@@ -508,8 +508,6 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
     finishedQty: row.finishedQty,
     remark: row.remark || ''
   });
-  const total = numberValue(values.unpreparedQty) + numberValue(values.preparedNotStartedQty) + numberValue(values.inProductionQty) + numberValue(values.finishedQty);
-  const gap = numberValue(row.currentOrderQty) - total;
 
   async function save() {
     await request(`/api/progress/${encodeURIComponent(row.demandKey)}`, {
@@ -530,24 +528,22 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
   );
 
   return [
-    row.month,
-    row.businessUnit,
-    row.supplier,
-    row.materialCode,
-    row.materialName || row.sku,
-    row.productLine,
-    row.productSeries,
     row.purchaseGroup,
     row.purchaseOwner,
     row.purchaseOrg,
+    row.month,
+    row.businessUnit,
+    row.supplier,
+    row.productLine,
+    row.productSeries,
+    row.materialName || row.materialCode,
+    row.sku,
     row.currentOrderQty,
     input('unpreparedQty'),
     input('preparedNotStartedQty'),
     input('inProductionQty'),
     input('finishedQty'),
-    gap,
-    <textarea value={values.remark} onChange={(event) => setValues({ ...values, remark: event.target.value })} placeholder={gap ? '数量不一致时必须填写备注' : '备注'} />,
-    <button type="button" className="compact-button" disabled={!row.canEdit} onClick={save}>{row.canEdit ? '保存' : '无权限'}</button>
+    <button type="button" className="compact-button" disabled={!row.canEdit} onClick={save}>{row.canEdit ? '提交' : '无权限'}</button>
   ];
 }
 
@@ -601,7 +597,7 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
       <DataTable
         className="progress-table"
         rows={displayRows}
-        columns={['月份', '事业部', '供应商', '物料编码', '物料', '产品线', '系列', '采购组', '采购下单人', '采购组织', '有效下单', '未备料', '已备料未生产', '生产中', '已完工', '差额', '备注', '操作']}
+        columns={['采购组', '采购下单人', '采购组织', '月份', '事业部', '供应商', '产品线', '系列', '物料', 'SKU', '金蝶采购订单', '未备料', '已备料未生产', '生产中', '已完工', '操作']}
         render={(row) => <ProgressEditor row={row} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
       />
       {!onlyIssues && (

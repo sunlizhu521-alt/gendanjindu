@@ -27,6 +27,16 @@ npm run dev
 https://sunlizhu521-alt.github.io/gendanjindu/
 ```
 
+## 腾讯云自动部署
+
+仓库已包含腾讯云 SSH 自动部署 workflow：
+
+```text
+.github/workflows/deploy-tencent.yml
+```
+
+服务器、Nginx 和 GitHub Secrets 配置见 [DEPLOY_TENCENT.md](./DEPLOY_TENCENT.md)。
+
 ## 默认账号
 
 - 孙立柱 / 521sunlizhu / 管理员

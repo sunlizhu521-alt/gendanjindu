@@ -1,0 +1,74 @@
+name: Deploy Tencent Cloud
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tencent-cloud
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_HOST: ${{ secrets.TENCENT_HOST }}
+      DEPLOY_USER: ${{ secrets.TENCENT_USER }}
+      DEPLOY_PORT: ${{ secrets.TENCENT_PORT || '22' }}
+      DEPLOY_PATH: ${{ secrets.TENCENT_DEPLOY_PATH }}
+      DEPLOY_SSH_KEY: ${{ secrets.TENCENT_SSH_KEY }}
+    steps:
+      - name: Check required secrets
+        run: |
+          test -n "$DEPLOY_HOST" || (echo "Missing secret: TENCENT_HOST" && exit 1)
+          test -n "$DEPLOY_USER" || (echo "Missing secret: TENCENT_USER" && exit 1)
+          test -n "$DEPLOY_PATH" || (echo "Missing secret: TENCENT_DEPLOY_PATH" && exit 1)
+          test -n "$DEPLOY_SSH_KEY" || (echo "Missing secret: TENCENT_SSH_KEY" && exit 1)
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/tencent_key
+          chmod 600 ~/.ssh/tencent_key
+          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Package dist
+        run: tar -C dist -czf gendanjindu-dist.tgz .
+
+      - name: Upload package
+        run: |
+          scp -i ~/.ssh/tencent_key -P "$DEPLOY_PORT" gendanjindu-dist.tgz \
+            "$DEPLOY_USER@$DEPLOY_HOST:/tmp/gendanjindu-dist.tgz"
+
+      - name: Release on server
+        run: |
+          ssh -i ~/.ssh/tencent_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "set -euo pipefail
+             mkdir -p '$DEPLOY_PATH'
+             if [ -d '$DEPLOY_PATH' ] && [ \"\$(ls -A '$DEPLOY_PATH' 2>/dev/null)\" ]; then
+               rm -rf '${DEPLOY_PATH}.bak'
+               cp -a '$DEPLOY_PATH' '${DEPLOY_PATH}.bak'
+             fi
+             find '$DEPLOY_PATH' -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+             tar -xzf /tmp/gendanjindu-dist.tgz -C '$DEPLOY_PATH'
+             rm -f /tmp/gendanjindu-dist.tgz"

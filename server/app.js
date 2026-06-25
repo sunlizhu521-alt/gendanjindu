@@ -595,6 +595,59 @@ app.post('/api/inventory', requireAuth, requirePage('inventory'), (req, res) => 
   res.json({ rows: all('SELECT * FROM inventory ORDER BY business_unit, supplier, material_code') });
 });
 
+app.get('/api/progress/export', requireAuth, (req, res) => {
+  const rows = demandRows(false, req.user);
+  const headers = ['demandKey', '月份', '事业部', '供应商', '物料编码', '物料', '产品线', '系列', '采购组', '采购下单人', '采购组织', '有效下单', '未备料', '已备料未生产', '生产中', '已完工', '差额', '备注'];
+  const aoa = [headers];
+  rows.forEach((row) => {
+    aoa.push([
+      row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode,
+      row.materialName || row.sku, row.productLine, row.productSeries,
+      row.purchaseGroup, row.purchaseOwner, row.purchaseOrg,
+      row.currentOrderQty, row.unpreparedQty, row.preparedNotStartedQty,
+      row.inProductionQty, row.finishedQty, row.gap, row.remark
+    ]);
+  });
+  const wb = xlsx.utils.book_new();
+  const ws = xlsx.utils.aoa_to_sheet(aoa);
+  xlsx.utils.book_append_sheet(wb, ws, '生产跟进');
+  const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Disposition', `attachment; filename="progress-export.xlsx"; filename*=UTF-8''${encodeURIComponent('生产跟进导出.xlsx')}`);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
+});
+
+app.post('/api/progress/import', requireAuth, upload.single('file'), (req, res) => {
+  const parsed = workbookRows(req.file);
+  const now = nowText();
+  let updated = 0;
+  transaction(() => {
+    parsed.rows.forEach((row) => {
+      const demandKeyValue = normalize(row.demandKey || row['demandKey'] || '');
+      if (!demandKeyValue) return;
+      const demand = get('SELECT * FROM order_demands WHERE demand_key = ?', [demandKeyValue]);
+      if (!demand) return;
+      const qty = (col) => Math.max(0, numberValue(row[col] || 0));
+      const remark = normalize(row['备注'] || row.remark || '');
+      run(
+        `INSERT INTO supplier_progress (demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, remark, updated_by, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(demand_key) DO UPDATE SET
+           unprepared_qty = excluded.unprepared_qty,
+           prepared_not_started_qty = excluded.prepared_not_started_qty,
+           in_production_qty = excluded.in_production_qty,
+           finished_qty = excluded.finished_qty,
+           remark = excluded.remark,
+           updated_by = excluded.updated_by,
+           updated_at = excluded.updated_at`,
+        [demandKeyValue, qty('未备料'), qty('已备料未生产'), qty('生产中'), qty('已完工'), remark, req.user.name, now]
+      );
+      updated++;
+    });
+  });
+  res.json({ updated });
+});
+
 app.post('/api/inventory/import', requireAuth, requirePage('inventory'), upload.single('file'), (req, res) => {
   const parsed = workbookRows(req.file);
   const now = nowText();

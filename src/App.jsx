@@ -191,9 +191,9 @@ function FilterBar({ filters, setFilters, options, onSubmit }) {
   const clear = () => setFilters({ keyword: '', month: '', supplier: '', purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
   return (
     <div className="toolbar filters-row">
+      <SelectField label="采购组织" value={filters.purchaseOrg} options={options.purchaseOrgs} onChange={(value) => setFilters({ ...filters, purchaseOrg: value })} />
       <SelectField label="创建月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
       <SelectField label="供应商" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
-      <SelectField label="采购组织" value={filters.purchaseOrg} options={options.purchaseOrgs} onChange={(value) => setFilters({ ...filters, purchaseOrg: value })} />
       <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
       <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
       <SelectField label="系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
@@ -548,15 +548,30 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
     try {
       const data = new FormData();
       data.append('file', importFile);
-      const payload = await request('/api/inventory/import', { token, method: 'POST', body: data });
-      setMessage(`模板导入完成：${payload.imported || 0} 行`);
+      const payload = await request('/api/progress/import', { token, method: 'POST', body: data });
+      setMessage(`进度导入完成：${payload.updated || 0} 行`);
       setImportFile(null);
       await reloadDemands();
     } catch {
-      setMessage('模板导入失败');
+      setMessage('进度导入失败');
     } finally {
       setImporting(false);
     }
+  }
+
+  async function handleExport() {
+    const res = await fetch(`${API}/api/progress/export`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) {
+      setMessage('导出失败');
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '生产跟进导出.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -580,13 +595,14 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
             <strong>{importFile ? importFile.name : '上传本地生产进度 Excel'}</strong>
             <span>按模板格式导入，覆盖本地进度数据</span>
           </label>
-          {importFile && (
-            <div className="card-actions" style={{ marginTop: 8 }}>
+          <div className="card-actions" style={{ marginTop: 8 }}>
+            <button type="button" className="compact-button" onClick={handleExport}>导出 Excel</button>
+            {importFile && (
               <button type="button" className="compact-button" disabled={importing} onClick={handleTemplateImport}>
                 {importing ? '导入中...' : '确认导入'}
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </section>
       )}
     </>

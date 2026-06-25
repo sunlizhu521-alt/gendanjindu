@@ -544,38 +544,26 @@ function DimensionLibrary({ token, reloadDemands, setMessage }) {
 
   useEffect(() => { load().catch(() => {}); }, []);
 
-  async function inspect(slot, file, sheetName = '') {
+  async function inspect(slot, file) {
     const data = new FormData();
     data.append('file', file);
-    if (sheetName) data.append('sheetName', sheetName);
     const payload = await request('/api/workbook/inspect', { token, method: 'POST', body: data });
-    setLocal((current) => ({
-      ...current,
-      [slot.id]: {
-        ...(current[slot.id] || {}),
-        file,
-        sheetName,
-        sheetNames: payload.sheetNames || [],
-        sheetPreviews: payload.sheetPreviews || [],
-        columns: payload.columns || [],
-        previewRows: payload.previewRows || [],
-        mapping: current[slot.id]?.mapping || {}
-      }
-    }));
+    const prevState = local[slot.id] || {};
+    setLocal({ ...local, [slot.id]: { ...prevState, file, columns: payload.columns || [], sheetNames: payload.sheetNames || [], sheetPreviews: payload.sheetPreviews || [], mapping: prevState.mapping || {}, sheetName: '' } });
   }
 
   async function selectSheet(slot, sheetName) {
-    const state = local[slot.id];
-    if (!state?.file) return;
-    await inspect(slot, state.file, sheetName);
+    const state = local[slot.id] || {};
+    const sheet = state.sheetPreviews?.find((s) => s.sheetName === sheetName);
+    setLocal({ ...local, [slot.id]: { ...state, sheetName, columns: sheet?.columns || state.columns } });
   }
 
   async function uploadSlot(slot) {
     const state = local[slot.id];
     const data = new FormData();
     data.append('file', state.file);
-    if (state.sheetName) data.append('sheetName', state.sheetName);
     data.append('mapping', JSON.stringify(state.mapping || {}));
+    if (state.sheetName) data.append('sheetName', state.sheetName);
     const payload = await request(`/api/dimensions/${slot.id}/upload`, { token, method: 'POST', body: data });
     setMessage(`${slot.title} 已上传 ${payload.rowCount} 行，请应用刷新。`);
     await load();
@@ -600,6 +588,9 @@ function DimensionLibrary({ token, reloadDemands, setMessage }) {
         {DIMENSION_SLOTS.map((slot, index) => {
           const record = records.find((item) => item.slot_id === slot.id);
           const state = local[slot.id] || {};
+          const hasSheets = (state.sheetNames?.length || record?.sheetNames?.length || 0) > 1;
+          const sheetNames = state.sheetNames?.length ? state.sheetNames : (record?.sheetNames || []);
+          const currentSheet = state.sheetName || record?.sheetName || '';
           return (
             <article key={slot.id} className="library-slot">
               <div className="slot-head">
@@ -611,20 +602,14 @@ function DimensionLibrary({ token, reloadDemands, setMessage }) {
                 <strong>{state.file?.name || record?.file_name || '上传维度表'}</strong>
                 <span>点击选择 Excel / CSV</span>
               </label>
-              {state.sheetNames?.length > 0 && (
-                <label className="filter-control">
-                  <span>工作表</span>
-                  <select value={state.sheetName || ''} onChange={(event) => selectSheet(slot, event.target.value)}>
-                    <option value="">全部工作表</option>
-                    {state.sheetNames.map((name) => <option key={name} value={name}>{name}</option>)}
-                  </select>
-                </label>
-              )}
-              {state.sheetPreviews?.length > 0 && (
-                <div className="slot-info">
-                  {state.sheetPreviews.map((sheet) => (
-                    <span key={sheet.sheetName}>{sheet.sheetName}：{sheet.rowCount} 行 / {sheet.columns.length} 列</span>
-                  ))}
+              {hasSheets && (
+                <div className="sheet-selector">
+                  <label>选择工作表
+                    <select value={currentSheet} onChange={(e) => selectSheet(slot, e.target.value)}>
+                      <option value="">全部工作表</option>
+                      {sheetNames.map((name) => <option key={name} value={name}>{name}</option>)}
+                    </select>
+                  </label>
                 </div>
               )}
               {state.columns?.length > 0 && slot.fields.length > 0 && (
@@ -635,17 +620,9 @@ function DimensionLibrary({ token, reloadDemands, setMessage }) {
                   onChange={(mapping) => setLocal({ ...local, [slot.id]: { ...state, mapping } })}
                 />
               )}
-              {state.previewRows?.length > 0 && (
-                <DataTable
-                  className="compact-table"
-                  columns={state.columns.slice(0, 6)}
-                  rows={state.previewRows}
-                  render={(row) => state.columns.slice(0, 6).map((column) => String(row[column] ?? ''))}
-                />
-              )}
               <div className="slot-info">
                 {record && <span>文件：{record.file_name}</span>}
-                {record?.sheet_name && <span>工作表：{record.sheet_name}</span>}
+                {hasSheets && <span>工作表：{sheetNames.join('、')}</span>}
                 {record && <span>行数：{record.rowCount}</span>}
                 {record && <span>更新：{record.updated_at}</span>}
               </div>

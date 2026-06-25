@@ -444,24 +444,7 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
           </div>
         )}
         {columns.length > 0 && (
-          <>
-            <FieldMapping fields={KINGDEE_FIELDS} columns={columns} mapping={mapping} onChange={setMapping} />
-            <div className="card-actions">
-              <button type="button" className="compact-button" disabled={parsing} onClick={doParse}>
-                {parsing ? '解析中...' : '解析预览'}
-              </button>
-              {preview && preview.validRows > 0 && (
-                <>
-                  <button type="button" className="compact-button" disabled={saving} onClick={doSave}>
-                    {saving ? '保存中...' : '上传保存'}
-                  </button>
-                  <button type="button" className="compact-button" disabled={applying} onClick={doApplyRefresh}>
-                    {applying ? '刷新中...' : '应用刷新'}
-                  </button>
-                </>
-              )}
-            </div>
-          </>
+          <FieldMapping fields={KINGDEE_FIELDS} columns={columns} mapping={mapping} onChange={setMapping} />
         )}
       </section>
       {preview && (

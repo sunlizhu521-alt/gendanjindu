@@ -587,6 +587,33 @@ app.post('/api/inventory', requireAuth, requirePage('inventory'), (req, res) => 
   res.json({ rows: all('SELECT * FROM inventory ORDER BY business_unit, supplier, material_code') });
 });
 
+app.post('/api/inventory/import', requireAuth, requirePage('inventory'), upload.single('file'), (req, res) => {
+  const parsed = workbookRows(req.file);
+  const now = nowText();
+  let imported = 0;
+  transaction(() => {
+    parsed.rows.forEach((row) => {
+      const businessUnit = normalize(row['事业部'] || row.businessUnit || row.business_unit || '');
+      const supplier = normalize(row['供应商'] || row.supplier || '');
+      const materialCode = normalize(row['物料编码'] || row.materialCode || row.material_code || '');
+      const qty = numberValue(row['库存数量'] || row.stockQty || row.stock_qty || row.quantity || 0);
+      if (!businessUnit || !supplier || !materialCode || !qty) return;
+      const key = stockKey(businessUnit, supplier, materialCode);
+      const existing = get('SELECT * FROM inventory WHERE stock_key = ?', [key]);
+      const remark = normalize(row['备注'] || row.remark || '');
+      run(
+        `INSERT INTO inventory (stock_key, business_unit, supplier, material_code, stock_qty, remark, updated_by, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(stock_key) DO UPDATE SET stock_qty = excluded.stock_qty, remark = excluded.remark, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+        [key, businessUnit, supplier, materialCode, qty, remark, req.user.name, now]
+      );
+      run('INSERT INTO inventory_logs (id, stock_key, old_qty, new_qty, remark, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [randomUUID(), key, numberValue(existing?.stock_qty), qty, remark, req.user.name, now]);
+      imported++;
+    });
+  });
+  res.json({ imported });
+});
+
 app.get('/api/trace', requireAuth, requirePage('trace'), (req, res) => {
   res.json({
     batches: all('SELECT * FROM kingdee_import_batches ORDER BY imported_at DESC LIMIT 100'),

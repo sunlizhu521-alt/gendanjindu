@@ -147,6 +147,10 @@ function requireAdmin(req, res, next) {
   return res.status(403).json({ error: '仅管理员可操作' });
 }
 
+function safeFilename(file) {
+  return Buffer.from(file.originalname, 'latin1').toString('utf8');
+}
+
 function workbookRows(file) {
   const workbook = xlsx.read(file.buffer, { type: 'buffer', cellDates: true });
   const sheets = workbook.SheetNames.map((sheetName) => {
@@ -510,7 +514,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requirePage('dimensionLi
     `INSERT INTO dimension_files (slot_id, title, file_name, mapping_json, rows_json, applied, uploaded_by, updated_at)
      VALUES (?, ?, ?, ?, ?, 0, ?, ?)
      ON CONFLICT(slot_id) DO UPDATE SET title = excluded.title, file_name = excluded.file_name, mapping_json = excluded.mapping_json, rows_json = excluded.rows_json, applied = 0, uploaded_by = excluded.uploaded_by, updated_at = excluded.updated_at`,
-    [slotId, DIMENSION_SLOTS[slotId] || slotId, req.file.originalname, JSON.stringify(mapping), JSON.stringify(rows), req.user.name, now]
+    [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), JSON.stringify(mapping), JSON.stringify(rows), req.user.name, now]
   );
   saveDatabase();
   res.json({ rowCount: rows.length });

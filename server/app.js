@@ -275,6 +275,7 @@ function applyDimensionEnrichment() {
            material_name = COALESCE(NULLIF(?, ''), material_name),
            product_line = COALESCE(NULLIF(?, ''), product_line),
            product_series = COALESCE(NULLIF(?, ''), product_series),
+           supplier_short_name = COALESCE(NULLIF(?, ''), supplier_short_name),
            purchase_group = COALESCE(NULLIF(?, ''), purchase_group),
            purchase_owner = COALESCE(NULLIF(?, ''), purchase_owner),
            purchase_org = COALESCE(NULLIF(?, ''), purchase_org)
@@ -284,6 +285,7 @@ function applyDimensionEnrichment() {
         normalize(product.materialName),
         normalize(product.productLine),
         normalize(product.productSeries),
+        normalize(assignment.supplierShortName),
         normalize(assignment.purchaseGroup),
         normalize(assignment.purchaseOwner),
         normalize(assignment.purchaseOrg),
@@ -329,6 +331,7 @@ function demandRows(includeInactive = false, user = null) {
       month: demand.month,
       businessUnit: demand.business_unit,
       supplier: demand.supplier,
+      supplierShortName: demand.supplier_short_name || '',
       materialCode: demand.material_code,
       currentOrderQty: numberValue(demand.current_order_qty),
       active: Boolean(demand.active),
@@ -540,6 +543,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requirePage('dimensionLi
     if (slotId === 'purchaseAssignment') {
       return {
         supplier: pick(row, mapping.supplier),
+        supplierShortName: pick(row, mapping.supplierShortName),
         materialCode: pick(row, mapping.materialCode),
         purchaseOwner: pick(row, mapping.purchaseOwner),
         purchaseGroup: pick(row, mapping.purchaseGroup),

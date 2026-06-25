@@ -67,6 +67,7 @@ function migrate() {
       month TEXT NOT NULL,
       business_unit TEXT NOT NULL,
       supplier TEXT NOT NULL,
+      supplier_short_name TEXT NOT NULL DEFAULT '',
       material_code TEXT NOT NULL,
       order_no TEXT,
       quantity REAL NOT NULL,
@@ -178,6 +179,9 @@ function migrate() {
   const demandColumns = all('PRAGMA table_info(order_demands)').map((row) => row.name);
   if (!demandColumns.includes('purchase_org')) {
     run("ALTER TABLE order_demands ADD COLUMN purchase_org TEXT NOT NULL DEFAULT ''");
+  }
+  if (!demandColumns.includes('supplier_short_name')) {
+    run("ALTER TABLE order_demands ADD COLUMN supplier_short_name TEXT NOT NULL DEFAULT ''");
   }
 }
 

@@ -36,6 +36,7 @@ const DIMENSION_SLOTS = [
   ] },
   { id: 'purchaseAssignment', title: '采购分工', fields: [
     ['supplier', '供应商'],
+    ['supplierShortName', '供应商简称'],
     ['materialCode', '物料编码'],
     ['purchaseOwner', '采购下单人'],
     ['purchaseGroup', '采购组'],
@@ -181,7 +182,7 @@ function useFilteredDemands(rows) {
   const filtered = useMemo(() => {
     const keyword = filters.keyword.toLowerCase();
     return rows.filter((row) => {
-      const text = [row.demandKey, row.materialCode, row.supplier, row.materialName, row.sku, row.purchaseOwner, row.purchaseGroup].join(' ').toLowerCase();
+      const text = [row.demandKey, row.materialCode, row.supplier, row.supplierShortName, row.materialName, row.sku, row.purchaseOwner, row.purchaseGroup].join(' ').toLowerCase();
       return (!keyword || text.includes(keyword))
         && (!filters.month || row.month === filters.month)
         && (!filters.supplier || row.supplier === filters.supplier)

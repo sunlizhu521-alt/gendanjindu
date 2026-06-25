@@ -19,6 +19,14 @@ npm install
 npm run dev
 ```
 
+## GitHub Pages
+
+推送到 `main` 后，GitHub Actions 会构建 `dist` 并发布到：
+
+```text
+https://sunlizhu521-alt.github.io/gendanjindu/
+```
+
 ## 默认账号
 
 - 孙立柱 / 521sunlizhu / 管理员

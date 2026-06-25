@@ -9,18 +9,40 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package source
+        run: |
+          tar \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='data' \
+            --exclude='dist' \
+            -czf /tmp/gendanjindu.tar.gz .
+
       - name: Deploy to server via SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "mkdir -p /home/ubuntu/zhuge-ai-lab/gendanjindu /tmp/gendanjindu-deploy"
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no /tmp/gendanjindu.tar.gz ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/gendanjindu-deploy/gendanjindu.tar.gz
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
             set -e
-            cd /home/ubuntu/zhuge-ai-lab/gendanjindu
-            git fetch origin main
-            git reset --hard origin/main
+            APP_DIR=/home/ubuntu/zhuge-ai-lab/gendanjindu
+            mkdir -p "$APP_DIR"
+            cd "$APP_DIR"
+            find . -mindepth 1 \
+              ! -path './data' \
+              ! -path './data/*' \
+              ! -path './node_modules' \
+              ! -path './node_modules/*' \
+              -delete
+            tar -xzf /tmp/gendanjindu-deploy/gendanjindu.tar.gz -C "$APP_DIR"
             npm ci --omit=dev
             npm run build
             pm2 restart gendanjindu
             pm2 save
+            rm -f /tmp/gendanjindu-deploy/gendanjindu.tar.gz
           EOF

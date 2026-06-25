@@ -327,11 +327,15 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
     setFile(nextFile);
     setPreview(null);
     setSheetName('');
-    const data = new FormData();
-    data.append('file', nextFile);
-    const payload = await request('/api/workbook/inspect', { token, method: 'POST', body: data });
-    setColumns(payload.columns || []);
-    setSheetNames(payload.sheetNames || []);
+    try {
+      const data = new FormData();
+      data.append('file', nextFile);
+      const payload = await request('/api/workbook/inspect', { token, method: 'POST', body: data });
+      setColumns(payload.columns || []);
+      setSheetNames(payload.sheetNames || []);
+    } catch (err) {
+      setMessage('文件读取失败：' + err.message);
+    }
   }
 
   async function selectSheet(name) {
@@ -357,6 +361,8 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
       } else {
         setMessage(`解析完成：${payload.validRows}/${payload.totalRows} 行有效，差异 ${payload.diffs.length} 条`);
       }
+    } catch (err) {
+      setMessage('解析失败：' + err.message);
     } finally {
       setParsing(false);
     }
@@ -371,6 +377,8 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
       if (sheetName) data.append('sheetName', sheetName);
       const payload = await request('/api/imports/kingdee/apply', { token, method: 'POST', body: data });
       setMessage(`上传保存完成：${payload.rowCount} 行，差异 ${payload.diffs.length} 条`);
+    } catch (err) {
+      setMessage('上传保存失败：' + err.message);
     } finally {
       setSaving(false);
     }

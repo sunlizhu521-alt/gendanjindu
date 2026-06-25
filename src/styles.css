@@ -695,3 +695,7 @@ th {
 .sheet-selector { padding: 0 16px 12px; }
 .sheet-selector label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #6b7280; }
 .sheet-selector select { flex: 1; padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; background: #fff; }
+.warn-text { color: #d97706; font-weight: 500; }
+.error-text { color: #dc2626; font-weight: 600; }
+.skipped-details { margin-top: 8px; }
+.skipped-details summary { cursor: pointer; color: #6b7280; font-size: 13px; }

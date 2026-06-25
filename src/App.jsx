@@ -384,8 +384,24 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
       </section>
       {preview && (
         <section className="panel">
-          <h3>预览结果</h3>
-          <p className="section-count">识别有效行 {preview.rowCount}，差异 {preview.diffs.length}</p>
+          <h3>解析结果</h3>
+          <p className="section-count">
+            总行数 {preview.totalRows}，有效 {preview.validRows} 行
+            {preview.skippedRows > 0 && <span className="warn-text">，跳过 {preview.skippedRows} 行（日期/事业部/供应商/物料编码/数量为空）</span>}
+            {preview.validRows === 0 && <span className="error-text">，0行有效！请检查字段映射是否正确、Excel列是否匹配</span>}
+            ，差异 {preview.diffs.length} 条
+          </p>
+          {preview.skipped?.length > 0 && (
+            <details className="skipped-details">
+              <summary>查看跳过的行（前{preview.skipped.length}条）</summary>
+              <DataTable
+                className="compact-table"
+                rows={preview.skipped}
+                columns={['Excel行号', '跳过原因', '原始数据']}
+                render={(row) => [row.row, row.reasons, row.preview]}
+              />
+            </details>
+          )}
           <DataTable
             className="compact-table"
             rows={preview.diffs.slice(0, 80)}

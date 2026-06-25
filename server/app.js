@@ -170,13 +170,25 @@ function pick(row, column) {
 }
 
 function mappedKingdeeRows(rows, mapping) {
-  return rows.map((row) => {
+  const valid = [];
+  const skipped = [];
+  rows.forEach((row, index) => {
     const month = monthFromDate(pick(row, mapping.createDate));
     const businessUnit = pick(row, mapping.businessUnit);
     const supplier = pick(row, mapping.supplier);
     const materialCode = pick(row, mapping.materialCode);
     const quantity = numberValue(row?.[mapping.quantity]);
-    return {
+    const reasons = [];
+    if (!month) reasons.push('日期无法解析');
+    if (!businessUnit) reasons.push('事业部为空');
+    if (!supplier) reasons.push('供应商为空');
+    if (!materialCode) reasons.push('物料编码为空');
+    if (!quantity) reasons.push('数量为0或无法解析');
+    if (reasons.length) {
+      skipped.push({ row: index + 2, reasons: reasons.join(';'), preview: JSON.stringify(row).slice(0, 100) });
+      return;
+    }
+    valid.push({
       month,
       businessUnit,
       supplier,
@@ -185,8 +197,9 @@ function mappedKingdeeRows(rows, mapping) {
       quantity,
       raw: row,
       demandKey: demandKey(month, businessUnit, supplier, materialCode)
-    };
-  }).filter((row) => row.month && row.businessUnit && row.supplier && row.materialCode && row.quantity);
+    });
+  });
+  return { totalRows: rows.length, validRows: valid.length, skippedRows: skipped.length, skipped, rows: valid };
 }
 
 function summarizeDemands(rows) {
@@ -389,23 +402,32 @@ app.post('/api/imports/kingdee/preview', requireAuth, requirePage('kingdeeImport
   const mapping = parseJson(req.body.mapping, {});
   const sheetName = normalize(req.body.sheetName);
   const parsed = workbookRows(req.file, sheetName || null);
-  const rows = mappedKingdeeRows(parsed.rows, mapping);
-  const summary = summarizeDemands(rows);
-  res.json({ fileName: req.file.originalname, rowCount: rows.length, summary: summary.slice(0, 100), diffs: diffAgainstCurrent(summary) });
+  const result = mappedKingdeeRows(parsed.rows, mapping);
+  const summary = summarizeDemands(result.rows);
+  res.json({
+    fileName: safeFilename(req.file),
+    totalRows: parsed.rows.length,
+    validRows: result.validRows,
+    skippedRows: result.skippedRows,
+    skipped: result.skipped.slice(0, 10),
+    rowCount: result.rows.length,
+    summary: summary.slice(0, 100),
+    diffs: diffAgainstCurrent(summary)
+  });
 });
 
 app.post('/api/imports/kingdee/apply', requireAuth, requirePage('kingdeeImport'), upload.single('file'), (req, res) => {
   const mapping = parseJson(req.body.mapping, {});
   const sheetName = normalize(req.body.sheetName);
   const parsed = workbookRows(req.file, sheetName || null);
-  const rows = mappedKingdeeRows(parsed.rows, mapping);
-  const summary = summarizeDemands(rows);
+  const result = mappedKingdeeRows(parsed.rows, mapping);
+  const summary = summarizeDemands(result.rows);
   const diffs = diffAgainstCurrent(summary);
   const batchId = randomUUID();
   const now = nowText();
   transaction(() => {
-    run('INSERT INTO kingdee_import_batches (id, file_name, imported_by, imported_at, row_count) VALUES (?, ?, ?, ?, ?)', [batchId, req.file.originalname, req.user.name, now, rows.length]);
-    rows.forEach((row) => {
+    run('INSERT INTO kingdee_import_batches (id, file_name, imported_by, imported_at, row_count) VALUES (?, ?, ?, ?, ?)', [batchId, req.file.originalname, req.user.name, now, result.rows.length]);
+    result.rows.forEach((row) => {
       run(
         'INSERT INTO kingdee_orders (id, batch_id, demand_key, month, business_unit, supplier, material_code, order_no, quantity, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [randomUUID(), batchId, row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.orderNo, row.quantity, JSON.stringify(row.raw)]
@@ -439,7 +461,7 @@ app.post('/api/imports/kingdee/apply', requireAuth, requirePage('kingdeeImport')
     );
     applyDimensionEnrichment();
   });
-  res.json({ batchId, rowCount: rows.length, diffs, demands: demandRows(false, req.user) });
+  res.json({ batchId, rowCount: result.rows.length, diffs, demands: demandRows(false, req.user) });
 });
 
 app.get('/api/demands', requireAuth, (req, res) => {

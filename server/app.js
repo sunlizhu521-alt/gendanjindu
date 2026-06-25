@@ -611,7 +611,7 @@ app.get('/api/progress/export', requireAuth, (req, res) => {
   const aoa = [headers];
   rows.forEach((row) => {
     aoa.push([
-      row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode,
+      row.demandKey, row.month, row.businessUnit, row.supplierShortName || row.supplier, row.materialCode,
       row.materialName || row.sku, row.productLine, row.productSeries,
       row.purchaseGroup, row.purchaseOwner, row.purchaseOrg,
       row.currentOrderQty, row.unpreparedQty, row.preparedNotStartedQty,

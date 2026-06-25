@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 
 const API = import.meta.env.DEV ? 'http://localhost:4003' : '';
 const TOKEN_KEY = 'gendanjinduToken';
+const BUSINESS_UNITS = ['海外事业一部', '海外事业二部', '国内事业部', '全球招商部', '其他部门'];
 
 const PAGE_ORDER = [
   'dashboard',
@@ -31,8 +32,8 @@ const DIMENSION_SLOTS = [
     ['materialCode', '物料编码'],
     ['sku', 'SKU'],
     ['materialName', '物料名称'],
-    ['productLine', '产品线'],
-    ['productSeries', '系列']
+    ['productLine', '销售产品线'],
+    ['productSeries', '销售系列']
   ] },
   { id: 'purchaseAssignment', title: '采购分工', fields: [
     ['supplier', '供应商'],
@@ -47,7 +48,7 @@ const DIMENSION_SLOTS = [
 ];
 
 const KINGDEE_FIELDS = [
-  ['createDate', '创建日期'],
+  ['createDate', '采购日期'],
   ['businessUnit', '事业部'],
   ['supplier', '供应商'],
   ['purchaseOrg', '采购组织'],
@@ -63,6 +64,10 @@ function normalize(value) {
 function numberValue(value) {
   const n = Number(normalize(value).replace(/,/g, ''));
   return Number.isFinite(n) ? n : 0;
+}
+
+function supplierName(row) {
+  return normalize(row.supplierShortName) || normalize(row.supplier);
 }
 
 function todayText() {
@@ -168,24 +173,25 @@ function FieldMapping({ fields, columns, mapping, onChange }) {
 
 function useFilteredDemands(rows) {
   const [filters, setFilters] = useState({ keyword: '', month: '', supplier: '', purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
-  const unique = (field) => [...new Set(rows.map((row) => row[field]).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'zh-Hans-CN'));
+  const unique = (values) => [...new Set(values.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'zh-Hans-CN'));
   const options = useMemo(() => ({
-    months: unique('month'),
-    suppliers: unique('supplier'),
-    purchaseOrgs: unique('purchaseOrg'),
-    businessUnits: unique('businessUnit'),
-    productLines: unique('productLine'),
-    series: unique('productSeries'),
-    purchaseGroups: unique('purchaseGroup'),
-    purchaseOwners: unique('purchaseOwner')
+    months: unique(rows.map((row) => row.month)),
+    suppliers: unique(rows.map((row) => supplierName(row))),
+    purchaseOrgs: unique(rows.map((row) => row.purchaseOrg)),
+    businessUnits: BUSINESS_UNITS,
+    productLines: unique(rows.map((row) => row.productLine)),
+    series: unique(rows.map((row) => row.productSeries)),
+    purchaseGroups: unique(rows.map((row) => row.purchaseGroup)),
+    purchaseOwners: unique(rows.map((row) => row.purchaseOwner))
   }), [rows]);
   const filtered = useMemo(() => {
     const keyword = filters.keyword.toLowerCase();
     return rows.filter((row) => {
-      const text = [row.demandKey, row.materialCode, row.supplier, row.supplierShortName, row.materialName, row.sku, row.purchaseOwner, row.purchaseGroup].join(' ').toLowerCase();
+      const displaySupplier = supplierName(row);
+      const text = [row.demandKey, row.materialCode, row.supplier, displaySupplier, row.materialName, row.sku, row.purchaseOwner, row.purchaseGroup].join(' ').toLowerCase();
       return (!keyword || text.includes(keyword))
         && (!filters.month || row.month === filters.month)
-        && (!filters.supplier || row.supplier === filters.supplier)
+        && (!filters.supplier || displaySupplier === filters.supplier)
         && (!filters.purchaseOrg || row.purchaseOrg === filters.purchaseOrg)
         && (!filters.businessUnit || row.businessUnit === filters.businessUnit)
         && (!filters.productLine || row.productLine === filters.productLine)
@@ -310,7 +316,7 @@ function Dashboard({ rows }) {
             className="compact-table"
             rows={activeRows.filter((row) => !row.progressUpdatedAt || daysSince(row.progressUpdatedAt) > 7 || numberValue(row.gap) !== 0).slice(0, 12)}
             columns={['月份', '事业部', '供应商', '物料', '有效下单', '差额', '上次刷新']}
-            render={(row) => [row.month, row.businessUnit, row.supplier, row.materialCode, row.currentOrderQty, row.gap, row.progressUpdatedAt || '待首次刷新']}
+            render={(row) => [row.month, row.businessUnit, supplierName(row), row.materialCode, row.currentOrderQty, row.gap, row.progressUpdatedAt || '待首次刷新']}
           />
         </article>
       </section>
@@ -519,7 +525,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
     row.purchaseOrg,
     row.month,
     row.businessUnit,
-    row.supplier,
+    supplierName(row),
     row.productLine,
     row.productSeries,
     row.materialName || row.materialCode,

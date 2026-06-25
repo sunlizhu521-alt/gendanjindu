@@ -17,23 +17,21 @@ const ROLE_ADMIN = '管理员';
 const ROLE_USER = '普通用户';
 const ALL_PAGES = [
   'dashboard',
-  'kingdeeImport',
   'progressRefresh',
+  'trace',
   'differenceAllocation',
   'progressMaintenance',
-  'weeklyBoard',
   'inventory',
+  'kingdeeImport',
   'dimensionLibrary',
-  'trace',
   'permissions'
 ];
 const PAGE_LABELS = {
   dashboard: '采购总览',
-  kingdeeImport: '金蝶订单导入',
+  kingdeeImport: '金蝶采购订单',
   progressRefresh: '生产进度刷新',
   differenceAllocation: '差异分配',
   progressMaintenance: '生产进度维护',
-  weeklyBoard: '周更新看板',
   inventory: '历史库存',
   dimensionLibrary: '维度表库',
   trace: '变更追溯',
@@ -389,7 +387,8 @@ app.post('/api/workbook/inspect', requireAuth, upload.single('file'), (req, res)
 
 app.post('/api/imports/kingdee/preview', requireAuth, requirePage('kingdeeImport'), upload.single('file'), (req, res) => {
   const mapping = parseJson(req.body.mapping, {});
-  const parsed = workbookRows(req.file);
+  const sheetName = normalize(req.body.sheetName);
+  const parsed = workbookRows(req.file, sheetName || null);
   const rows = mappedKingdeeRows(parsed.rows, mapping);
   const summary = summarizeDemands(rows);
   res.json({ fileName: req.file.originalname, rowCount: rows.length, summary: summary.slice(0, 100), diffs: diffAgainstCurrent(summary) });
@@ -397,7 +396,8 @@ app.post('/api/imports/kingdee/preview', requireAuth, requirePage('kingdeeImport
 
 app.post('/api/imports/kingdee/apply', requireAuth, requirePage('kingdeeImport'), upload.single('file'), (req, res) => {
   const mapping = parseJson(req.body.mapping, {});
-  const parsed = workbookRows(req.file);
+  const sheetName = normalize(req.body.sheetName);
+  const parsed = workbookRows(req.file, sheetName || null);
   const rows = mappedKingdeeRows(parsed.rows, mapping);
   const summary = summarizeDemands(rows);
   const diffs = diffAgainstCurrent(summary);

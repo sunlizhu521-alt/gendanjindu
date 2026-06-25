@@ -6,24 +6,22 @@ const TOKEN_KEY = 'gendanjinduToken';
 
 const PAGE_ORDER = [
   'dashboard',
-  'kingdeeImport',
   'progressRefresh',
+  'trace',
   'differenceAllocation',
   'progressMaintenance',
-  'weeklyBoard',
   'inventory',
+  'kingdeeImport',
   'dimensionLibrary',
-  'trace',
   'permissions'
 ];
 
 const PAGE_LABELS = {
   dashboard: '采购总览',
-  kingdeeImport: '金蝶订单导入',
+  kingdeeImport: '金蝶采购订单',
   progressRefresh: '生产进度刷新',
   differenceAllocation: '差异分配',
   progressMaintenance: '生产进度维护',
-  weeklyBoard: '周更新看板',
   inventory: '历史库存',
   dimensionLibrary: '维度表库',
   trace: '变更追溯',
@@ -306,6 +304,8 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
   const [columns, setColumns] = useState([]);
   const [mapping, setMapping] = useState({});
   const [preview, setPreview] = useState(null);
+  const [sheetName, setSheetName] = useState('');
+  const [sheetNames, setSheetNames] = useState([]);
 
   useEffect(() => {
     request('/api/mappings/kingdee', { token }).then((payload) => setMapping(payload.mapping || {})).catch(() => {});
@@ -314,8 +314,19 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
   async function inspect(nextFile) {
     setFile(nextFile);
     setPreview(null);
+    setSheetName('');
     const data = new FormData();
     data.append('file', nextFile);
+    const payload = await request('/api/workbook/inspect', { token, method: 'POST', body: data });
+    setColumns(payload.columns || []);
+    setSheetNames(payload.sheetNames || []);
+  }
+
+  async function selectSheet(name) {
+    setSheetName(name);
+    const data = new FormData();
+    data.append('file', file);
+    if (name) data.append('sheetName', name);
     const payload = await request('/api/workbook/inspect', { token, method: 'POST', body: data });
     setColumns(payload.columns || []);
   }
@@ -324,6 +335,7 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
     const data = new FormData();
     data.append('file', file);
     data.append('mapping', JSON.stringify(mapping));
+    if (sheetName) data.append('sheetName', sheetName);
     const payload = await request('/api/imports/kingdee/preview', { token, method: 'POST', body: data });
     setPreview(payload);
   }
@@ -332,6 +344,7 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
     const data = new FormData();
     data.append('file', file);
     data.append('mapping', JSON.stringify(mapping));
+    if (sheetName) data.append('sheetName', sheetName);
     const payload = await request('/api/imports/kingdee/apply', { token, method: 'POST', body: data });
     setMessage(`已应用金蝶快照：${payload.rowCount} 行，差异 ${payload.diffs.length} 条。`);
     await reloadDemands();
@@ -340,7 +353,7 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
   return (
     <>
       <div className="section-heading-row">
-        <h2>金蝶订单导入</h2>
+        <h2>金蝶采购订单</h2>
         <span className="section-count">字段映射会保存最近一次配置</span>
       </div>
       <section className="panel">
@@ -349,6 +362,16 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
           <strong>{file ? file.name : '上传金蝶采购订单 Excel'}</strong>
           <span>选择文件后配置字段映射，再预览和应用</span>
         </label>
+        {sheetNames.length > 1 && (
+          <div className="sheet-selector">
+            <label>选择工作表
+              <select value={sheetName} onChange={(e) => selectSheet(e.target.value)}>
+                <option value="">全部工作表</option>
+                {sheetNames.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </label>
+          </div>
+        )}
         {columns.length > 0 && (
           <>
             <FieldMapping fields={KINGDEE_FIELDS} columns={columns} mapping={mapping} onChange={setMapping} />
@@ -456,34 +479,6 @@ function MaintenancePage({ rows }) {
         rows={filtered}
         columns={['月份', '事业部', '供应商', '物料编码', '物料名称', '有效下单', '库存', '未备料', '已备料', '在生产', '已完工', '差额', '刷新人', '刷新时间']}
         render={(row) => [row.month, row.businessUnit, row.supplier, row.materialCode, row.materialName, row.currentOrderQty, row.stockQty, row.unpreparedQty, row.preparedNotStartedQty, row.inProductionQty, row.finishedQty, row.gap, row.progressUpdatedBy, row.progressUpdatedAt || '待首次刷新']}
-      />
-    </>
-  );
-}
-
-function WeeklyBoard({ rows }) {
-  const issueRows = rows.filter((row) => row.active && (!row.progressUpdatedAt || daysSince(row.progressUpdatedAt) > 7 || numberValue(row.gap) !== 0));
-  return (
-    <>
-      <div className="section-heading-row">
-        <h2>周更新看板</h2>
-        <span className="section-count">待处理 {issueRows.length} 条</span>
-      </div>
-      <DataTable
-        rows={issueRows}
-        columns={['状态', '月份', '事业部', '供应商', '物料编码', '有效下单', '生产合计', '差额', '刷新时间', '采购下单人']}
-        render={(row) => [
-          !row.progressUpdatedAt ? '待首次刷新' : daysSince(row.progressUpdatedAt) > 7 ? '超过7天未刷新' : numberValue(row.gap) !== 0 ? '数量不一致' : '正常',
-          row.month,
-          row.businessUnit,
-          row.supplier,
-          row.materialCode,
-          row.currentOrderQty,
-          row.progressTotal,
-          row.gap,
-          row.progressUpdatedAt || '',
-          row.purchaseOwner || '未匹配'
-        ]}
       />
     </>
   );
@@ -768,7 +763,7 @@ function App() {
     const payload = await request('/api/bootstrap', { token: currentToken });
     setUser(payload.user);
     setPages(payload.pages || PAGE_LABELS);
-    setActiveTab(payload.user.pageAccess?.[0] || 'dashboard');
+    setActiveTab(PAGE_ORDER.find((page) => payload.user.role === '管理员' || payload.user.pageAccess?.includes(page)) || 'dashboard');
     const demandPayload = await request('/api/demands', { token: currentToken });
     setDemands(demandPayload.rows || []);
   }
@@ -787,6 +782,7 @@ function App() {
     setToken(payload.token);
     setUser(payload.user);
     setPages(payload.pages || PAGE_LABELS);
+    setActiveTab(PAGE_ORDER.find((page) => payload.user.role === '管理员' || payload.user.pageAccess?.includes(page)) || 'dashboard');
   }
 
   async function logout() {
@@ -825,7 +821,6 @@ function App() {
         {activeTab === 'progressRefresh' && <ProgressPage rows={demands} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'differenceAllocation' && <ProgressPage title="差异分配" onlyIssues rows={demands} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'progressMaintenance' && <MaintenancePage rows={demands} />}
-        {activeTab === 'weeklyBoard' && <WeeklyBoard rows={demands} />}
         {activeTab === 'inventory' && <InventoryPage token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'dimensionLibrary' && <DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'trace' && <TracePage token={token} setMessage={setMessage} />}

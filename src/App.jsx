@@ -38,7 +38,8 @@ const DIMENSION_SLOTS = [
     ['supplier', '供应商'],
     ['materialCode', '物料编码'],
     ['purchaseOwner', '采购下单人'],
-    ['purchaseGroup', '采购组']
+    ['purchaseGroup', '采购组'],
+    ['purchaseOrg', '采购组织']
   ] },
   { id: 'spare1', title: '备用 1', fields: [] },
   { id: 'spare2', title: '备用 2', fields: [] }
@@ -48,6 +49,7 @@ const KINGDEE_FIELDS = [
   ['createDate', '创建日期'],
   ['businessUnit', '事业部'],
   ['supplier', '供应商'],
+  ['purchaseOrg', '采购组织'],
   ['materialCode', '物料编码'],
   ['quantity', '采购订单数量'],
   ['orderNo', '采购订单号']
@@ -155,11 +157,12 @@ function FieldMapping({ fields, columns, mapping, onChange }) {
 }
 
 function useFilteredDemands(rows) {
-  const [filters, setFilters] = useState({ keyword: '', month: '', supplier: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
+  const [filters, setFilters] = useState({ keyword: '', month: '', supplier: '', purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
   const unique = (field) => [...new Set(rows.map((row) => row[field]).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'zh-Hans-CN'));
   const options = useMemo(() => ({
     months: unique('month'),
     suppliers: unique('supplier'),
+    purchaseOrgs: unique('purchaseOrg'),
     businessUnits: unique('businessUnit'),
     productLines: unique('productLine'),
     series: unique('productSeries'),
@@ -173,6 +176,7 @@ function useFilteredDemands(rows) {
       return (!keyword || text.includes(keyword))
         && (!filters.month || row.month === filters.month)
         && (!filters.supplier || row.supplier === filters.supplier)
+        && (!filters.purchaseOrg || row.purchaseOrg === filters.purchaseOrg)
         && (!filters.businessUnit || row.businessUnit === filters.businessUnit)
         && (!filters.productLine || row.productLine === filters.productLine)
         && (!filters.series || row.productSeries === filters.series)
@@ -184,11 +188,12 @@ function useFilteredDemands(rows) {
 }
 
 function FilterBar({ filters, setFilters, options, onSubmit }) {
-  const clear = () => setFilters({ keyword: '', month: '', supplier: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
+  const clear = () => setFilters({ keyword: '', month: '', supplier: '', purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
   return (
     <div className="toolbar filters-row">
       <SelectField label="创建月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
       <SelectField label="供应商" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
+      <SelectField label="采购组织" value={filters.purchaseOrg} options={options.purchaseOrgs} onChange={(value) => setFilters({ ...filters, purchaseOrg: value })} />
       <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
       <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
       <SelectField label="系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
@@ -500,6 +505,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
     row.productSeries,
     row.purchaseGroup,
     row.purchaseOwner,
+    row.purchaseOrg,
     row.currentOrderQty,
     input('unpreparedQty'),
     input('preparedNotStartedQty'),
@@ -546,7 +552,7 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
       <DataTable
         className="progress-table"
         rows={displayRows}
-        columns={['月份', '事业部', '供应商', '物料编码', '物料', '产品线', '系列', '采购组', '采购下单人', '有效下单', '未备料', '已备料未生产', '生产中', '已完工', '差额', '备注', '操作']}
+        columns={['月份', '事业部', '供应商', '物料编码', '物料', '产品线', '系列', '采购组', '采购下单人', '采购组织', '有效下单', '未备料', '已备料未生产', '生产中', '已完工', '差额', '备注', '操作']}
         render={(row) => <ProgressEditor row={row} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
       />
       {!onlyIssues && (

@@ -86,6 +86,7 @@ function migrate() {
       product_series TEXT,
       purchase_group TEXT,
       purchase_owner TEXT,
+      purchase_org TEXT NOT NULL DEFAULT '',
       source_batch_id TEXT,
       updated_at TEXT NOT NULL
     );
@@ -172,6 +173,11 @@ function migrate() {
   }
   if (!dimensionColumns.includes('sheet_names')) {
     run("ALTER TABLE dimension_files ADD COLUMN sheet_names TEXT NOT NULL DEFAULT '[]'");
+  }
+
+  const demandColumns = all('PRAGMA table_info(order_demands)').map((row) => row.name);
+  if (!demandColumns.includes('purchase_org')) {
+    run("ALTER TABLE order_demands ADD COLUMN purchase_org TEXT NOT NULL DEFAULT ''");
   }
 }
 

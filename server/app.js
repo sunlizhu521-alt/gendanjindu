@@ -175,6 +175,7 @@ function mappedKingdeeRows(rows, mapping) {
     const businessUnit = pick(row, mapping.businessUnit);
     const supplier = pick(row, mapping.supplier);
     const materialCode = pick(row, mapping.materialCode);
+    const purchaseOrg = pick(row, mapping.purchaseOrg);
     const quantity = numberValue(row?.[mapping.quantity]);
     const reasons = [];
     if (!month) reasons.push('日期无法解析');
@@ -191,6 +192,7 @@ function mappedKingdeeRows(rows, mapping) {
       businessUnit,
       supplier,
       materialCode,
+      purchaseOrg,
       orderNo: mapping.orderNo ? pick(row, mapping.orderNo) : '',
       quantity,
       raw: row,
@@ -209,6 +211,7 @@ function summarizeDemands(rows) {
       businessUnit: row.businessUnit,
       supplier: row.supplier,
       materialCode: row.materialCode,
+      purchaseOrg: row.purchaseOrg || '',
       currentOrderQty: 0,
       rows: 0
     };
@@ -271,7 +274,8 @@ function applyDimensionEnrichment() {
            product_line = COALESCE(NULLIF(?, ''), product_line),
            product_series = COALESCE(NULLIF(?, ''), product_series),
            purchase_group = COALESCE(NULLIF(?, ''), purchase_group),
-           purchase_owner = COALESCE(NULLIF(?, ''), purchase_owner)
+           purchase_owner = COALESCE(NULLIF(?, ''), purchase_owner),
+           purchase_org = COALESCE(NULLIF(?, ''), purchase_org)
        WHERE demand_key = ?`,
       [
         normalize(product.sku),
@@ -280,6 +284,7 @@ function applyDimensionEnrichment() {
         normalize(product.productSeries),
         normalize(assignment.purchaseGroup),
         normalize(assignment.purchaseOwner),
+        normalize(assignment.purchaseOrg),
         demand.demand_key
       ]
     );
@@ -331,6 +336,7 @@ function demandRows(includeInactive = false, user = null) {
       productSeries: demand.product_series || '',
       purchaseGroup: demand.purchase_group || '',
       purchaseOwner: demand.purchase_owner || '',
+      purchaseOrg: demand.purchase_org || '',
       stockQty,
       demandAfterStock,
       unpreparedQty: numberValue(progress.unprepared_qty),
@@ -434,14 +440,15 @@ app.post('/api/imports/kingdee/apply', requireAuth, requirePage('kingdeeImport')
     run('UPDATE order_demands SET active = 0, updated_at = ?', [now]);
     summary.forEach((row) => {
       run(
-        `INSERT INTO order_demands (demand_key, month, business_unit, supplier, material_code, current_order_qty, active, source_batch_id, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+        `INSERT INTO order_demands (demand_key, month, business_unit, supplier, material_code, current_order_qty, active, purchase_org, source_batch_id, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
          ON CONFLICT(demand_key) DO UPDATE SET
            current_order_qty = excluded.current_order_qty,
+           purchase_org = COALESCE(NULLIF(excluded.purchase_org, ''), order_demands.purchase_org),
            active = 1,
            source_batch_id = excluded.source_batch_id,
            updated_at = excluded.updated_at`,
-        [row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.currentOrderQty, batchId, now]
+        [row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.currentOrderQty, row.purchaseOrg || '', batchId, now]
       );
       const progress = get('SELECT demand_key FROM supplier_progress WHERE demand_key = ?', [row.demandKey]);
       if (!progress) {
@@ -533,7 +540,8 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requirePage('dimensionLi
         supplier: pick(row, mapping.supplier),
         materialCode: pick(row, mapping.materialCode),
         purchaseOwner: pick(row, mapping.purchaseOwner),
-        purchaseGroup: pick(row, mapping.purchaseGroup)
+        purchaseGroup: pick(row, mapping.purchaseGroup),
+        purchaseOrg: pick(row, mapping.purchaseOrg)
       };
     }
     return row;

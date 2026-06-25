@@ -393,6 +393,23 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
         <span className="section-count">字段映射会保存最近一次配置</span>
       </div>
       <section className="panel">
+        {file && (
+          <div className="card-actions">
+            <button type="button" className="compact-button" disabled={parsing} onClick={doParse}>
+              {parsing ? '解析中...' : '解析预览'}
+            </button>
+            {preview && preview.validRows > 0 && (
+              <>
+                <button type="button" className="compact-button" disabled={saving} onClick={doSave}>
+                  {saving ? '保存中...' : '上传保存'}
+                </button>
+                <button type="button" className="compact-button" disabled={applying} onClick={doApplyRefresh}>
+                  {applying ? '刷新中...' : '应用刷新'}
+                </button>
+              </>
+            )}
+          </div>
+        )}
         <label className="drop-zone">
           <input type="file" accept=".xlsx,.xls,.csv" onChange={(event) => event.target.files?.[0] && inspect(event.target.files[0])} />
           <strong>{file ? file.name : '上传采购订单 Excel'}</strong>

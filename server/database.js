@@ -123,6 +123,8 @@ function migrate() {
       slot_id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       file_name TEXT NOT NULL,
+      sheet_name TEXT NOT NULL DEFAULT '',
+      sheet_names TEXT NOT NULL DEFAULT '[]',
       mapping_json TEXT NOT NULL,
       rows_json TEXT NOT NULL,
       applied INTEGER NOT NULL DEFAULT 0,
@@ -163,6 +165,14 @@ function migrate() {
       created_at TEXT NOT NULL
     );
   `);
+
+  const dimensionColumns = all('PRAGMA table_info(dimension_files)').map((row) => row.name);
+  if (!dimensionColumns.includes('sheet_name')) {
+    run("ALTER TABLE dimension_files ADD COLUMN sheet_name TEXT NOT NULL DEFAULT ''");
+  }
+  if (!dimensionColumns.includes('sheet_names')) {
+    run("ALTER TABLE dimension_files ADD COLUMN sheet_names TEXT NOT NULL DEFAULT '[]'");
+  }
 }
 
 export function run(sql, params = []) {

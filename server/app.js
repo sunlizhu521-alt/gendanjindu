@@ -151,13 +151,20 @@ function safeFilename(file) {
   return Buffer.from(file.originalname, 'latin1').toString('utf8');
 }
 
-function workbookRows(file) {
+function workbookRows(file, sheetName = null) {
   const workbook = xlsx.read(file.buffer, { type: 'buffer', cellDates: true });
-  const sheets = workbook.SheetNames.map((sheetName) => {
-    const rows = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '', raw: false });
-    return { sheetName, rows, columns: rows[0] ? Object.keys(rows[0]) : [] };
+  const targetSheets = sheetName
+    ? workbook.SheetNames.filter((name) => name === sheetName)
+    : workbook.SheetNames;
+  const sheets = targetSheets.map((name) => {
+    const rows = xlsx.utils.sheet_to_json(workbook.Sheets[name], { defval: '', raw: false });
+    return { sheetName: name, rows, columns: rows[0] ? Object.keys(rows[0]) : [] };
   });
-  return { sheetNames: workbook.SheetNames, sheets, rows: sheets.flatMap((sheet) => sheet.rows) };
+  const sheetPreviews = workbook.SheetNames.map((name) => {
+    const rows = xlsx.utils.sheet_to_json(workbook.Sheets[name], { defval: '', raw: false });
+    return { sheetName: name, columns: rows[0] ? Object.keys(rows[0]) : [], rowCount: rows.length, previewRows: rows.slice(0, 8) };
+  });
+  return { sheetNames: workbook.SheetNames, sheetPreviews, sheets, rows: sheets.flatMap((sheet) => sheet.rows) };
 }
 
 function pick(row, column) {
@@ -375,8 +382,9 @@ app.put('/api/mappings/:kind', requireAuth, (req, res) => {
 });
 
 app.post('/api/workbook/inspect', requireAuth, upload.single('file'), (req, res) => {
-  const parsed = workbookRows(req.file);
-  res.json({ sheetNames: parsed.sheetNames, columns: parsed.sheets[0]?.columns || [], previewRows: parsed.rows.slice(0, 8) });
+  const sheetName = normalize(req.body.sheetName);
+  const parsed = workbookRows(req.file, sheetName || null);
+  res.json({ sheetNames: parsed.sheetNames, sheetPreviews: parsed.sheetPreviews, columns: parsed.sheets[0]?.columns || [], previewRows: parsed.rows.slice(0, 8) });
 });
 
 app.post('/api/imports/kingdee/preview', requireAuth, requirePage('kingdeeImport'), upload.single('file'), (req, res) => {
@@ -481,14 +489,15 @@ app.get('/api/diffs', requireAuth, requirePage('differenceAllocation'), (req, re
 });
 
 app.get('/api/dimensions', requireAuth, requirePage('dimensionLibrary'), (req, res) => {
-  const rows = all('SELECT slot_id, title, file_name, mapping_json, rows_json, applied, uploaded_by, updated_at FROM dimension_files');
-  res.json({ rows: rows.map((row) => ({ ...row, mapping: parseJson(row.mapping_json, {}), rows: parseJson(row.rows_json, []).slice(0, 8), rowCount: parseJson(row.rows_json, []).length })) });
+  const rows = all('SELECT slot_id, title, file_name, sheet_name, sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at FROM dimension_files');
+  res.json({ rows: rows.map((row) => ({ ...row, sheetNames: parseJson(row.sheet_names, []), mapping: parseJson(row.mapping_json, {}), rows: parseJson(row.rows_json, []).slice(0, 8), rowCount: parseJson(row.rows_json, []).length })) });
 });
 
 app.post('/api/dimensions/:slotId/upload', requireAuth, requirePage('dimensionLibrary'), upload.single('file'), (req, res) => {
   const slotId = req.params.slotId;
   const mapping = parseJson(req.body.mapping, {});
-  const parsed = workbookRows(req.file);
+  const sheetName = normalize(req.body.sheetName);
+  const parsed = workbookRows(req.file, sheetName || null);
   const rows = parsed.rows.map((row) => {
     if (slotId === 'productCategory') {
       return {
@@ -511,13 +520,13 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requirePage('dimensionLi
   }).filter((row) => Object.values(row).some(Boolean));
   const now = nowText();
   run(
-    `INSERT INTO dimension_files (slot_id, title, file_name, mapping_json, rows_json, applied, uploaded_by, updated_at)
-     VALUES (?, ?, ?, ?, ?, 0, ?, ?)
-     ON CONFLICT(slot_id) DO UPDATE SET title = excluded.title, file_name = excluded.file_name, mapping_json = excluded.mapping_json, rows_json = excluded.rows_json, applied = 0, uploaded_by = excluded.uploaded_by, updated_at = excluded.updated_at`,
-    [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), JSON.stringify(mapping), JSON.stringify(rows), req.user.name, now]
+    `INSERT INTO dimension_files (slot_id, title, file_name, sheet_name, sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+     ON CONFLICT(slot_id) DO UPDATE SET title = excluded.title, file_name = excluded.file_name, sheet_name = excluded.sheet_name, sheet_names = excluded.sheet_names, mapping_json = excluded.mapping_json, rows_json = excluded.rows_json, applied = 0, uploaded_by = excluded.uploaded_by, updated_at = excluded.updated_at`,
+    [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), sheetName, JSON.stringify(parsed.sheetNames), JSON.stringify(mapping), JSON.stringify(rows), req.user.name, now]
   );
   saveDatabase();
-  res.json({ rowCount: rows.length });
+  res.json({ rowCount: rows.length, sheetName, sheetNames: parsed.sheetNames });
 });
 
 app.post('/api/dimensions/:slotId/apply', requireAuth, requirePage('dimensionLibrary'), (req, res) => {

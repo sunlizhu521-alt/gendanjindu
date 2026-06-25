@@ -396,8 +396,10 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
 
   async function doApplyRefresh() {
     setApplying(true);
+    const currentPreview = preview;
     try {
       await reloadDemands();
+      setPreview(currentPreview);
       setMessage('应用刷新完成，采购总览已更新');
     } finally {
       setApplying(false);

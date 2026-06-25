@@ -262,13 +262,17 @@ function applyDimensionEnrichment() {
     if (materialCode && !productMap.has(materialCode)) productMap.set(materialCode, row);
   });
   const assignmentMap = new Map();
+  const supplierMap = new Map();
   assignmentRows.forEach((row) => {
+    const supplier = normalize(row.supplier);
+    if (supplier && normalize(row.supplierShortName) && !supplierMap.has(supplier)) supplierMap.set(supplier, row);
     const key = [normalize(row.supplier), normalize(row.materialCode)].join('|');
     if (normalize(row.supplier) && normalize(row.materialCode)) assignmentMap.set(key, row);
   });
   all('SELECT * FROM order_demands').forEach((demand) => {
     const product = productMap.get(demand.material_code) || {};
     const assignment = assignmentMap.get([demand.supplier, demand.material_code].join('|')) || {};
+    const supplierAssignment = supplierMap.get(demand.supplier) || {};
     run(
       `UPDATE order_demands
        SET sku = COALESCE(NULLIF(?, ''), sku),
@@ -285,7 +289,7 @@ function applyDimensionEnrichment() {
         normalize(product.materialName),
         normalize(product.productLine),
         normalize(product.productSeries),
-        normalize(assignment.supplierShortName),
+        normalize(assignment.supplierShortName || supplierAssignment.supplierShortName),
         normalize(assignment.purchaseGroup),
         normalize(assignment.purchaseOwner),
         normalize(assignment.purchaseOrg),

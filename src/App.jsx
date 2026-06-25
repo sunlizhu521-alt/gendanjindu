@@ -93,8 +93,17 @@ async function request(path, { token, ...options } = {}) {
     ...(options.headers || {})
   };
   const res = await fetch(`${API}${path}`, { ...options, headers });
-  const payload = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(payload.error || '请求失败');
+  const text = await res.text();
+  let payload = {};
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    payload = {};
+  }
+  if (!res.ok) {
+    const plainText = text && !text.trim().startsWith('<') ? text.slice(0, 200) : '';
+    throw new Error(payload.error || plainText || `请求失败（${res.status}）`);
+  }
   return payload;
 }
 

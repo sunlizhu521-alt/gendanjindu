@@ -43,7 +43,8 @@ const DIMENSION_SLOTS = {
 };
 
 const app = express();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+const UPLOAD_LIMIT_BYTES = 100 * 1024 * 1024;
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: UPLOAD_LIMIT_BYTES } });
 
 app.use(cors());
 app.use(compression());
@@ -148,6 +149,7 @@ function safeFilename(file) {
 }
 
 function workbookRows(file, sheetName = null) {
+  if (!file?.buffer) throw new Error('未收到上传文件');
   const workbook = xlsx.read(file.buffer, { type: 'buffer', cellDates: true });
   const targetSheets = sheetName
     ? workbook.SheetNames.filter((name) => name === sheetName)
@@ -730,6 +732,18 @@ app.patch('/api/users/:id', requireAuth, requirePage('permissions'), requireAdmi
   run(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`, params);
   saveDatabase();
   res.json({ ok: true });
+});
+
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  if (!req.path.startsWith('/api/')) return next(err);
+  const isMulterError = err instanceof multer.MulterError;
+  const status = isMulterError ? 400 : Number(err.status || err.statusCode || 500);
+  const error = isMulterError && err.code === 'LIMIT_FILE_SIZE'
+    ? '文件过大，请压缩到100MB以内再上传'
+    : (err.message || '服务器处理失败');
+  console.error(`[${nowText()}] API error ${req.method} ${req.path}:`, err);
+  return res.status(status).json({ error });
 });
 
 const distDir = path.join(rootDir, 'dist');

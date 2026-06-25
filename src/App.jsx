@@ -304,6 +304,9 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
   const [preview, setPreview] = useState(null);
   const [sheetName, setSheetName] = useState('');
   const [sheetNames, setSheetNames] = useState([]);
+  const [parsing, setParsing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [applying, setApplying] = useState(false);
 
   useEffect(() => {
     request('/api/mappings/kingdee', { token }).then((payload) => setMapping(payload.mapping || {})).catch(() => {});
@@ -329,23 +332,47 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
     setColumns(payload.columns || []);
   }
 
-  async function previewImport() {
-    const data = new FormData();
-    data.append('file', file);
-    data.append('mapping', JSON.stringify(mapping));
-    if (sheetName) data.append('sheetName', sheetName);
-    const payload = await request('/api/imports/kingdee/preview', { token, method: 'POST', body: data });
-    setPreview(payload);
+  async function doParse() {
+    setParsing(true);
+    try {
+      const data = new FormData();
+      data.append('file', file);
+      data.append('mapping', JSON.stringify(mapping));
+      if (sheetName) data.append('sheetName', sheetName);
+      const payload = await request('/api/imports/kingdee/preview', { token, method: 'POST', body: data });
+      setPreview(payload);
+      if (payload.validRows === 0) {
+        setMessage('解析失败：0行有效，请检查字段映射和Excel列是否匹配');
+      } else {
+        setMessage(`解析完成：${payload.validRows}/${payload.totalRows} 行有效，差异 ${payload.diffs.length} 条`);
+      }
+    } finally {
+      setParsing(false);
+    }
   }
 
-  async function applyImport() {
-    const data = new FormData();
-    data.append('file', file);
-    data.append('mapping', JSON.stringify(mapping));
-    if (sheetName) data.append('sheetName', sheetName);
-    const payload = await request('/api/imports/kingdee/apply', { token, method: 'POST', body: data });
-    setMessage(`已应用金蝶快照：${payload.rowCount} 行，差异 ${payload.diffs.length} 条。`);
-    await reloadDemands();
+  async function doSave() {
+    setSaving(true);
+    try {
+      const data = new FormData();
+      data.append('file', file);
+      data.append('mapping', JSON.stringify(mapping));
+      if (sheetName) data.append('sheetName', sheetName);
+      const payload = await request('/api/imports/kingdee/apply', { token, method: 'POST', body: data });
+      setMessage(`上传保存完成：${payload.rowCount} 行，差异 ${payload.diffs.length} 条`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function doApplyRefresh() {
+    setApplying(true);
+    try {
+      await reloadDemands();
+      setMessage('应用刷新完成，采购总览已更新');
+    } finally {
+      setApplying(false);
+    }
   }
 
   return (
@@ -358,7 +385,7 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
         <label className="drop-zone">
           <input type="file" accept=".xlsx,.xls,.csv" onChange={(event) => event.target.files?.[0] && inspect(event.target.files[0])} />
           <strong>{file ? file.name : '上传采购订单 Excel'}</strong>
-          <span>选择文件后配置字段映射，再预览和应用</span>
+          <span>选择文件后配置字段映射，点击解析预览查看进度</span>
         </label>
         {sheetNames.length > 1 && (
           <div className="sheet-selector">
@@ -374,8 +401,19 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
           <>
             <FieldMapping fields={KINGDEE_FIELDS} columns={columns} mapping={mapping} onChange={setMapping} />
             <div className="card-actions">
-              <button type="button" className="compact-button" onClick={previewImport}>预览快照差异</button>
-              {preview && <button type="button" className="compact-button" onClick={applyImport}>确认应用</button>}
+              <button type="button" className="compact-button" disabled={parsing} onClick={doParse}>
+                {parsing ? '解析中...' : '解析预览'}
+              </button>
+              {preview && preview.validRows > 0 && (
+                <>
+                  <button type="button" className="compact-button" disabled={saving} onClick={doSave}>
+                    {saving ? '保存中...' : '上传保存'}
+                  </button>
+                  <button type="button" className="compact-button" disabled={applying} onClick={doApplyRefresh}>
+                    {applying ? '刷新中...' : '应用刷新'}
+                  </button>
+                </>
+              )}
             </div>
           </>
         )}
@@ -385,9 +423,9 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
           <h3>解析结果</h3>
           <p className="section-count">
             总行数 {preview.totalRows}，有效 {preview.validRows} 行
-            {preview.skippedRows > 0 && <span className="warn-text">，跳过 {preview.skippedRows} 行（日期/事业部/供应商/物料编码/数量为空）</span>}
-            {preview.validRows === 0 && <span className="error-text">，0行有效！请检查字段映射是否正确、Excel列是否匹配</span>}
-            ，差异 {preview.diffs.length} 条
+            {preview.skippedRows > 0 && <span className="warn-text">，跳过 {preview.skippedRows} 行（必填字段为空）</span>}
+            {preview.validRows === 0 && <span className="error-text">，无有效行！请检查字段映射</span>}
+            {preview.validRows > 0 && <span>，差异 {preview.diffs.length} 条</span>}
           </p>
           {preview.skipped?.length > 0 && (
             <details className="skipped-details">
@@ -400,12 +438,17 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
               />
             </details>
           )}
-          <DataTable
-            className="compact-table"
-            rows={preview.diffs.slice(0, 80)}
-            columns={['类型', '主键', '旧数量', '新数量']}
-            render={(row) => [row.diffType, row.demandKey, row.oldQty, row.newQty]}
-          />
+          {preview.diffs.length > 0 && preview.validRows > 0 && (
+            <>
+              <h4 style={{ marginTop: 16 }}>差异明细（前80条）</h4>
+              <DataTable
+                className="compact-table"
+                rows={preview.diffs.slice(0, 80)}
+                columns={['类型', '主键', '旧数量', '新数量']}
+                render={(row) => [row.diffType, row.demandKey, row.oldQty, row.newQty]}
+              />
+            </>
+          )}
         </section>
       )}
     </>

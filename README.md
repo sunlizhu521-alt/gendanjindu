@@ -1,16 +1,13 @@
 # 采购跟单进度系统
 
-参考 `pinzhiyanhuo` 的 Vite + React 页面框架搭建，当前版本支持 GitHub Pages 静态运行，业务数据保存在浏览器本地存储。
+Node + SQLite + React 的采购跟单进度共享系统。系统把金蝶采购订单、供应商生产进度、历史库存、维度分类和权限管理放在一个腾讯云服务里。
 
 ## 功能模块
 
-- 采购总览：按供应商、产品线、采购组、状态筛选，查看关键指标和风险明细。
-- 跟单台账：维护采购订单、物料、供应商、计划日期、交付数量和异常备注。
-- 供应商交付：聚焦未交付明细，支持导出当前筛选结果。
-- 异常跟进：自动汇总逾期、缺口和风险记录。
-- 维度表库：上传商品分类、供应商、采购分组等维表，按物料编码补充台账字段。
-- 事实表库：上传采购跟单事实表并应用到台账。
-- 权限管理：管理员维护用户可访问页面。
+- 金蝶订单导入：字段映射、快照预览、差异确认。
+- 生产进度刷新：按创建月份、事业部、供应商、物料编码手工刷新四阶段数量。
+- 差异分配、生产进度维护、采购总览、周更新看板。
+- 历史库存、维度表库、变更追溯、权限管理。
 
 ## 本地开发
 
@@ -19,26 +16,25 @@ npm install
 npm run dev
 ```
 
-## GitHub Pages
+本地后端首次启动需要设置管理员初始密码环境变量：
 
-推送到 `main` 后，GitHub Actions 会构建 `dist` 并发布到：
-
-```text
-https://sunlizhu521-alt.github.io/gendanjindu/
+```bash
+先在当前终端设置 ADMIN_INITIAL_PASSWORD 为临时强密码
+npm run dev
 ```
 
 ## 腾讯云自动部署
 
-仓库已包含腾讯云 SSH 自动部署 workflow：
+仓库包含腾讯云 SSH + PM2 自动部署 workflow：
 
 ```text
 .github/workflows/deploy-tencent.yml
 ```
 
-服务器、Nginx 和 GitHub Secrets 配置见 [DEPLOY_TENCENT.md](./DEPLOY_TENCENT.md)。
+配置见 [DEPLOY_TENCENT.md](./DEPLOY_TENCENT.md)。
 
-## 默认账号
+## 管理员
 
-- 孙立柱 / 521sunlizhu / 管理员
-
-GitHub Pages 预览适合演示和单机使用；多人正式协作建议后续接入服务器 API。
+- 默认管理员用户名：`孙立柱`
+- 管理员密码不写入 GitHub；首次初始化从 `ADMIN_INITIAL_PASSWORD` 环境变量读取。
+- 数据库只保存 bcrypt 哈希。

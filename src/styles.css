@@ -225,6 +225,26 @@ h3 {
   flex-wrap: wrap;
 }
 
+.form-grid,
+.mapping-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.form-grid label,
+.mapping-grid label {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  color: #475569;
+}
+
+.form-grid button {
+  align-self: end;
+}
+
 .filters-row {
   position: relative;
   z-index: 5;
@@ -450,14 +470,21 @@ th {
   min-width: 2480px;
 }
 
+.progress-table table {
+  min-width: 1920px;
+}
+
 .ledger-table input,
 .ledger-table select,
-.ledger-table textarea {
+.ledger-table textarea,
+.progress-table input,
+.progress-table textarea {
   min-width: 116px;
   padding: 6px 8px;
 }
 
-.ledger-table textarea {
+.ledger-table textarea,
+.progress-table textarea {
   min-width: 180px;
 }
 
@@ -646,6 +673,11 @@ th {
   }
 
   .permission-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .form-grid,
+  .mapping-grid {
     grid-template-columns: 1fr;
   }
 

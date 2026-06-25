@@ -20,8 +20,11 @@ jobs:
       DEPLOY_HOST: ${{ secrets.TENCENT_HOST }}
       DEPLOY_USER: ${{ secrets.TENCENT_USER }}
       DEPLOY_PORT: ${{ secrets.TENCENT_PORT || '22' }}
-      DEPLOY_PATH: ${{ secrets.TENCENT_DEPLOY_PATH }}
+      DEPLOY_PATH: ${{ secrets.TENCENT_DEPLOY_PATH || '/www/wwwroot/gendanjindu' }}
+      DATA_DIR: ${{ secrets.TENCENT_DATA_DIR || '/www/wwwroot/gendanjindu-data' }}
+      APP_PORT: ${{ secrets.TENCENT_APP_PORT || '4003' }}
       DEPLOY_SSH_KEY: ${{ secrets.TENCENT_SSH_KEY }}
+      ADMIN_INITIAL_PASSWORD: ${{ secrets.ADMIN_INITIAL_PASSWORD }}
     steps:
       - name: Check required secrets
         run: |
@@ -29,6 +32,7 @@ jobs:
           test -n "$DEPLOY_USER" || (echo "Missing secret: TENCENT_USER" && exit 1)
           test -n "$DEPLOY_PATH" || (echo "Missing secret: TENCENT_DEPLOY_PATH" && exit 1)
           test -n "$DEPLOY_SSH_KEY" || (echo "Missing secret: TENCENT_SSH_KEY" && exit 1)
+          test -n "$ADMIN_INITIAL_PASSWORD" || (echo "Missing secret: ADMIN_INITIAL_PASSWORD" && exit 1)
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,23 +56,38 @@ jobs:
           chmod 600 ~/.ssh/tencent_key
           ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
 
+      - name: Create runtime environment file
+        run: |
+          ADMIN_INITIAL_PASSWORD_B64="$(printf '%s' "$ADMIN_INITIAL_PASSWORD" | base64 -w0)"
+          printf 'DATA_DIR=%q\nAPP_PORT=%q\nADMIN_INITIAL_PASSWORD_B64=%q\n' "$DATA_DIR" "$APP_PORT" "$ADMIN_INITIAL_PASSWORD_B64" > gendanjindu-runtime.env
+
       - name: Package dist
-        run: tar -C dist -czf gendanjindu-dist.tgz .
+        run: tar --exclude=node_modules --exclude=data --exclude=dist --exclude=.git -czf gendanjindu-release.tgz .
 
       - name: Upload package
         run: |
-          scp -i ~/.ssh/tencent_key -P "$DEPLOY_PORT" gendanjindu-dist.tgz \
-            "$DEPLOY_USER@$DEPLOY_HOST:/tmp/gendanjindu-dist.tgz"
+          scp -i ~/.ssh/tencent_key -P "$DEPLOY_PORT" gendanjindu-release.tgz \
+            "$DEPLOY_USER@$DEPLOY_HOST:/tmp/gendanjindu-release.tgz"
+          scp -i ~/.ssh/tencent_key -P "$DEPLOY_PORT" gendanjindu-runtime.env \
+            "$DEPLOY_USER@$DEPLOY_HOST:/tmp/gendanjindu-runtime.env"
 
       - name: Release on server
         run: |
           ssh -i ~/.ssh/tencent_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
             "set -euo pipefail
-             mkdir -p '$DEPLOY_PATH'
-             if [ -d '$DEPLOY_PATH' ] && [ \"\$(ls -A '$DEPLOY_PATH' 2>/dev/null)\" ]; then
-               rm -rf '${DEPLOY_PATH}.bak'
-               cp -a '$DEPLOY_PATH' '${DEPLOY_PATH}.bak'
-             fi
-             find '$DEPLOY_PATH' -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-             tar -xzf /tmp/gendanjindu-dist.tgz -C '$DEPLOY_PATH'
-             rm -f /tmp/gendanjindu-dist.tgz"
+             mkdir -p '$DEPLOY_PATH' '$DATA_DIR'
+             rm -rf '${DEPLOY_PATH}.next'
+             mkdir -p '${DEPLOY_PATH}.next'
+             tar -xzf /tmp/gendanjindu-release.tgz -C '${DEPLOY_PATH}.next'
+             cd '${DEPLOY_PATH}.next'
+             npm ci --omit=dev
+             npm run build
+             rm -rf '${DEPLOY_PATH}.previous'
+             if [ -d '$DEPLOY_PATH/current' ]; then mv '$DEPLOY_PATH/current' '${DEPLOY_PATH}.previous'; fi
+             mv '${DEPLOY_PATH}.next' '$DEPLOY_PATH/current'
+             cd '$DEPLOY_PATH/current'
+             . /tmp/gendanjindu-runtime.env
+             ADMIN_INITIAL_PASSWORD=\"\$(printf '%s' \"\$ADMIN_INITIAL_PASSWORD_B64\" | base64 -d)\"
+             ADMIN_INITIAL_PASSWORD=\"\$ADMIN_INITIAL_PASSWORD\" DATA_DIR=\"\$DATA_DIR\" PORT=\"\$APP_PORT\" npx pm2 startOrReload ecosystem.config.cjs --update-env
+             npx pm2 save
+             rm -f /tmp/gendanjindu-release.tgz /tmp/gendanjindu-runtime.env"

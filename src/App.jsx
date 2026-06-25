@@ -9,7 +9,6 @@ const PAGE_ORDER = [
   'progressRefresh',
   'trace',
   'differenceAllocation',
-  'progressMaintenance',
   'inventory',
   'kingdeeImport',
   'dimensionLibrary',
@@ -18,10 +17,9 @@ const PAGE_ORDER = [
 
 const PAGE_LABELS = {
   dashboard: '采购总览',
-  kingdeeImport: '金蝶采购订单',
-  progressRefresh: '生产进度刷新',
+  kingdeeImport: '采购订单',
+  progressRefresh: '生产跟进',
   differenceAllocation: '差异分配',
-  progressMaintenance: '生产进度维护',
   inventory: '历史库存',
   dimensionLibrary: '维度表库',
   trace: '变更追溯',
@@ -353,13 +351,13 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
   return (
     <>
       <div className="section-heading-row">
-        <h2>金蝶采购订单</h2>
+        <h2>采购订单</h2>
         <span className="section-count">字段映射会保存最近一次配置</span>
       </div>
       <section className="panel">
         <label className="drop-zone">
           <input type="file" accept=".xlsx,.xls,.csv" onChange={(event) => event.target.files?.[0] && inspect(event.target.files[0])} />
-          <strong>{file ? file.name : '上传金蝶采购订单 Excel'}</strong>
+          <strong>{file ? file.name : '上传采购订单 Excel'}</strong>
           <span>选择文件后配置字段映射，再预览和应用</span>
         </label>
         {sheetNames.length > 1 && (
@@ -460,7 +458,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
   ];
 }
 
-function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产进度刷新', onlyIssues = false }) {
+function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产跟进', onlyIssues = false }) {
   const { filters, setFilters, options, filtered } = useFilteredDemands(rows.filter((row) => row.active));
   const displayRows = onlyIssues
     ? filtered.filter((row) => numberValue(row.gap) !== 0 || !row.progressUpdatedAt)
@@ -477,24 +475,6 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
         rows={displayRows}
         columns={['月份', '事业部', '供应商', '物料编码', '物料', '有效下单', '未备料未生产', '已备料未生产', '未完工-在生产', '已完工', '差额', '备注', '操作']}
         render={(row) => <ProgressEditor row={row} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
-      />
-    </>
-  );
-}
-
-function MaintenancePage({ rows }) {
-  const { filters, setFilters, options, filtered } = useFilteredDemands(rows.filter((row) => row.active));
-  return (
-    <>
-      <div className="section-heading-row">
-        <h2>生产进度维护</h2>
-        <span className="section-count">{filtered.length} 条</span>
-      </div>
-      <FilterBar filters={filters} setFilters={setFilters} options={options} />
-      <DataTable
-        rows={filtered}
-        columns={['月份', '事业部', '供应商', '物料编码', '物料名称', '有效下单', '库存', '未备料', '已备料', '在生产', '已完工', '差额', '刷新人', '刷新时间']}
-        render={(row) => [row.month, row.businessUnit, row.supplier, row.materialCode, row.materialName, row.currentOrderQty, row.stockQty, row.unpreparedQty, row.preparedNotStartedQty, row.inProductionQty, row.finishedQty, row.gap, row.progressUpdatedBy, row.progressUpdatedAt || '待首次刷新']}
       />
     </>
   );
@@ -836,7 +816,6 @@ function App() {
         {activeTab === 'kingdeeImport' && <KingdeeImport token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'progressRefresh' && <ProgressPage rows={demands} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'differenceAllocation' && <ProgressPage title="差异分配" onlyIssues rows={demands} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
-        {activeTab === 'progressMaintenance' && <MaintenancePage rows={demands} />}
         {activeTab === 'inventory' && <InventoryPage token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'dimensionLibrary' && <DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'trace' && <TracePage token={token} setMessage={setMessage} />}

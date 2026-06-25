@@ -20,7 +20,6 @@ const ALL_PAGES = [
   'progressRefresh',
   'trace',
   'differenceAllocation',
-  'progressMaintenance',
   'inventory',
   'kingdeeImport',
   'dimensionLibrary',
@@ -28,10 +27,9 @@ const ALL_PAGES = [
 ];
 const PAGE_LABELS = {
   dashboard: '采购总览',
-  kingdeeImport: '金蝶采购订单',
-  progressRefresh: '生产进度刷新',
+  kingdeeImport: '采购订单',
+  progressRefresh: '生产跟进',
   differenceAllocation: '差异分配',
-  progressMaintenance: '生产进度维护',
   inventory: '历史库存',
   dimensionLibrary: '维度表库',
   trace: '变更追溯',

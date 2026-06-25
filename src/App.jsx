@@ -122,7 +122,7 @@ function MetricCard({ label, value, tone = '' }) {
   );
 }
 
-function DataTable({ columns, rows, render, className = '' }) {
+function DataTable({ columns, rows, render, renderRow, className = '' }) {
   return (
     <div className={`table-wrap ${className}`}>
       <table>
@@ -133,9 +133,11 @@ function DataTable({ columns, rows, render, className = '' }) {
           {rows.length === 0 ? (
             <tr><td className="empty" colSpan={columns.length}>暂无数据</td></tr>
           ) : rows.map((row, index) => (
-            <tr key={row.demandKey || row.id || `${index}-${row.materialCode || row.stock_key}`}>
-              {render(row, index).map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}
-            </tr>
+            renderRow ? renderRow(row, index) : (
+              <tr key={row.demandKey || row.id || `${index}-${row.materialCode || row.stock_key}`}>
+                {render(row, index).map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}
+              </tr>
+            )
           ))}
         </tbody>
       </table>
@@ -519,7 +521,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
     />
   );
 
-  return [
+  const cells = [
     row.purchaseGroup,
     row.purchaseOwner,
     row.purchaseOrg,
@@ -537,6 +539,12 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
     input('finishedQty'),
     <button type="button" className="compact-button" disabled={!row.canEdit} onClick={save}>{row.canEdit ? '提交' : '无权限'}</button>
   ];
+
+  return (
+    <tr>
+      {cells.map((cell, index) => <td key={index}>{cell}</td>)}
+    </tr>
+  );
 }
 
 function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产跟进', onlyIssues = false }) {
@@ -590,7 +598,7 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
         className="progress-table"
         rows={displayRows}
         columns={['采购组', '采购下单人', '采购组织', '月份', '事业部', '供应商', '产品线', '系列', '物料', 'SKU', '金蝶采购订单', '未备料', '已备料未生产', '生产中', '已完工', '操作']}
-        render={(row) => <ProgressEditor row={row} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
+        renderRow={(row) => <ProgressEditor key={row.demandKey} row={row} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
       />
       {!onlyIssues && (
         <section className="panel" style={{ marginTop: 16 }}>

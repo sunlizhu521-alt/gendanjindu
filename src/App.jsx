@@ -334,10 +334,17 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
   const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [currentStatus, setCurrentStatus] = useState(null);
 
   useEffect(() => {
     request('/api/mappings/kingdee', { token }).then((payload) => setMapping(payload.mapping || {})).catch(() => {});
-  }, [token]);
+    if (mode === 'current') loadCurrentStatus().catch(() => {});
+  }, [token, mode]);
+
+  async function loadCurrentStatus() {
+    const payload = await request('/api/imports/kingdee/current-status', { token });
+    setCurrentStatus(payload.current || null);
+  }
 
   async function inspect(nextFile) {
     setFile(nextFile);
@@ -400,6 +407,7 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
       } else {
         setMessage(`上传保存完成：${payload.rowCount} 行，差异 ${payload.diffs.length} 条`);
       }
+      if (mode === 'current') await loadCurrentStatus();
     } catch (err) {
       setMessage('上传保存失败：' + err.message);
     } finally {
@@ -412,6 +420,7 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
     const currentPreview = preview;
     try {
       await reloadDemands();
+      if (mode === 'current') await loadCurrentStatus();
       setPreview(currentPreview);
       setMessage('应用刷新完成，采购总览已更新');
     } finally {
@@ -426,6 +435,14 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
         <span className="section-count">{description}</span>
       </div>
       <section className="panel">
+        {mode === 'current' && (
+          <div className="slot-info">
+            <span>当前文件：{currentStatus?.fileName || '暂无'}</span>
+            <span>导入时间：{currentStatus?.importedAt || '暂无'}</span>
+            <span>应用时间：{currentStatus?.appliedAt || '暂无'}</span>
+            <span>当前有效行：{currentStatus?.activeRows ?? 0}</span>
+          </div>
+        )}
         {file && (
           <div className="card-actions">
             <button type="button" className="compact-button" disabled={parsing} onClick={doParse}>

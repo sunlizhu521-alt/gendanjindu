@@ -58,6 +58,7 @@ function migrate() {
       file_name TEXT NOT NULL,
       imported_by TEXT NOT NULL,
       imported_at TEXT NOT NULL,
+      applied_at TEXT NOT NULL DEFAULT '',
       row_count INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS kingdee_orders (
@@ -250,6 +251,12 @@ function migrate() {
   const kingdeeColumns = all('PRAGMA table_info(kingdee_orders)').map((row) => row.name);
   if (!kingdeeColumns.includes('purchase_org')) {
     run("ALTER TABLE kingdee_orders ADD COLUMN purchase_org TEXT NOT NULL DEFAULT ''");
+  }
+
+  const kingdeeBatchColumns = all('PRAGMA table_info(kingdee_import_batches)').map((row) => row.name);
+  if (!kingdeeBatchColumns.includes('applied_at')) {
+    run("ALTER TABLE kingdee_import_batches ADD COLUMN applied_at TEXT NOT NULL DEFAULT ''");
+    run("UPDATE kingdee_import_batches SET applied_at = imported_at WHERE applied_at = ''");
   }
 
   const progressColumns = all('PRAGMA table_info(supplier_progress)').map((row) => row.name);

@@ -177,21 +177,57 @@ function safeFilename(file) {
   return Buffer.from(file.originalname, 'latin1').toString('utf8');
 }
 
-function workbookRows(file, sheetName = null) {
+function previewRowsForSheet(sheet) {
+  if (!sheet?.['!ref']) return { columns: [], rowCount: 0, previewRows: [] };
+  const fullRange = xlsx.utils.decode_range(sheet['!ref']);
+  const previewRange = { ...fullRange, e: { ...fullRange.e, r: Math.min(fullRange.e.r, fullRange.s.r + 8) } };
+  const aoa = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false, range: previewRange });
+  const columns = (aoa[0] || []).map((value) => normalize(value));
+  const previewRows = aoa.slice(1).map((values) => {
+    const row = {};
+    columns.forEach((column, index) => {
+      if (column) row[column] = values[index] ?? '';
+    });
+    return row;
+  });
+  return { columns: columns.filter(Boolean), rowCount: Math.max(0, fullRange.e.r - fullRange.s.r), previewRows };
+}
+
+function workbookRows(file, sheetName = null, options = {}) {
   if (!file?.buffer) throw new Error('未收到上传文件');
   const workbook = xlsx.read(file.buffer, { type: 'buffer', cellDates: true });
   const targetSheets = sheetName
     ? workbook.SheetNames.filter((name) => name === sheetName)
     : workbook.SheetNames;
+  const parsedRows = new Map();
+  const getRows = (name) => {
+    if (!parsedRows.has(name)) {
+      parsedRows.set(name, xlsx.utils.sheet_to_json(workbook.Sheets[name], { defval: '', raw: false }));
+    }
+    return parsedRows.get(name);
+  };
   const sheets = targetSheets.map((name) => {
-    const rows = xlsx.utils.sheet_to_json(workbook.Sheets[name], { defval: '', raw: false });
+    const rows = getRows(name);
     return { sheetName: name, rows, columns: rows[0] ? Object.keys(rows[0]) : [] };
   });
-  const sheetPreviews = workbook.SheetNames.map((name) => {
-    const rows = xlsx.utils.sheet_to_json(workbook.Sheets[name], { defval: '', raw: false });
-    return { sheetName: name, columns: rows[0] ? Object.keys(rows[0]) : [], rowCount: rows.length, previewRows: rows.slice(0, 8) };
-  });
+  const includePreviews = options.includePreviews !== false;
+  const sheetPreviews = includePreviews ? workbook.SheetNames.map((name) => {
+    if (parsedRows.has(name)) {
+      const rows = parsedRows.get(name);
+      return { sheetName: name, columns: rows[0] ? Object.keys(rows[0]) : [], rowCount: rows.length, previewRows: rows.slice(0, 8) };
+    }
+    return { sheetName: name, ...previewRowsForSheet(workbook.Sheets[name]) };
+  }) : [];
   return { sheetNames: workbook.SheetNames, sheetPreviews, sheets, rows: sheets.flatMap((sheet) => sheet.rows) };
+}
+
+function workbookInspect(file, sheetName = null) {
+  if (!file?.buffer) throw new Error('未收到上传文件');
+  const workbook = xlsx.read(file.buffer, { type: 'buffer', cellDates: true });
+  const sheetPreviews = workbook.SheetNames.map((name) => ({ sheetName: name, ...previewRowsForSheet(workbook.Sheets[name]) }));
+  const targetName = sheetName && workbook.SheetNames.includes(sheetName) ? sheetName : workbook.SheetNames[0];
+  const target = sheetPreviews.find((sheet) => sheet.sheetName === targetName) || { columns: [], previewRows: [] };
+  return { sheetNames: workbook.SheetNames, sheetPreviews, columns: target.columns, previewRows: target.previewRows };
 }
 
 function pick(row, column) {
@@ -210,7 +246,6 @@ function mappedKingdeeRows(rows, mapping) {
     const quantity = numberValue(row?.[mapping.quantity]);
     const reasons = [];
     if (!month) reasons.push('日期无法解析');
-    if (!businessUnit) reasons.push('事业部为空');
     if (!supplier) reasons.push('供应商为空');
     if (!materialCode) reasons.push('物料编码为空');
     if (!quantity) reasons.push('数量为0或无法解析');
@@ -640,7 +675,7 @@ function allocationStatus(sessionId) {
 
 function applyKingdeeSnapshot({ fileName, sourceRows, summary, diffs, mapping, userName, now }) {
   const batchId = randomUUID();
-  run('INSERT INTO kingdee_import_batches (id, file_name, imported_by, imported_at, row_count) VALUES (?, ?, ?, ?, ?)', [batchId, fileName, userName, now, sourceRows.length]);
+  run('INSERT INTO kingdee_import_batches (id, file_name, imported_by, imported_at, applied_at, row_count) VALUES (?, ?, ?, ?, ?, ?)', [batchId, fileName, userName, now, now, sourceRows.length]);
   sourceRows.forEach((row) => {
     run(
       'INSERT INTO kingdee_orders (id, batch_id, demand_key, month, business_unit, supplier, material_code, purchase_org, order_no, quantity, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -722,14 +757,37 @@ app.put('/api/mappings/:kind', requireAuth, (req, res) => {
 
 app.post('/api/workbook/inspect', requireAuth, upload.single('file'), (req, res) => {
   const sheetName = normalize(req.body.sheetName);
-  const parsed = workbookRows(req.file, sheetName || null);
-  res.json({ sheetNames: parsed.sheetNames, sheetPreviews: parsed.sheetPreviews, columns: parsed.sheets[0]?.columns || [], previewRows: parsed.rows.slice(0, 8) });
+  res.json(workbookInspect(req.file, sheetName || null));
+});
+
+app.get('/api/imports/kingdee/current-status', requireAuth, requirePage('kingdeeImport'), (req, res) => {
+  const batch = get(
+    `SELECT b.*
+     FROM order_demands d
+     JOIN kingdee_import_batches b ON b.id = d.source_batch_id
+     WHERE d.active = 1
+     ORDER BY COALESCE(NULLIF(b.applied_at, ''), b.imported_at) DESC
+     LIMIT 1`
+  );
+  if (!batch) return res.json({ current: null });
+  const activeRows = numberValue(get('SELECT COUNT(*) AS count FROM order_demands WHERE active = 1 AND source_batch_id = ?', [batch.id])?.count);
+  res.json({
+    current: {
+      batchId: batch.id,
+      fileName: batch.file_name,
+      importedBy: batch.imported_by,
+      importedAt: batch.imported_at,
+      appliedAt: batch.applied_at || batch.imported_at,
+      rowCount: numberValue(batch.row_count),
+      activeRows
+    }
+  });
 });
 
 app.post('/api/imports/kingdee/preview', requireAuth, requirePage('kingdeeImport'), upload.single('file'), (req, res) => {
   const mapping = parseJson(req.body.mapping, {});
   const sheetName = normalize(req.body.sheetName);
-  const parsed = workbookRows(req.file, sheetName || null);
+  const parsed = workbookRows(req.file, sheetName || null, { includePreviews: false });
   const result = mappedKingdeeRows(parsed.rows, mapping);
   const summary = summarizeDemands(result.rows);
   res.json({
@@ -747,7 +805,7 @@ app.post('/api/imports/kingdee/preview', requireAuth, requirePage('kingdeeImport
 app.post('/api/imports/kingdee/apply', requireAuth, requirePage('kingdeeImport'), upload.single('file'), (req, res) => {
   const mapping = parseJson(req.body.mapping, {});
   const sheetName = normalize(req.body.sheetName);
-  const parsed = workbookRows(req.file, sheetName || null);
+  const parsed = workbookRows(req.file, sheetName || null, { includePreviews: false });
   const result = mappedKingdeeRows(parsed.rows, mapping);
   const summary = summarizeDemands(result.rows);
   const diffs = diffAgainstCurrent(summary);
@@ -762,7 +820,7 @@ app.post('/api/imports/kingdee/apply', requireAuth, requirePage('kingdeeImport')
 app.post('/api/imports/kingdee/new-snapshot', requireAuth, requirePage('kingdeeImport'), upload.single('file'), (req, res) => {
   const mapping = parseJson(req.body.mapping, {});
   const sheetName = normalize(req.body.sheetName);
-  const parsed = workbookRows(req.file, sheetName || null);
+  const parsed = workbookRows(req.file, sheetName || null, { includePreviews: false });
   const result = mappedKingdeeRows(parsed.rows, mapping);
   const summary = summarizeDemands(result.rows);
   const diffs = diffAgainstCurrent(summary);
@@ -849,7 +907,7 @@ app.post('/api/difference-allocations/compare', requireAuth, requirePage('differ
   const requestMapping = parseJson(req.body.mapping, {});
   const mapping = Object.keys(requestMapping).length ? requestMapping : savedMapping('kingdee');
   const sheetName = normalize(req.body.sheetName);
-  const parsed = workbookRows(req.file, sheetName || null);
+  const parsed = workbookRows(req.file, sheetName || null, { includePreviews: false });
   const result = mappedKingdeeRows(parsed.rows, mapping);
   const summary = summarizeDemands(result.rows);
   const { sessionId, rows } = persistDifferenceCompare({ file: req.file, sheetName, mapping, parsed, result, summary, user: req.user });
@@ -926,7 +984,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requirePage('dimensionLi
   const slotId = req.params.slotId;
   const mapping = parseJson(req.body.mapping, {});
   const sheetName = normalize(req.body.sheetName);
-  const parsed = workbookRows(req.file, sheetName || null);
+  const parsed = workbookRows(req.file, sheetName || null, { includePreviews: false });
   const rows = parsed.rows.map((row) => {
     if (slotId === 'productCategory') {
       return {
@@ -1022,7 +1080,7 @@ app.get('/api/progress/export', requireAuth, (req, res) => {
 });
 
 app.post('/api/progress/import', requireAuth, upload.single('file'), (req, res) => {
-  const parsed = workbookRows(req.file);
+  const parsed = workbookRows(req.file, null, { includePreviews: false });
   const now = nowText();
   let updated = 0;
   transaction(() => {
@@ -1054,7 +1112,7 @@ app.post('/api/progress/import', requireAuth, upload.single('file'), (req, res) 
 });
 
 app.post('/api/inventory/import', requireAuth, requirePage('inventory'), upload.single('file'), (req, res) => {
-  const parsed = workbookRows(req.file);
+  const parsed = workbookRows(req.file, null, { includePreviews: false });
   const now = nowText();
   let imported = 0;
   transaction(() => {

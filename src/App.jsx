@@ -484,7 +484,7 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
               />
             </details>
           )}
-          {preview.diffs.length > 0 && preview.validRows > 0 && (
+          {mode === 'new' && preview.diffs.length > 0 && preview.validRows > 0 && (
             <>
               <h4 style={{ marginTop: 16 }}>差异明细（前80条）</h4>
               <DataTable

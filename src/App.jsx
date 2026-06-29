@@ -702,7 +702,8 @@ function DifferenceAllocationPage({ token, reloadDemands, setMessage }) {
         body: JSON.stringify({
           actionType: input.actionType || '',
           allocatedQty: input.allocatedQty ?? row.diffQty,
-          reason: input.reason || ''
+          reason: input.reason || '',
+          remark: input.remark || ''
         })
       });
       setAllocations(payload.rows || []);
@@ -787,7 +788,7 @@ function DifferenceAllocationPage({ token, reloadDemands, setMessage }) {
           <DataTable
             className="diff-allocation-table"
             rows={diffRows}
-            columns={['状态', '类型', '月份', '事业部', '供应商', '物料编码', '物料', '物流编码', 'SKU', '产品线', '系列', '采购组', '采购下单人', '采购组织', '旧数量', '新数量', '差异', '生产中', '已完工', '已发货数量', '本地进度合计', '库存', '动作', '数量', '原因', '操作']}
+            columns={['状态', '类型', '月份', '事业部', '供应商', '物料编码', '物料', '物流编码', 'SKU', '产品线', '系列', '采购组', '采购下单人', '采购组织', '原采购订单号', '新采购订单号', '旧数量', '新数量', '差异', '生产中', '已完工', '已发货数量', '本地进度合计', '库存', '动作', '数量', '原因', '备注', '操作']}
             renderRow={(row) => {
               const input = rowInputs[row.id] || {};
               const allocated = allocatedRowIds.has(row.id);
@@ -807,6 +808,8 @@ function DifferenceAllocationPage({ token, reloadDemands, setMessage }) {
                   <td>{row.purchaseGroup}</td>
                   <td>{row.purchaseOwner}</td>
                   <td>{row.purchaseOrg}</td>
+                  <td>{row.oldOrderNos}</td>
+                  <td>{row.newOrderNos}</td>
                   <td>{row.oldQty}</td>
                   <td>{row.newQty}</td>
                   <td>{row.diffQty}</td>
@@ -828,6 +831,9 @@ function DifferenceAllocationPage({ token, reloadDemands, setMessage }) {
                     <textarea value={input.reason || ''} onChange={(event) => setRowValue(row.id, 'reason', event.target.value)} placeholder="填写原因" />
                   </td>
                   <td>
+                    <textarea value={input.remark || ''} onChange={(event) => setRowValue(row.id, 'remark', event.target.value)} placeholder="备注选填" />
+                  </td>
+                  <td>
                     <button type="button" className="compact-button" disabled={allocated} onClick={() => submitRow(row)}>
                       {allocated ? '已提交' : '提交'}
                     </button>
@@ -844,8 +850,8 @@ function DifferenceAllocationPage({ token, reloadDemands, setMessage }) {
         <DataTable
           className="compact-table"
           rows={allocations}
-          columns={['动作', '主键', '分配数量', '原因', '旧数量', '新数量', '差异', '本地进度', '库存', '提交人', '提交时间']}
-          render={(row) => [row.actionType, row.demandKey, row.allocatedQty, row.reason, row.oldQty, row.newQty, Math.abs(numberValue(row.deltaQty)), row.progressTotal, row.stockQty, row.createdBy, row.createdAt]}
+          columns={['动作', '主键', '分配数量', '原因', '备注', '原采购订单号', '新采购订单号', '旧数量', '新数量', '差异', '本地进度', '库存', '提交人', '提交时间']}
+          render={(row) => [row.actionType, row.demandKey, row.allocatedQty, row.reason, row.remark, row.oldOrderNos, row.newOrderNos, row.oldQty, row.newQty, Math.abs(numberValue(row.deltaQty)), row.progressTotal, row.stockQty, row.createdBy, row.createdAt]}
         />
       </section>
     </>

@@ -154,6 +154,8 @@ function migrate() {
       new_qty REAL NOT NULL DEFAULT 0,
       delta_qty REAL NOT NULL DEFAULT 0,
       diff_type TEXT NOT NULL,
+      old_order_nos TEXT NOT NULL DEFAULT '',
+      new_order_nos TEXT NOT NULL DEFAULT '',
       progress_total REAL NOT NULL DEFAULT 0,
       stock_qty REAL NOT NULL DEFAULT 0,
       new_snapshot_json TEXT NOT NULL DEFAULT '{}',
@@ -167,6 +169,9 @@ function migrate() {
       action_type TEXT NOT NULL,
       allocated_qty REAL NOT NULL DEFAULT 0,
       reason TEXT NOT NULL,
+      remark TEXT NOT NULL DEFAULT '',
+      old_order_nos TEXT NOT NULL DEFAULT '',
+      new_order_nos TEXT NOT NULL DEFAULT '',
       old_qty REAL NOT NULL DEFAULT 0,
       new_qty REAL NOT NULL DEFAULT 0,
       delta_qty REAL NOT NULL DEFAULT 0,
@@ -258,6 +263,25 @@ function migrate() {
   }
   if (!compareSessionColumns.includes('source_rows_json')) {
     run("ALTER TABLE difference_compare_sessions ADD COLUMN source_rows_json TEXT NOT NULL DEFAULT '[]'");
+  }
+
+  const compareRowColumns = all('PRAGMA table_info(difference_compare_rows)').map((row) => row.name);
+  if (!compareRowColumns.includes('old_order_nos')) {
+    run("ALTER TABLE difference_compare_rows ADD COLUMN old_order_nos TEXT NOT NULL DEFAULT ''");
+  }
+  if (!compareRowColumns.includes('new_order_nos')) {
+    run("ALTER TABLE difference_compare_rows ADD COLUMN new_order_nos TEXT NOT NULL DEFAULT ''");
+  }
+
+  const allocationColumns = all('PRAGMA table_info(difference_allocations)').map((row) => row.name);
+  if (!allocationColumns.includes('remark')) {
+    run("ALTER TABLE difference_allocations ADD COLUMN remark TEXT NOT NULL DEFAULT ''");
+  }
+  if (!allocationColumns.includes('old_order_nos')) {
+    run("ALTER TABLE difference_allocations ADD COLUMN old_order_nos TEXT NOT NULL DEFAULT ''");
+  }
+  if (!allocationColumns.includes('new_order_nos')) {
+    run("ALTER TABLE difference_allocations ADD COLUMN new_order_nos TEXT NOT NULL DEFAULT ''");
   }
 }
 

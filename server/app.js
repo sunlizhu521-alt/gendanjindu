@@ -395,10 +395,26 @@ function demandRows(includeInactive = false, user = null) {
   });
 }
 
-function compareRowsFromSummary(summary, user) {
+function uniqueOrderNos(rows) {
+  return [...new Set(rows.map((row) => normalize(row.orderNo || row.order_no)).filter(Boolean))].join('、');
+}
+
+function oldOrderNosForDemand(demandKeyValue) {
+  const demand = get('SELECT source_batch_id FROM order_demands WHERE demand_key = ?', [demandKeyValue]);
+  if (!demand?.source_batch_id) return '';
+  return uniqueOrderNos(all('SELECT order_no FROM kingdee_orders WHERE batch_id = ? AND demand_key = ?', [demand.source_batch_id, demandKeyValue]));
+}
+
+function compareRowsFromSummary(summary, sourceRows, user) {
   const currentRows = demandRows(false, user);
   const currentMap = new Map(currentRows.map((row) => [row.demandKey, row]));
   const nextMap = new Map(summary.map((row) => [row.demandKey, row]));
+  const sourceRowsByDemand = new Map();
+  sourceRows.forEach((row) => {
+    const list = sourceRowsByDemand.get(row.demandKey) || [];
+    list.push(row);
+    sourceRowsByDemand.set(row.demandKey, list);
+  });
   const keys = [...new Set([...currentMap.keys(), ...nextMap.keys()])];
   return keys.map((key) => {
     const current = currentMap.get(key);
@@ -461,6 +477,8 @@ function compareRowsFromSummary(summary, user) {
       deltaQty,
       diffQty: Math.abs(deltaQty),
       diffType: !current ? '新增' : !next ? '消失' : deltaQty > 0 ? '数量增加' : '数量减少',
+      oldOrderNos: oldOrderNosForDemand(key),
+      newOrderNos: uniqueOrderNos(sourceRowsByDemand.get(key) || []),
       stockQty: numberValue(stock?.stock_qty),
       inProductionQty: numberValue(base.inProductionQty),
       finishedQty: numberValue(base.finishedQty),
@@ -472,7 +490,7 @@ function compareRowsFromSummary(summary, user) {
 }
 
 function persistDifferenceCompare({ file, sheetName, mapping, parsed, result, summary, user }) {
-  const rows = compareRowsFromSummary(summary, user);
+  const rows = compareRowsFromSummary(summary, result.rows, user);
   const sessionId = randomUUID();
   const now = nowText();
   transaction(() => {
@@ -484,9 +502,9 @@ function persistDifferenceCompare({ file, sheetName, mapping, parsed, result, su
     rows.forEach((row) => {
       const rowId = randomUUID();
       run(
-        `INSERT INTO difference_compare_rows (id, session_id, demand_key, month, business_unit, supplier, supplier_short_name, material_code, purchase_org, old_qty, new_qty, delta_qty, diff_type, progress_total, stock_qty, new_snapshot_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [rowId, sessionId, row.demandKey, row.month, row.businessUnit, row.supplier, row.supplierShortName, row.materialCode, row.purchaseOrg, row.oldQty, row.newQty, row.deltaQty, row.diffType, row.progressTotal, row.stockQty, JSON.stringify(row.newSnapshot), now]
+        `INSERT INTO difference_compare_rows (id, session_id, demand_key, month, business_unit, supplier, supplier_short_name, material_code, purchase_org, old_qty, new_qty, delta_qty, diff_type, old_order_nos, new_order_nos, progress_total, stock_qty, new_snapshot_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [rowId, sessionId, row.demandKey, row.month, row.businessUnit, row.supplier, row.supplierShortName, row.materialCode, row.purchaseOrg, row.oldQty, row.newQty, row.deltaQty, row.diffType, row.oldOrderNos, row.newOrderNos, row.progressTotal, row.stockQty, JSON.stringify(row.newSnapshot), now]
       );
       row.id = rowId;
       row.sessionId = sessionId;
@@ -506,6 +524,9 @@ function allocationRows(sessionId = '') {
     actionType: row.action_type,
     allocatedQty: numberValue(row.allocated_qty),
     reason: row.reason,
+    remark: row.remark || '',
+    oldOrderNos: row.old_order_nos || '',
+    newOrderNos: row.new_order_nos || '',
     oldQty: numberValue(row.old_qty),
     newQty: numberValue(row.new_qty),
     deltaQty: numberValue(row.delta_qty),
@@ -730,6 +751,7 @@ app.post('/api/difference-allocations/:sessionId/rows/:rowId', requireAuth, requ
   const actionType = normalize(req.body.actionType);
   const allocatedQty = numberValue(req.body.allocatedQty);
   const reason = normalize(req.body.reason);
+  const remark = normalize(req.body.remark);
   const requiredQty = Math.abs(numberValue(row.delta_qty));
   if (!DIFF_ALLOCATION_ACTIONS.includes(actionType)) return res.status(400).json({ error: '请选择有效的分配动作' });
   if (!reason) return res.status(400).json({ error: '必须填写分配原因' });
@@ -738,9 +760,9 @@ app.post('/api/difference-allocations/:sessionId/rows/:rowId', requireAuth, requ
   transaction(() => {
     run('DELETE FROM difference_allocations WHERE session_id = ? AND row_id = ?', [req.params.sessionId, req.params.rowId]);
     run(
-      `INSERT INTO difference_allocations (id, session_id, row_id, demand_key, action_type, allocated_qty, reason, old_qty, new_qty, delta_qty, progress_total, stock_qty, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [randomUUID(), req.params.sessionId, req.params.rowId, row.demand_key, actionType, allocatedQty, reason, row.old_qty, row.new_qty, row.delta_qty, row.progress_total, row.stock_qty, req.user.name, now]
+      `INSERT INTO difference_allocations (id, session_id, row_id, demand_key, action_type, allocated_qty, reason, remark, old_order_nos, new_order_nos, old_qty, new_qty, delta_qty, progress_total, stock_qty, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [randomUUID(), req.params.sessionId, req.params.rowId, row.demand_key, actionType, allocatedQty, reason, remark, row.old_order_nos || '', row.new_order_nos || '', row.old_qty, row.new_qty, row.delta_qty, row.progress_total, row.stock_qty, req.user.name, now]
     );
   });
   res.json({ rows: allocationRows(req.params.sessionId), status: allocationStatus(req.params.sessionId) });

@@ -69,6 +69,7 @@ function migrate() {
       supplier TEXT NOT NULL,
       supplier_short_name TEXT NOT NULL DEFAULT '',
       material_code TEXT NOT NULL,
+      purchase_org TEXT NOT NULL DEFAULT '',
       order_no TEXT,
       quantity REAL NOT NULL,
       raw_json TEXT NOT NULL
@@ -246,6 +247,11 @@ function migrate() {
     run("ALTER TABLE order_demands ADD COLUMN logistics_code TEXT NOT NULL DEFAULT ''");
   }
 
+  const kingdeeColumns = all('PRAGMA table_info(kingdee_orders)').map((row) => row.name);
+  if (!kingdeeColumns.includes('purchase_org')) {
+    run("ALTER TABLE kingdee_orders ADD COLUMN purchase_org TEXT NOT NULL DEFAULT ''");
+  }
+
   const progressColumns = all('PRAGMA table_info(supplier_progress)').map((row) => row.name);
   if (!progressColumns.includes('shipped_qty')) {
     run("ALTER TABLE supplier_progress ADD COLUMN shipped_qty REAL NOT NULL DEFAULT 0");
@@ -283,6 +289,88 @@ function migrate() {
   if (!allocationColumns.includes('new_order_nos')) {
     run("ALTER TABLE difference_allocations ADD COLUMN new_order_nos TEXT NOT NULL DEFAULT ''");
   }
+
+  migrateDemandKeysToPurchaseOrg();
+}
+
+function normalizeKeyPart(value) {
+  return String(value ?? '').trim();
+}
+
+function newDemandKey(purchaseOrg, month, businessUnit, supplier, materialCode) {
+  return [purchaseOrg, month, businessUnit, supplier, materialCode].map(normalizeKeyPart).join('|');
+}
+
+function hasLegacyDemandKey(value) {
+  return normalizeKeyPart(value).split('|').length === 4;
+}
+
+function rewriteDemandKeyInJson(value, keyMap) {
+  const parsed = (() => {
+    try {
+      return value ? JSON.parse(value) : [];
+    } catch {
+      return null;
+    }
+  })();
+  if (!Array.isArray(parsed)) return value;
+  let changed = false;
+  parsed.forEach((row) => {
+    if (row && keyMap.has(row.demandKey)) {
+      row.demandKey = keyMap.get(row.demandKey);
+      changed = true;
+    }
+  });
+  return changed ? JSON.stringify(parsed) : value;
+}
+
+function migrateDemandKeysToPurchaseOrg() {
+  const legacyDemands = all('SELECT demand_key, month, business_unit, supplier, material_code, purchase_org FROM order_demands')
+    .filter((row) => hasLegacyDemandKey(row.demand_key));
+  if (legacyDemands.length === 0) return;
+
+  const keyMap = new Map();
+  legacyDemands.forEach((row) => {
+    keyMap.set(row.demand_key, newDemandKey(row.purchase_org, row.month, row.business_unit, row.supplier, row.material_code));
+  });
+
+  keyMap.forEach((nextKey, oldKey) => {
+    if (nextKey !== oldKey) {
+      run('UPDATE order_demands SET demand_key = ? WHERE demand_key = ?', [nextKey, oldKey]);
+    }
+    run('UPDATE supplier_progress SET demand_key = ? WHERE demand_key = ?', [nextKey, oldKey]);
+    run('UPDATE supplier_progress_snapshots SET demand_key = ? WHERE demand_key = ?', [nextKey, oldKey]);
+    run('UPDATE demand_snapshot_diffs SET demand_key = ? WHERE demand_key = ?', [nextKey, oldKey]);
+    run('UPDATE difference_compare_rows SET demand_key = ? WHERE demand_key = ?', [nextKey, oldKey]);
+    run('UPDATE difference_allocations SET demand_key = ? WHERE demand_key = ?', [nextKey, oldKey]);
+    run('UPDATE demand_change_notes SET demand_key = ? WHERE demand_key = ?', [nextKey, oldKey]);
+    run('UPDATE kingdee_orders SET demand_key = ? WHERE demand_key = ?', [nextKey, oldKey]);
+  });
+
+  all('SELECT id, demand_key, purchase_org FROM kingdee_orders').forEach((row) => {
+    if (hasLegacyDemandKey(row.demand_key)) {
+      const parts = row.demand_key.split('|');
+      const nextKey = newDemandKey(row.purchase_org, parts[0], parts[1], parts[2], parts[3]);
+      run('UPDATE kingdee_orders SET demand_key = ? WHERE id = ?', [nextKey, row.id]);
+    }
+  });
+
+  all('SELECT id, month, business_unit, supplier, material_code FROM demand_change_notes').forEach((row) => {
+    const demand = all(
+      'SELECT purchase_org FROM order_demands WHERE month = ? AND business_unit = ? AND supplier = ? AND material_code = ? ORDER BY active DESC, updated_at DESC LIMIT 1',
+      [row.month, row.business_unit, row.supplier, row.material_code]
+    )[0];
+    const nextKey = newDemandKey(demand?.purchase_org || '', row.month, row.business_unit, row.supplier, row.material_code);
+    run('UPDATE demand_change_notes SET demand_key = ? WHERE id = ?', [nextKey, row.id]);
+  });
+
+  all('SELECT id, summary_json, source_rows_json FROM difference_compare_sessions').forEach((row) => {
+    const summaryJson = rewriteDemandKeyInJson(row.summary_json, keyMap);
+    const sourceRowsJson = rewriteDemandKeyInJson(row.source_rows_json, keyMap);
+    if (summaryJson !== row.summary_json || sourceRowsJson !== row.source_rows_json) {
+      run('UPDATE difference_compare_sessions SET summary_json = ?, source_rows_json = ? WHERE id = ?', [summaryJson, sourceRowsJson, row.id]);
+    }
+  });
 }
 
 export function run(sql, params = []) {

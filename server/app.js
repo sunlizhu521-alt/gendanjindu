@@ -18,8 +18,8 @@ const ROLE_USER = '普通用户';
 const ALL_PAGES = [
   'dashboard',
   'progressRefresh',
-  'trace',
   'differenceAllocation',
+  'trace',
   'inventory',
   'kingdeeImport',
   'dimensionLibrary',
@@ -41,7 +41,8 @@ const DIMENSION_SLOTS = {
   spare1: '备用 1',
   spare2: '备用 2'
 };
-const DIFF_ALLOCATION_ACTIONS = ['减少', '增加', '追加', '取消', '延迟', '型号迭代', '涨价', '降价'];
+const DIFF_ALLOCATION_ACTIONS = ['减少', '增加', '追加', '取消', '其他'];
+const DIFF_ALLOCATION_REASONS = ['业务调整', '型号迭代', '涨价', '降价', '其他'];
 
 const app = express();
 const UPLOAD_LIMIT_BYTES = 100 * 1024 * 1024;
@@ -76,8 +77,35 @@ function monthFromDate(value) {
   return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function demandKey(month, businessUnit, supplier, materialCode) {
-  return [month, businessUnit, supplier, materialCode].map(normalize).join('|');
+function demandKey(purchaseOrg, month, businessUnit, supplier, materialCode) {
+  return [purchaseOrg, month, businessUnit, supplier, materialCode].map(normalize).join('|');
+}
+
+function displayDemandKey(row) {
+  return [
+    row.purchaseOrg || row.purchase_org,
+    row.month,
+    row.businessUnit || row.business_unit,
+    supplierNameForRow(row)
+  ].map(normalize).filter(Boolean).join('|');
+}
+
+function supplierNameForRow(row) {
+  return normalize(row.supplierShortName || row.supplier_short_name) || normalize(row.supplier);
+}
+
+function displayKeyFromDemandKey(value) {
+  const parts = normalize(value).split('|');
+  return parts.length >= 5 ? parts.slice(0, 4).join('|') : normalize(value);
+}
+
+function displayKeyForCompareRow(row) {
+  return [
+    row.purchase_org,
+    row.month,
+    row.business_unit,
+    normalize(row.supplier_short_name) || normalize(row.supplier)
+  ].map(normalize).filter(Boolean).join('|');
 }
 
 function stockKey(businessUnit, supplier, materialCode) {
@@ -199,7 +227,7 @@ function mappedKingdeeRows(rows, mapping) {
       orderNo: mapping.orderNo ? pick(row, mapping.orderNo) : '',
       quantity,
       raw: row,
-      demandKey: demandKey(month, businessUnit, supplier, materialCode)
+      demandKey: demandKey(purchaseOrg, month, businessUnit, supplier, materialCode)
     });
   });
   return { totalRows: rows.length, validRows: valid.length, skippedRows: skipped.length, skipped, rows: valid };
@@ -364,6 +392,7 @@ function demandRows(includeInactive = false, user = null) {
     const demandAfterStock = Math.max(numberValue(demand.current_order_qty) - stockQty, 0);
     return {
       demandKey: demand.demand_key,
+      displayKey: displayDemandKey(demand),
       month: demand.month,
       businessUnit: demand.business_unit,
       supplier: demand.supplier,
@@ -459,6 +488,7 @@ function compareRowsFromSummary(summary, sourceRows, user) {
     const progressTotalValue = current ? numberValue(current.progressTotal) : 0;
     return {
       demandKey: key,
+      displayKey: displayDemandKey(base),
       month: base.month,
       businessUnit: base.businessUnit,
       supplier: base.supplier,
@@ -515,12 +545,21 @@ function persistDifferenceCompare({ file, sheetName, mapping, parsed, result, su
 
 function allocationRows(sessionId = '') {
   const params = sessionId ? [sessionId] : [];
-  const where = sessionId ? 'WHERE session_id = ?' : '';
-  return all(`SELECT * FROM difference_allocations ${where} ORDER BY created_at DESC LIMIT 500`, params).map((row) => ({
+  const where = sessionId ? 'WHERE a.session_id = ?' : '';
+  return all(
+    `SELECT a.*, r.month, r.business_unit, r.supplier, r.supplier_short_name, r.material_code, r.purchase_org
+     FROM difference_allocations a
+     LEFT JOIN difference_compare_rows r ON r.id = a.row_id
+     ${where}
+     ORDER BY a.created_at DESC LIMIT 500`,
+    params
+  ).map((row) => ({
     id: row.id,
     sessionId: row.session_id,
     rowId: row.row_id,
     demandKey: row.demand_key,
+    displayKey: row.month ? displayKeyForCompareRow(row) : displayKeyFromDemandKey(row.demand_key),
+    materialCode: row.material_code || normalize(row.demand_key).split('|')[4] || '',
     actionType: row.action_type,
     allocatedQty: numberValue(row.allocated_qty),
     reason: row.reason,
@@ -537,6 +576,62 @@ function allocationRows(sessionId = '') {
   }));
 }
 
+function compareRowsForSession(sessionId, user) {
+  return all('SELECT * FROM difference_compare_rows WHERE session_id = ? ORDER BY month DESC, business_unit, supplier, material_code', [sessionId]).map((row) => {
+    const demand = get('SELECT * FROM order_demands WHERE demand_key = ?', [row.demand_key]);
+    const progress = progressForDemand(row.demand_key);
+    const stock = demand ? inventoryForDemand(demand) : { stock_qty: row.stock_qty };
+    const enriched = enrichDemandFields(row.supplier, row.material_code);
+    const permissionDemand = demand || { purchase_owner: enriched.purchaseOwner, supplier: row.supplier, material_code: row.material_code };
+    if (!canEditDemand(user, permissionDemand)) return null;
+    return {
+      id: row.id,
+      sessionId: row.session_id,
+      demandKey: row.demand_key,
+      displayKey: displayKeyForCompareRow(row),
+      month: row.month,
+      businessUnit: row.business_unit,
+      supplier: row.supplier,
+      supplierShortName: row.supplier_short_name || demand?.supplier_short_name || '',
+      materialCode: row.material_code,
+      materialName: demand?.material_name || enriched.materialName || '',
+      purchaseOrg: row.purchase_org,
+      oldQty: numberValue(row.old_qty),
+      newQty: numberValue(row.new_qty),
+      deltaQty: numberValue(row.delta_qty),
+      diffQty: Math.abs(numberValue(row.delta_qty)),
+      diffType: row.diff_type,
+      oldOrderNos: row.old_order_nos || '',
+      newOrderNos: row.new_order_nos || '',
+      shippedQty: numberValue(progress.shipped_qty),
+      inProductionQty: numberValue(progress.in_production_qty),
+      finishedQty: numberValue(progress.finished_qty),
+      progressTotal: numberValue(progress.in_production_qty) + numberValue(progress.finished_qty) + numberValue(progress.shipped_qty),
+      stockQty: numberValue(stock.stock_qty)
+    };
+  }).filter(Boolean);
+}
+
+function latestComparePayload(user) {
+  const session = get('SELECT * FROM difference_compare_sessions ORDER BY created_at DESC LIMIT 1');
+  if (!session) {
+    return { sessionId: '', diffRows: [], allocations: allocationRows(), status: { total: 0, allocated: 0, complete: false }, actions: DIFF_ALLOCATION_ACTIONS, reasons: DIFF_ALLOCATION_REASONS };
+  }
+  return {
+    sessionId: session.id,
+    fileName: session.file_name,
+    totalRows: numberValue(session.total_rows),
+    validRows: numberValue(session.valid_rows),
+    skippedRows: numberValue(session.skipped_rows),
+    createdAt: session.created_at,
+    status: allocationStatus(session.id),
+    diffRows: compareRowsForSession(session.id, user),
+    allocations: allocationRows(session.id),
+    actions: DIFF_ALLOCATION_ACTIONS,
+    reasons: DIFF_ALLOCATION_REASONS
+  };
+}
+
 function allocationStatus(sessionId) {
   const total = numberValue(get('SELECT COUNT(*) AS count FROM difference_compare_rows WHERE session_id = ?', [sessionId])?.count);
   const allocated = numberValue(get('SELECT COUNT(DISTINCT row_id) AS count FROM difference_allocations WHERE session_id = ?', [sessionId])?.count);
@@ -548,8 +643,8 @@ function applyKingdeeSnapshot({ fileName, sourceRows, summary, diffs, mapping, u
   run('INSERT INTO kingdee_import_batches (id, file_name, imported_by, imported_at, row_count) VALUES (?, ?, ?, ?, ?)', [batchId, fileName, userName, now, sourceRows.length]);
   sourceRows.forEach((row) => {
     run(
-      'INSERT INTO kingdee_orders (id, batch_id, demand_key, month, business_unit, supplier, material_code, order_no, quantity, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [randomUUID(), batchId, row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.orderNo || '', row.quantity, JSON.stringify(row.raw || row)]
+      'INSERT INTO kingdee_orders (id, batch_id, demand_key, month, business_unit, supplier, material_code, purchase_org, order_no, quantity, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [randomUUID(), batchId, row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.purchaseOrg || '', row.orderNo || '', row.quantity, JSON.stringify(row.raw || row)]
     );
   });
   run('UPDATE order_demands SET active = 0, updated_at = ?', [now]);
@@ -664,6 +759,37 @@ app.post('/api/imports/kingdee/apply', requireAuth, requirePage('kingdeeImport')
   res.json({ batchId, rowCount: result.rows.length, diffs, demands: demandRows(false, req.user) });
 });
 
+app.post('/api/imports/kingdee/new-snapshot', requireAuth, requirePage('kingdeeImport'), upload.single('file'), (req, res) => {
+  const mapping = parseJson(req.body.mapping, {});
+  const sheetName = normalize(req.body.sheetName);
+  const parsed = workbookRows(req.file, sheetName || null);
+  const result = mappedKingdeeRows(parsed.rows, mapping);
+  const summary = summarizeDemands(result.rows);
+  const diffs = diffAgainstCurrent(summary);
+  const now = nowText();
+  const compare = persistDifferenceCompare({ file: req.file, sheetName, mapping, parsed, result, summary, user: req.user });
+  let batchId = '';
+  transaction(() => {
+    batchId = applyKingdeeSnapshot({ fileName: safeFilename(req.file), sourceRows: result.rows, summary, diffs, mapping, userName: req.user.name, now });
+    run('UPDATE difference_compare_sessions SET status = ?, applied_batch_id = ?, applied_at = ? WHERE id = ?', ['snapshot_applied', batchId, now, compare.sessionId]);
+  });
+  res.json({
+    batchId,
+    sessionId: compare.sessionId,
+    rowCount: result.rows.length,
+    totalRows: parsed.rows.length,
+    validRows: result.validRows,
+    skippedRows: result.skippedRows,
+    skipped: result.skipped.slice(0, 10),
+    diffRows: compareRowsForSession(compare.sessionId, req.user),
+    allocations: allocationRows(compare.sessionId),
+    actions: DIFF_ALLOCATION_ACTIONS,
+    reasons: DIFF_ALLOCATION_REASONS,
+    status: allocationStatus(compare.sessionId),
+    demands: demandRows(false, req.user)
+  });
+});
+
 app.get('/api/demands', requireAuth, (req, res) => {
   res.json({ rows: demandRows(req.query.includeInactive === '1', req.user) });
 });
@@ -712,7 +838,11 @@ app.get('/api/diffs', requireAuth, requirePage('differenceAllocation'), (req, re
 
 app.get('/api/difference-allocations', requireAuth, requirePage('differenceAllocation'), (req, res) => {
   const sessionId = normalize(req.query.sessionId);
-  res.json({ rows: allocationRows(sessionId), actions: DIFF_ALLOCATION_ACTIONS });
+  res.json({ rows: allocationRows(sessionId), actions: DIFF_ALLOCATION_ACTIONS, reasons: DIFF_ALLOCATION_REASONS });
+});
+
+app.get('/api/difference-allocations/latest', requireAuth, requirePage('differenceAllocation'), (req, res) => {
+  res.json(latestComparePayload(req.user));
 });
 
 app.post('/api/difference-allocations/compare', requireAuth, requirePage('differenceAllocation'), upload.single('file'), (req, res) => {
@@ -734,6 +864,7 @@ app.post('/api/difference-allocations/compare', requireAuth, requirePage('differ
     skipped: result.skipped.slice(0, 10),
     diffRows: rows,
     allocations: allocationRows(sessionId),
+    reasons: DIFF_ALLOCATION_REASONS,
     status
   });
 });
@@ -741,7 +872,6 @@ app.post('/api/difference-allocations/compare', requireAuth, requirePage('differ
 app.post('/api/difference-allocations/:sessionId/rows/:rowId', requireAuth, requirePage('differenceAllocation'), (req, res) => {
   const session = get('SELECT * FROM difference_compare_sessions WHERE id = ?', [req.params.sessionId]);
   if (!session) return res.status(404).json({ error: '比对会话不存在' });
-  if (session.status === 'applied') return res.status(400).json({ error: '该快照已经应用，不能重复分配' });
   const row = get('SELECT * FROM difference_compare_rows WHERE id = ? AND session_id = ?', [req.params.rowId, req.params.sessionId]);
   if (!row) return res.status(404).json({ error: '差异行不存在' });
   const existingDemand = get('SELECT * FROM order_demands WHERE demand_key = ?', [row.demand_key]);
@@ -754,7 +884,7 @@ app.post('/api/difference-allocations/:sessionId/rows/:rowId', requireAuth, requ
   const remark = normalize(req.body.remark);
   const requiredQty = Math.abs(numberValue(row.delta_qty));
   if (!DIFF_ALLOCATION_ACTIONS.includes(actionType)) return res.status(400).json({ error: '请选择有效的分配动作' });
-  if (!reason) return res.status(400).json({ error: '必须填写分配原因' });
+  if (!DIFF_ALLOCATION_REASONS.includes(reason)) return res.status(400).json({ error: '请选择有效的分配原因' });
   if (allocatedQty !== requiredQty) return res.status(400).json({ error: `分配数量必须等于差异数量 ${requiredQty}` });
   const now = nowText();
   transaction(() => {
@@ -771,7 +901,7 @@ app.post('/api/difference-allocations/:sessionId/rows/:rowId', requireAuth, requ
 app.post('/api/difference-allocations/:sessionId/apply', requireAuth, requirePage('differenceAllocation'), (req, res) => {
   const session = get('SELECT * FROM difference_compare_sessions WHERE id = ?', [req.params.sessionId]);
   if (!session) return res.status(404).json({ error: '比对会话不存在' });
-  if (session.status === 'applied') return res.status(400).json({ error: '该快照已经应用' });
+  if (session.status === 'applied' || session.status === 'snapshot_applied') return res.status(400).json({ error: '该快照已经应用' });
   const status = allocationStatus(req.params.sessionId);
   if (!status.complete) return res.status(400).json({ error: '所有差异分配完成后才能应用新快照' });
   const summary = parseJson(session.summary_json, []);
@@ -965,7 +1095,8 @@ app.post('/api/change-notes', requireAuth, requirePage('trace'), (req, res) => {
   const businessUnit = normalize(req.body.businessUnit);
   const supplier = normalize(req.body.supplier);
   const materialCode = normalize(req.body.materialCode);
-  const key = demandKey(month, businessUnit, supplier, materialCode);
+  const purchaseOrg = normalize(req.body.purchaseOrg);
+  const key = demandKey(purchaseOrg, month, businessUnit, supplier, materialCode);
   run(
     'INSERT INTO demand_change_notes (id, demand_key, month, business_unit, supplier, material_code, related_qty, reason, change_date, remark, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [randomUUID(), key, month, businessUnit, supplier, materialCode, numberValue(req.body.relatedQty), normalize(req.body.reason), normalize(req.body.changeDate), normalize(req.body.remark), req.user.name, nowText()]

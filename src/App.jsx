@@ -8,8 +8,8 @@ const BUSINESS_UNITS = ['海外事业一部', '海外事业二部', '国内事�
 const PAGE_ORDER = [
   'dashboard',
   'progressRefresh',
-  'trace',
   'differenceAllocation',
+  'trace',
   'inventory',
   'kingdeeImport',
   'dimensionLibrary',
@@ -324,7 +324,7 @@ function Dashboard({ rows }) {
   );
 }
 
-function KingdeeImport({ token, reloadDemands, setMessage }) {
+function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, description, mode }) {
   const [file, setFile] = useState(null);
   const [columns, setColumns] = useState([]);
   const [mapping, setMapping] = useState({});
@@ -391,8 +391,15 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
       data.append('file', file);
       data.append('mapping', JSON.stringify(mapping));
       if (sheetName) data.append('sheetName', sheetName);
-      const payload = await request('/api/imports/kingdee/apply', { token, method: 'POST', body: data });
-      setMessage(`上传保存完成：${payload.rowCount} 行，差异 ${payload.diffs.length} 条`);
+      const path = mode === 'new' ? '/api/imports/kingdee/new-snapshot' : '/api/imports/kingdee/apply';
+      const payload = await request(path, { token, method: 'POST', body: data });
+      if (mode === 'new') {
+        setPreview({ ...payload, diffs: payload.diffRows || [] });
+        setMessage(`新采购订单已上传并应用：${payload.rowCount} 行，生成差异 ${payload.diffRows?.length || 0} 条`);
+        await reloadDemands();
+      } else {
+        setMessage(`上传保存完成：${payload.rowCount} 行，差异 ${payload.diffs.length} 条`);
+      }
     } catch (err) {
       setMessage('上传保存失败：' + err.message);
     } finally {
@@ -415,8 +422,8 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
   return (
     <>
       <div className="section-heading-row">
-        <h2>采购订单</h2>
-        <span className="section-count">字段映射会保存最近一次配置</span>
+        <h3>{title}</h3>
+        <span className="section-count">{description}</span>
       </div>
       <section className="panel">
         {file && (
@@ -427,18 +434,20 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
             {preview && preview.validRows > 0 && (
               <>
                 <button type="button" className="compact-button" disabled={saving} onClick={doSave}>
-                  {saving ? '保存中...' : '上传保存'}
+                  {saving ? '保存中...' : mode === 'new' ? '上传新订单并应用' : '上传保存'}
                 </button>
-                <button type="button" className="compact-button" disabled={applying} onClick={doApplyRefresh}>
-                  {applying ? '刷新中...' : '应用刷新'}
-                </button>
+                {mode !== 'new' && (
+                  <button type="button" className="compact-button" disabled={applying} onClick={doApplyRefresh}>
+                    {applying ? '刷新中...' : '应用刷新'}
+                  </button>
+                )}
               </>
             )}
           </div>
         )}
         <label className="drop-zone">
           <input type="file" accept=".xlsx,.xls,.csv" onChange={(event) => event.target.files?.[0] && inspect(event.target.files[0])} />
-          <strong>{file ? file.name : '上传采购订单 Excel'}</strong>
+          <strong>{file ? file.name : `${title} Excel`}</strong>
           <span>选择文件后配置字段映射，点击解析预览查看进度</span>
         </label>
         {sheetNames.length > 1 && (
@@ -482,12 +491,39 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
                 className="compact-table"
                 rows={preview.diffs.slice(0, 80)}
                 columns={['类型', '主键', '旧数量', '新数量']}
-                render={(row) => [row.diffType, row.demandKey, row.oldQty, row.newQty]}
+                render={(row) => [row.diffType || row.diff_type, row.displayKey || row.demandKey, row.oldQty, row.newQty]}
               />
             </>
           )}
         </section>
       )}
+    </>
+  );
+}
+
+function KingdeeImport({ token, reloadDemands, setMessage }) {
+  return (
+    <>
+      <div className="section-heading-row">
+        <h2>采购订单</h2>
+        <span className="section-count">字段映射会保存最近一次配置</span>
+      </div>
+      <KingdeeUploadPanel
+        token={token}
+        reloadDemands={reloadDemands}
+        setMessage={setMessage}
+        title="当前应用采购订单"
+        description="首次导入或直接刷新当前金蝶基线"
+        mode="current"
+      />
+      <KingdeeUploadPanel
+        token={token}
+        reloadDemands={reloadDemands}
+        setMessage={setMessage}
+        title="新采购订单上传"
+        description="生成差异分配并立即应用为新的当前采购订单"
+        mode="new"
+      />
     </>
   );
 }
@@ -619,75 +655,22 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
   );
 }
 
-function DifferenceAllocationPage({ token, reloadDemands, setMessage }) {
-  const [file, setFile] = useState(null);
-  const [columns, setColumns] = useState([]);
-  const [mapping, setMapping] = useState({});
-  const [sheetName, setSheetName] = useState('');
-  const [sheetNames, setSheetNames] = useState([]);
-  const [compare, setCompare] = useState(null);
-  const [allocations, setAllocations] = useState([]);
-  const [actions, setActions] = useState(['减少', '增加', '追加', '取消', '延迟', '型号迭代', '涨价', '降价']);
+function DifferenceAllocationPage({ token, user, setMessage }) {
+  const [compare, setCompare] = useState({ diffRows: [], allocations: [], actions: [], reasons: [], status: { total: 0, allocated: 0 } });
   const [rowInputs, setRowInputs] = useState({});
-  const [comparing, setComparing] = useState(false);
-  const [applying, setApplying] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  async function loadMapping() {
-    const payload = await request('/api/mappings/kingdee', { token });
-    setMapping(payload.mapping || {});
-  }
-
-  async function loadAllocations(sessionId = '') {
-    const query = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
-    const payload = await request(`/api/difference-allocations${query}`, { token });
-    setAllocations(payload.rows || []);
-    if (payload.actions?.length) setActions(payload.actions);
-  }
-
-  useEffect(() => {
-    loadMapping().catch(() => {});
-    loadAllocations().catch(() => {});
-  }, [token]);
-
-  async function inspect(nextFile) {
-    setFile(nextFile);
-    setCompare(null);
-    setSheetName('');
-    const data = new FormData();
-    data.append('file', nextFile);
-    const payload = await request('/api/workbook/inspect', { token, method: 'POST', body: data });
-    setColumns(payload.columns || []);
-    setSheetNames(payload.sheetNames || []);
-  }
-
-  async function selectSheet(name) {
-    setSheetName(name);
-    const data = new FormData();
-    data.append('file', file);
-    if (name) data.append('sheetName', name);
-    const payload = await request('/api/workbook/inspect', { token, method: 'POST', body: data });
-    setColumns(payload.columns || []);
-  }
-
-  async function startCompare() {
-    if (!file) return;
-    setComparing(true);
+  async function loadLatest() {
+    setLoading(true);
     try {
-      const data = new FormData();
-      data.append('file', file);
-      data.append('mapping', JSON.stringify(mapping));
-      if (sheetName) data.append('sheetName', sheetName);
-      const payload = await request('/api/difference-allocations/compare', { token, method: 'POST', body: data });
+      const payload = await request('/api/difference-allocations/latest', { token });
       setCompare(payload);
-      setAllocations(payload.allocations || []);
-      if (payload.actions?.length) setActions(payload.actions);
-      setMessage(`三表比对完成：有效 ${payload.validRows}/${payload.totalRows} 行，差异 ${payload.diffRows.length} 条`);
-    } catch (err) {
-      setMessage('三表比对失败：' + err.message);
     } finally {
-      setComparing(false);
+      setLoading(false);
     }
   }
+
+  useEffect(() => { loadLatest().catch(() => {}); }, [token]);
 
   function setRowValue(rowId, key, value) {
     setRowInputs({ ...rowInputs, [rowId]: { ...(rowInputs[rowId] || {}), [key]: value } });
@@ -701,157 +684,94 @@ function DifferenceAllocationPage({ token, reloadDemands, setMessage }) {
         method: 'POST',
         body: JSON.stringify({
           actionType: input.actionType || '',
-          allocatedQty: input.allocatedQty ?? row.diffQty,
+          allocatedQty: row.diffQty,
           reason: input.reason || '',
           remark: input.remark || ''
         })
       });
-      setAllocations(payload.rows || []);
-      setCompare({ ...compare, status: payload.status });
+      setCompare({ ...compare, allocations: payload.rows || [], status: payload.status });
       setMessage('差异分配已提交。');
     } catch (err) {
       setMessage('提交失败：' + err.message);
     }
   }
 
-  async function applySnapshot() {
-    if (!compare?.sessionId) return;
-    setApplying(true);
-    try {
-      const payload = await request(`/api/difference-allocations/${encodeURIComponent(compare.sessionId)}/apply`, { token, method: 'POST' });
-      setCompare({ ...compare, status: payload.status });
-      setMessage('新金蝶快照已应用，采购总览已更新。');
-      await reloadDemands();
-      await loadAllocations(compare.sessionId);
-    } catch (err) {
-      setMessage('应用失败：' + err.message);
-    } finally {
-      setApplying(false);
-    }
-  }
-
+  const allocations = compare.allocations || [];
   const allocatedRowIds = new Set(allocations.map((row) => row.rowId));
-  const diffRows = compare?.diffRows || [];
+  const diffRows = compare.diffRows || [];
   const pendingCount = diffRows.filter((row) => !allocatedRowIds.has(row.id)).length;
 
   return (
     <>
       <div className="section-heading-row">
         <h2>差异分配</h2>
-        <span className="section-count">上传新版金蝶 Excel，比对旧金蝶、新金蝶、本地进度和库存</span>
+        <span className="section-count">
+          {loading ? '加载中...' : `最新差异 ${diffRows.length} 条，待分配 ${pendingCount} 条`}
+        </span>
       </div>
       <section className="panel">
-        <label className="drop-zone">
-          <input type="file" accept=".xlsx,.xls,.csv" onChange={(event) => event.target.files?.[0] && inspect(event.target.files[0])} />
-          <strong>{file ? file.name : '上传新版金蝶采购订单 Excel'}</strong>
-          <span>使用采购订单页最近一次字段映射，必要时可在下方调整</span>
-        </label>
-        {sheetNames.length > 1 && (
-          <div className="sheet-selector">
-            <label>选择工作表
-              <select value={sheetName} onChange={(event) => selectSheet(event.target.value)}>
-                <option value="">全部工作表</option>
-                {sheetNames.map((name) => <option key={name} value={name}>{name}</option>)}
-              </select>
-            </label>
-          </div>
-        )}
-        {columns.length > 0 && (
-          <FieldMapping fields={KINGDEE_FIELDS} columns={columns} mapping={mapping} onChange={setMapping} />
-        )}
-        <div className="card-actions">
-          <button type="button" className="compact-button" disabled={!file || comparing} onClick={startCompare}>
-            {comparing ? '比对中...' : '开始三表比对'}
-          </button>
-          {compare && (
-            <button type="button" className="compact-button" disabled={!compare.status?.complete || applying || compare.status?.applied} onClick={applySnapshot}>
-              {applying ? '应用中...' : '确认应用新快照'}
-            </button>
-          )}
+        <div className="section-heading-row">
+          <h3>待分配差异</h3>
+          <span className="section-count">{compare.fileName ? `来源：${compare.fileName}，生成时间：${compare.createdAt || ''}` : '请先在采购订单页上传新采购订单'}</span>
         </div>
-      </section>
-
-      {compare && (
-        <section className="panel" style={{ marginTop: 16 }}>
-          <div className="section-heading-row">
-            <h3>三表比对结果</h3>
-            <span className="section-count">
-              总行数 {compare.totalRows}，有效 {compare.validRows}，跳过 {compare.skippedRows}，差异 {diffRows.length}，待分配 {pendingCount}
-            </span>
-          </div>
-          {compare.skipped?.length > 0 && (
-            <details className="skipped-details">
-              <summary>查看跳过的行（前{compare.skipped.length}条）</summary>
-              <DataTable className="compact-table" rows={compare.skipped} columns={['Excel行号', '跳过原因', '原始数据']} render={(row) => [row.row, row.reasons, row.preview]} />
-            </details>
-          )}
-          <DataTable
-            className="diff-allocation-table"
-            rows={diffRows}
-            columns={['状态', '类型', '月份', '事业部', '供应商', '物料编码', '物料', '物流编码', 'SKU', '产品线', '系列', '采购组', '采购下单人', '采购组织', '原采购订单号', '新采购订单号', '旧数量', '新数量', '差异', '生产中', '已完工', '已发货数量', '本地进度合计', '库存', '动作', '数量', '原因', '备注', '操作']}
-            renderRow={(row) => {
-              const input = rowInputs[row.id] || {};
-              const allocated = allocatedRowIds.has(row.id);
-              return (
-                <tr key={row.id}>
-                  <td>{allocated ? '已分配' : '待分配'}</td>
-                  <td>{row.diffType}</td>
-                  <td>{row.month}</td>
-                  <td>{row.businessUnit}</td>
-                  <td>{supplierName(row)}</td>
-                  <td>{row.materialCode}</td>
-                  <td>{row.materialName || row.sku}</td>
-                  <td>{row.logisticsCode}</td>
-                  <td>{row.sku}</td>
-                  <td>{row.productLine}</td>
-                  <td>{row.productSeries}</td>
-                  <td>{row.purchaseGroup}</td>
-                  <td>{row.purchaseOwner}</td>
-                  <td>{row.purchaseOrg}</td>
-                  <td>{row.oldOrderNos}</td>
-                  <td>{row.newOrderNos}</td>
-                  <td>{row.oldQty}</td>
-                  <td>{row.newQty}</td>
-                  <td>{row.diffQty}</td>
-                  <td>{row.inProductionQty}</td>
-                  <td>{row.finishedQty}</td>
-                  <td>{row.shippedQty}</td>
-                  <td>{row.progressTotal}</td>
-                  <td>{row.stockQty}</td>
-                  <td>
-                    <select value={input.actionType || ''} onChange={(event) => setRowValue(row.id, 'actionType', event.target.value)}>
-                      <option value="">选择动作</option>
-                      {actions.map((action) => <option key={action} value={action}>{action}</option>)}
+        <DataTable
+          className="diff-allocation-table"
+          rows={diffRows}
+          columns={['主键', '物料编码', '物料名称', '原采购数量', '新采购数量', '已发货', '生产中', '已完工', '差异', '原因', '操作', '备注', '提交人', '提交时间', '提交']}
+          renderRow={(row) => {
+            const input = rowInputs[row.id] || {};
+            const allocated = allocatedRowIds.has(row.id);
+            const allocation = allocations.find((item) => item.rowId === row.id);
+            return (
+              <tr key={row.id}>
+                <td>{row.displayKey}</td>
+                <td>{row.materialCode}</td>
+                <td>{row.materialName || row.materialCode}</td>
+                <td>{row.oldQty}</td>
+                <td>{row.newQty}</td>
+                <td>{row.shippedQty}</td>
+                <td>{row.inProductionQty}</td>
+                <td>{row.finishedQty}</td>
+                <td>{row.diffQty}</td>
+                <td>
+                  {allocated ? allocation?.reason : (
+                    <select value={input.reason || ''} onChange={(event) => setRowValue(row.id, 'reason', event.target.value)}>
+                      <option value="">选择原因</option>
+                      {(compare.reasons || []).map((reason) => <option key={reason} value={reason}>{reason}</option>)}
                     </select>
-                  </td>
-                  <td>
-                    <input type="number" value={input.allocatedQty ?? row.diffQty} onChange={(event) => setRowValue(row.id, 'allocatedQty', event.target.value)} />
-                  </td>
-                  <td>
-                    <textarea value={input.reason || ''} onChange={(event) => setRowValue(row.id, 'reason', event.target.value)} placeholder="填写原因" />
-                  </td>
-                  <td>
-                    <textarea value={input.remark || ''} onChange={(event) => setRowValue(row.id, 'remark', event.target.value)} placeholder="备注选填" />
-                  </td>
-                  <td>
-                    <button type="button" className="compact-button" disabled={allocated} onClick={() => submitRow(row)}>
-                      {allocated ? '已提交' : '提交'}
-                    </button>
-                  </td>
-                </tr>
-              );
-            }}
-          />
-        </section>
-      )}
+                  )}
+                </td>
+                <td>
+                  {allocated ? allocation?.actionType : (
+                    <select value={input.actionType || ''} onChange={(event) => setRowValue(row.id, 'actionType', event.target.value)}>
+                      <option value="">选择操作</option>
+                      {(compare.actions || []).map((action) => <option key={action} value={action}>{action}</option>)}
+                    </select>
+                  )}
+                </td>
+                <td>
+                  {allocated ? allocation?.remark : <textarea value={input.remark || ''} onChange={(event) => setRowValue(row.id, 'remark', event.target.value)} placeholder="备注选填" />}
+                </td>
+                <td>{allocated ? allocation?.createdBy : user.name}</td>
+                <td>{allocated ? allocation?.createdAt : todayText()}</td>
+                <td>
+                  <button type="button" className="compact-button" disabled={allocated || !compare.sessionId} onClick={() => submitRow(row)}>
+                    {allocated ? '已提交' : '提交'}
+                  </button>
+                </td>
+              </tr>
+            );
+          }}
+        />
+      </section>
 
       <section className="panel" style={{ marginTop: 16 }}>
         <div className="section-heading-row"><h3>已分配记录</h3><span className="section-count">{allocations.length} 条</span></div>
         <DataTable
           className="compact-table"
           rows={allocations}
-          columns={['动作', '主键', '分配数量', '原因', '备注', '原采购订单号', '新采购订单号', '旧数量', '新数量', '差异', '本地进度', '库存', '提交人', '提交时间']}
-          render={(row) => [row.actionType, row.demandKey, row.allocatedQty, row.reason, row.remark, row.oldOrderNos, row.newOrderNos, row.oldQty, row.newQty, Math.abs(numberValue(row.deltaQty)), row.progressTotal, row.stockQty, row.createdBy, row.createdAt]}
+          columns={['主键', '物料编码', '原采购数量', '新采购数量', '差异', '原因', '操作', '备注', '提交人', '提交时间']}
+          render={(row) => [row.displayKey || row.demandKey, row.materialCode || '', row.oldQty, row.newQty, Math.abs(numberValue(row.deltaQty)), row.reason, row.actionType, row.remark, row.createdBy, row.createdAt]}
         />
       </section>
     </>
@@ -1010,7 +930,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage }) {
 
 function TracePage({ token, setMessage }) {
   const [data, setData] = useState({ batches: [], diffs: [], progress: [], inventory: [], notes: [] });
-  const [note, setNote] = useState({ month: '', businessUnit: '', supplier: '', materialCode: '', relatedQty: '', reason: '', changeDate: todayText(), remark: '' });
+  const [note, setNote] = useState({ purchaseOrg: '', month: '', businessUnit: '', supplier: '', materialCode: '', relatedQty: '', reason: '', changeDate: todayText(), remark: '' });
 
   async function load() {
     const payload = await request('/api/trace', { token });
@@ -1023,7 +943,7 @@ function TracePage({ token, setMessage }) {
     event.preventDefault();
     await request('/api/change-notes', { token, method: 'POST', body: JSON.stringify(note) });
     setMessage('变更备注已保存。');
-    setNote({ month: '', businessUnit: '', supplier: '', materialCode: '', relatedQty: '', reason: '', changeDate: todayText(), remark: '' });
+    setNote({ purchaseOrg: '', month: '', businessUnit: '', supplier: '', materialCode: '', relatedQty: '', reason: '', changeDate: todayText(), remark: '' });
     await load();
   }
 
@@ -1032,6 +952,7 @@ function TracePage({ token, setMessage }) {
       <div className="section-heading-row"><h2>变更追溯</h2><span className="section-count">导入、差异、进度、库存、备注</span></div>
       <form className="panel form-grid" onSubmit={saveNote}>
         {[
+          ['purchaseOrg', '采购组织'],
           ['month', '创建月份'],
           ['businessUnit', '事业部'],
           ['supplier', '供应商'],
@@ -1193,7 +1114,7 @@ function App() {
         {activeTab === 'dashboard' && <Dashboard rows={demands} />}
         {activeTab === 'kingdeeImport' && <KingdeeImport token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'progressRefresh' && <ProgressPage rows={demands} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
-        {activeTab === 'differenceAllocation' && <DifferenceAllocationPage token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
+        {activeTab === 'differenceAllocation' && <DifferenceAllocationPage token={token} user={user} setMessage={setMessage} />}
         {activeTab === 'inventory' && <InventoryPage token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'dimensionLibrary' && <DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'trace' && <TracePage token={token} setMessage={setMessage} />}

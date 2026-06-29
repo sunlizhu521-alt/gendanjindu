@@ -71,6 +71,7 @@ function migrate() {
       supplier_short_name TEXT NOT NULL DEFAULT '',
       material_code TEXT NOT NULL,
       purchase_org TEXT NOT NULL DEFAULT '',
+      creator TEXT NOT NULL DEFAULT '',
       order_no TEXT,
       quantity REAL NOT NULL,
       raw_json TEXT NOT NULL
@@ -139,6 +140,8 @@ function migrate() {
       status TEXT NOT NULL DEFAULT 'pending',
       applied_batch_id TEXT,
       applied_at TEXT,
+      old_applied_at TEXT NOT NULL DEFAULT '',
+      new_applied_at TEXT NOT NULL DEFAULT '',
       created_by TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
@@ -152,6 +155,7 @@ function migrate() {
       supplier_short_name TEXT NOT NULL DEFAULT '',
       material_code TEXT NOT NULL,
       purchase_org TEXT NOT NULL DEFAULT '',
+      order_creator TEXT NOT NULL DEFAULT '',
       old_qty REAL NOT NULL DEFAULT 0,
       new_qty REAL NOT NULL DEFAULT 0,
       delta_qty REAL NOT NULL DEFAULT 0,
@@ -252,6 +256,9 @@ function migrate() {
   if (!kingdeeColumns.includes('purchase_org')) {
     run("ALTER TABLE kingdee_orders ADD COLUMN purchase_org TEXT NOT NULL DEFAULT ''");
   }
+  if (!kingdeeColumns.includes('creator')) {
+    run("ALTER TABLE kingdee_orders ADD COLUMN creator TEXT NOT NULL DEFAULT ''");
+  }
 
   const kingdeeBatchColumns = all('PRAGMA table_info(kingdee_import_batches)').map((row) => row.name);
   if (!kingdeeBatchColumns.includes('applied_at')) {
@@ -277,8 +284,18 @@ function migrate() {
   if (!compareSessionColumns.includes('source_rows_json')) {
     run("ALTER TABLE difference_compare_sessions ADD COLUMN source_rows_json TEXT NOT NULL DEFAULT '[]'");
   }
+  if (!compareSessionColumns.includes('old_applied_at')) {
+    run("ALTER TABLE difference_compare_sessions ADD COLUMN old_applied_at TEXT NOT NULL DEFAULT ''");
+  }
+  if (!compareSessionColumns.includes('new_applied_at')) {
+    run("ALTER TABLE difference_compare_sessions ADD COLUMN new_applied_at TEXT NOT NULL DEFAULT ''");
+    run("UPDATE difference_compare_sessions SET new_applied_at = COALESCE(applied_at, '') WHERE new_applied_at = ''");
+  }
 
   const compareRowColumns = all('PRAGMA table_info(difference_compare_rows)').map((row) => row.name);
+  if (!compareRowColumns.includes('order_creator')) {
+    run("ALTER TABLE difference_compare_rows ADD COLUMN order_creator TEXT NOT NULL DEFAULT ''");
+  }
   if (!compareRowColumns.includes('old_order_nos')) {
     run("ALTER TABLE difference_compare_rows ADD COLUMN old_order_nos TEXT NOT NULL DEFAULT ''");
   }

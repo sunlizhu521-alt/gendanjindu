@@ -121,6 +121,57 @@ function migrate() {
       new_qty REAL NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS difference_compare_sessions (
+      id TEXT PRIMARY KEY,
+      file_name TEXT NOT NULL,
+      sheet_name TEXT NOT NULL DEFAULT '',
+      mapping_json TEXT NOT NULL DEFAULT '{}',
+      summary_json TEXT NOT NULL DEFAULT '[]',
+      source_rows_json TEXT NOT NULL DEFAULT '[]',
+      total_rows INTEGER NOT NULL DEFAULT 0,
+      valid_rows INTEGER NOT NULL DEFAULT 0,
+      skipped_rows INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending',
+      applied_batch_id TEXT,
+      applied_at TEXT,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS difference_compare_rows (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      demand_key TEXT NOT NULL,
+      month TEXT NOT NULL,
+      business_unit TEXT NOT NULL,
+      supplier TEXT NOT NULL,
+      supplier_short_name TEXT NOT NULL DEFAULT '',
+      material_code TEXT NOT NULL,
+      purchase_org TEXT NOT NULL DEFAULT '',
+      old_qty REAL NOT NULL DEFAULT 0,
+      new_qty REAL NOT NULL DEFAULT 0,
+      delta_qty REAL NOT NULL DEFAULT 0,
+      diff_type TEXT NOT NULL,
+      progress_total REAL NOT NULL DEFAULT 0,
+      stock_qty REAL NOT NULL DEFAULT 0,
+      new_snapshot_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS difference_allocations (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      row_id TEXT NOT NULL,
+      demand_key TEXT NOT NULL,
+      action_type TEXT NOT NULL,
+      allocated_qty REAL NOT NULL DEFAULT 0,
+      reason TEXT NOT NULL,
+      old_qty REAL NOT NULL DEFAULT 0,
+      new_qty REAL NOT NULL DEFAULT 0,
+      delta_qty REAL NOT NULL DEFAULT 0,
+      progress_total REAL NOT NULL DEFAULT 0,
+      stock_qty REAL NOT NULL DEFAULT 0,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS dimension_files (
       slot_id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -182,6 +233,14 @@ function migrate() {
   }
   if (!demandColumns.includes('supplier_short_name')) {
     run("ALTER TABLE order_demands ADD COLUMN supplier_short_name TEXT NOT NULL DEFAULT ''");
+  }
+
+  const compareSessionColumns = all('PRAGMA table_info(difference_compare_sessions)').map((row) => row.name);
+  if (!compareSessionColumns.includes('summary_json')) {
+    run("ALTER TABLE difference_compare_sessions ADD COLUMN summary_json TEXT NOT NULL DEFAULT '[]'");
+  }
+  if (!compareSessionColumns.includes('source_rows_json')) {
+    run("ALTER TABLE difference_compare_sessions ADD COLUMN source_rows_json TEXT NOT NULL DEFAULT '[]'");
   }
 }
 

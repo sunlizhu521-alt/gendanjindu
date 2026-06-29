@@ -41,6 +41,7 @@ const DIMENSION_SLOTS = {
   spare1: '备用 1',
   spare2: '备用 2'
 };
+const DIFF_ALLOCATION_ACTIONS = ['减少', '增加', '追加', '取消', '延迟', '型号迭代', '涨价', '降价'];
 
 const app = express();
 const UPLOAD_LIMIT_BYTES = 100 * 1024 * 1024;
@@ -247,13 +248,18 @@ function diffAgainstCurrent(summary) {
   return diffs;
 }
 
+function savedMapping(kind) {
+  const row = get('SELECT * FROM import_mappings WHERE kind = ?', [kind]);
+  return parseJson(row?.mapping_json, {});
+}
+
 function getDimensionRows(slotId) {
   const record = get('SELECT rows_json, applied FROM dimension_files WHERE slot_id = ?', [slotId]);
   if (!record?.applied) return [];
   return parseJson(record.rows_json, []);
 }
 
-function applyDimensionEnrichment() {
+function dimensionLookups() {
   const productRows = getDimensionRows('productCategory');
   const assignmentRows = getDimensionRows('purchaseAssignment');
   const productMap = new Map();
@@ -269,6 +275,28 @@ function applyDimensionEnrichment() {
     const key = [normalize(row.supplier), normalize(row.materialCode)].join('|');
     if (normalize(row.supplier) && normalize(row.materialCode)) assignmentMap.set(key, row);
   });
+  return { productMap, assignmentMap, supplierMap };
+}
+
+function enrichDemandFields(supplier, materialCode) {
+  const { productMap, assignmentMap, supplierMap } = dimensionLookups();
+  const product = productMap.get(normalize(materialCode)) || {};
+  const assignment = assignmentMap.get([normalize(supplier), normalize(materialCode)].join('|')) || {};
+  const supplierAssignment = supplierMap.get(normalize(supplier)) || {};
+  return {
+    sku: normalize(product.sku),
+    materialName: normalize(product.materialName),
+    productLine: normalize(product.productLine),
+    productSeries: normalize(product.productSeries),
+    supplierShortName: normalize(assignment.supplierShortName || supplierAssignment.supplierShortName),
+    purchaseGroup: normalize(assignment.purchaseGroup),
+    purchaseOwner: normalize(assignment.purchaseOwner),
+    purchaseOrg: normalize(assignment.purchaseOrg)
+  };
+}
+
+function applyDimensionEnrichment() {
+  const { productMap, assignmentMap, supplierMap } = dimensionLookups();
   all('SELECT * FROM order_demands').forEach((demand) => {
     const product = productMap.get(demand.material_code) || {};
     const assignment = assignmentMap.get([demand.supplier, demand.material_code].join('|')) || {};
@@ -363,6 +391,173 @@ function demandRows(includeInactive = false, user = null) {
   });
 }
 
+function compareRowsFromSummary(summary, user) {
+  const currentRows = demandRows(false, user);
+  const currentMap = new Map(currentRows.map((row) => [row.demandKey, row]));
+  const nextMap = new Map(summary.map((row) => [row.demandKey, row]));
+  const keys = [...new Set([...currentMap.keys(), ...nextMap.keys()])];
+  return keys.map((key) => {
+    const current = currentMap.get(key);
+    const next = nextMap.get(key);
+    const oldQty = numberValue(current?.currentOrderQty);
+    const newQty = numberValue(next?.currentOrderQty);
+    const deltaQty = newQty - oldQty;
+    if (deltaQty === 0) return null;
+    const enriched = next ? enrichDemandFields(next.supplier, next.materialCode) : {};
+    const base = current || {
+      demandKey: key,
+      month: next.month,
+      businessUnit: next.businessUnit,
+      supplier: next.supplier,
+      supplierShortName: enriched.supplierShortName,
+      materialCode: next.materialCode,
+      sku: enriched.sku,
+      materialName: enriched.materialName,
+      productLine: enriched.productLine,
+      productSeries: enriched.productSeries,
+      purchaseGroup: enriched.purchaseGroup,
+      purchaseOwner: enriched.purchaseOwner,
+      purchaseOrg: next.purchaseOrg || enriched.purchaseOrg,
+      stockQty: 0,
+      unpreparedQty: 0,
+      preparedNotStartedQty: 0,
+      inProductionQty: 0,
+      finishedQty: 0,
+      progressTotal: 0
+    };
+    const permissionDemand = {
+      purchase_owner: base.purchaseOwner || '',
+      supplier: base.supplier,
+      material_code: base.materialCode
+    };
+    if (!canEditDemand(user, permissionDemand)) return null;
+    const stock = current ? { stock_qty: current.stockQty } : inventoryForDemand({
+      business_unit: next.businessUnit,
+      supplier: next.supplier,
+      material_code: next.materialCode
+    });
+    const progressTotalValue = current ? numberValue(current.progressTotal) : 0;
+    return {
+      demandKey: key,
+      month: base.month,
+      businessUnit: base.businessUnit,
+      supplier: base.supplier,
+      supplierShortName: base.supplierShortName || '',
+      materialCode: base.materialCode,
+      sku: base.sku || '',
+      materialName: base.materialName || '',
+      productLine: base.productLine || '',
+      productSeries: base.productSeries || '',
+      purchaseGroup: base.purchaseGroup || '',
+      purchaseOwner: base.purchaseOwner || '',
+      purchaseOrg: next?.purchaseOrg || base.purchaseOrg || '',
+      oldQty,
+      newQty,
+      deltaQty,
+      diffQty: Math.abs(deltaQty),
+      diffType: !current ? '新增' : !next ? '消失' : deltaQty > 0 ? '数量增加' : '数量减少',
+      stockQty: numberValue(stock?.stock_qty),
+      unpreparedQty: numberValue(base.unpreparedQty),
+      preparedNotStartedQty: numberValue(base.preparedNotStartedQty),
+      inProductionQty: numberValue(base.inProductionQty),
+      finishedQty: numberValue(base.finishedQty),
+      progressTotal: progressTotalValue,
+      newSnapshot: next || null
+    };
+  }).filter(Boolean).sort((a, b) => a.month === b.month ? a.demandKey.localeCompare(b.demandKey, 'zh-Hans-CN') : b.month.localeCompare(a.month));
+}
+
+function persistDifferenceCompare({ file, sheetName, mapping, parsed, result, summary, user }) {
+  const rows = compareRowsFromSummary(summary, user);
+  const sessionId = randomUUID();
+  const now = nowText();
+  transaction(() => {
+    run(
+      `INSERT INTO difference_compare_sessions (id, file_name, sheet_name, mapping_json, summary_json, source_rows_json, total_rows, valid_rows, skipped_rows, status, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+      [sessionId, safeFilename(file), sheetName, JSON.stringify(mapping), JSON.stringify(summary), JSON.stringify(result.rows), parsed.rows.length, result.validRows, result.skippedRows, user.name, now]
+    );
+    rows.forEach((row) => {
+      const rowId = randomUUID();
+      run(
+        `INSERT INTO difference_compare_rows (id, session_id, demand_key, month, business_unit, supplier, supplier_short_name, material_code, purchase_org, old_qty, new_qty, delta_qty, diff_type, progress_total, stock_qty, new_snapshot_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [rowId, sessionId, row.demandKey, row.month, row.businessUnit, row.supplier, row.supplierShortName, row.materialCode, row.purchaseOrg, row.oldQty, row.newQty, row.deltaQty, row.diffType, row.progressTotal, row.stockQty, JSON.stringify(row.newSnapshot), now]
+      );
+      row.id = rowId;
+      row.sessionId = sessionId;
+    });
+  });
+  return { sessionId, rows };
+}
+
+function allocationRows(sessionId = '') {
+  const params = sessionId ? [sessionId] : [];
+  const where = sessionId ? 'WHERE session_id = ?' : '';
+  return all(`SELECT * FROM difference_allocations ${where} ORDER BY created_at DESC LIMIT 500`, params).map((row) => ({
+    id: row.id,
+    sessionId: row.session_id,
+    rowId: row.row_id,
+    demandKey: row.demand_key,
+    actionType: row.action_type,
+    allocatedQty: numberValue(row.allocated_qty),
+    reason: row.reason,
+    oldQty: numberValue(row.old_qty),
+    newQty: numberValue(row.new_qty),
+    deltaQty: numberValue(row.delta_qty),
+    progressTotal: numberValue(row.progress_total),
+    stockQty: numberValue(row.stock_qty),
+    createdBy: row.created_by,
+    createdAt: row.created_at
+  }));
+}
+
+function allocationStatus(sessionId) {
+  const total = numberValue(get('SELECT COUNT(*) AS count FROM difference_compare_rows WHERE session_id = ?', [sessionId])?.count);
+  const allocated = numberValue(get('SELECT COUNT(DISTINCT row_id) AS count FROM difference_allocations WHERE session_id = ?', [sessionId])?.count);
+  return { total, allocated, complete: total > 0 && allocated >= total };
+}
+
+function applyKingdeeSnapshot({ fileName, sourceRows, summary, diffs, mapping, userName, now }) {
+  const batchId = randomUUID();
+  run('INSERT INTO kingdee_import_batches (id, file_name, imported_by, imported_at, row_count) VALUES (?, ?, ?, ?, ?)', [batchId, fileName, userName, now, sourceRows.length]);
+  sourceRows.forEach((row) => {
+    run(
+      'INSERT INTO kingdee_orders (id, batch_id, demand_key, month, business_unit, supplier, material_code, order_no, quantity, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [randomUUID(), batchId, row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.orderNo || '', row.quantity, JSON.stringify(row.raw || row)]
+    );
+  });
+  run('UPDATE order_demands SET active = 0, updated_at = ?', [now]);
+  summary.forEach((row) => {
+    run(
+      `INSERT INTO order_demands (demand_key, month, business_unit, supplier, material_code, current_order_qty, active, purchase_org, source_batch_id, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+       ON CONFLICT(demand_key) DO UPDATE SET
+         current_order_qty = excluded.current_order_qty,
+         purchase_org = COALESCE(NULLIF(excluded.purchase_org, ''), order_demands.purchase_org),
+         active = 1,
+         source_batch_id = excluded.source_batch_id,
+         updated_at = excluded.updated_at`,
+      [row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.currentOrderQty, row.purchaseOrg || '', batchId, now]
+    );
+    const progress = get('SELECT demand_key FROM supplier_progress WHERE demand_key = ?', [row.demandKey]);
+    if (!progress) {
+      run('INSERT INTO supplier_progress (demand_key, updated_at) VALUES (?, ?)', [row.demandKey, now]);
+    }
+  });
+  diffs.forEach((diff) => {
+    run('INSERT INTO demand_snapshot_diffs (id, batch_id, demand_key, diff_type, old_qty, new_qty, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [randomUUID(), batchId, diff.demandKey, diff.diffType, diff.oldQty, diff.newQty, now]);
+  });
+  run(
+    `INSERT INTO import_mappings (kind, mapping_json, updated_by, updated_at)
+     VALUES ('kingdee', ?, ?, ?)
+     ON CONFLICT(kind) DO UPDATE SET mapping_json = excluded.mapping_json, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+    [JSON.stringify(mapping), userName, now]
+  );
+  applyDimensionEnrichment();
+  return batchId;
+}
+
 app.post('/api/auth/login', async (req, res) => {
   const name = normalize(req.body?.name);
   const password = normalize(req.body?.password);
@@ -436,44 +631,10 @@ app.post('/api/imports/kingdee/apply', requireAuth, requirePage('kingdeeImport')
   const result = mappedKingdeeRows(parsed.rows, mapping);
   const summary = summarizeDemands(result.rows);
   const diffs = diffAgainstCurrent(summary);
-  const batchId = randomUUID();
   const now = nowText();
+  let batchId = '';
   transaction(() => {
-    run('INSERT INTO kingdee_import_batches (id, file_name, imported_by, imported_at, row_count) VALUES (?, ?, ?, ?, ?)', [batchId, req.file.originalname, req.user.name, now, result.rows.length]);
-    result.rows.forEach((row) => {
-      run(
-        'INSERT INTO kingdee_orders (id, batch_id, demand_key, month, business_unit, supplier, material_code, order_no, quantity, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [randomUUID(), batchId, row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.orderNo, row.quantity, JSON.stringify(row.raw)]
-      );
-    });
-    run('UPDATE order_demands SET active = 0, updated_at = ?', [now]);
-    summary.forEach((row) => {
-      run(
-        `INSERT INTO order_demands (demand_key, month, business_unit, supplier, material_code, current_order_qty, active, purchase_org, source_batch_id, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
-         ON CONFLICT(demand_key) DO UPDATE SET
-           current_order_qty = excluded.current_order_qty,
-           purchase_org = COALESCE(NULLIF(excluded.purchase_org, ''), order_demands.purchase_org),
-           active = 1,
-           source_batch_id = excluded.source_batch_id,
-           updated_at = excluded.updated_at`,
-        [row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.currentOrderQty, row.purchaseOrg || '', batchId, now]
-      );
-      const progress = get('SELECT demand_key FROM supplier_progress WHERE demand_key = ?', [row.demandKey]);
-      if (!progress) {
-        run('INSERT INTO supplier_progress (demand_key, updated_at) VALUES (?, ?)', [row.demandKey, now]);
-      }
-    });
-    diffs.forEach((diff) => {
-      run('INSERT INTO demand_snapshot_diffs (id, batch_id, demand_key, diff_type, old_qty, new_qty, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [randomUUID(), batchId, diff.demandKey, diff.diffType, diff.oldQty, diff.newQty, now]);
-    });
-    run(
-      `INSERT INTO import_mappings (kind, mapping_json, updated_by, updated_at)
-       VALUES ('kingdee', ?, ?, ?)
-       ON CONFLICT(kind) DO UPDATE SET mapping_json = excluded.mapping_json, updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
-      [JSON.stringify(mapping), req.user.name, now]
-    );
-    applyDimensionEnrichment();
+    batchId = applyKingdeeSnapshot({ fileName: safeFilename(req.file), sourceRows: result.rows, summary, diffs, mapping, userName: req.user.name, now });
   });
   res.json({ batchId, rowCount: result.rows.length, diffs, demands: demandRows(false, req.user) });
 });
@@ -522,6 +683,82 @@ app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'
 
 app.get('/api/diffs', requireAuth, requirePage('differenceAllocation'), (req, res) => {
   res.json({ rows: all('SELECT * FROM demand_snapshot_diffs ORDER BY created_at DESC LIMIT 500') });
+});
+
+app.get('/api/difference-allocations', requireAuth, requirePage('differenceAllocation'), (req, res) => {
+  const sessionId = normalize(req.query.sessionId);
+  res.json({ rows: allocationRows(sessionId), actions: DIFF_ALLOCATION_ACTIONS });
+});
+
+app.post('/api/difference-allocations/compare', requireAuth, requirePage('differenceAllocation'), upload.single('file'), (req, res) => {
+  const requestMapping = parseJson(req.body.mapping, {});
+  const mapping = Object.keys(requestMapping).length ? requestMapping : savedMapping('kingdee');
+  const sheetName = normalize(req.body.sheetName);
+  const parsed = workbookRows(req.file, sheetName || null);
+  const result = mappedKingdeeRows(parsed.rows, mapping);
+  const summary = summarizeDemands(result.rows);
+  const { sessionId, rows } = persistDifferenceCompare({ file: req.file, sheetName, mapping, parsed, result, summary, user: req.user });
+  const status = allocationStatus(sessionId);
+  res.json({
+    sessionId,
+    actions: DIFF_ALLOCATION_ACTIONS,
+    fileName: safeFilename(req.file),
+    totalRows: parsed.rows.length,
+    validRows: result.validRows,
+    skippedRows: result.skippedRows,
+    skipped: result.skipped.slice(0, 10),
+    diffRows: rows,
+    allocations: allocationRows(sessionId),
+    status
+  });
+});
+
+app.post('/api/difference-allocations/:sessionId/rows/:rowId', requireAuth, requirePage('differenceAllocation'), (req, res) => {
+  const session = get('SELECT * FROM difference_compare_sessions WHERE id = ?', [req.params.sessionId]);
+  if (!session) return res.status(404).json({ error: '比对会话不存在' });
+  if (session.status === 'applied') return res.status(400).json({ error: '该快照已经应用，不能重复分配' });
+  const row = get('SELECT * FROM difference_compare_rows WHERE id = ? AND session_id = ?', [req.params.rowId, req.params.sessionId]);
+  if (!row) return res.status(404).json({ error: '差异行不存在' });
+  const existingDemand = get('SELECT * FROM order_demands WHERE demand_key = ?', [row.demand_key]);
+  const enriched = enrichDemandFields(row.supplier, row.material_code);
+  const permissionDemand = existingDemand || { purchase_owner: enriched.purchaseOwner, supplier: row.supplier, material_code: row.material_code };
+  if (!canEditDemand(req.user, permissionDemand)) return res.status(403).json({ error: '没有该供应商物料的分配权限' });
+  const actionType = normalize(req.body.actionType);
+  const allocatedQty = numberValue(req.body.allocatedQty);
+  const reason = normalize(req.body.reason);
+  const requiredQty = Math.abs(numberValue(row.delta_qty));
+  if (!DIFF_ALLOCATION_ACTIONS.includes(actionType)) return res.status(400).json({ error: '请选择有效的分配动作' });
+  if (!reason) return res.status(400).json({ error: '必须填写分配原因' });
+  if (allocatedQty !== requiredQty) return res.status(400).json({ error: `分配数量必须等于差异数量 ${requiredQty}` });
+  const now = nowText();
+  transaction(() => {
+    run('DELETE FROM difference_allocations WHERE session_id = ? AND row_id = ?', [req.params.sessionId, req.params.rowId]);
+    run(
+      `INSERT INTO difference_allocations (id, session_id, row_id, demand_key, action_type, allocated_qty, reason, old_qty, new_qty, delta_qty, progress_total, stock_qty, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [randomUUID(), req.params.sessionId, req.params.rowId, row.demand_key, actionType, allocatedQty, reason, row.old_qty, row.new_qty, row.delta_qty, row.progress_total, row.stock_qty, req.user.name, now]
+    );
+  });
+  res.json({ rows: allocationRows(req.params.sessionId), status: allocationStatus(req.params.sessionId) });
+});
+
+app.post('/api/difference-allocations/:sessionId/apply', requireAuth, requirePage('differenceAllocation'), (req, res) => {
+  const session = get('SELECT * FROM difference_compare_sessions WHERE id = ?', [req.params.sessionId]);
+  if (!session) return res.status(404).json({ error: '比对会话不存在' });
+  if (session.status === 'applied') return res.status(400).json({ error: '该快照已经应用' });
+  const status = allocationStatus(req.params.sessionId);
+  if (!status.complete) return res.status(400).json({ error: '所有差异分配完成后才能应用新快照' });
+  const summary = parseJson(session.summary_json, []);
+  const sourceRows = parseJson(session.source_rows_json, []);
+  const mapping = parseJson(session.mapping_json, {});
+  const diffs = diffAgainstCurrent(summary);
+  const now = nowText();
+  let batchId = '';
+  transaction(() => {
+    batchId = applyKingdeeSnapshot({ fileName: session.file_name, sourceRows, summary, diffs, mapping, userName: req.user.name, now });
+    run('UPDATE difference_compare_sessions SET status = ?, applied_batch_id = ?, applied_at = ? WHERE id = ?', ['applied', batchId, now, req.params.sessionId]);
+  });
+  res.json({ batchId, status: { ...allocationStatus(req.params.sessionId), applied: true }, demands: demandRows(false, req.user) });
 });
 
 app.get('/api/dimensions', requireAuth, requirePage('dimensionLibrary'), (req, res) => {

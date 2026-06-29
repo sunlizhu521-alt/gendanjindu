@@ -474,17 +474,25 @@ th {
   min-width: 1920px;
 }
 
+.diff-allocation-table table {
+  min-width: 2480px;
+}
+
 .ledger-table input,
 .ledger-table select,
 .ledger-table textarea,
 .progress-table input,
-.progress-table textarea {
+.progress-table textarea,
+.diff-allocation-table input,
+.diff-allocation-table select,
+.diff-allocation-table textarea {
   min-width: 116px;
   padding: 6px 8px;
 }
 
 .ledger-table textarea,
-.progress-table textarea {
+.progress-table textarea,
+.diff-allocation-table textarea {
   min-width: 180px;
 }
 

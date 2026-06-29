@@ -82,6 +82,7 @@ function migrate() {
       current_order_qty REAL NOT NULL DEFAULT 0,
       active INTEGER NOT NULL DEFAULT 1,
       sku TEXT,
+      logistics_code TEXT NOT NULL DEFAULT '',
       material_name TEXT,
       product_line TEXT,
       product_series TEXT,
@@ -97,6 +98,7 @@ function migrate() {
       prepared_not_started_qty REAL NOT NULL DEFAULT 0,
       in_production_qty REAL NOT NULL DEFAULT 0,
       finished_qty REAL NOT NULL DEFAULT 0,
+      shipped_qty REAL NOT NULL DEFAULT 0,
       remark TEXT,
       updated_by TEXT,
       updated_at TEXT
@@ -108,6 +110,7 @@ function migrate() {
       prepared_not_started_qty REAL NOT NULL,
       in_production_qty REAL NOT NULL,
       finished_qty REAL NOT NULL,
+      shipped_qty REAL NOT NULL DEFAULT 0,
       remark TEXT,
       updated_by TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -233,6 +236,20 @@ function migrate() {
   }
   if (!demandColumns.includes('supplier_short_name')) {
     run("ALTER TABLE order_demands ADD COLUMN supplier_short_name TEXT NOT NULL DEFAULT ''");
+  }
+  if (!demandColumns.includes('logistics_code')) {
+    run("ALTER TABLE order_demands ADD COLUMN logistics_code TEXT NOT NULL DEFAULT ''");
+  }
+
+  const progressColumns = all('PRAGMA table_info(supplier_progress)').map((row) => row.name);
+  if (!progressColumns.includes('shipped_qty')) {
+    run("ALTER TABLE supplier_progress ADD COLUMN shipped_qty REAL NOT NULL DEFAULT 0");
+  }
+  run('UPDATE supplier_progress SET unprepared_qty = 0, prepared_not_started_qty = 0');
+
+  const progressSnapshotColumns = all('PRAGMA table_info(supplier_progress_snapshots)').map((row) => row.name);
+  if (!progressSnapshotColumns.includes('shipped_qty')) {
+    run("ALTER TABLE supplier_progress_snapshots ADD COLUMN shipped_qty REAL NOT NULL DEFAULT 0");
   }
 
   const compareSessionColumns = all('PRAGMA table_info(difference_compare_sessions)').map((row) => row.name);

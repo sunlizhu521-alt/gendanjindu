@@ -285,6 +285,7 @@ function enrichDemandFields(supplier, materialCode) {
   const supplierAssignment = supplierMap.get(normalize(supplier)) || {};
   return {
     sku: normalize(product.sku),
+    logisticsCode: normalize(product.logisticsCode),
     materialName: normalize(product.materialName),
     productLine: normalize(product.productLine),
     productSeries: normalize(product.productSeries),
@@ -304,6 +305,7 @@ function applyDimensionEnrichment() {
     run(
       `UPDATE order_demands
        SET sku = COALESCE(NULLIF(?, ''), sku),
+           logistics_code = COALESCE(NULLIF(?, ''), logistics_code),
            material_name = COALESCE(NULLIF(?, ''), material_name),
            product_line = COALESCE(NULLIF(?, ''), product_line),
            product_series = COALESCE(NULLIF(?, ''), product_series),
@@ -314,6 +316,7 @@ function applyDimensionEnrichment() {
        WHERE demand_key = ?`,
       [
         normalize(product.sku),
+        normalize(product.logisticsCode),
         normalize(product.materialName),
         normalize(product.productLine),
         normalize(product.productSeries),
@@ -334,6 +337,7 @@ function progressForDemand(demandKeyValue) {
     prepared_not_started_qty: 0,
     in_production_qty: 0,
     finished_qty: 0,
+    shipped_qty: 0,
     remark: '',
     updated_by: '',
     updated_at: ''
@@ -355,7 +359,7 @@ function demandRows(includeInactive = false, user = null) {
   return all(`SELECT * FROM order_demands ${where} ORDER BY month DESC, business_unit, supplier, material_code`).map((demand) => {
     const progress = progressForDemand(demand.demand_key);
     const stock = inventoryForDemand(demand);
-    const progressTotal = numberValue(progress.unprepared_qty) + numberValue(progress.prepared_not_started_qty) + numberValue(progress.in_production_qty) + numberValue(progress.finished_qty);
+    const progressTotal = numberValue(progress.in_production_qty) + numberValue(progress.finished_qty) + numberValue(progress.shipped_qty);
     const stockQty = numberValue(stock.stock_qty);
     const demandAfterStock = Math.max(numberValue(demand.current_order_qty) - stockQty, 0);
     return {
@@ -368,6 +372,7 @@ function demandRows(includeInactive = false, user = null) {
       currentOrderQty: numberValue(demand.current_order_qty),
       active: Boolean(demand.active),
       sku: demand.sku || '',
+      logisticsCode: demand.logistics_code || '',
       materialName: demand.material_name || '',
       productLine: demand.product_line || '',
       productSeries: demand.product_series || '',
@@ -376,10 +381,9 @@ function demandRows(includeInactive = false, user = null) {
       purchaseOrg: demand.purchase_org || '',
       stockQty,
       demandAfterStock,
-      unpreparedQty: numberValue(progress.unprepared_qty),
-      preparedNotStartedQty: numberValue(progress.prepared_not_started_qty),
       inProductionQty: numberValue(progress.in_production_qty),
       finishedQty: numberValue(progress.finished_qty),
+      shippedQty: numberValue(progress.shipped_qty),
       progressTotal,
       gap: numberValue(demand.current_order_qty) - progressTotal,
       shortageAfterStock: demandAfterStock - progressTotal,
@@ -412,6 +416,7 @@ function compareRowsFromSummary(summary, user) {
       supplierShortName: enriched.supplierShortName,
       materialCode: next.materialCode,
       sku: enriched.sku,
+      logisticsCode: enriched.logisticsCode,
       materialName: enriched.materialName,
       productLine: enriched.productLine,
       productSeries: enriched.productSeries,
@@ -419,10 +424,9 @@ function compareRowsFromSummary(summary, user) {
       purchaseOwner: enriched.purchaseOwner,
       purchaseOrg: next.purchaseOrg || enriched.purchaseOrg,
       stockQty: 0,
-      unpreparedQty: 0,
-      preparedNotStartedQty: 0,
       inProductionQty: 0,
       finishedQty: 0,
+      shippedQty: 0,
       progressTotal: 0
     };
     const permissionDemand = {
@@ -445,6 +449,7 @@ function compareRowsFromSummary(summary, user) {
       supplierShortName: base.supplierShortName || '',
       materialCode: base.materialCode,
       sku: base.sku || '',
+      logisticsCode: base.logisticsCode || '',
       materialName: base.materialName || '',
       productLine: base.productLine || '',
       productSeries: base.productSeries || '',
@@ -457,10 +462,9 @@ function compareRowsFromSummary(summary, user) {
       diffQty: Math.abs(deltaQty),
       diffType: !current ? '新增' : !next ? '消失' : deltaQty > 0 ? '数量增加' : '数量减少',
       stockQty: numberValue(stock?.stock_qty),
-      unpreparedQty: numberValue(base.unpreparedQty),
-      preparedNotStartedQty: numberValue(base.preparedNotStartedQty),
       inProductionQty: numberValue(base.inProductionQty),
       finishedQty: numberValue(base.finishedQty),
+      shippedQty: numberValue(base.shippedQty),
       progressTotal: progressTotalValue,
       newSnapshot: next || null
     };
@@ -648,34 +652,34 @@ app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'
   if (!demand) return res.status(404).json({ error: '需求不存在' });
   if (!canEditDemand(req.user, demand)) return res.status(403).json({ error: '没有该供应商物料的刷新权限' });
   const values = {
-    unprepared: numberValue(req.body.unpreparedQty),
-    prepared: numberValue(req.body.preparedNotStartedQty),
     inProduction: numberValue(req.body.inProductionQty),
     finished: numberValue(req.body.finishedQty),
+    shipped: numberValue(req.body.shippedQty),
     remark: normalize(req.body.remark)
   };
-  const total = values.unprepared + values.prepared + values.inProduction + values.finished;
+  const total = values.inProduction + values.finished + values.shipped;
   if (total !== numberValue(demand.current_order_qty) && !values.remark) {
     return res.status(400).json({ error: '数量不一致时必须填写备注' });
   }
   const now = nowText();
   transaction(() => {
     run(
-      `INSERT INTO supplier_progress (demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, remark, updated_by, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO supplier_progress (demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty, remark, updated_by, updated_at)
+       VALUES (?, 0, 0, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(demand_key) DO UPDATE SET
-         unprepared_qty = excluded.unprepared_qty,
-         prepared_not_started_qty = excluded.prepared_not_started_qty,
+         unprepared_qty = 0,
+         prepared_not_started_qty = 0,
          in_production_qty = excluded.in_production_qty,
          finished_qty = excluded.finished_qty,
+         shipped_qty = excluded.shipped_qty,
          remark = excluded.remark,
          updated_by = excluded.updated_by,
          updated_at = excluded.updated_at`,
-      [demand.demand_key, values.unprepared, values.prepared, values.inProduction, values.finished, values.remark, req.user.name, now]
+      [demand.demand_key, values.inProduction, values.finished, values.shipped, values.remark, req.user.name, now]
     );
     run(
-      'INSERT INTO supplier_progress_snapshots (id, demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, remark, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [randomUUID(), demand.demand_key, values.unprepared, values.prepared, values.inProduction, values.finished, values.remark, req.user.name, now]
+      'INSERT INTO supplier_progress_snapshots (id, demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty, remark, updated_by, updated_at) VALUES (?, ?, 0, 0, ?, ?, ?, ?, ?, ?)',
+      [randomUUID(), demand.demand_key, values.inProduction, values.finished, values.shipped, values.remark, req.user.name, now]
     );
   });
   res.json({ rows: demandRows(false, req.user) });
@@ -776,6 +780,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requirePage('dimensionLi
       return {
         materialCode: pick(row, mapping.materialCode),
         sku: pick(row, mapping.sku),
+        logisticsCode: pick(row, mapping.logisticsCode),
         materialName: pick(row, mapping.materialName),
         productLine: pick(row, mapping.productLine),
         productSeries: pick(row, mapping.productSeries)
@@ -844,15 +849,15 @@ app.post('/api/inventory', requireAuth, requirePage('inventory'), (req, res) => 
 
 app.get('/api/progress/export', requireAuth, (req, res) => {
   const rows = demandRows(false, req.user);
-  const headers = ['demandKey', '月份', '事业部', '供应商', '物料编码', '物料', '产品线', '系列', '采购组', '采购下单人', '采购组织', '有效下单', '未备料', '已备料未生产', '生产中', '已完工', '差额', '备注'];
+  const headers = ['demandKey', '采购组', '采购下单人', '采购组织', '月份', '事业部', '供应商', '产品线', '系列', '物料', '物流编码', 'SKU', '下单数量', '生产中', '已完工', '已发货数量', '备注'];
   const aoa = [headers];
   rows.forEach((row) => {
     aoa.push([
-      row.demandKey, row.month, row.businessUnit, row.supplierShortName || row.supplier, row.materialCode,
-      row.materialName || row.sku, row.productLine, row.productSeries,
-      row.purchaseGroup, row.purchaseOwner, row.purchaseOrg,
-      row.currentOrderQty, row.unpreparedQty, row.preparedNotStartedQty,
-      row.inProductionQty, row.finishedQty, row.gap, row.remark
+      row.demandKey, row.purchaseGroup, row.purchaseOwner, row.purchaseOrg,
+      row.month, row.businessUnit, row.supplierShortName || row.supplier,
+      row.productLine, row.productSeries, row.materialName || row.materialCode,
+      row.logisticsCode, row.sku, row.currentOrderQty,
+      row.inProductionQty, row.finishedQty, row.shippedQty, row.remark
     ]);
   });
   const wb = xlsx.utils.book_new();
@@ -877,17 +882,18 @@ app.post('/api/progress/import', requireAuth, upload.single('file'), (req, res) 
       const qty = (col) => Math.max(0, numberValue(row[col] || 0));
       const remark = normalize(row['备注'] || row.remark || '');
       run(
-        `INSERT INTO supplier_progress (demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, remark, updated_by, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO supplier_progress (demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty, remark, updated_by, updated_at)
+         VALUES (?, 0, 0, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(demand_key) DO UPDATE SET
-           unprepared_qty = excluded.unprepared_qty,
-           prepared_not_started_qty = excluded.prepared_not_started_qty,
+           unprepared_qty = 0,
+           prepared_not_started_qty = 0,
            in_production_qty = excluded.in_production_qty,
            finished_qty = excluded.finished_qty,
+           shipped_qty = excluded.shipped_qty,
            remark = excluded.remark,
            updated_by = excluded.updated_by,
            updated_at = excluded.updated_at`,
-        [demandKeyValue, qty('未备料'), qty('已备料未生产'), qty('生产中'), qty('已完工'), remark, req.user.name, now]
+        [demandKeyValue, qty('生产中'), qty('已完工'), qty('已发货数量') || qty('入库数量'), remark, req.user.name, now]
       );
       updated++;
     });

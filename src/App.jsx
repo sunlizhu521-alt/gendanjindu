@@ -31,6 +31,7 @@ const DIMENSION_SLOTS = [
   { id: 'productCategory', title: '商品分类', fields: [
     ['materialCode', '物料编码'],
     ['sku', 'SKU'],
+    ['logisticsCode', '物流编码'],
     ['materialName', '物料名称'],
     ['productLine', '销售产品线'],
     ['productSeries', '销售系列']
@@ -84,8 +85,7 @@ function daysSince(value) {
 }
 
 function progressTotal(row) {
-  return numberValue(row.unpreparedQty) + numberValue(row.preparedNotStartedQty)
-    + numberValue(row.inProductionQty) + numberValue(row.finishedQty);
+  return numberValue(row.inProductionQty) + numberValue(row.finishedQty) + numberValue(row.shippedQty);
 }
 
 function authHeaders(token) {
@@ -190,7 +190,7 @@ function useFilteredDemands(rows) {
     const keyword = filters.keyword.toLowerCase();
     return rows.filter((row) => {
       const displaySupplier = supplierName(row);
-      const text = [row.demandKey, row.materialCode, row.supplier, displaySupplier, row.materialName, row.sku, row.purchaseOwner, row.purchaseGroup].join(' ').toLowerCase();
+      const text = [row.demandKey, row.materialCode, row.supplier, displaySupplier, row.materialName, row.logisticsCode, row.sku, row.purchaseOwner, row.purchaseGroup].join(' ').toLowerCase();
       return (!keyword || text.includes(keyword))
         && (!filters.month || row.month === filters.month)
         && (!filters.supplier || displaySupplier === filters.supplier)
@@ -219,7 +219,7 @@ function FilterBar({ filters, setFilters, options, onSubmit }) {
       <SelectField label="采购下单人" value={filters.purchaseOwner} options={options.purchaseOwners} onChange={(value) => setFilters({ ...filters, purchaseOwner: value })} />
       <input
         className="search-input"
-        placeholder="搜索供应商、物料、SKU、采购人"
+        placeholder="搜索供应商、物料、物流编码、SKU、采购人"
         value={filters.keyword}
         onChange={(event) => setFilters({ ...filters, keyword: event.target.value })}
       />
@@ -267,16 +267,15 @@ function Dashboard({ rows }) {
   const summary = activeRows.reduce((acc, row) => {
     acc.order += numberValue(row.currentOrderQty);
     acc.stock += numberValue(row.stockQty);
-    acc.unprepared += numberValue(row.unpreparedQty);
-    acc.prepared += numberValue(row.preparedNotStartedQty);
     acc.inProduction += numberValue(row.inProductionQty);
     acc.finished += numberValue(row.finishedQty);
+    acc.shipped += numberValue(row.shippedQty);
     acc.gap += numberValue(row.gap);
     if (!row.progressUpdatedAt) acc.first += 1;
     if (row.progressUpdatedAt && daysSince(row.progressUpdatedAt) > 7) acc.stale += 1;
     if (numberValue(row.gap) !== 0) acc.mismatch += 1;
     return acc;
-  }, { order: 0, stock: 0, unprepared: 0, prepared: 0, inProduction: 0, finished: 0, gap: 0, first: 0, stale: 0, mismatch: 0 });
+  }, { order: 0, stock: 0, inProduction: 0, finished: 0, shipped: 0, gap: 0, first: 0, stale: 0, mismatch: 0 });
   const byBusinessUnit = [...new Set(activeRows.map((row) => row.businessUnit).filter(Boolean))].map((businessUnit) => ({
     businessUnit,
     order: activeRows.filter((row) => row.businessUnit === businessUnit).reduce((sum, row) => sum + numberValue(row.currentOrderQty), 0)
@@ -290,12 +289,11 @@ function Dashboard({ rows }) {
         <span className="section-count">当前有效需求 {activeRows.length} 条</span>
       </div>
       <section className="metric-grid">
-        <MetricCard label="金蝶有效下单" value={summary.order.toLocaleString()} />
+        <MetricCard label="下单数量" value={summary.order.toLocaleString()} />
         <MetricCard label="历史库存" value={summary.stock.toLocaleString()} />
-        <MetricCard label="未备料未生产" value={summary.unprepared.toLocaleString()} />
-        <MetricCard label="已备料未生产" value={summary.prepared.toLocaleString()} />
-        <MetricCard label="未完工-在生产" value={summary.inProduction.toLocaleString()} />
+        <MetricCard label="生产中" value={summary.inProduction.toLocaleString()} />
         <MetricCard label="已完工" value={summary.finished.toLocaleString()} />
+        <MetricCard label="已发货数量" value={summary.shipped.toLocaleString()} />
         <MetricCard label="差额待分配" value={summary.gap.toLocaleString()} tone={summary.gap ? 'warning' : ''} />
         <MetricCard label="待首次/超7天" value={`${summary.first}/${summary.stale}`} tone={summary.first || summary.stale ? 'warning' : ''} />
       </section>
@@ -317,7 +315,7 @@ function Dashboard({ rows }) {
           <DataTable
             className="compact-table"
             rows={activeRows.filter((row) => !row.progressUpdatedAt || daysSince(row.progressUpdatedAt) > 7 || numberValue(row.gap) !== 0).slice(0, 12)}
-            columns={['月份', '事业部', '供应商', '物料', '有效下单', '差额', '上次刷新']}
+            columns={['月份', '事业部', '供应商', '物料', '下单数量', '差额', '上次刷新']}
             render={(row) => [row.month, row.businessUnit, supplierName(row), row.materialCode, row.currentOrderQty, row.gap, row.progressUpdatedAt || '待首次刷新']}
           />
         </article>
@@ -496,10 +494,9 @@ function KingdeeImport({ token, reloadDemands, setMessage }) {
 
 function ProgressEditor({ row, token, reloadDemands, setMessage }) {
   const [values, setValues] = useState({
-    unpreparedQty: row.unpreparedQty,
-    preparedNotStartedQty: row.preparedNotStartedQty,
     inProductionQty: row.inProductionQty,
     finishedQty: row.finishedQty,
+    shippedQty: row.shippedQty,
     remark: row.remark || ''
   });
 
@@ -531,12 +528,12 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
     row.productLine,
     row.productSeries,
     row.materialName || row.materialCode,
+    row.logisticsCode,
     row.sku,
     row.currentOrderQty,
-    input('unpreparedQty'),
-    input('preparedNotStartedQty'),
     input('inProductionQty'),
     input('finishedQty'),
+    input('shippedQty'),
     <button type="button" className="compact-button" disabled={!row.canEdit} onClick={save}>{row.canEdit ? '提交' : '无权限'}</button>
   ];
 
@@ -597,7 +594,7 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
       <DataTable
         className="progress-table"
         rows={displayRows}
-        columns={['采购组', '采购下单人', '采购组织', '月份', '事业部', '供应商', '产品线', '系列', '物料', 'SKU', '金蝶采购订单', '未备料', '已备料未生产', '生产中', '已完工', '操作']}
+        columns={['采购组', '采购下单人', '采购组织', '月份', '事业部', '供应商', '产品线', '系列', '物料', '物流编码', 'SKU', '下单数量', '生产中', '已完工', '已发货数量', '操作']}
         renderRow={(row) => <ProgressEditor key={row.demandKey} row={row} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
       />
       {!onlyIssues && (
@@ -790,7 +787,7 @@ function DifferenceAllocationPage({ token, reloadDemands, setMessage }) {
           <DataTable
             className="diff-allocation-table"
             rows={diffRows}
-            columns={['状态', '类型', '月份', '事业部', '供应商', '物料编码', '物料', '产品线', '系列', '采购组', '采购下单人', '采购组织', '旧数量', '新数量', '差异', '本地进度', '库存', '动作', '数量', '原因', '操作']}
+            columns={['状态', '类型', '月份', '事业部', '供应商', '物料编码', '物料', '物流编码', 'SKU', '产品线', '系列', '采购组', '采购下单人', '采购组织', '旧数量', '新数量', '差异', '生产中', '已完工', '已发货数量', '本地进度合计', '库存', '动作', '数量', '原因', '操作']}
             renderRow={(row) => {
               const input = rowInputs[row.id] || {};
               const allocated = allocatedRowIds.has(row.id);
@@ -803,6 +800,8 @@ function DifferenceAllocationPage({ token, reloadDemands, setMessage }) {
                   <td>{supplierName(row)}</td>
                   <td>{row.materialCode}</td>
                   <td>{row.materialName || row.sku}</td>
+                  <td>{row.logisticsCode}</td>
+                  <td>{row.sku}</td>
                   <td>{row.productLine}</td>
                   <td>{row.productSeries}</td>
                   <td>{row.purchaseGroup}</td>
@@ -811,6 +810,9 @@ function DifferenceAllocationPage({ token, reloadDemands, setMessage }) {
                   <td>{row.oldQty}</td>
                   <td>{row.newQty}</td>
                   <td>{row.diffQty}</td>
+                  <td>{row.inProductionQty}</td>
+                  <td>{row.finishedQty}</td>
+                  <td>{row.shippedQty}</td>
                   <td>{row.progressTotal}</td>
                   <td>{row.stockQty}</td>
                   <td>
@@ -1042,7 +1044,7 @@ function TracePage({ token, setMessage }) {
         <article className="panel"><h3>快照差异</h3><DataTable className="compact-table" rows={data.diffs || []} columns={['类型', '主键', '旧数量', '新数量', '时间']} render={(row) => [row.diff_type, row.demand_key, row.old_qty, row.new_qty, row.created_at]} /></article>
       </section>
       <section className="dashboard-grid">
-        <article className="panel"><h3>进度刷新历史</h3><DataTable className="compact-table" rows={data.progress || []} columns={['主键', '未备料', '已备料', '在生产', '已完工', '更新人', '时间']} render={(row) => [row.demand_key, row.unprepared_qty, row.prepared_not_started_qty, row.in_production_qty, row.finished_qty, row.updated_by, row.updated_at]} /></article>
+        <article className="panel"><h3>进度刷新历史</h3><DataTable className="compact-table" rows={data.progress || []} columns={['主键', '生产中', '已完工', '已发货数量', '更新人', '时间']} render={(row) => [row.demand_key, row.in_production_qty, row.finished_qty, row.shipped_qty || 0, row.updated_by, row.updated_at]} /></article>
         <article className="panel"><h3>库存调整历史</h3><DataTable className="compact-table" rows={data.inventory || []} columns={['库存主键', '旧数量', '新数量', '备注', '更新人', '时间']} render={(row) => [row.stock_key, row.old_qty, row.new_qty, row.remark, row.updated_by, row.updated_at]} /></article>
       </section>
     </>

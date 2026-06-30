@@ -136,6 +136,31 @@ function MetricCard({ label, value, tone = '' }) {
   );
 }
 
+function SeriesBarChart({ title, rows, valueKey }) {
+  const chartRows = rows
+    .map((row) => ({ name: row.series, value: numberValue(row[valueKey]) }))
+    .filter((row) => row.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 12);
+  const maxValue = Math.max(...chartRows.map((row) => row.value), 1);
+  return (
+    <article className="panel series-chart">
+      <h3>{title}</h3>
+      <div className="bar-list">
+        {chartRows.length === 0 ? (
+          <p className="empty-chart">暂无数据</p>
+        ) : chartRows.map((row) => (
+          <div key={row.name} className="bar-row series-bar-row">
+            <span title={row.name}>{row.name}</span>
+            <div className="bar-track"><i style={{ width: `${Math.max(row.value / maxValue * 100, 6)}%` }} /></div>
+            <strong>{row.value.toLocaleString()}</strong>
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
 function DataTable({ columns, rows, render, renderRow, className = '' }) {
   return (
     <div className={`table-wrap ${className}`}>
@@ -324,6 +349,19 @@ function Dashboard({ rows }) {
     acc.finished += numberValue(row.finishedQty);
     return acc;
   }, { order: 0, shipped: 0, inProduction: 0, finished: 0 });
+  const seriesRows = useMemo(() => {
+    const map = new Map();
+    filteredRows.forEach((row) => {
+      const series = normalize(row.productSeries) || '未分类';
+      const record = map.get(series) || { series, orderQty: 0, inProductionQty: 0, finishedQty: 0, totalQty: 0 };
+      record.orderQty += numberValue(row.currentOrderQty);
+      record.inProductionQty += numberValue(row.inProductionQty);
+      record.finishedQty += numberValue(row.finishedQty);
+      record.totalQty = record.inProductionQty + record.finishedQty;
+      map.set(series, record);
+    });
+    return [...map.values()].sort((a, b) => b.orderQty - a.orderQty);
+  }, [filteredRows]);
 
   return (
     <>
@@ -354,6 +392,12 @@ function Dashboard({ rows }) {
         <MetricCard label="已发货" value={summary.shipped.toLocaleString()} />
         <MetricCard label="生产中" value={summary.inProduction.toLocaleString()} />
         <MetricCard label="已完工" value={summary.finished.toLocaleString()} />
+      </section>
+      <section className="series-chart-grid">
+        <SeriesBarChart title="系列下单数量" rows={seriesRows} valueKey="orderQty" />
+        <SeriesBarChart title="系列生产中数量" rows={seriesRows} valueKey="inProductionQty" />
+        <SeriesBarChart title="系列已完工数量" rows={seriesRows} valueKey="finishedQty" />
+        <SeriesBarChart title="系列总数量" rows={seriesRows} valueKey="totalQty" />
       </section>
       <section className="panel">
         <DataTable

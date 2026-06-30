@@ -851,6 +851,35 @@ app.get('/api/imports/kingdee/current-status', requireAuth, requirePage('kingdee
   });
 });
 
+app.delete('/api/imports/kingdee/test-cache', requireAuth, requirePage('kingdeeImport'), (req, res) => {
+  if (normalize(req.user.name) !== '孙立柱') {
+    return res.status(403).json({ error: '仅孙立柱可以清除测试缓存' });
+  }
+  const counts = {
+    kingdeeOrders: numberValue(get('SELECT COUNT(*) AS count FROM kingdee_orders')?.count),
+    importBatches: numberValue(get('SELECT COUNT(*) AS count FROM kingdee_import_batches')?.count),
+    demands: numberValue(get('SELECT COUNT(*) AS count FROM order_demands')?.count),
+    progress: numberValue(get('SELECT COUNT(*) AS count FROM supplier_progress')?.count),
+    progressSnapshots: numberValue(get('SELECT COUNT(*) AS count FROM supplier_progress_snapshots')?.count),
+    snapshotDiffs: numberValue(get('SELECT COUNT(*) AS count FROM demand_snapshot_diffs')?.count),
+    compareSessions: numberValue(get('SELECT COUNT(*) AS count FROM difference_compare_sessions')?.count),
+    compareRows: numberValue(get('SELECT COUNT(*) AS count FROM difference_compare_rows')?.count),
+    allocations: numberValue(get('SELECT COUNT(*) AS count FROM difference_allocations')?.count)
+  };
+  transaction(() => {
+    run('DELETE FROM difference_allocations');
+    run('DELETE FROM difference_compare_rows');
+    run('DELETE FROM difference_compare_sessions');
+    run('DELETE FROM demand_snapshot_diffs');
+    run('DELETE FROM supplier_progress_snapshots');
+    run('DELETE FROM supplier_progress');
+    run('DELETE FROM kingdee_orders');
+    run('DELETE FROM order_demands');
+    run('DELETE FROM kingdee_import_batches');
+  });
+  res.json({ ok: true, cleared: counts });
+});
+
 app.post('/api/imports/kingdee/preview', requireAuth, requirePage('kingdeeImport'), upload.single('file'), (req, res) => {
   const mapping = parseJson(req.body.mapping, {});
   const sheetName = normalize(req.body.sheetName);

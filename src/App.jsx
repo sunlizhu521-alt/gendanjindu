@@ -526,13 +526,33 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
   );
 }
 
-function KingdeeImport({ token, reloadDemands, setMessage }) {
+function KingdeeImport({ token, user, reloadDemands, setMessage }) {
+  async function clearTestCache() {
+    const confirmed = window.confirm('仅测试使用：将清空采购订单、差异分配、生产跟进及其历史记录。维度表、历史库存、用户权限和变更备注不会清除。确定继续吗？');
+    if (!confirmed) return;
+    try {
+      const payload = await request('/api/imports/kingdee/test-cache', { token, method: 'DELETE' });
+      const total = Object.values(payload.cleared || {}).reduce((sum, value) => sum + numberValue(value), 0);
+      setMessage(`测试缓存已清除，共 ${total} 条记录。`);
+      await reloadDemands();
+    } catch (err) {
+      setMessage('清除缓存失败：' + err.message);
+    }
+  }
+
   return (
     <>
       <div className="section-heading-row">
         <h2>采购订单</h2>
         <span className="section-count">字段映射会保存最近一次配置</span>
       </div>
+      {user?.name === '孙立柱' && (
+        <section className="panel">
+          <div className="card-actions">
+            <button type="button" className="ghost compact-button" onClick={clearTestCache}>清除测试缓存</button>
+          </div>
+        </section>
+      )}
       <KingdeeUploadPanel
         token={token}
         reloadDemands={reloadDemands}
@@ -1140,7 +1160,7 @@ function App() {
       <section className="content" onClick={(event) => event.stopPropagation()}>
         {message && <p className="message">{message}</p>}
         {activeTab === 'dashboard' && <Dashboard rows={demands} />}
-        {activeTab === 'kingdeeImport' && <KingdeeImport token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
+        {activeTab === 'kingdeeImport' && <KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'progressRefresh' && <ProgressPage rows={demands} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'differenceAllocation' && <DifferenceAllocationPage token={token} user={user} setMessage={setMessage} />}
         {activeTab === 'inventory' && <InventoryPage token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}

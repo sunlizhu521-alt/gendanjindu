@@ -6,13 +6,18 @@ import { fileURLToPath } from 'node:url';
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(rootDir, 'data');
 const dbPath = path.join(dataDir, 'gendanjindu.sqlite');
+const backupDir = path.join(dataDir, 'backups');
+const backupIntervalMs = 6 * 60 * 60 * 1000;
+const backupRetentionMs = 7 * 24 * 60 * 60 * 1000;
 
 let SQL;
 let db;
+let backupTimerStarted = false;
 
 export async function initDatabase() {
   if (db) return db;
   fs.mkdirSync(dataDir, { recursive: true });
+  backupDatabaseOnStartup();
   SQL = await initSqlJs();
   if (fs.existsSync(dbPath)) {
     db = new SQL.Database(fs.readFileSync(dbPath));
@@ -21,12 +26,49 @@ export async function initDatabase() {
   }
   migrate();
   saveDatabase();
+  startPeriodicDatabaseBackups();
   return db;
 }
 
 export function saveDatabase() {
   if (!db) return;
   fs.writeFileSync(dbPath, Buffer.from(db.export()));
+}
+
+function backupDatabaseOnStartup() {
+  try {
+    if (fs.existsSync(dbPath)) {
+      fs.copyFileSync(dbPath, path.join(dataDir, 'gendanjindu.backup.sqlite'));
+    }
+  } catch {
+    // Backup failures must not block service startup.
+  }
+}
+
+function startPeriodicDatabaseBackups() {
+  if (backupTimerStarted) return;
+  backupTimerStarted = true;
+  const timer = setInterval(() => {
+    try {
+      fs.mkdirSync(backupDir, { recursive: true });
+      if (!fs.existsSync(dbPath)) return;
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+      const hourStr = String(now.getHours()).padStart(2, '0');
+      fs.copyFileSync(dbPath, path.join(backupDir, `gendanjindu-${dateStr}-${hourStr}.sqlite`));
+      const expiresBefore = Date.now() - backupRetentionMs;
+      fs.readdirSync(backupDir).forEach((fileName) => {
+        if (!fileName.endsWith('.sqlite')) return;
+        const filePath = path.join(backupDir, fileName);
+        if (fs.statSync(filePath).mtimeMs < expiresBefore) {
+          fs.unlinkSync(filePath);
+        }
+      });
+    } catch {
+      // Backup failures must not affect the running service.
+    }
+  }, backupIntervalMs);
+  timer.unref?.();
 }
 
 function migrate() {

@@ -241,16 +241,29 @@ function pick(row, column) {
   return normalize(row?.[column]);
 }
 
+function pickAny(row, columns = []) {
+  for (const column of columns) {
+    const value = pick(row, column);
+    if (value) return value;
+  }
+  return '';
+}
+
+function pickMapped(row, mapping, key, aliases = []) {
+  return pick(row, mapping[key]) || pickAny(row, aliases);
+}
+
 function mappedKingdeeRows(rows, mapping) {
   const valid = [];
   const skipped = [];
   rows.forEach((row, index) => {
-    const month = monthFromDate(pick(row, mapping.createDate));
-    const businessUnit = pick(row, mapping.businessUnit);
-    const supplier = pick(row, mapping.supplier);
-    const materialCode = pick(row, mapping.materialCode);
-    const purchaseOrg = pick(row, mapping.purchaseOrg);
-    const quantity = numberValue(row?.[mapping.quantity]);
+    const month = monthFromDate(pickMapped(row, mapping, 'createDate', ['采购日期', '创建日期', '下单日期', '订单日期', '日期']));
+    const businessUnit = pickMapped(row, mapping, 'businessUnit', ['事业部', '业务部门', '部门']);
+    const supplier = pickMapped(row, mapping, 'supplier', ['供应商', '供应商名称', '供应商全称']);
+    const materialCode = pickMapped(row, mapping, 'materialCode', ['物料编码', '物料代码', '商品编码', '存货编码', '产品编码', '品号', '编码']);
+    const purchaseOrg = pickMapped(row, mapping, 'purchaseOrg', ['采购组织', '采购单位', '采购部门']);
+    const creator = pickMapped(row, mapping, 'creator', ['创建人', '制单人', '采购员', '申请人', '下单人', '采购下单人', '创建者']);
+    const quantity = numberValue(row?.[mapping.quantity] ?? pickAny(row, ['采购订单数量', '数量', '订单数量', '下单数量', '采购数量']));
     const reasons = [];
     if (!month) reasons.push('日期无法解析');
     if (!supplier) reasons.push('供应商为空');
@@ -266,7 +279,7 @@ function mappedKingdeeRows(rows, mapping) {
       supplier,
       materialCode,
       purchaseOrg,
-      creator: mapping.creator ? pick(row, mapping.creator) : '',
+      creator,
       orderNo: mapping.orderNo ? pick(row, mapping.orderNo) : '',
       quantity,
       raw: row,
@@ -1157,12 +1170,13 @@ app.post('/api/inventory', requireAuth, requirePage('inventory'), (req, res) => 
 app.get('/api/progress/export', requireAuth, (req, res) => {
   const rows = demandRows(false, req.user);
   const headers = ['demandKey', '采购组', '采购下单人', '采购组织', '月份', '事业部', '供应商', '产品线', '系列', '物料', '物流编码', 'SKU', '下单数量', '生产中', '已完工', '已发货数量', '备注'];
+  headers.splice(9, 0, '物料编码');
   const aoa = [headers];
   rows.forEach((row) => {
     aoa.push([
       row.demandKey, row.purchaseGroup, row.purchaseOwner, row.purchaseOrg,
       row.month, row.businessUnit, row.supplierShortName || row.supplier,
-      row.productLine, row.productSeries, row.materialName || row.materialCode,
+      row.productLine, row.productSeries, row.materialCode, row.materialName || row.materialCode,
       row.logisticsCode, row.sku, row.currentOrderQty,
       row.inProductionQty, row.finishedQty, row.shippedQty, row.remark
     ]);

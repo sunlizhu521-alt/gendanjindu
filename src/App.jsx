@@ -54,7 +54,7 @@ const KINGDEE_FIELDS = [
   ['supplier', '供应商'],
   ['purchaseOrg', '采购组织'],
   ['materialCode', '物料编码'],
-  ['creator', '创建人'],
+  ['creator', '创建人（采购订单）'],
   ['quantity', '采购订单数量'],
   ['orderNo', '采购订单号']
 ];

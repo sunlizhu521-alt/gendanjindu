@@ -751,6 +751,7 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
 function DifferenceAllocationPage({ token, user, setMessage }) {
   const [compare, setCompare] = useState({ diffRows: [], allocations: [], actions: [], reasons: [], status: { total: 0, allocated: 0 } });
   const [rowInputs, setRowInputs] = useState({});
+  const [filters, setFilters] = useState({ month: '', supplier: '', businessUnit: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
   const [loading, setLoading] = useState(false);
 
   async function loadLatest() {
@@ -792,15 +793,72 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
   const allocations = compare.allocations || [];
   const allocatedRowIds = new Set(allocations.map((row) => row.rowId));
   const diffRows = compare.diffRows || [];
-  const pendingCount = diffRows.filter((row) => !allocatedRowIds.has(row.id)).length;
+  const filterSourceRows = [...diffRows, ...allocations];
+  const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+  const options = useMemo(() => ({
+    months: unique(filterSourceRows.map((row) => row.month)),
+    suppliers: unique(filterSourceRows.map((row) => supplierName(row))),
+    businessUnits: BUSINESS_UNITS,
+    productLines: unique(filterSourceRows.map((row) => row.productLine)),
+    series: unique(filterSourceRows.map((row) => row.productSeries)),
+    skus: unique(filterSourceRows.map((row) => row.sku)),
+    orderCreators: unique(filterSourceRows.map((row) => row.orderCreator))
+  }), [diffRows, allocations]);
+  const matchesFilters = (row) => {
+    const keyword = filters.keyword.toLowerCase();
+    const displaySupplier = supplierName(row);
+    const text = [
+      row.demandKey,
+      row.displayKey,
+      row.month,
+      row.businessUnit,
+      displaySupplier,
+      row.supplier,
+      row.productLine,
+      row.productSeries,
+      row.materialCode,
+      row.sku,
+      row.materialName,
+      row.orderCreator
+    ].join(' ').toLowerCase();
+    return (!keyword || text.includes(keyword))
+      && (!filters.month || row.month === filters.month)
+      && (!filters.supplier || displaySupplier === filters.supplier)
+      && (!filters.businessUnit || row.businessUnit === filters.businessUnit)
+      && (!filters.productLine || row.productLine === filters.productLine)
+      && (!filters.series || row.productSeries === filters.series)
+      && (!filters.sku || row.sku === filters.sku)
+      && (!filters.orderCreator || row.orderCreator === filters.orderCreator);
+  };
+  const filteredDiffRows = useMemo(() => diffRows.filter(matchesFilters), [diffRows, filters]);
+  const filteredAllocations = useMemo(() => allocations.filter(matchesFilters), [allocations, filters]);
+  const pendingCount = filteredDiffRows.filter((row) => !allocatedRowIds.has(row.id)).length;
+  const totalPendingCount = diffRows.filter((row) => !allocatedRowIds.has(row.id)).length;
+  const clearFilters = () => setFilters({ month: '', supplier: '', businessUnit: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
 
   return (
     <>
       <div className="section-heading-row">
         <h2>差异分配</h2>
         <span className="section-count">
-          {loading ? '加载中...' : `最新差异 ${diffRows.length} 条，待分配 ${pendingCount} 条`}
+          {loading ? '加载中...' : `当前显示 ${filteredDiffRows.length} / ${diffRows.length} 条，待分配 ${pendingCount} / ${totalPendingCount} 条`}
         </span>
+      </div>
+      <div className="toolbar filters-row">
+        <SelectField label="下单月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
+        <SelectField label="供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
+        <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
+        <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
+        <SelectField label="系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
+        <SelectField label="SKU" value={filters.sku} options={options.skus} onChange={(value) => setFilters({ ...filters, sku: value })} />
+        <SelectField label="创建人" value={filters.orderCreator} options={options.orderCreators} onChange={(value) => setFilters({ ...filters, orderCreator: value })} />
+        <input
+          className="search-input"
+          placeholder="搜索供应商、物料编码、SKU、物料名称、创建人"
+          value={filters.keyword}
+          onChange={(event) => setFilters({ ...filters, keyword: event.target.value })}
+        />
+        <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
       </div>
       <section className="panel">
         <div className="section-heading-row">
@@ -809,7 +867,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
         </div>
         <DataTable
           className="diff-allocation-table"
-          rows={diffRows}
+          rows={filteredDiffRows}
           columns={['主键', '创建人', '物料编码', '物料名称', '原采购数量', '新采购数量', '已发货', '生产中', '已完工', '差异', '原因', '操作', '备注', '提交人', '提交时间', '提交']}
           renderRow={(row) => {
             const input = rowInputs[row.id] || {};
@@ -861,10 +919,10 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
       </section>
 
       <section className="panel" style={{ marginTop: 16 }}>
-        <div className="section-heading-row"><h3>已分配记录</h3><span className="section-count">{allocations.length} 条</span></div>
+        <div className="section-heading-row"><h3>已分配记录</h3><span className="section-count">{filteredAllocations.length} / {allocations.length} 条</span></div>
         <DataTable
           className="compact-table"
-          rows={allocations}
+          rows={filteredAllocations}
           columns={['主键', '创建人', '物料编码', '原采购数量', '新采购数量', '差异', '原因', '操作', '备注', '提交人', '提交时间']}
           render={(row) => [row.displayKey || row.demandKey, row.orderCreator || '', row.materialCode || '', row.oldQty, row.newQty, signedNumber(row.deltaQty), row.reason, row.actionType, row.remark, row.createdBy, row.createdAt]}
         />

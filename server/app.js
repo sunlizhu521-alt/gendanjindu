@@ -629,28 +629,41 @@ function allocationRows(sessionId = '') {
      ${where}
      ORDER BY a.created_at DESC LIMIT 500`,
     params
-  ).map((row) => ({
-    id: row.id,
-    sessionId: row.session_id,
-    rowId: row.row_id,
-    demandKey: row.demand_key,
-    displayKey: row.month ? displayKeyForCompareRow(row) : displayKeyFromDemandKey(row.demand_key),
-    materialCode: row.material_code || normalize(row.demand_key).split('|')[4] || '',
-    orderCreator: row.order_creator || '',
-    actionType: row.action_type,
-    allocatedQty: numberValue(row.allocated_qty),
-    reason: row.reason,
-    remark: row.remark || '',
-    oldOrderNos: row.old_order_nos || '',
-    newOrderNos: row.new_order_nos || '',
-    oldQty: numberValue(row.old_qty),
-    newQty: numberValue(row.new_qty),
-    deltaQty: numberValue(row.delta_qty),
-    progressTotal: numberValue(row.progress_total),
-    stockQty: numberValue(row.stock_qty),
-    createdBy: row.created_by,
-    createdAt: row.created_at
-  }));
+  ).map((row) => {
+    const materialCode = row.material_code || normalize(row.demand_key).split('|')[4] || '';
+    const demand = get('SELECT * FROM order_demands WHERE demand_key = ?', [row.demand_key]);
+    const enriched = enrichDemandFields(row.supplier, materialCode);
+    return {
+      id: row.id,
+      sessionId: row.session_id,
+      rowId: row.row_id,
+      demandKey: row.demand_key,
+      displayKey: row.month ? displayKeyForCompareRow(row) : displayKeyFromDemandKey(row.demand_key),
+      month: row.month || demand?.month || '',
+      businessUnit: row.business_unit || demand?.business_unit || '',
+      supplier: row.supplier || demand?.supplier || '',
+      supplierShortName: row.supplier_short_name || demand?.supplier_short_name || enriched.supplierShortName || '',
+      materialCode,
+      sku: demand?.sku || enriched.sku || '',
+      materialName: demand?.material_name || enriched.materialName || '',
+      productLine: demand?.product_line || enriched.productLine || '',
+      productSeries: demand?.product_series || enriched.productSeries || '',
+      orderCreator: row.order_creator || '',
+      actionType: row.action_type,
+      allocatedQty: numberValue(row.allocated_qty),
+      reason: row.reason,
+      remark: row.remark || '',
+      oldOrderNos: row.old_order_nos || '',
+      newOrderNos: row.new_order_nos || '',
+      oldQty: numberValue(row.old_qty),
+      newQty: numberValue(row.new_qty),
+      deltaQty: numberValue(row.delta_qty),
+      progressTotal: numberValue(row.progress_total),
+      stockQty: numberValue(row.stock_qty),
+      createdBy: row.created_by,
+      createdAt: row.created_at
+    };
+  });
 }
 
 function backfillCompareRowsFromSnapshot(session) {
@@ -705,7 +718,10 @@ function compareRowsForSession(sessionId, user) {
       supplier: row.supplier,
       supplierShortName: row.supplier_short_name || demand?.supplier_short_name || '',
       materialCode: row.material_code,
+      sku: demand?.sku || enriched.sku || '',
       materialName: demand?.material_name || enriched.materialName || '',
+      productLine: demand?.product_line || enriched.productLine || '',
+      productSeries: demand?.product_series || enriched.productSeries || '',
       purchaseOrg: row.purchase_org,
       orderCreator: row.order_creator || '',
       oldQty: numberValue(row.old_qty),

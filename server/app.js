@@ -41,7 +41,7 @@ const DIMENSION_SLOTS = {
   spare1: '备用 1',
   spare2: '备用 2'
 };
-const DIFF_ALLOCATION_ACTIONS = ['减少', '增加', '追加', '取消', '其他'];
+const DIFF_ALLOCATION_ACTIONS = ['减少', '取消', '增加', '其他'];
 const DIFF_ALLOCATION_REASONS = ['业务调整', '型号迭代', '涨价', '降价', '其他'];
 
 const app = express();
@@ -65,6 +65,13 @@ function normalize(value) {
 function numberValue(value) {
   const n = Number(normalize(value).replace(/,/g, ''));
   return Number.isFinite(n) ? n : 0;
+}
+
+function actionsForDelta(deltaQty) {
+  const value = numberValue(deltaQty);
+  if (value > 0) return ['增加', '其他'];
+  if (value < 0) return ['减少', '取消', '其他'];
+  return ['其他'];
 }
 
 function monthFromDate(value) {
@@ -691,6 +698,7 @@ function compareRowsForSession(sessionId, user) {
       newQty: numberValue(row.new_qty),
       deltaQty: numberValue(row.delta_qty),
       diffQty: Math.abs(numberValue(row.delta_qty)),
+      availableActions: actionsForDelta(row.delta_qty),
       diffType: row.diff_type,
       oldOrderNos: row.old_order_nos || '',
       newOrderNos: row.new_order_nos || '',
@@ -1000,7 +1008,8 @@ app.post('/api/difference-allocations/:sessionId/rows/:rowId', requireAuth, requ
   const reason = normalize(req.body.reason);
   const remark = normalize(req.body.remark);
   const requiredQty = Math.abs(numberValue(row.delta_qty));
-  if (!DIFF_ALLOCATION_ACTIONS.includes(actionType)) return res.status(400).json({ error: '请选择有效的分配动作' });
+  const availableActions = actionsForDelta(row.delta_qty);
+  if (!availableActions.includes(actionType)) return res.status(400).json({ error: `当前差异只能选择：${availableActions.join('、')}` });
   if (!DIFF_ALLOCATION_REASONS.includes(reason)) return res.status(400).json({ error: '请选择有效的分配原因' });
   if (allocatedQty !== requiredQty) return res.status(400).json({ error: `分配数量必须等于差异数量 ${requiredQty}` });
   const now = nowText();

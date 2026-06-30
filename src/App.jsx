@@ -72,6 +72,13 @@ function supplierName(row) {
   return normalize(row.supplierShortName) || normalize(row.supplier);
 }
 
+function actionsForDelta(deltaQty) {
+  const value = numberValue(deltaQty);
+  if (value > 0) return ['增加', '其他'];
+  if (value < 0) return ['减少', '取消', '其他'];
+  return ['其他'];
+}
+
 function todayText() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
@@ -741,6 +748,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
             const input = rowInputs[row.id] || {};
             const allocated = allocatedRowIds.has(row.id);
             const allocation = allocations.find((item) => item.rowId === row.id);
+            const availableActions = row.availableActions || actionsForDelta(row.deltaQty);
             return (
               <tr key={row.id}>
                 <td>{row.displayKey}</td>
@@ -765,7 +773,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
                   {allocated ? allocation?.actionType : (
                     <select value={input.actionType || ''} onChange={(event) => setRowValue(row.id, 'actionType', event.target.value)}>
                       <option value="">选择操作</option>
-                      {(compare.actions || []).map((action) => <option key={action} value={action}>{action}</option>)}
+                      {availableActions.map((action) => <option key={action} value={action}>{action}</option>)}
                     </select>
                   )}
                 </td>

@@ -1,12 +1,9 @@
 name: Deploy
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      deploy_note:
-        description: 'Deployment note'
-        required: false
-        default: 'manual tencent deploy'
 
 jobs:
   deploy:

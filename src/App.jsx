@@ -566,13 +566,13 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
 }
 
 function KingdeeImport({ token, user, reloadDemands, setMessage }) {
-  async function clearTestCache() {
-    const confirmed = window.confirm('仅测试使用：将清空采购订单、差异分配、生产跟进及其历史记录。维度表、历史库存、用户权限和变更备注不会清除。确定继续吗？');
+  async function clearOrderCache() {
+    const confirmed = window.confirm('将清空采购订单、订单需求、生产跟进、差异分配和相关历史记录。维度表、历史库存、用户权限、字段映射和变更备注不会清除。确定继续吗？');
     if (!confirmed) return;
     try {
-      const payload = await request('/api/imports/kingdee/test-cache', { token, method: 'DELETE' });
+      const payload = await request('/api/imports/kingdee/cache', { token, method: 'DELETE' });
       const total = Object.values(payload.cleared || {}).reduce((sum, value) => sum + numberValue(value), 0);
-      setMessage(`测试缓存已清除，共 ${total} 条记录。`);
+      setMessage(`采购订单缓存已清除，共 ${total} 条记录。`);
       await reloadDemands();
     } catch (err) {
       setMessage('清除缓存失败：' + err.message);
@@ -588,7 +588,7 @@ function KingdeeImport({ token, user, reloadDemands, setMessage }) {
       {user?.name === '孙立柱' && (
         <section className="panel">
           <div className="card-actions">
-            <button type="button" className="ghost compact-button" onClick={clearTestCache}>清除测试缓存</button>
+            <button type="button" className="ghost compact-button" onClick={clearOrderCache}>清除缓存</button>
           </div>
         </section>
       )}

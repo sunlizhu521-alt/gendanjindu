@@ -865,9 +865,9 @@ app.get('/api/imports/kingdee/current-status', requireAuth, requirePage('kingdee
   });
 });
 
-app.delete('/api/imports/kingdee/test-cache', requireAuth, requirePage('kingdeeImport'), (req, res) => {
+function clearKingdeeCache(req, res) {
   if (normalize(req.user.name) !== '孙立柱') {
-    return res.status(403).json({ error: '仅孙立柱可以清除测试缓存' });
+    return res.status(403).json({ error: '仅孙立柱可以清除采购订单缓存' });
   }
   const counts = {
     kingdeeOrders: numberValue(get('SELECT COUNT(*) AS count FROM kingdee_orders')?.count),
@@ -892,6 +892,12 @@ app.delete('/api/imports/kingdee/test-cache', requireAuth, requirePage('kingdeeI
     run('DELETE FROM kingdee_import_batches');
   });
   res.json({ ok: true, cleared: counts });
+}
+
+app.delete('/api/imports/kingdee/cache', requireAuth, requirePage('kingdeeImport'), clearKingdeeCache);
+
+app.delete('/api/imports/kingdee/test-cache', requireAuth, requirePage('kingdeeImport'), (req, res) => {
+  clearKingdeeCache(req, res);
 });
 
 app.post('/api/imports/kingdee/preview', requireAuth, requirePage('kingdeeImport'), upload.single('file'), (req, res) => {

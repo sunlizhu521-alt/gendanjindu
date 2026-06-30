@@ -370,6 +370,12 @@ h3 {
   color: #dc2626;
 }
 
+.dashboard-explain {
+  max-width: 860px;
+  line-height: 1.6;
+  text-align: right;
+}
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: minmax(320px, .8fr) minmax(420px, 1.2fr);

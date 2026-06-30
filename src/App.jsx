@@ -68,6 +68,12 @@ function numberValue(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function signedNumber(value) {
+  const n = numberValue(value);
+  if (n > 0) return `+${n.toLocaleString()}`;
+  return n.toLocaleString();
+}
+
 function supplierName(row) {
   return normalize(row.supplierShortName) || normalize(row.supplier);
 }
@@ -323,7 +329,9 @@ function Dashboard({ rows }) {
     <>
       <div className="section-heading-row">
         <h2>采购总览</h2>
-        <span className="section-count">当前显示 {filteredRows.length} / {activeRows.length} 条</span>
+        <span className="section-count dashboard-explain">
+          当前显示 {filteredRows.length} / {activeRows.length} 条；下单数量=备货需求，已发货=采购入库，生产中=供应商在生产中，已完工=供应商已经生产完待入采购入库
+        </span>
       </div>
       <div className="toolbar filters-row">
         <SelectField label="下单月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
@@ -819,7 +827,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
                 <td>{row.shippedQty}</td>
                 <td>{row.inProductionQty}</td>
                 <td>{row.finishedQty}</td>
-                <td>{row.diffQty}</td>
+                <td>{signedNumber(row.deltaQty)}</td>
                 <td>
                   {allocated ? allocation?.reason : (
                     <select value={input.reason || ''} onChange={(event) => setRowValue(row.id, 'reason', event.target.value)}>
@@ -858,7 +866,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
           className="compact-table"
           rows={allocations}
           columns={['主键', '创建人', '物料编码', '原采购数量', '新采购数量', '差异', '原因', '操作', '备注', '提交人', '提交时间']}
-          render={(row) => [row.displayKey || row.demandKey, row.orderCreator || '', row.materialCode || '', row.oldQty, row.newQty, Math.abs(numberValue(row.deltaQty)), row.reason, row.actionType, row.remark, row.createdBy, row.createdAt]}
+          render={(row) => [row.displayKey || row.demandKey, row.orderCreator || '', row.materialCode || '', row.oldQty, row.newQty, signedNumber(row.deltaQty), row.reason, row.actionType, row.remark, row.createdBy, row.createdAt]}
         />
       </section>
     </>

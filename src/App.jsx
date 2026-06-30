@@ -271,62 +271,101 @@ function Login({ onLogin }) {
 }
 
 function Dashboard({ rows }) {
-  const activeRows = rows.filter((row) => row.active);
-  const summary = activeRows.reduce((acc, row) => {
+  const activeRows = useMemo(() => rows.filter((row) => row.active), [rows]);
+  const [filters, setFilters] = useState({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
+  const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+  const options = useMemo(() => ({
+    months: unique(activeRows.map((row) => row.month)),
+    businessUnits: BUSINESS_UNITS,
+    suppliers: unique(activeRows.map((row) => supplierName(row))),
+    productLines: unique(activeRows.map((row) => row.productLine)),
+    series: unique(activeRows.map((row) => row.productSeries)),
+    skus: unique(activeRows.map((row) => row.sku)),
+    orderCreators: unique(activeRows.map((row) => row.orderCreator))
+  }), [activeRows]);
+  const filteredRows = useMemo(() => {
+    const keyword = filters.keyword.toLowerCase();
+    return activeRows.filter((row) => {
+      const displaySupplier = supplierName(row);
+      const text = [
+        row.demandKey,
+        row.month,
+        row.businessUnit,
+        displaySupplier,
+        row.supplier,
+        row.productLine,
+        row.productSeries,
+        row.materialCode,
+        row.sku,
+        row.materialName,
+        row.orderCreator
+      ].join(' ').toLowerCase();
+      return (!keyword || text.includes(keyword))
+        && (!filters.month || row.month === filters.month)
+        && (!filters.businessUnit || row.businessUnit === filters.businessUnit)
+        && (!filters.supplier || displaySupplier === filters.supplier)
+        && (!filters.productLine || row.productLine === filters.productLine)
+        && (!filters.series || row.productSeries === filters.series)
+        && (!filters.sku || row.sku === filters.sku)
+        && (!filters.orderCreator || row.orderCreator === filters.orderCreator);
+    });
+  }, [activeRows, filters]);
+  const clearFilters = () => setFilters({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
+  const summary = filteredRows.reduce((acc, row) => {
     acc.order += numberValue(row.currentOrderQty);
-    acc.stock += numberValue(row.stockQty);
+    acc.shipped += numberValue(row.shippedQty);
     acc.inProduction += numberValue(row.inProductionQty);
     acc.finished += numberValue(row.finishedQty);
-    acc.shipped += numberValue(row.shippedQty);
-    acc.gap += numberValue(row.gap);
-    if (!row.progressUpdatedAt) acc.first += 1;
-    if (row.progressUpdatedAt && daysSince(row.progressUpdatedAt) > 7) acc.stale += 1;
-    if (numberValue(row.gap) !== 0) acc.mismatch += 1;
     return acc;
-  }, { order: 0, stock: 0, inProduction: 0, finished: 0, shipped: 0, gap: 0, first: 0, stale: 0, mismatch: 0 });
-  const byBusinessUnit = [...new Set(activeRows.map((row) => row.businessUnit).filter(Boolean))].map((businessUnit) => ({
-    businessUnit,
-    order: activeRows.filter((row) => row.businessUnit === businessUnit).reduce((sum, row) => sum + numberValue(row.currentOrderQty), 0)
-  }));
-  const maxOrder = Math.max(...byBusinessUnit.map((row) => row.order), 1);
+  }, { order: 0, shipped: 0, inProduction: 0, finished: 0 });
 
   return (
     <>
       <div className="section-heading-row">
         <h2>采购总览</h2>
-        <span className="section-count">当前有效需求 {activeRows.length} 条</span>
+        <span className="section-count">当前显示 {filteredRows.length} / {activeRows.length} 条</span>
+      </div>
+      <div className="toolbar filters-row">
+        <SelectField label="下单月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
+        <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
+        <SelectField label="供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
+        <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
+        <SelectField label="系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
+        <SelectField label="SKU" value={filters.sku} options={options.skus} onChange={(value) => setFilters({ ...filters, sku: value })} />
+        <SelectField label="创建人" value={filters.orderCreator} options={options.orderCreators} onChange={(value) => setFilters({ ...filters, orderCreator: value })} />
+        <input
+          className="search-input"
+          placeholder="搜索供应商、物料编码、SKU、物料名称、创建人"
+          value={filters.keyword}
+          onChange={(event) => setFilters({ ...filters, keyword: event.target.value })}
+        />
+        <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
       </div>
       <section className="metric-grid">
         <MetricCard label="下单数量" value={summary.order.toLocaleString()} />
-        <MetricCard label="历史库存" value={summary.stock.toLocaleString()} />
+        <MetricCard label="已发货" value={summary.shipped.toLocaleString()} />
         <MetricCard label="生产中" value={summary.inProduction.toLocaleString()} />
         <MetricCard label="已完工" value={summary.finished.toLocaleString()} />
-        <MetricCard label="已发货数量" value={summary.shipped.toLocaleString()} />
-        <MetricCard label="差额待分配" value={summary.gap.toLocaleString()} tone={summary.gap ? 'warning' : ''} />
-        <MetricCard label="待首次/超7天" value={`${summary.first}/${summary.stale}`} tone={summary.first || summary.stale ? 'warning' : ''} />
       </section>
-      <section className="dashboard-grid">
-        <article className="panel">
-          <h3>事业部订单分布</h3>
-          <div className="bar-list">
-            {byBusinessUnit.map((row) => (
-              <div key={row.businessUnit} className="bar-row">
-                <span>{row.businessUnit}</span>
-                <div className="bar-track"><i style={{ width: `${Math.max(row.order / maxOrder * 100, 8)}%` }} /></div>
-                <strong>{row.order}</strong>
-              </div>
-            ))}
-          </div>
-        </article>
-        <article className="panel">
-          <h3>需要处理</h3>
-          <DataTable
-            className="compact-table"
-            rows={activeRows.filter((row) => !row.progressUpdatedAt || daysSince(row.progressUpdatedAt) > 7 || numberValue(row.gap) !== 0).slice(0, 12)}
-            columns={['月份', '事业部', '供应商', '物料', '下单数量', '差额', '上次刷新']}
-            render={(row) => [row.month, row.businessUnit, supplierName(row), row.materialCode, row.currentOrderQty, row.gap, row.progressUpdatedAt || '待首次刷新']}
-          />
-        </article>
+      <section className="panel">
+        <DataTable
+          className="compact-table"
+          rows={filteredRows}
+          columns={['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', '下单数量', '已发货', '生产中', '已完工']}
+          render={(row) => [
+            row.businessUnit,
+            supplierName(row),
+            row.productLine,
+            row.productSeries,
+            row.materialCode,
+            row.sku,
+            row.materialName,
+            row.currentOrderQty,
+            row.shippedQty,
+            row.inProductionQty,
+            row.finishedQty
+          ]}
+        />
       </section>
     </>
   );

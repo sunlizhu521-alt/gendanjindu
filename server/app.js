@@ -464,6 +464,7 @@ function demandRows(includeInactive = false, user = null) {
       purchaseGroup: demand.purchase_group || '',
       purchaseOwner: demand.purchase_owner || '',
       purchaseOrg: demand.purchase_org || '',
+      orderCreator: oldCreatorsForDemand(demand.demand_key),
       stockQty,
       demandAfterStock,
       inProductionQty: numberValue(progress.in_production_qty),

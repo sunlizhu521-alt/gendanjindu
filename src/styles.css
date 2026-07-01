@@ -321,6 +321,24 @@ h3 {
   box-shadow: 0 12px 30px rgba(15, 23, 42, .16);
 }
 
+.month-calendar-filter {
+  min-width: 190px;
+}
+
+.month-calendar-menu {
+  width: 260px;
+}
+
+.month-picker-row {
+  padding: 6px 6px 8px;
+  border-bottom: 1px solid #edf2f7;
+  margin-bottom: 4px;
+}
+
+.month-picker-row input {
+  height: 34px;
+}
+
 .filter-option {
   display: flex;
   align-items: center;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 const API = import.meta.env.DEV ? 'http://localhost:4003' : '';
 const TOKEN_KEY = 'gendanjinduToken';
@@ -202,6 +202,70 @@ function SelectField({ label, value, options, onChange }) {
         {options.map((option) => <option key={option} value={option}>{option}</option>)}
       </select>
     </label>
+  );
+}
+
+function MonthCalendarFilter({ label, value = [], options = [], onChange }) {
+  const [open, setOpen] = useState(false);
+  const [calendarValue, setCalendarValue] = useState('');
+  const rootRef = useRef(null);
+  const selected = Array.isArray(value) ? value : [];
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (rootRef.current && !rootRef.current.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick);
+  }, [open]);
+
+  const updateSelected = (next) => {
+    onChange([...new Set(next.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')));
+  };
+  const toggleMonth = (month) => {
+    updateSelected(selected.includes(month) ? selected.filter((item) => item !== month) : [...selected, month]);
+  };
+  const addCalendarMonth = (month) => {
+    if (!month) return;
+    updateSelected([...selected, month]);
+    setCalendarValue('');
+  };
+  const buttonText = selected.length === 0
+    ? '全部'
+    : selected.length <= 2
+      ? selected.join('、')
+      : `已选${selected.length}项`;
+
+  return (
+    <div className="filter-control month-calendar-filter" ref={rootRef}>
+      <span>{label}</span>
+      <button type="button" className="filter-button" onClick={() => setOpen(!open)} title={buttonText}>{buttonText}</button>
+      {open && (
+        <div className="filter-menu month-calendar-menu">
+          <div className="month-picker-row">
+            <input
+              type="month"
+              value={calendarValue}
+              onChange={(event) => {
+                setCalendarValue(event.target.value);
+                addCalendarMonth(event.target.value);
+              }}
+            />
+          </div>
+          <label className="filter-option">
+            <input type="checkbox" checked={selected.length === 0} onChange={() => updateSelected([])} />
+            <span>全部</span>
+          </label>
+          {options.map((month) => (
+            <label key={month} className="filter-option">
+              <input type="checkbox" checked={selected.includes(month)} onChange={() => toggleMonth(month)} />
+              <span>{month}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -468,7 +532,7 @@ function Dashboard({ rows }) {
 
 function PurchaseBoard({ rows }) {
   const activeRows = useMemo(() => rows.filter((row) => row.active), [rows]);
-  const [filters, setFilters] = useState({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
+  const [filters, setFilters] = useState({ months: [], businessUnit: '', supplier: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
   const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const matchesFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
@@ -487,8 +551,9 @@ function PurchaseBoard({ rows }) {
       row.materialName,
       row.orderCreator
     ].join(' ').toLowerCase();
+    const selectedMonths = Array.isArray(filters.months) ? filters.months : [];
     return (!keyword || text.includes(keyword))
-      && (omit === 'month' || !filters.month || row.month === filters.month)
+      && (omit === 'month' || selectedMonths.length === 0 || selectedMonths.includes(row.month))
       && (omit === 'businessUnit' || !filters.businessUnit || row.businessUnit === filters.businessUnit)
       && (omit === 'supplier' || !filters.supplier || displaySupplier === filters.supplier)
       && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
@@ -509,7 +574,7 @@ function PurchaseBoard({ rows }) {
     };
   }, [activeRows, filters]);
   const filteredRows = useMemo(() => activeRows.filter((row) => matchesFilters(row)), [activeRows, filters]);
-  const clearFilters = () => setFilters({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
+  const clearFilters = () => setFilters({ months: [], businessUnit: '', supplier: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
 
   const board = useMemo(() => {
     const months = unique(filteredRows.map((row) => row.month));
@@ -565,7 +630,7 @@ function PurchaseBoard({ rows }) {
     <>
       <div className="section-heading-row"><h2>采购看板</h2><span className="section-count">当前显示 {board.items.length} 个物料，按状态颜色区分</span></div>
       <div className="toolbar filters-row">
-        <SelectField label="下单月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
+        <MonthCalendarFilter label="下单月份" value={filters.months} options={options.months} onChange={(months) => setFilters({ ...filters, months })} />
         <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
         <SelectField label="供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
         <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />

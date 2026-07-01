@@ -584,12 +584,14 @@ function PurchaseBoard({ rows }) {
       if (row.month && (numberValue(row.currentOrderQty) > 0 || progressTotal(row) > 0)) {
         monthsWithData.add(row.month);
       }
-      const itemKey = [row.sku, row.materialCode, row.materialName || row.materialCode].map(normalize).join('|');
+      const displaySupplier = supplierName(row);
+      const itemKey = [row.sku, row.materialCode, row.materialName || row.materialCode, displaySupplier].map(normalize).join('|');
       const item = itemMap.get(itemKey) || {
         key: itemKey,
         sku: row.sku || '',
         materialCode: row.materialCode || '',
         materialName: row.materialName || row.materialCode || '',
+        supplier: displaySupplier,
         stock: new Map(),
         stockSeen: new Set(),
         orders: new Map()
@@ -667,26 +669,28 @@ function PurchaseBoard({ rows }) {
                 <th className="board-sticky board-sku-col" rowSpan="2">SKU</th>
                 <th className="board-sticky board-code-col" rowSpan="2">物料编码</th>
                 <th className="board-sticky board-name-col" rowSpan="2">产品名称</th>
-                <th colSpan={Math.max(board.businessUnits.length, 1)}>历史库存</th>
+                <th className="board-sticky board-supplier-col" rowSpan="2">供应商</th>
+                <th className="board-stock-head" colSpan={Math.max(board.businessUnits.length, 1)}>历史库存</th>
                 {board.months.map((month) => (
-                  <th key={month} colSpan={Math.max(board.businessUnits.length, 1)}>{month}订单</th>
+                  <th key={month} className="board-month-head" colSpan={Math.max(board.businessUnits.length, 1)}>{month}订单</th>
                 ))}
               </tr>
               <tr>
-                {(board.businessUnits.length ? board.businessUnits : ['']).map((unit) => <th key={`stock-${unit}`}>{unit || '-'}</th>)}
+                {(board.businessUnits.length ? board.businessUnits : ['']).map((unit) => <th key={`stock-${unit}`} className="board-unit-head">{unit || '-'}</th>)}
                 {board.months.map((month) => (
-                  (board.businessUnits.length ? board.businessUnits : ['']).map((unit) => <th key={`${month}-${unit}`}>{unit || '-'}</th>)
+                  (board.businessUnits.length ? board.businessUnits : ['']).map((unit) => <th key={`${month}-${unit}`} className="board-unit-head">{unit || '-'}</th>)
                 ))}
               </tr>
             </thead>
             <tbody>
               {board.items.length === 0 ? (
-                <tr><td className="empty" colSpan={3 + Math.max(board.businessUnits.length, 1) * (board.months.length + 1)}>暂无数据</td></tr>
+                <tr><td className="empty" colSpan={4 + Math.max(board.businessUnits.length, 1) * (board.months.length + 1)}>暂无数据</td></tr>
               ) : board.items.map((item) => (
                 <tr key={item.key}>
                   <td className="board-sticky board-sku-col">{item.sku}</td>
                   <td className="board-sticky board-code-col">{item.materialCode}</td>
                   <td className="board-sticky board-name-col board-name-cell">{item.materialName}</td>
+                  <td className="board-sticky board-supplier-col">{item.supplier}</td>
                   {(board.businessUnits.length ? board.businessUnits : ['']).map((unit) => {
                     const value = numberValue(item.stock.get(unit));
                     return <td key={`stock-${item.key}-${unit}`} className="board-status-cell">{value > 0 && <span className="board-chip stock">{value.toLocaleString()}</span>}</td>;

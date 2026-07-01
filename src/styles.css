@@ -493,9 +493,9 @@ h3 {
 }
 
 .purchase-board-table {
-  min-width: 1320px;
+  min-width: 1580px;
   border-collapse: collapse;
-  table-layout: fixed;
+  table-layout: auto;
 }
 
 .purchase-board-table th,
@@ -508,19 +508,22 @@ h3 {
   color: #0f172a;
   font-size: 13px;
   text-align: center;
+  white-space: nowrap;
 }
 
 .purchase-board-table th {
   position: sticky;
   top: 0;
   z-index: 4;
-  background: #f8fafc;
+  background: #dbeafe;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .purchase-board-table thead tr:nth-child(2) th {
   top: 48px;
   z-index: 4;
+  background: #eef2ff;
 }
 
 .purchase-board-table .board-sticky {
@@ -529,27 +532,49 @@ h3 {
 }
 
 .purchase-board-table th.board-sticky {
-  z-index: 6;
+  z-index: 7;
+  background: #bfdbfe;
 }
 
 .purchase-board-table .board-sku-col {
   left: 0;
-  min-width: 126px;
+  min-width: 120px;
+  width: 120px;
 }
 
 .purchase-board-table .board-code-col {
-  left: 126px;
-  min-width: 126px;
+  left: 120px;
+  min-width: 135px;
+  width: 135px;
 }
 
 .purchase-board-table .board-name-col {
-  left: 252px;
-  min-width: 255px;
+  left: 255px;
+  min-width: 320px;
+  width: 320px;
+}
+
+.purchase-board-table .board-supplier-col {
+  left: 575px;
+  min-width: 180px;
+  width: 180px;
 }
 
 .board-name-cell {
   text-align: left;
-  white-space: normal;
+}
+
+.board-stock-head {
+  background: #dcfce7 !important;
+}
+
+.board-month-head {
+  background: #fed7aa !important;
+}
+
+.board-unit-head {
+  min-width: 135px;
+  width: 135px;
 }
 
 .board-status-cell {

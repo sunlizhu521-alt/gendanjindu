@@ -990,6 +990,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
   });
   const [touchedQtyKeys, setTouchedQtyKeys] = useState([]);
   const [autoKey, setAutoKey] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setValues({
@@ -1035,13 +1036,20 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
       setMessage('任意两项合计不能超过下单数量。');
       return;
     }
-    await request(`/api/progress/${encodeURIComponent(row.demandKey)}`, {
-      token,
-      method: 'PATCH',
-      body: JSON.stringify(payload)
-    });
-    setMessage('生产进度已保存。');
-    await reloadDemands();
+    setSaving(true);
+    try {
+      await request(`/api/progress/${encodeURIComponent(row.demandKey)}`, {
+        token,
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      });
+      setMessage('生产进度已保存。');
+      await reloadDemands();
+    } catch (err) {
+      setMessage('生产进度保存失败：' + err.message);
+    } finally {
+      setSaving(false);
+    }
   }
 
   const input = (key) => (
@@ -1072,7 +1080,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
     input('inProductionQty'),
     input('finishedQty'),
     input('shippedQty'),
-    <button type="button" className="compact-button" disabled={!row.canEdit} onClick={save}>{row.canEdit ? '提交' : '无权限'}</button>
+    <button type="button" className="compact-button" disabled={!row.canEdit || saving} onClick={save}>{saving ? '保存中...' : row.canEdit ? '提交' : '无权限'}</button>
   ];
 
   return (

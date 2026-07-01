@@ -1127,7 +1127,10 @@ app.get('/api/demands', requireAuth, (req, res) => {
 app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'), (req, res) => {
   const demand = get('SELECT * FROM order_demands WHERE demand_key = ?', [req.params.demandKey]);
   if (!demand) return res.status(404).json({ error: '需求不存在' });
-  if (!canEditDemand(req.user, demand)) return res.status(403).json({ error: '没有该供应商物料的刷新权限' });
+  const orderCreator = oldCreatorsForDemand(demand.demand_key);
+  if (!canEditDemand(req.user, { ...demand, order_creator: orderCreator, purchase_owner: orderCreator || demand.purchase_owner })) {
+    return res.status(403).json({ error: '没有该供应商物料的刷新权限' });
+  }
   const values = {
     inProduction: numberValue(req.body.inProductionQty),
     finished: numberValue(req.body.finishedQty),

@@ -1687,11 +1687,13 @@ function App() {
   }
 
   async function bootstrap(currentToken = token) {
-    const payload = await request('/api/bootstrap', { token: currentToken });
+    const [payload, demandPayload] = await Promise.all([
+      request('/api/bootstrap', { token: currentToken }),
+      request('/api/demands', { token: currentToken })
+    ]);
     setUser(payload.user);
     setPages(payload.pages || PAGE_LABELS);
     setActiveTab(PAGE_ORDER.find((page) => payload.user.role === '管理员' || payload.user.pageAccess?.includes(page)) || 'dashboard');
-    const demandPayload = await request('/api/demands', { token: currentToken });
     setDemands(demandPayload.rows || []);
   }
 

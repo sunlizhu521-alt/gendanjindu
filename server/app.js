@@ -490,8 +490,7 @@ function purchaseGroupForCreator(creator, materialCode, fallbackAssignment, look
   ]);
 }
 
-function enrichDemandFields(supplier, materialCode, orderCreator = '') {
-  const lookups = dimensionLookups();
+function enrichDemandFields(supplier, materialCode, orderCreator = '', lookups = dimensionLookups()) {
   const { productMap, assignmentMap, supplierMap } = lookups;
   const product = productMap.get(normalize(materialCode)) || {};
   const assignment = assignmentMap.get([normalize(supplier), normalize(materialCode)].join('|')) || {};
@@ -564,6 +563,49 @@ function inventoryForDemand(demand) {
   return get('SELECT * FROM inventory WHERE stock_key = ?', [stockKey(demand.business_unit, demand.supplier, demand.material_code)]) || { stock_qty: 0 };
 }
 
+function demandBatchKey(batchId, demandKeyValue) {
+  return [normalize(batchId), normalize(demandKeyValue)].join('|');
+}
+
+function defaultProgress(demandKeyValue) {
+  return {
+    demand_key: demandKeyValue,
+    unprepared_qty: 0,
+    prepared_not_started_qty: 0,
+    in_production_qty: 0,
+    finished_qty: 0,
+    shipped_qty: 0,
+    remark: '',
+    updated_by: '',
+    updated_at: ''
+  };
+}
+
+function demandLoadContext(demands) {
+  const lookups = dimensionLookups();
+  const progressMap = new Map(all('SELECT * FROM supplier_progress').map((row) => [row.demand_key, row]));
+  const inventoryMap = new Map(all('SELECT * FROM inventory').map((row) => [row.stock_key, row]));
+  const batchIds = [...new Set(demands.map((row) => normalize(row.source_batch_id)).filter(Boolean))];
+  const demandKeys = new Set(demands.map((row) => normalize(row.demand_key)));
+  const orderRowsByDemand = new Map();
+  if (batchIds.length) {
+    const placeholders = batchIds.map(() => '?').join(',');
+    all(
+      `SELECT batch_id, demand_key, creator, oa_flow_no, raw_json
+       FROM kingdee_orders
+       WHERE batch_id IN (${placeholders})`,
+      batchIds
+    ).forEach((row, index) => {
+      if (!demandKeys.has(normalize(row.demand_key))) return;
+      const key = demandBatchKey(row.batch_id, row.demand_key);
+      const list = orderRowsByDemand.get(key) || [];
+      list.push(orderRowDateSort(row, index));
+      orderRowsByDemand.set(key, list);
+    });
+  }
+  return { lookups, progressMap, inventoryMap, orderRowsByDemand };
+}
+
 function canEditDemand(user, demand) {
   if (user.role === ROLE_ADMIN) return true;
   const owner = normalize(demand.order_creator)
@@ -575,11 +617,15 @@ function canEditDemand(user, demand) {
 
 function demandRows(includeInactive = false, user = null) {
   const where = includeInactive ? '' : 'WHERE active = 1';
-  return all(`SELECT * FROM order_demands ${where} ORDER BY month DESC, business_unit, supplier, material_code`).map((demand) => {
-    const progress = progressForDemand(demand.demand_key);
-    const stock = inventoryForDemand(demand);
-    const orderCreator = oldCreatorsForDemand(demand.demand_key);
-    const enriched = enrichDemandFields(demand.supplier, demand.material_code, orderCreator);
+  const demands = all(`SELECT * FROM order_demands ${where} ORDER BY month DESC, business_unit, supplier, material_code`);
+  const context = demandLoadContext(demands);
+  return demands.map((demand) => {
+    const progress = context.progressMap.get(demand.demand_key) || defaultProgress(demand.demand_key);
+    const stock = context.inventoryMap.get(stockKey(demand.business_unit, demand.supplier, demand.material_code)) || { stock_qty: 0 };
+    const orderRows = context.orderRowsByDemand.get(demandBatchKey(demand.source_batch_id, demand.demand_key)) || [];
+    const orderCreator = uniqueCreators(orderRows);
+    const oaFlowNo = demand.oa_flow_no || orderedOaFlowNos(orderRows, rawOaFlowNo);
+    const enriched = enrichDemandFields(demand.supplier, demand.material_code, orderCreator, context.lookups);
     const purchaseOwner = orderCreator || demand.purchase_owner || enriched.purchaseOwner || '';
     const purchaseGroup = enriched.purchaseGroup || demand.purchase_group || '';
     const progressTotal = numberValue(progress.in_production_qty) + numberValue(progress.finished_qty) + numberValue(progress.shipped_qty);
@@ -603,7 +649,7 @@ function demandRows(includeInactive = false, user = null) {
       purchaseGroup,
       purchaseOwner,
       purchaseOrg: demand.purchase_org || '',
-      oaFlowNo: demand.oa_flow_no || oldOaFlowNosForDemand(demand.demand_key),
+      oaFlowNo,
       orderCreator,
       stockQty,
       demandAfterStock,
@@ -1301,7 +1347,18 @@ app.post('/api/difference-allocations/:sessionId/apply', requireAuth, requirePag
 
 app.get('/api/dimensions', requireAuth, requirePage('dimensionLibrary'), (req, res) => {
   const rows = all('SELECT slot_id, title, file_name, sheet_name, sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at FROM dimension_files');
-  res.json({ rows: rows.map((row) => ({ ...row, sheetNames: parseJson(row.sheet_names, []), mapping: parseJson(row.mapping_json, {}), rows: parseJson(row.rows_json, []).slice(0, 8), rowCount: parseJson(row.rows_json, []).length })) });
+  res.json({
+    rows: rows.map((row) => {
+      const dimensionRows = parseJson(row.rows_json, []);
+      const { rows_json: _rowsJson, ...safeRow } = row;
+      return {
+        ...safeRow,
+        sheetNames: parseJson(row.sheet_names, []),
+        mapping: parseJson(row.mapping_json, {}),
+        rowCount: dimensionRows.length
+      };
+    })
+  });
 });
 
 app.post('/api/dimensions/:slotId/upload', requireAuth, requirePage('dimensionLibrary'), upload.single('file'), (req, res) => {

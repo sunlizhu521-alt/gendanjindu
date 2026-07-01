@@ -378,7 +378,7 @@ function Login({ onLogin }) {
 
 function Dashboard({ rows }) {
   const activeRows = useMemo(() => rows.filter((row) => row.active), [rows]);
-  const [filters, setFilters] = useState({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
+  const [filters, setFilters] = useState({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
   const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const matchesDashboardFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
@@ -395,7 +395,7 @@ function Dashboard({ rows }) {
       row.oaFlowNo,
       row.sku,
       row.materialName,
-      row.orderCreator
+      row.purchaseOwner
     ].join(' ').toLowerCase();
     return (!keyword || text.includes(keyword))
       && (omit === 'month' || !filters.month || row.month === filters.month)
@@ -404,7 +404,7 @@ function Dashboard({ rows }) {
       && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
       && (omit === 'series' || !filters.series || row.productSeries === filters.series)
       && (omit === 'sku' || !filters.sku || row.sku === filters.sku)
-      && (omit === 'orderCreator' || !filters.orderCreator || row.orderCreator === filters.orderCreator);
+      && (omit === 'purchaseOwner' || !filters.purchaseOwner || row.purchaseOwner === filters.purchaseOwner);
   };
   const options = useMemo(() => {
     const rowsFor = (field) => activeRows.filter((row) => matchesDashboardFilters(row, field));
@@ -415,11 +415,11 @@ function Dashboard({ rows }) {
       productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
       series: unique(rowsFor('series').map((row) => row.productSeries)),
       skus: unique(rowsFor('sku').map((row) => row.sku)),
-      orderCreators: unique(rowsFor('orderCreator').map((row) => row.orderCreator))
+      purchaseOwners: unique(rowsFor('purchaseOwner').map((row) => row.purchaseOwner))
     };
   }, [activeRows, filters]);
   const filteredRows = useMemo(() => activeRows.filter((row) => matchesDashboardFilters(row)), [activeRows, filters]);
-  const clearFilters = () => setFilters({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
+  const clearFilters = () => setFilters({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
   const summary = filteredRows.reduce((acc, row) => {
     acc.order += numberValue(row.currentOrderQty);
     acc.shipped += numberValue(row.shippedQty);
@@ -483,10 +483,10 @@ function Dashboard({ rows }) {
         <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
         <SelectField label="系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
         <SelectField label="SKU" value={filters.sku} options={options.skus} onChange={(value) => setFilters({ ...filters, sku: value })} />
-        <SelectField label="创建人" value={filters.orderCreator} options={options.orderCreators} onChange={(value) => setFilters({ ...filters, orderCreator: value })} />
+        <SelectField label="采购下单人" value={filters.purchaseOwner} options={options.purchaseOwners} onChange={(value) => setFilters({ ...filters, purchaseOwner: value })} />
         <input
           className="search-input"
-          placeholder="搜索供应商、物料编码、OA备货流程号、SKU、物料名称、创建人"
+          placeholder="搜索供应商、物料编码、OA备货流程号、SKU、物料名称、采购下单人"
           value={filters.keyword}
           onChange={(event) => setFilters({ ...filters, keyword: event.target.value })}
         />
@@ -532,7 +532,7 @@ function Dashboard({ rows }) {
 
 function PurchaseBoard({ rows }) {
   const activeRows = useMemo(() => rows.filter((row) => row.active), [rows]);
-  const [filters, setFilters] = useState({ months: [], businessUnit: '', supplier: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
+  const [filters, setFilters] = useState({ months: [], businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
   const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const matchesFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
@@ -549,7 +549,7 @@ function PurchaseBoard({ rows }) {
       row.oaFlowNo,
       row.sku,
       row.materialName,
-      row.orderCreator
+      row.purchaseOwner
     ].join(' ').toLowerCase();
     const selectedMonths = Array.isArray(filters.months) ? filters.months : [];
     return (!keyword || text.includes(keyword))
@@ -559,7 +559,7 @@ function PurchaseBoard({ rows }) {
       && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
       && (omit === 'series' || !filters.series || row.productSeries === filters.series)
       && (omit === 'sku' || !filters.sku || row.sku === filters.sku)
-      && (omit === 'orderCreator' || !filters.orderCreator || row.orderCreator === filters.orderCreator);
+      && (omit === 'purchaseOwner' || !filters.purchaseOwner || row.purchaseOwner === filters.purchaseOwner);
   };
   const options = useMemo(() => {
     const rowsFor = (field) => activeRows.filter((row) => matchesFilters(row, field));
@@ -570,11 +570,11 @@ function PurchaseBoard({ rows }) {
       productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
       series: unique(rowsFor('series').map((row) => row.productSeries)),
       skus: unique(rowsFor('sku').map((row) => row.sku)),
-      orderCreators: unique(rowsFor('orderCreator').map((row) => row.orderCreator))
+      purchaseOwners: unique(rowsFor('purchaseOwner').map((row) => row.purchaseOwner))
     };
   }, [activeRows, filters]);
   const filteredRows = useMemo(() => activeRows.filter((row) => matchesFilters(row)), [activeRows, filters]);
-  const clearFilters = () => setFilters({ months: [], businessUnit: '', supplier: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
+  const clearFilters = () => setFilters({ months: [], businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
 
   const board = useMemo(() => {
     const monthsWithData = new Set();
@@ -646,10 +646,10 @@ function PurchaseBoard({ rows }) {
         <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
         <SelectField label="系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
         <SelectField label="SKU" value={filters.sku} options={options.skus} onChange={(value) => setFilters({ ...filters, sku: value })} />
-        <SelectField label="创建人" value={filters.orderCreator} options={options.orderCreators} onChange={(value) => setFilters({ ...filters, orderCreator: value })} />
+        <SelectField label="采购下单人" value={filters.purchaseOwner} options={options.purchaseOwners} onChange={(value) => setFilters({ ...filters, purchaseOwner: value })} />
         <input
           className="search-input"
-          placeholder="搜索供应商、物料编码、OA备货流程号、SKU、物料名称、创建人"
+          placeholder="搜索供应商、物料编码、OA备货流程号、SKU、物料名称、采购下单人"
           value={filters.keyword}
           onChange={(event) => setFilters({ ...filters, keyword: event.target.value })}
         />
@@ -1168,7 +1168,7 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
 function DifferenceAllocationPage({ token, user, setMessage }) {
   const [compare, setCompare] = useState({ diffRows: [], allocations: [], actions: [], reasons: [], status: { total: 0, allocated: 0 } });
   const [rowInputs, setRowInputs] = useState({});
-  const [filters, setFilters] = useState({ month: '', supplier: '', businessUnit: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
+  const [filters, setFilters] = useState({ month: '', supplier: '', businessUnit: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
   const [loading, setLoading] = useState(false);
 
   async function loadLatest() {
@@ -1219,7 +1219,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
     productLines: unique(filterSourceRows.map((row) => row.productLine)),
     series: unique(filterSourceRows.map((row) => row.productSeries)),
     skus: unique(filterSourceRows.map((row) => row.sku)),
-    orderCreators: unique(filterSourceRows.map((row) => row.orderCreator))
+    purchaseOwners: unique(filterSourceRows.map((row) => row.purchaseOwner))
   }), [diffRows, allocations]);
   const matchesFilters = (row) => {
     const keyword = filters.keyword.toLowerCase();
@@ -1237,7 +1237,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
       row.oaFlowNo,
       row.sku,
       row.materialName,
-      row.orderCreator
+      row.purchaseOwner
     ].join(' ').toLowerCase();
     return (!keyword || text.includes(keyword))
       && (!filters.month || row.month === filters.month)
@@ -1246,13 +1246,13 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
       && (!filters.productLine || row.productLine === filters.productLine)
       && (!filters.series || row.productSeries === filters.series)
       && (!filters.sku || row.sku === filters.sku)
-      && (!filters.orderCreator || row.orderCreator === filters.orderCreator);
+      && (!filters.purchaseOwner || row.purchaseOwner === filters.purchaseOwner);
   };
   const filteredDiffRows = useMemo(() => diffRows.filter(matchesFilters), [diffRows, filters]);
   const filteredAllocations = useMemo(() => allocations.filter(matchesFilters), [allocations, filters]);
   const pendingCount = filteredDiffRows.filter((row) => !allocatedRowIds.has(row.id)).length;
   const totalPendingCount = diffRows.filter((row) => !allocatedRowIds.has(row.id)).length;
-  const clearFilters = () => setFilters({ month: '', supplier: '', businessUnit: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
+  const clearFilters = () => setFilters({ month: '', supplier: '', businessUnit: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
 
   return (
     <>
@@ -1269,10 +1269,10 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
         <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
         <SelectField label="系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
         <SelectField label="SKU" value={filters.sku} options={options.skus} onChange={(value) => setFilters({ ...filters, sku: value })} />
-        <SelectField label="创建人" value={filters.orderCreator} options={options.orderCreators} onChange={(value) => setFilters({ ...filters, orderCreator: value })} />
+        <SelectField label="采购下单人" value={filters.purchaseOwner} options={options.purchaseOwners} onChange={(value) => setFilters({ ...filters, purchaseOwner: value })} />
         <input
           className="search-input"
-          placeholder="搜索供应商、物料编码、OA备货流程号、SKU、物料名称、创建人"
+          placeholder="搜索供应商、物料编码、OA备货流程号、SKU、物料名称、采购下单人"
           value={filters.keyword}
           onChange={(event) => setFilters({ ...filters, keyword: event.target.value })}
         />
@@ -1286,7 +1286,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
         <DataTable
           className="diff-allocation-table"
           rows={filteredDiffRows}
-          columns={['主键', 'OA备货流程号', '创建人', '物料编码', '物料名称', '原采购数量', '新采购数量', '已发货', '生产中', '已完工', '差异', '原因', '操作', '备注', '提交人', '提交时间', '提交']}
+          columns={['主键', 'OA备货流程号', '采购下单人', '物料编码', '物料名称', '原采购数量', '新采购数量', '已发货', '生产中', '已完工', '差异', '原因', '操作', '备注', '提交人', '提交时间', '提交']}
           renderRow={(row) => {
             const input = rowInputs[row.id] || {};
             const allocated = allocatedRowIds.has(row.id);
@@ -1296,7 +1296,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
               <tr key={row.id}>
                 <td>{row.displayKey}</td>
                 <td>{row.oaFlowNo}</td>
-                <td>{row.orderCreator}</td>
+                <td>{row.purchaseOwner}</td>
                 <td>{row.materialCode}</td>
                 <td>{row.materialName || row.materialCode}</td>
                 <td>{row.oldQty}</td>
@@ -1342,8 +1342,8 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
         <DataTable
           className="compact-table"
           rows={filteredAllocations}
-          columns={['主键', 'OA备货流程号', '创建人', '物料编码', '原采购数量', '新采购数量', '差异', '原因', '操作', '备注', '提交人', '提交时间']}
-          render={(row) => [row.displayKey || row.demandKey, row.oaFlowNo || '', row.orderCreator || '', row.materialCode || '', row.oldQty, row.newQty, signedNumber(row.deltaQty), row.reason, row.actionType, row.remark, row.createdBy, row.createdAt]}
+          columns={['主键', 'OA备货流程号', '采购下单人', '物料编码', '原采购数量', '新采购数量', '差异', '原因', '操作', '备注', '提交人', '提交时间']}
+          render={(row) => [row.displayKey || row.demandKey, row.oaFlowNo || '', row.purchaseOwner || '', row.materialCode || '', row.oldQty, row.newQty, signedNumber(row.deltaQty), row.reason, row.actionType, row.remark, row.createdBy, row.createdAt]}
         />
       </section>
     </>
@@ -1512,7 +1512,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage }) {
 
 function TracePage({ token }) {
   const [data, setData] = useState({ changeRecords: [] });
-  const [filters, setFilters] = useState({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
+  const [filters, setFilters] = useState({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
 
   async function load() {
     const payload = await request('/api/trace', { token });
@@ -1540,7 +1540,7 @@ function TracePage({ token }) {
       row.reason,
       row.actionType,
       row.remark,
-      row.orderCreator
+      row.purchaseOwner
     ].join(' ').toLowerCase();
     return (!keyword || text.includes(keyword))
       && (omit === 'month' || !filters.month || row.month === filters.month)
@@ -1549,7 +1549,7 @@ function TracePage({ token }) {
       && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
       && (omit === 'series' || !filters.series || row.productSeries === filters.series)
       && (omit === 'sku' || !filters.sku || row.sku === filters.sku)
-      && (omit === 'orderCreator' || !filters.orderCreator || row.orderCreator === filters.orderCreator);
+      && (omit === 'purchaseOwner' || !filters.purchaseOwner || row.purchaseOwner === filters.purchaseOwner);
   };
   const options = useMemo(() => {
     const rowsFor = (field) => rows.filter((row) => matchesTraceFilters(row, field));
@@ -1560,11 +1560,11 @@ function TracePage({ token }) {
       productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
       series: unique(rowsFor('series').map((row) => row.productSeries)),
       skus: unique(rowsFor('sku').map((row) => row.sku)),
-      orderCreators: unique(rowsFor('orderCreator').map((row) => row.orderCreator))
+      purchaseOwners: unique(rowsFor('purchaseOwner').map((row) => row.purchaseOwner))
     };
   }, [rows, filters]);
   const filteredRows = useMemo(() => rows.filter((row) => matchesTraceFilters(row)), [rows, filters]);
-  const clearFilters = () => setFilters({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
+  const clearFilters = () => setFilters({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
 
   return (
     <>
@@ -1576,7 +1576,7 @@ function TracePage({ token }) {
         <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
         <SelectField label="系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
         <SelectField label="SKU" value={filters.sku} options={options.skus} onChange={(value) => setFilters({ ...filters, sku: value })} />
-        <SelectField label="创建人" value={filters.orderCreator} options={options.orderCreators} onChange={(value) => setFilters({ ...filters, orderCreator: value })} />
+        <SelectField label="采购下单人" value={filters.purchaseOwner} options={options.purchaseOwners} onChange={(value) => setFilters({ ...filters, purchaseOwner: value })} />
         <input
           className="search-input"
           placeholder="搜索操作人、供应商、物料编码、SKU、物料名称、原因、操作、备注"

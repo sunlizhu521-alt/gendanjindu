@@ -408,20 +408,57 @@ function dimensionLookups() {
   });
   const assignmentMap = new Map();
   const supplierMap = new Map();
+  const assignmentOwnerMaterialMap = new Map();
   assignmentRows.forEach((row) => {
     const supplier = normalize(row.supplier);
+    const materialCode = normalize(row.materialCode);
     if (supplier && normalize(row.supplierShortName) && !supplierMap.has(supplier)) supplierMap.set(supplier, row);
-    const key = [normalize(row.supplier), normalize(row.materialCode)].join('|');
-    if (normalize(row.supplier) && normalize(row.materialCode)) assignmentMap.set(key, row);
+    const key = [supplier, materialCode].join('|');
+    if (supplier && materialCode) assignmentMap.set(key, row);
+    [row.productLineDetailPurchaseOwner, row.purchaseOwner].map(normalize).filter(Boolean).forEach((owner) => {
+      const ownerKey = [owner, materialCode].join('|');
+      if (materialCode && !assignmentOwnerMaterialMap.has(ownerKey)) assignmentOwnerMaterialMap.set(ownerKey, row);
+    });
   });
-  return { productMap, assignmentMap, supplierMap };
+  return { productMap, assignmentMap, supplierMap, assignmentOwnerMaterialMap };
 }
 
-function enrichDemandFields(supplier, materialCode) {
-  const { productMap, assignmentMap, supplierMap } = dimensionLookups();
+function splitDelimited(value) {
+  return [...new Set(normalize(value).split(/[+、]/).map(normalize).filter(Boolean))];
+}
+
+function assignmentGroup(row) {
+  return normalize(row?.productLineDetailPurchaseGroup || row?.purchaseGroup);
+}
+
+function assignmentOwner(row) {
+  return normalize(row?.productLineDetailPurchaseOwner || row?.purchaseOwner);
+}
+
+function assignmentsForOrderCreator(creator, materialCode, lookups) {
+  const code = normalize(materialCode);
+  if (!code) return [];
+  return splitDelimited(creator)
+    .map((owner) => lookups.assignmentOwnerMaterialMap.get([owner, code].join('|')))
+    .filter(Boolean);
+}
+
+function purchaseGroupForCreator(creator, materialCode, fallbackAssignment, lookups) {
+  const creatorGroups = assignmentsForOrderCreator(creator, materialCode, lookups).map(assignmentGroup);
+  if (normalize(creator)) return uniqueDelimitedValues(creatorGroups);
+  return uniqueDelimitedValues([
+    ...creatorGroups,
+    assignmentGroup(fallbackAssignment)
+  ]);
+}
+
+function enrichDemandFields(supplier, materialCode, orderCreator = '') {
+  const lookups = dimensionLookups();
+  const { productMap, assignmentMap, supplierMap } = lookups;
   const product = productMap.get(normalize(materialCode)) || {};
   const assignment = assignmentMap.get([normalize(supplier), normalize(materialCode)].join('|')) || {};
   const supplierAssignment = supplierMap.get(normalize(supplier)) || {};
+  const creator = normalize(orderCreator);
   return {
     sku: normalize(product.sku),
     logisticsCode: normalize(product.logisticsCode),
@@ -429,18 +466,20 @@ function enrichDemandFields(supplier, materialCode) {
     productLine: normalize(product.productLine),
     productSeries: normalize(product.productSeries),
     supplierShortName: normalize(assignment.supplierShortName || supplierAssignment.supplierShortName),
-    purchaseGroup: normalize(assignment.productLineDetailPurchaseGroup || assignment.purchaseGroup),
-    purchaseOwner: normalize(assignment.productLineDetailPurchaseOwner || assignment.purchaseOwner),
+    purchaseGroup: purchaseGroupForCreator(creator, materialCode, assignment, lookups),
+    purchaseOwner: creator || assignmentOwner(assignment),
     purchaseOrg: normalize(assignment.purchaseOrg)
   };
 }
 
 function applyDimensionEnrichment() {
-  const { productMap, assignmentMap, supplierMap } = dimensionLookups();
+  const lookups = dimensionLookups();
+  const { productMap, assignmentMap, supplierMap } = lookups;
   all('SELECT * FROM order_demands').forEach((demand) => {
     const product = productMap.get(demand.material_code) || {};
     const assignment = assignmentMap.get([demand.supplier, demand.material_code].join('|')) || {};
     const supplierAssignment = supplierMap.get(demand.supplier) || {};
+    const orderCreator = oldCreatorsForDemand(demand.demand_key);
     run(
       `UPDATE order_demands
        SET sku = COALESCE(NULLIF(?, ''), sku),
@@ -460,8 +499,8 @@ function applyDimensionEnrichment() {
         normalize(product.productLine),
         normalize(product.productSeries),
         normalize(assignment.supplierShortName || supplierAssignment.supplierShortName),
-        normalize(assignment.productLineDetailPurchaseGroup || assignment.purchaseGroup),
-        normalize(assignment.productLineDetailPurchaseOwner || assignment.purchaseOwner),
+        purchaseGroupForCreator(orderCreator, demand.material_code, assignment, lookups),
+        normalize(orderCreator) || assignmentOwner(assignment),
         normalize(assignment.purchaseOrg),
         demand.demand_key
       ]
@@ -489,8 +528,11 @@ function inventoryForDemand(demand) {
 
 function canEditDemand(user, demand) {
   if (user.role === ROLE_ADMIN) return true;
-  if (!normalize(demand.purchase_owner)) return true;
-  return normalize(demand.purchase_owner) === normalize(user.name);
+  const owner = normalize(demand.order_creator)
+    || (demand.demand_key ? oldCreatorsForDemand(demand.demand_key) : '')
+    || normalize(demand.purchase_owner);
+  if (!owner) return true;
+  return splitDelimited(owner).includes(normalize(user.name));
 }
 
 function demandRows(includeInactive = false, user = null) {
@@ -498,6 +540,10 @@ function demandRows(includeInactive = false, user = null) {
   return all(`SELECT * FROM order_demands ${where} ORDER BY month DESC, business_unit, supplier, material_code`).map((demand) => {
     const progress = progressForDemand(demand.demand_key);
     const stock = inventoryForDemand(demand);
+    const orderCreator = oldCreatorsForDemand(demand.demand_key);
+    const enriched = enrichDemandFields(demand.supplier, demand.material_code, orderCreator);
+    const purchaseOwner = orderCreator || demand.purchase_owner || enriched.purchaseOwner || '';
+    const purchaseGroup = enriched.purchaseGroup || demand.purchase_group || '';
     const progressTotal = numberValue(progress.in_production_qty) + numberValue(progress.finished_qty) + numberValue(progress.shipped_qty);
     const stockQty = numberValue(stock.stock_qty);
     const demandAfterStock = Math.max(numberValue(demand.current_order_qty) - stockQty, 0);
@@ -507,20 +553,20 @@ function demandRows(includeInactive = false, user = null) {
       month: demand.month,
       businessUnit: demand.business_unit,
       supplier: demand.supplier,
-      supplierShortName: demand.supplier_short_name || '',
+      supplierShortName: demand.supplier_short_name || enriched.supplierShortName || '',
       materialCode: demand.material_code,
       currentOrderQty: numberValue(demand.current_order_qty),
       active: Boolean(demand.active),
-      sku: demand.sku || '',
-      logisticsCode: demand.logistics_code || '',
-      materialName: demand.material_name || '',
-      productLine: demand.product_line || '',
-      productSeries: demand.product_series || '',
-      purchaseGroup: demand.purchase_group || '',
-      purchaseOwner: demand.purchase_owner || '',
+      sku: demand.sku || enriched.sku || '',
+      logisticsCode: demand.logistics_code || enriched.logisticsCode || '',
+      materialName: demand.material_name || enriched.materialName || '',
+      productLine: demand.product_line || enriched.productLine || '',
+      productSeries: demand.product_series || enriched.productSeries || '',
+      purchaseGroup,
+      purchaseOwner,
       purchaseOrg: demand.purchase_org || '',
       oaFlowNo: demand.oa_flow_no || oldOaFlowNosForDemand(demand.demand_key),
-      orderCreator: oldCreatorsForDemand(demand.demand_key),
+      orderCreator,
       stockQty,
       demandAfterStock,
       inProductionQty: numberValue(progress.in_production_qty),
@@ -532,7 +578,7 @@ function demandRows(includeInactive = false, user = null) {
       remark: progress.remark || '',
       progressUpdatedBy: progress.updated_by || '',
       progressUpdatedAt: progress.updated_at || '',
-      canEdit: user ? canEditDemand(user, demand) : false
+      canEdit: user ? canEditDemand(user, { ...demand, purchase_owner: purchaseOwner, order_creator: orderCreator }) : false
     };
   });
 }
@@ -610,7 +656,8 @@ function compareRowsFromSummary(summary, sourceRows, user) {
     const newQty = numberValue(next?.currentOrderQty);
     const deltaQty = newQty - oldQty;
     if (deltaQty === 0) return null;
-    const enriched = next ? enrichDemandFields(next.supplier, next.materialCode) : {};
+    const orderCreator = uniqueCreators(sourceRowsByDemand.get(key) || []) || oldCreatorsForDemand(key);
+    const enriched = next ? enrichDemandFields(next.supplier, next.materialCode, orderCreator) : {};
     const base = current || {
       demandKey: key,
       month: next.month,
@@ -624,7 +671,7 @@ function compareRowsFromSummary(summary, sourceRows, user) {
       productLine: enriched.productLine,
       productSeries: enriched.productSeries,
       purchaseGroup: enriched.purchaseGroup,
-      purchaseOwner: enriched.purchaseOwner,
+      purchaseOwner: orderCreator || enriched.purchaseOwner,
       purchaseOrg: next.purchaseOrg || enriched.purchaseOrg,
       stockQty: 0,
       inProductionQty: 0,
@@ -638,7 +685,6 @@ function compareRowsFromSummary(summary, sourceRows, user) {
       material_code: next.materialCode
     });
     const progressTotalValue = current ? numberValue(current.progressTotal) : 0;
-    const orderCreator = uniqueCreators(sourceRowsByDemand.get(key) || []) || oldCreatorsForDemand(key);
     return {
       demandKey: key,
       displayKey: displayDemandKey(base),
@@ -653,7 +699,7 @@ function compareRowsFromSummary(summary, sourceRows, user) {
       productLine: base.productLine || '',
       productSeries: base.productSeries || '',
       purchaseGroup: base.purchaseGroup || '',
-      purchaseOwner: base.purchaseOwner || '',
+      purchaseOwner: orderCreator || base.purchaseOwner || '',
       purchaseOrg: next?.purchaseOrg || base.purchaseOrg || '',
       orderCreator,
       oldQty,
@@ -785,8 +831,11 @@ function compareRowsForSession(sessionId, user) {
     const demand = get('SELECT * FROM order_demands WHERE demand_key = ?', [row.demand_key]);
     const progress = progressForDemand(row.demand_key);
     const stock = demand ? inventoryForDemand(demand) : { stock_qty: row.stock_qty };
-    const enriched = enrichDemandFields(row.supplier, row.material_code);
-    const permissionDemand = demand || { purchase_owner: enriched.purchaseOwner, supplier: row.supplier, material_code: row.material_code };
+    const orderCreator = row.order_creator || oldCreatorsForDemand(row.demand_key);
+    const enriched = enrichDemandFields(row.supplier, row.material_code, orderCreator);
+    const permissionDemand = demand
+      ? { ...demand, order_creator: orderCreator, purchase_owner: orderCreator || demand.purchase_owner }
+      : { purchase_owner: orderCreator || enriched.purchaseOwner, order_creator: orderCreator, supplier: row.supplier, material_code: row.material_code };
     if (!canEditDemand(user, permissionDemand)) return null;
     return {
       id: row.id,
@@ -804,7 +853,7 @@ function compareRowsForSession(sessionId, user) {
       productLine: demand?.product_line || enriched.productLine || '',
       productSeries: demand?.product_series || enriched.productSeries || '',
       purchaseOrg: row.purchase_org,
-      orderCreator: row.order_creator || '',
+      orderCreator,
       oldQty: numberValue(row.old_qty),
       newQty: numberValue(row.new_qty),
       deltaQty: numberValue(row.delta_qty),
@@ -1157,8 +1206,11 @@ app.post('/api/difference-allocations/:sessionId/rows/:rowId', requireAuth, requ
   const row = get('SELECT * FROM difference_compare_rows WHERE id = ? AND session_id = ?', [req.params.rowId, req.params.sessionId]);
   if (!row) return res.status(404).json({ error: '差异行不存在' });
   const existingDemand = get('SELECT * FROM order_demands WHERE demand_key = ?', [row.demand_key]);
-  const enriched = enrichDemandFields(row.supplier, row.material_code);
-  const permissionDemand = existingDemand || { purchase_owner: enriched.purchaseOwner, supplier: row.supplier, material_code: row.material_code };
+  const orderCreator = row.order_creator || oldCreatorsForDemand(row.demand_key);
+  const enriched = enrichDemandFields(row.supplier, row.material_code, orderCreator);
+  const permissionDemand = existingDemand
+    ? { ...existingDemand, order_creator: orderCreator, purchase_owner: orderCreator || existingDemand.purchase_owner }
+    : { purchase_owner: orderCreator || enriched.purchaseOwner, order_creator: orderCreator, supplier: row.supplier, material_code: row.material_code };
   if (!canEditDemand(req.user, permissionDemand)) return res.status(403).json({ error: '没有该供应商物料的分配权限' });
   const actionType = normalize(req.body.actionType);
   const allocatedQty = numberValue(req.body.allocatedQty);

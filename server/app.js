@@ -261,6 +261,14 @@ function pickMapped(row, mapping, key, aliases = []) {
   return pick(row, mapping[key]) || pickAny(row, aliases);
 }
 
+function uniqueDelimitedValues(values) {
+  return [...new Set(values.map(normalize).filter(Boolean))].join('、');
+}
+
+function appendUniqueDelimited(existing, next) {
+  return uniqueDelimitedValues([...normalize(existing).split('、'), next]);
+}
+
 function mappedKingdeeRows(rows, mapping) {
   const valid = [];
   const skipped = [];
@@ -271,6 +279,7 @@ function mappedKingdeeRows(rows, mapping) {
     const materialCode = pickMapped(row, mapping, 'materialCode', ['物料编码', '物料代码', '商品编码', '存货编码', '产品编码', '品号', '编码']);
     const purchaseOrg = pickMapped(row, mapping, 'purchaseOrg', ['采购组织', '采购单位', '采购部门']);
     const creator = pickMapped(row, mapping, 'creator', ['创建人', '制单人', '采购员', '申请人', '下单人', '采购下单人', '创建者']);
+    const oaFlowNo = pickMapped(row, mapping, 'oaFlowNo', ['OA备货流程号', 'OA流程号', '备货流程号', 'OA申请号', 'OA申请流程号', 'OA流程编号']);
     const quantity = numberValue(row?.[mapping.quantity] ?? pickAny(row, ['采购订单数量', '数量', '订单数量', '下单数量', '采购数量']));
     const reasons = [];
     if (!month) reasons.push('日期无法解析');
@@ -288,6 +297,7 @@ function mappedKingdeeRows(rows, mapping) {
       materialCode,
       purchaseOrg,
       creator,
+      oaFlowNo,
       orderNo: mapping.orderNo ? pick(row, mapping.orderNo) : '',
       quantity,
       raw: row,
@@ -307,10 +317,12 @@ function summarizeDemands(rows) {
       supplier: row.supplier,
       materialCode: row.materialCode,
       purchaseOrg: row.purchaseOrg || '',
+      oaFlowNo: row.oaFlowNo || '',
       currentOrderQty: 0,
       rows: 0
     };
     current.currentOrderQty += row.quantity;
+    current.oaFlowNo = appendUniqueDelimited(current.oaFlowNo, row.oaFlowNo);
     current.rows += 1;
     map.set(row.demandKey, current);
   });
@@ -472,6 +484,7 @@ function demandRows(includeInactive = false, user = null) {
       purchaseGroup: demand.purchase_group || '',
       purchaseOwner: demand.purchase_owner || '',
       purchaseOrg: demand.purchase_org || '',
+      oaFlowNo: demand.oa_flow_no || oldOaFlowNosForDemand(demand.demand_key),
       orderCreator: oldCreatorsForDemand(demand.demand_key),
       stockQty,
       demandAfterStock,
@@ -490,7 +503,7 @@ function demandRows(includeInactive = false, user = null) {
 }
 
 function uniqueOrderNos(rows) {
-  return [...new Set(rows.map((row) => normalize(row.orderNo || row.order_no)).filter(Boolean))].join('、');
+  return uniqueDelimitedValues(rows.map((row) => row.orderNo || row.order_no));
 }
 
 function oldOrderNosForDemand(demandKeyValue) {
@@ -499,8 +512,20 @@ function oldOrderNosForDemand(demandKeyValue) {
   return uniqueOrderNos(all('SELECT order_no FROM kingdee_orders WHERE batch_id = ? AND demand_key = ?', [demand.source_batch_id, demandKeyValue]));
 }
 
+function rawOaFlowNo(row) {
+  const raw = parseJson(row.raw_json, {});
+  return normalize(row.oaFlowNo || row.oa_flow_no)
+    || pickAny(raw, ['OA备货流程号', 'OA流程号', '备货流程号', 'OA申请号', 'OA申请流程号', 'OA流程编号']);
+}
+
+function oldOaFlowNosForDemand(demandKeyValue) {
+  const demand = get('SELECT source_batch_id FROM order_demands WHERE demand_key = ?', [demandKeyValue]);
+  if (!demand?.source_batch_id) return '';
+  return uniqueDelimitedValues(all('SELECT oa_flow_no, raw_json FROM kingdee_orders WHERE batch_id = ? AND demand_key = ?', [demand.source_batch_id, demandKeyValue]).map(rawOaFlowNo));
+}
+
 function uniqueCreators(rows) {
-  return [...new Set(rows.map((row) => normalize(row.creator)).filter(Boolean))].join('、');
+  return uniqueDelimitedValues(rows.map((row) => row.creator));
 }
 
 function oldCreatorsForDemand(demandKeyValue) {
@@ -783,22 +808,23 @@ function applyKingdeeSnapshot({ fileName, sourceRows, summary, diffs, mapping, u
   run('INSERT INTO kingdee_import_batches (id, file_name, imported_by, imported_at, applied_at, row_count) VALUES (?, ?, ?, ?, ?, ?)', [batchId, fileName, userName, now, now, sourceRows.length]);
   sourceRows.forEach((row) => {
     run(
-      'INSERT INTO kingdee_orders (id, batch_id, demand_key, month, business_unit, supplier, material_code, purchase_org, creator, order_no, quantity, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [randomUUID(), batchId, row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.purchaseOrg || '', row.creator || '', row.orderNo || '', row.quantity, JSON.stringify(row.raw || row)]
+      'INSERT INTO kingdee_orders (id, batch_id, demand_key, month, business_unit, supplier, material_code, purchase_org, creator, oa_flow_no, order_no, quantity, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [randomUUID(), batchId, row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.purchaseOrg || '', row.creator || '', row.oaFlowNo || '', row.orderNo || '', row.quantity, JSON.stringify(row.raw || row)]
     );
   });
   run('UPDATE order_demands SET active = 0, updated_at = ?', [now]);
   summary.forEach((row) => {
     run(
-      `INSERT INTO order_demands (demand_key, month, business_unit, supplier, material_code, current_order_qty, active, purchase_org, source_batch_id, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+      `INSERT INTO order_demands (demand_key, month, business_unit, supplier, material_code, current_order_qty, active, purchase_org, oa_flow_no, source_batch_id, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
        ON CONFLICT(demand_key) DO UPDATE SET
          current_order_qty = excluded.current_order_qty,
          purchase_org = COALESCE(NULLIF(excluded.purchase_org, ''), order_demands.purchase_org),
+         oa_flow_no = COALESCE(NULLIF(excluded.oa_flow_no, ''), order_demands.oa_flow_no),
          active = 1,
          source_batch_id = excluded.source_batch_id,
          updated_at = excluded.updated_at`,
-      [row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.currentOrderQty, row.purchaseOrg || '', batchId, now]
+      [row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.currentOrderQty, row.purchaseOrg || '', row.oaFlowNo || '', batchId, now]
     );
     const progress = get('SELECT demand_key FROM supplier_progress WHERE demand_key = ?', [row.demandKey]);
     if (!progress) {

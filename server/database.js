@@ -114,6 +114,7 @@ function migrate() {
       material_code TEXT NOT NULL,
       purchase_org TEXT NOT NULL DEFAULT '',
       creator TEXT NOT NULL DEFAULT '',
+      oa_flow_no TEXT NOT NULL DEFAULT '',
       order_no TEXT,
       quantity REAL NOT NULL,
       raw_json TEXT NOT NULL
@@ -134,6 +135,7 @@ function migrate() {
       purchase_group TEXT,
       purchase_owner TEXT,
       purchase_org TEXT NOT NULL DEFAULT '',
+      oa_flow_no TEXT NOT NULL DEFAULT '',
       source_batch_id TEXT,
       updated_at TEXT NOT NULL
     );
@@ -293,6 +295,9 @@ function migrate() {
   if (!demandColumns.includes('logistics_code')) {
     run("ALTER TABLE order_demands ADD COLUMN logistics_code TEXT NOT NULL DEFAULT ''");
   }
+  if (!demandColumns.includes('oa_flow_no')) {
+    run("ALTER TABLE order_demands ADD COLUMN oa_flow_no TEXT NOT NULL DEFAULT ''");
+  }
 
   const kingdeeColumns = all('PRAGMA table_info(kingdee_orders)').map((row) => row.name);
   if (!kingdeeColumns.includes('purchase_org')) {
@@ -300,6 +305,9 @@ function migrate() {
   }
   if (!kingdeeColumns.includes('creator')) {
     run("ALTER TABLE kingdee_orders ADD COLUMN creator TEXT NOT NULL DEFAULT ''");
+  }
+  if (!kingdeeColumns.includes('oa_flow_no')) {
+    run("ALTER TABLE kingdee_orders ADD COLUMN oa_flow_no TEXT NOT NULL DEFAULT ''");
   }
 
   const kingdeeBatchColumns = all('PRAGMA table_info(kingdee_import_batches)').map((row) => row.name);

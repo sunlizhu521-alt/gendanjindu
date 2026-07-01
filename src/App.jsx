@@ -54,6 +54,7 @@ const KINGDEE_FIELDS = [
   ['purchaseOrg', '采购组织'],
   ['materialCode', '物料编码'],
   ['creator', '创建人（采购订单）'],
+  ['oaFlowNo', 'OA备货流程号'],
   ['quantity', '采购订单数量'],
   ['orderNo', '采购订单号']
 ];
@@ -402,7 +403,7 @@ function Dashboard({ rows }) {
         <DataTable
           className="compact-table"
           rows={filteredRows}
-          columns={['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', '下单数量', '已发货', '生产中', '已完工']}
+          columns={['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', '下单数量', '已发货', '生产中', '已完工', 'OA备货流程号']}
           render={(row) => [
             row.businessUnit,
             supplierName(row),
@@ -414,7 +415,8 @@ function Dashboard({ rows }) {
             row.currentOrderQty,
             row.shippedQty,
             row.inProductionQty,
-            row.finishedQty
+            row.finishedQty,
+            row.oaFlowNo
           ]}
         />
       </section>

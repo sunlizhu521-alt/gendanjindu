@@ -222,32 +222,34 @@ function FieldMapping({ fields, columns, mapping, onChange }) {
 function useFilteredDemands(rows) {
   const [filters, setFilters] = useState({ keyword: '', month: '', supplier: '', purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
   const unique = (values) => [...new Set(values.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'zh-Hans-CN'));
-  const options = useMemo(() => ({
-    months: unique(rows.map((row) => row.month)),
-    suppliers: unique(rows.map((row) => supplierName(row))),
-    purchaseOrgs: unique(rows.map((row) => row.purchaseOrg)),
-    businessUnits: BUSINESS_UNITS,
-    productLines: unique(rows.map((row) => row.productLine)),
-    series: unique(rows.map((row) => row.productSeries)),
-    purchaseGroups: unique(rows.map((row) => row.purchaseGroup)),
-    purchaseOwners: unique(rows.map((row) => row.purchaseOwner))
-  }), [rows]);
-  const filtered = useMemo(() => {
+  const matchesFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
-    return rows.filter((row) => {
-      const displaySupplier = supplierName(row);
-      const text = [row.demandKey, row.oaFlowNo, row.materialCode, row.supplier, displaySupplier, row.materialName, row.logisticsCode, row.sku, row.purchaseOwner, row.purchaseGroup].join(' ').toLowerCase();
-      return (!keyword || text.includes(keyword))
-        && (!filters.month || row.month === filters.month)
-        && (!filters.supplier || displaySupplier === filters.supplier)
-        && (!filters.purchaseOrg || row.purchaseOrg === filters.purchaseOrg)
-        && (!filters.businessUnit || row.businessUnit === filters.businessUnit)
-        && (!filters.productLine || row.productLine === filters.productLine)
-        && (!filters.series || row.productSeries === filters.series)
-        && (!filters.purchaseGroup || row.purchaseGroup === filters.purchaseGroup)
-        && (!filters.purchaseOwner || row.purchaseOwner === filters.purchaseOwner);
-    });
+    const displaySupplier = supplierName(row);
+    const text = [row.demandKey, row.oaFlowNo, row.materialCode, row.supplier, displaySupplier, row.materialName, row.logisticsCode, row.sku, row.purchaseOwner, row.purchaseGroup].join(' ').toLowerCase();
+    return (!keyword || text.includes(keyword))
+      && (omit === 'month' || !filters.month || row.month === filters.month)
+      && (omit === 'supplier' || !filters.supplier || displaySupplier === filters.supplier)
+      && (omit === 'purchaseOrg' || !filters.purchaseOrg || row.purchaseOrg === filters.purchaseOrg)
+      && (omit === 'businessUnit' || !filters.businessUnit || row.businessUnit === filters.businessUnit)
+      && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
+      && (omit === 'series' || !filters.series || row.productSeries === filters.series)
+      && (omit === 'purchaseGroup' || !filters.purchaseGroup || row.purchaseGroup === filters.purchaseGroup)
+      && (omit === 'purchaseOwner' || !filters.purchaseOwner || row.purchaseOwner === filters.purchaseOwner);
+  };
+  const options = useMemo(() => {
+    const rowsFor = (field) => rows.filter((row) => matchesFilters(row, field));
+    return {
+      months: unique(rowsFor('month').map((row) => row.month)),
+      suppliers: unique(rowsFor('supplier').map((row) => supplierName(row))),
+      purchaseOrgs: unique(rowsFor('purchaseOrg').map((row) => row.purchaseOrg)),
+      businessUnits: unique(rowsFor('businessUnit').map((row) => row.businessUnit)),
+      productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
+      series: unique(rowsFor('series').map((row) => row.productSeries)),
+      purchaseGroups: unique(rowsFor('purchaseGroup').map((row) => row.purchaseGroup)),
+      purchaseOwners: unique(rowsFor('purchaseOwner').map((row) => row.purchaseOwner))
+    };
   }, [rows, filters]);
+  const filtered = useMemo(() => rows.filter((row) => matchesFilters(row)), [rows, filters]);
   return { filters, setFilters, options, filtered };
 }
 

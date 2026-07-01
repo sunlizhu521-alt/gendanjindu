@@ -373,6 +373,33 @@ function Dashboard({ rows }) {
     return [...map.values()].sort((a, b) => b.orderQty - a.orderQty);
   }, [filteredRows]);
 
+  async function exportDashboardTable() {
+    const XLSX = await import('xlsx');
+    const headers = ['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', '下单数量', '已发货', '生产中', '已完工', 'OA备货流程号'];
+    const aoa = [
+      headers,
+      ...filteredRows.map((row) => [
+        row.businessUnit,
+        supplierName(row),
+        row.productLine,
+        row.productSeries,
+        row.materialCode,
+        row.sku,
+        row.materialName,
+        numberValue(row.currentOrderQty),
+        numberValue(row.shippedQty),
+        numberValue(row.inProductionQty),
+        numberValue(row.finishedQty),
+        row.oaFlowNo
+      ])
+    ];
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+    worksheet['!cols'] = headers.map((header) => ({ wch: Math.max(12, header.length + 4) }));
+    XLSX.utils.book_append_sheet(workbook, worksheet, '采购总览');
+    XLSX.writeFile(workbook, `采购总览_${todayText()}.xlsx`);
+  }
+
   return (
     <>
       <div className="section-heading-row dashboard-heading">
@@ -396,6 +423,7 @@ function Dashboard({ rows }) {
           onChange={(event) => setFilters({ ...filters, keyword: event.target.value })}
         />
         <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
+        <button type="button" className="compact-button" onClick={exportDashboardTable}>导出表格</button>
       </div>
       <section className="metric-grid">
         <MetricCard label="下单数量" value={summary.order.toLocaleString()} />

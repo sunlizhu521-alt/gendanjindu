@@ -1215,52 +1215,101 @@ function DimensionLibrary({ token, reloadDemands, setMessage }) {
   );
 }
 
-function TracePage({ token, setMessage }) {
-  const [data, setData] = useState({ batches: [], diffs: [], progress: [], inventory: [], notes: [] });
-  const [note, setNote] = useState({ purchaseOrg: '', month: '', businessUnit: '', supplier: '', materialCode: '', oaFlowNo: '', relatedQty: '', reason: '', changeDate: todayText(), remark: '' });
+function TracePage({ token }) {
+  const [data, setData] = useState({ changeRecords: [] });
+  const [filters, setFilters] = useState({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
 
   async function load() {
     const payload = await request('/api/trace', { token });
     setData(payload);
   }
 
-  useEffect(() => { load().catch(() => {}); }, []);
+  useEffect(() => { load().catch(() => {}); }, [token]);
 
-  async function saveNote(event) {
-    event.preventDefault();
-    await request('/api/change-notes', { token, method: 'POST', body: JSON.stringify(note) });
-    setMessage('变更备注已保存。');
-    setNote({ purchaseOrg: '', month: '', businessUnit: '', supplier: '', materialCode: '', oaFlowNo: '', relatedQty: '', reason: '', changeDate: todayText(), remark: '' });
-    await load();
-  }
+  const rows = data.changeRecords || [];
+  const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+  const matchesTraceFilters = (row, omit = '') => {
+    const keyword = filters.keyword.toLowerCase();
+    const displaySupplier = supplierName(row);
+    const text = [
+      row.operator,
+      row.month,
+      row.businessUnit,
+      displaySupplier,
+      row.supplier,
+      row.productLine,
+      row.productSeries,
+      row.materialCode,
+      row.sku,
+      row.materialName,
+      row.reason,
+      row.actionType,
+      row.remark,
+      row.orderCreator
+    ].join(' ').toLowerCase();
+    return (!keyword || text.includes(keyword))
+      && (omit === 'month' || !filters.month || row.month === filters.month)
+      && (omit === 'businessUnit' || !filters.businessUnit || row.businessUnit === filters.businessUnit)
+      && (omit === 'supplier' || !filters.supplier || displaySupplier === filters.supplier)
+      && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
+      && (omit === 'series' || !filters.series || row.productSeries === filters.series)
+      && (omit === 'sku' || !filters.sku || row.sku === filters.sku)
+      && (omit === 'orderCreator' || !filters.orderCreator || row.orderCreator === filters.orderCreator);
+  };
+  const options = useMemo(() => {
+    const rowsFor = (field) => rows.filter((row) => matchesTraceFilters(row, field));
+    return {
+      months: unique(rowsFor('month').map((row) => row.month)),
+      businessUnits: unique(rowsFor('businessUnit').map((row) => row.businessUnit)),
+      suppliers: unique(rowsFor('supplier').map((row) => supplierName(row))),
+      productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
+      series: unique(rowsFor('series').map((row) => row.productSeries)),
+      skus: unique(rowsFor('sku').map((row) => row.sku)),
+      orderCreators: unique(rowsFor('orderCreator').map((row) => row.orderCreator))
+    };
+  }, [rows, filters]);
+  const filteredRows = useMemo(() => rows.filter((row) => matchesTraceFilters(row)), [rows, filters]);
+  const clearFilters = () => setFilters({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
 
   return (
     <>
-      <div className="section-heading-row"><h2>变更追溯</h2><span className="section-count">导入、差异、进度、库存、备注</span></div>
-      <form className="panel form-grid" onSubmit={saveNote}>
-        {[
-          ['purchaseOrg', '采购组织'],
-          ['month', '创建月份'],
-          ['businessUnit', '事业部'],
-          ['supplier', '供应商'],
-          ['materialCode', '物料编码'],
-          ['oaFlowNo', 'OA备货流程号'],
-          ['relatedQty', '关联数量'],
-          ['reason', '原因'],
-          ['changeDate', '日期'],
-          ['remark', '备注']
-        ].map(([key, label]) => (
-          <label key={key}>{label}<input value={note[key]} onChange={(event) => setNote({ ...note, [key]: event.target.value })} /></label>
-        ))}
-        <button type="submit" className="compact-button">保存备注</button>
-      </form>
-      <section className="dashboard-grid">
-        <article className="panel"><h3>金蝶导入批次</h3><DataTable className="compact-table" rows={data.batches || []} columns={['文件', '行数', '导入人', '时间']} render={(row) => [row.file_name, row.row_count, row.imported_by, row.imported_at]} /></article>
-        <article className="panel"><h3>快照差异</h3><DataTable className="compact-table" rows={data.diffs || []} columns={['类型', '主键', '旧数量', '新数量', '时间']} render={(row) => [row.diff_type, row.demand_key, row.old_qty, row.new_qty, row.created_at]} /></article>
-      </section>
-      <section className="dashboard-grid">
-        <article className="panel"><h3>进度刷新历史</h3><DataTable className="compact-table" rows={data.progress || []} columns={['主键', '生产中', '已完工', '已发货数量', '更新人', '时间']} render={(row) => [row.demand_key, row.in_production_qty, row.finished_qty, row.shipped_qty || 0, row.updated_by, row.updated_at]} /></article>
-        <article className="panel"><h3>库存调整历史</h3><DataTable className="compact-table" rows={data.inventory || []} columns={['库存主键', '旧数量', '新数量', '备注', '更新人', '时间']} render={(row) => [row.stock_key, row.old_qty, row.new_qty, row.remark, row.updated_by, row.updated_at]} /></article>
+      <div className="section-heading-row"><h2>变更追溯</h2><span className="section-count">当前显示 {filteredRows.length} / {rows.length} 条</span></div>
+      <div className="toolbar filters-row">
+        <SelectField label="下单月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
+        <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
+        <SelectField label="供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
+        <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
+        <SelectField label="系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
+        <SelectField label="SKU" value={filters.sku} options={options.skus} onChange={(value) => setFilters({ ...filters, sku: value })} />
+        <SelectField label="创建人" value={filters.orderCreator} options={options.orderCreators} onChange={(value) => setFilters({ ...filters, orderCreator: value })} />
+        <input
+          className="search-input"
+          placeholder="搜索操作人、供应商、物料编码、SKU、物料名称、原因、操作、备注"
+          value={filters.keyword}
+          onChange={(event) => setFilters({ ...filters, keyword: event.target.value })}
+        />
+        <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
+      </div>
+      <section className="panel">
+        <div className="section-heading-row"><h3>变更记录信息</h3><span className="section-count">{filteredRows.length} 条</span></div>
+        <DataTable
+          className="compact-table change-record-table"
+          rows={filteredRows}
+          columns={['操作人', '事业部', '供应商', '产品线', '系列', '物料编码', 'SKU', '物料名称', '原因', '操作', '备注']}
+          render={(row) => [
+            row.operator,
+            row.businessUnit,
+            supplierName(row),
+            <TightCell value={row.productLine} />,
+            <TightCell value={row.productSeries} />,
+            row.materialCode,
+            row.sku,
+            row.materialName,
+            row.reason,
+            row.actionType,
+            row.remark
+          ]}
+        />
       </section>
     </>
   );

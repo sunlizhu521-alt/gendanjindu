@@ -1358,13 +1358,62 @@ app.post('/api/inventory/import', requireAuth, requirePage('inventory'), upload.
   res.json({ imported });
 });
 
+function traceChangeRecords() {
+  const allocationRecords = allocationRows().map((row) => ({
+    id: `allocation-${row.id}`,
+    sourceType: 'differenceAllocation',
+    operator: row.createdBy || '',
+    month: row.month || '',
+    businessUnit: row.businessUnit || '',
+    supplier: row.supplier || '',
+    supplierShortName: row.supplierShortName || '',
+    productLine: row.productLine || '',
+    productSeries: row.productSeries || '',
+    materialCode: row.materialCode || '',
+    sku: row.sku || '',
+    materialName: row.materialName || row.materialCode || '',
+    orderCreator: row.orderCreator || '',
+    reason: row.reason || '',
+    actionType: row.actionType || '',
+    remark: row.remark || '',
+    createdAt: row.createdAt || ''
+  }));
+  const noteRecords = all('SELECT * FROM demand_change_notes ORDER BY created_at DESC LIMIT 300').map((row) => {
+    const demand = get('SELECT * FROM order_demands WHERE demand_key = ?', [row.demand_key]);
+    const enriched = enrichDemandFields(row.supplier, row.material_code);
+    return {
+      id: `note-${row.id}`,
+      sourceType: 'changeNote',
+      operator: row.created_by || '',
+      month: row.month || demand?.month || '',
+      businessUnit: row.business_unit || demand?.business_unit || '',
+      supplier: row.supplier || demand?.supplier || '',
+      supplierShortName: demand?.supplier_short_name || enriched.supplierShortName || '',
+      productLine: demand?.product_line || enriched.productLine || '',
+      productSeries: demand?.product_series || enriched.productSeries || '',
+      materialCode: row.material_code || demand?.material_code || '',
+      sku: demand?.sku || enriched.sku || '',
+      materialName: demand?.material_name || enriched.materialName || row.material_code || '',
+      orderCreator: oldCreatorsForDemand(row.demand_key),
+      reason: row.reason || '',
+      actionType: '备注',
+      remark: row.remark || '',
+      createdAt: row.created_at || row.change_date || ''
+    };
+  });
+  return [...allocationRecords, ...noteRecords]
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt), 'zh-Hans-CN'))
+    .slice(0, 800);
+}
+
 app.get('/api/trace', requireAuth, requirePage('trace'), (req, res) => {
   res.json({
     batches: all('SELECT * FROM kingdee_import_batches ORDER BY imported_at DESC LIMIT 100'),
     diffs: all('SELECT * FROM demand_snapshot_diffs ORDER BY created_at DESC LIMIT 300'),
     progress: all('SELECT * FROM supplier_progress_snapshots ORDER BY updated_at DESC LIMIT 300'),
     inventory: all('SELECT * FROM inventory_logs ORDER BY updated_at DESC LIMIT 300'),
-    notes: all('SELECT * FROM demand_change_notes ORDER BY created_at DESC LIMIT 300')
+    notes: all('SELECT * FROM demand_change_notes ORDER BY created_at DESC LIMIT 300'),
+    changeRecords: traceChangeRecords()
   });
 });
 

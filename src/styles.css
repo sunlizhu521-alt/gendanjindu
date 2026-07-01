@@ -501,6 +501,10 @@ th {
   min-width: 720px;
 }
 
+.change-record-table table {
+  min-width: 1320px;
+}
+
 .compact-table th,
 .compact-table td,
 .preview-table th,

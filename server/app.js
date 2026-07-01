@@ -1000,7 +1000,11 @@ function applyKingdeeSnapshot({ fileName, sourceRows, summary, diffs, mapping, u
     );
     const progress = get('SELECT demand_key FROM supplier_progress WHERE demand_key = ?', [row.demandKey]);
     if (!progress) {
-      run('INSERT INTO supplier_progress (demand_key, updated_at) VALUES (?, ?)', [row.demandKey, now]);
+      run(
+        `INSERT INTO supplier_progress (demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty, remark, updated_by, updated_at)
+         VALUES (?, 0, 0, ?, 0, 0, ?, ?, ?)`,
+        [row.demandKey, numberValue(row.currentOrderQty), '', userName, now]
+      );
     }
   });
   diffs.forEach((diff) => {

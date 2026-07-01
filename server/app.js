@@ -503,6 +503,10 @@ function splitDelimited(value) {
   return [...new Set(normalize(value).split(/[+、]/).map(normalize).filter(Boolean))];
 }
 
+function singlePurchaseOwner(value) {
+  return splitDelimited(value).find((item) => item && item !== UNASSIGNED_PURCHASE_OWNER) || '';
+}
+
 function assignmentGroup(row) {
   return rowAliasValue(row, ['productLineDetailPurchaseGroup', '产品线明细-采购组', '产品线明细采购组', '产品线明细-采购分组', '产品线明细采购分组', 'purchaseGroup', '采购组', '采购分组']);
 }
@@ -512,7 +516,7 @@ function assignmentOwner(row) {
 }
 
 function realPurchaseOwner(...values) {
-  return values.map(normalize).find((value) => value && value !== UNASSIGNED_PURCHASE_OWNER) || '';
+  return values.map(singlePurchaseOwner).find(Boolean) || '';
 }
 
 function enrichDemandFields(supplier, materialCode, orderCreator = '', lookups = dimensionLookups()) {

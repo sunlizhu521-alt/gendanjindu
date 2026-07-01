@@ -427,8 +427,8 @@ function enrichDemandFields(supplier, materialCode) {
     productLine: normalize(product.productLine),
     productSeries: normalize(product.productSeries),
     supplierShortName: normalize(assignment.supplierShortName || supplierAssignment.supplierShortName),
-    purchaseGroup: normalize(assignment.purchaseGroup),
-    purchaseOwner: normalize(assignment.purchaseOwner),
+    purchaseGroup: normalize(assignment.productLineDetailPurchaseGroup || assignment.purchaseGroup),
+    purchaseOwner: normalize(assignment.productLineDetailPurchaseOwner || assignment.purchaseOwner),
     purchaseOrg: normalize(assignment.purchaseOrg)
   };
 }
@@ -458,8 +458,8 @@ function applyDimensionEnrichment() {
         normalize(product.productLine),
         normalize(product.productSeries),
         normalize(assignment.supplierShortName || supplierAssignment.supplierShortName),
-        normalize(assignment.purchaseGroup),
-        normalize(assignment.purchaseOwner),
+        normalize(assignment.productLineDetailPurchaseGroup || assignment.purchaseGroup),
+        normalize(assignment.productLineDetailPurchaseOwner || assignment.purchaseOwner),
         normalize(assignment.purchaseOrg),
         demand.demand_key
       ]
@@ -1214,6 +1214,8 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requirePage('dimensionLi
         supplier: pick(row, mapping.supplier),
         supplierShortName: pick(row, mapping.supplierShortName),
         materialCode: pick(row, mapping.materialCode),
+        productLineDetailPurchaseGroup: pick(row, mapping.productLineDetailPurchaseGroup) || pickAny(row, ['产品线明细-采购组', '产品线明细采购组', '产品线明细-采购分组', '产品线明细采购分组']),
+        productLineDetailPurchaseOwner: pick(row, mapping.productLineDetailPurchaseOwner) || pickAny(row, ['产品线明细-采购下单人', '产品线明细采购下单人', '产品线明细-下单人', '产品线明细下单人']),
         purchaseOwner: pick(row, mapping.purchaseOwner),
         purchaseGroup: pick(row, mapping.purchaseGroup),
         purchaseOrg: pick(row, mapping.purchaseOrg)

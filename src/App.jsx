@@ -39,6 +39,8 @@ const DIMENSION_SLOTS = [
     ['supplier', '供应商'],
     ['supplierShortName', '供应商简称'],
     ['materialCode', '物料编码'],
+    ['productLineDetailPurchaseGroup', '产品线明细-采购组'],
+    ['productLineDetailPurchaseOwner', '产品线明细-采购下单人'],
     ['purchaseOwner', '采购下单人'],
     ['purchaseGroup', '采购组'],
     ['purchaseOrg', '采购组织']
@@ -76,6 +78,11 @@ function signedNumber(value) {
 
 function supplierName(row) {
   return normalize(row.supplierShortName) || normalize(row.supplier);
+}
+
+function TightCell({ value }) {
+  const text = normalize(value);
+  return <span className="tight-cell" title={text}>{text}</span>;
 }
 
 function actionsForDelta(deltaQty) {
@@ -408,8 +415,8 @@ function Dashboard({ rows }) {
           render={(row) => [
             row.businessUnit,
             supplierName(row),
-            row.productLine,
-            row.productSeries,
+            <TightCell value={row.productLine} />,
+            <TightCell value={row.productSeries} />,
             row.materialCode,
             row.sku,
             row.materialName,
@@ -748,8 +755,8 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
     row.month,
     row.businessUnit,
     supplierName(row),
-    row.productLine,
-    row.productSeries,
+    <TightCell value={row.productLine} />,
+    <TightCell value={row.productSeries} />,
     row.materialCode,
     row.materialName || row.materialCode,
     row.logisticsCode,

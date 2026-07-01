@@ -498,6 +498,15 @@ th {
   font-size: 13px;
 }
 
+.tight-cell {
+  display: inline-block;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
 .ledger-table table {
   min-width: 2480px;
 }

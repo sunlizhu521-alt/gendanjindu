@@ -909,7 +909,6 @@ function applyKingdeeSnapshot({ fileName, sourceRows, summary, diffs, mapping, u
       [randomUUID(), batchId, row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.purchaseOrg || '', row.creator || '', row.oaFlowNo || '', row.orderNo || '', row.quantity, JSON.stringify(row.raw || row)]
     );
   });
-  run('UPDATE order_demands SET active = 0, updated_at = ?', [now]);
   summary.forEach((row) => {
     run(
       `INSERT INTO order_demands (demand_key, month, business_unit, supplier, material_code, current_order_qty, active, purchase_org, oa_flow_no, source_batch_id, updated_at)

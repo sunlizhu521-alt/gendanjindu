@@ -92,8 +92,8 @@ function monthFromDate(value) {
   return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function demandKey(purchaseOrg, month, businessUnit, supplier, materialCode, oaFlowNo = '') {
-  return [purchaseOrg, month, businessUnit, supplier, materialCode, oaFlowNo].map(normalize).join('|');
+function demandKey(purchaseOrg, month, businessUnit, supplier, materialCode) {
+  return [purchaseOrg, month, businessUnit, supplier, materialCode].map(normalize).join('|');
 }
 
 function displayDemandKey(row) {
@@ -262,11 +262,11 @@ function pickMapped(row, mapping, key, aliases = []) {
 }
 
 function uniqueDelimitedValues(values) {
-  return [...new Set(values.map(normalize).filter(Boolean))].join('、');
+  return [...new Set(values.flatMap((value) => normalize(value).split(/[+、]/)).map(normalize).filter(Boolean))].join('+');
 }
 
 function appendUniqueDelimited(existing, next) {
-  return uniqueDelimitedValues([...normalize(existing).split('、'), next]);
+  return uniqueDelimitedValues([existing, next]);
 }
 
 function mappedKingdeeRows(rows, mapping) {
@@ -301,7 +301,7 @@ function mappedKingdeeRows(rows, mapping) {
       orderNo: mapping.orderNo ? pick(row, mapping.orderNo) : '',
       quantity,
       raw: row,
-      demandKey: demandKey(purchaseOrg, month, businessUnit, supplier, materialCode, oaFlowNo)
+      demandKey: demandKey(purchaseOrg, month, businessUnit, supplier, materialCode)
     });
   });
   return { totalRows: rows.length, validRows: valid.length, skippedRows: skipped.length, skipped, rows: valid };
@@ -1329,7 +1329,7 @@ app.post('/api/change-notes', requireAuth, requirePage('trace'), (req, res) => {
   const materialCode = normalize(req.body.materialCode);
   const purchaseOrg = normalize(req.body.purchaseOrg);
   const oaFlowNo = normalize(req.body.oaFlowNo);
-  const key = demandKey(purchaseOrg, month, businessUnit, supplier, materialCode, oaFlowNo);
+  const key = demandKey(purchaseOrg, month, businessUnit, supplier, materialCode);
   run(
     'INSERT INTO demand_change_notes (id, demand_key, month, business_unit, supplier, material_code, oa_flow_no, related_qty, reason, change_date, remark, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [randomUUID(), key, month, businessUnit, supplier, materialCode, oaFlowNo, numberValue(req.body.relatedQty), normalize(req.body.reason), normalize(req.body.changeDate), normalize(req.body.remark), req.user.name, nowText()]

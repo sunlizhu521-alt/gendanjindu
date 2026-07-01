@@ -377,12 +377,12 @@ function normalizeKeyPart(value) {
   return String(value ?? '').trim();
 }
 
-function newDemandKey(purchaseOrg, month, businessUnit, supplier, materialCode, oaFlowNo = '') {
-  return [purchaseOrg, month, businessUnit, supplier, materialCode, oaFlowNo].map(normalizeKeyPart).join('|');
+function newDemandKey(purchaseOrg, month, businessUnit, supplier, materialCode) {
+  return [purchaseOrg, month, businessUnit, supplier, materialCode].map(normalizeKeyPart).join('|');
 }
 
 function hasLegacyDemandKey(value) {
-  return normalizeKeyPart(value).split('|').length < 6;
+  return normalizeKeyPart(value).split('|').length !== 5;
 }
 
 function pickRawOaFlowNo(rawJson) {
@@ -401,7 +401,7 @@ function pickRawOaFlowNo(rawJson) {
 }
 
 function uniqueKeyValues(values) {
-  return [...new Set(values.map(normalizeKeyPart).filter(Boolean))].join('、');
+  return [...new Set(values.flatMap((value) => normalizeKeyPart(value).split(/[+、]/)).map(normalizeKeyPart).filter(Boolean))].join('+');
 }
 
 function oaFlowNoForDemand(row) {
@@ -425,8 +425,7 @@ function rewriteDemandKeyInJson(value, keyMap) {
   let changed = false;
   parsed.forEach((row) => {
     if (!row) return;
-    const hasRowOaFlowNo = normalizeKeyPart(row.oaFlowNo || row.oa_flow_no);
-    const nextKey = (hasRowOaFlowNo ? jsonRowDemandKey(row) : '') || keyMap.get(row.demandKey) || jsonRowDemandKey(row);
+    const nextKey = keyMap.get(row.demandKey) || jsonRowDemandKey(row);
     if (nextKey && row.demandKey !== nextKey) {
       row.demandKey = nextKey;
       changed = true;
@@ -446,30 +445,54 @@ function jsonRowDemandKey(row) {
     month,
     businessUnit,
     supplier,
-    materialCode,
-    row.oaFlowNo || row.oa_flow_no
+    materialCode
   );
 }
 
 function migrateDemandKeysToCurrentShape() {
-  const legacyDemands = all('SELECT demand_key, month, business_unit, supplier, material_code, purchase_org, oa_flow_no, source_batch_id FROM order_demands')
-    .filter((row) => hasLegacyDemandKey(row.demand_key));
-  if (legacyDemands.length === 0) return;
-
+  const demandRows = all('SELECT * FROM order_demands');
+  if (demandRows.length === 0) return;
   const keyMap = new Map();
-  legacyDemands.forEach((row) => {
-    const oaFlowNo = oaFlowNoForDemand(row);
-    if (oaFlowNo && normalizeKeyPart(row.oa_flow_no) !== oaFlowNo) {
-      run('UPDATE order_demands SET oa_flow_no = ? WHERE demand_key = ?', [oaFlowNo, row.demand_key]);
-    }
-    keyMap.set(row.demand_key, newDemandKey(row.purchase_org, row.month, row.business_unit, row.supplier, row.material_code, oaFlowNo));
+  const groups = new Map();
+  demandRows.forEach((row) => {
+    const targetKey = newDemandKey(row.purchase_org, row.month, row.business_unit, row.supplier, row.material_code);
+    keyMap.set(row.demand_key, targetKey);
+    const list = groups.get(targetKey) || [];
+    list.push(row);
+    groups.set(targetKey, list);
   });
 
-  keyMap.forEach((nextKey, oldKey) => {
-    if (nextKey !== oldKey) {
-      run('UPDATE order_demands SET demand_key = ? WHERE demand_key = ?', [nextKey, oldKey]);
+  groups.forEach((rows, targetKey) => {
+    const needsMerge = rows.length > 1 || rows.some((row) => row.demand_key !== targetKey || hasLegacyDemandKey(row.demand_key));
+    const oaFlowNo = uniqueKeyValues(rows.map((row) => row.oa_flow_no || oaFlowNoForDemand(row)));
+    if (!needsMerge) {
+      const row = rows[0];
+      if (oaFlowNo && normalizeKeyPart(row.oa_flow_no) !== oaFlowNo) {
+        run('UPDATE order_demands SET oa_flow_no = ? WHERE demand_key = ?', [oaFlowNo, row.demand_key]);
+      }
+      return;
     }
-    run('UPDATE supplier_progress SET demand_key = ? WHERE demand_key = ?', [nextKey, oldKey]);
+
+    const base = rows.find((row) => Number(row.active)) || rows[0];
+    const active = rows.some((row) => Number(row.active)) ? 1 : 0;
+    const qtyRows = active ? rows.filter((row) => Number(row.active)) : rows;
+    const currentOrderQty = qtyRows.reduce((sum, row) => sum + Number(row.current_order_qty || 0), 0);
+    const pick = (field) => normalizeKeyPart(base[field]) || normalizeKeyPart(rows.find((row) => normalizeKeyPart(row[field]))?.[field]);
+    rows.forEach((row) => run('DELETE FROM order_demands WHERE demand_key = ?', [row.demand_key]));
+    run(
+      `INSERT INTO order_demands (demand_key, month, business_unit, supplier, material_code, current_order_qty, active, sku, logistics_code, material_name, product_line, product_series, purchase_group, purchase_owner, purchase_org, oa_flow_no, source_batch_id, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        targetKey, base.month, base.business_unit, base.supplier, base.material_code, currentOrderQty, active,
+        pick('sku'), pick('logistics_code'), pick('material_name'), pick('product_line'), pick('product_series'),
+        pick('purchase_group'), pick('purchase_owner'), base.purchase_org || '', oaFlowNo, pick('source_batch_id'), pick('updated_at')
+      ]
+    );
+  });
+
+  consolidateSupplierProgress(keyMap);
+
+  keyMap.forEach((nextKey, oldKey) => {
     run('UPDATE supplier_progress_snapshots SET demand_key = ? WHERE demand_key = ?', [nextKey, oldKey]);
     run('UPDATE demand_snapshot_diffs SET demand_key = ? WHERE demand_key = ?', [nextKey, oldKey]);
     run('UPDATE difference_compare_rows SET demand_key = ? WHERE demand_key = ?', [nextKey, oldKey]);
@@ -480,7 +503,7 @@ function migrateDemandKeysToCurrentShape() {
 
   all('SELECT id, demand_key, month, business_unit, supplier, material_code, purchase_org, oa_flow_no, raw_json FROM kingdee_orders').forEach((row) => {
     if (hasLegacyDemandKey(row.demand_key)) {
-      const nextKey = newDemandKey(row.purchase_org, row.month, row.business_unit, row.supplier, row.material_code, normalizeKeyPart(row.oa_flow_no) || pickRawOaFlowNo(row.raw_json));
+      const nextKey = newDemandKey(row.purchase_org, row.month, row.business_unit, row.supplier, row.material_code);
       run('UPDATE kingdee_orders SET demand_key = ? WHERE id = ?', [nextKey, row.id]);
     }
   });
@@ -490,7 +513,7 @@ function migrateDemandKeysToCurrentShape() {
       'SELECT purchase_org, oa_flow_no FROM order_demands WHERE month = ? AND business_unit = ? AND supplier = ? AND material_code = ? ORDER BY active DESC, updated_at DESC LIMIT 1',
       [row.month, row.business_unit, row.supplier, row.material_code]
     )[0];
-    const nextKey = newDemandKey(demand?.purchase_org || '', row.month, row.business_unit, row.supplier, row.material_code, row.oa_flow_no || demand?.oa_flow_no || '');
+    const nextKey = newDemandKey(demand?.purchase_org || '', row.month, row.business_unit, row.supplier, row.material_code);
     run('UPDATE demand_change_notes SET demand_key = ? WHERE id = ?', [nextKey, row.id]);
   });
 
@@ -500,6 +523,37 @@ function migrateDemandKeysToCurrentShape() {
     if (summaryJson !== row.summary_json || sourceRowsJson !== row.source_rows_json) {
       run('UPDATE difference_compare_sessions SET summary_json = ?, source_rows_json = ? WHERE id = ?', [summaryJson, sourceRowsJson, row.id]);
     }
+  });
+}
+
+function consolidateSupplierProgress(keyMap) {
+  const rows = all('SELECT * FROM supplier_progress');
+  if (rows.length === 0) return;
+  const groups = new Map();
+  rows.forEach((row) => {
+    const targetKey = keyMap.get(row.demand_key) || row.demand_key;
+    const list = groups.get(targetKey) || [];
+    list.push(row);
+    groups.set(targetKey, list);
+  });
+  groups.forEach((list, targetKey) => {
+    if (list.length === 1 && list[0].demand_key === targetKey) return;
+    const latest = [...list].sort((a, b) => normalizeKeyPart(b.updated_at).localeCompare(normalizeKeyPart(a.updated_at)))[0] || {};
+    const sum = (field) => list.reduce((total, row) => total + Number(row[field] || 0), 0);
+    list.forEach((row) => run('DELETE FROM supplier_progress WHERE demand_key = ?', [row.demand_key]));
+    run(
+      `INSERT INTO supplier_progress (demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty, remark, updated_by, updated_at)
+       VALUES (?, 0, 0, ?, ?, ?, ?, ?, ?)`,
+      [
+        targetKey,
+        sum('in_production_qty'),
+        sum('finished_qty'),
+        sum('shipped_qty'),
+        latest.remark || '',
+        latest.updated_by || '',
+        latest.updated_at || ''
+      ]
+    );
   });
 }
 

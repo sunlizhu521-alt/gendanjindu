@@ -73,6 +73,17 @@ function normalize(value) {
   return String(value ?? '').trim();
 }
 
+function normalizeMatchPart(value) {
+  return normalize(value)
+    .normalize('NFKC')
+    .replace(/[\s\u00a0\u200b-\u200d\ufeff]/g, '')
+    .replace(/\.0$/, '');
+}
+
+function assignmentKey(supplier, materialCode) {
+  return [normalizeMatchPart(supplier), normalizeMatchPart(materialCode)].join('|');
+}
+
 function numberValue(value) {
   const n = Number(normalize(value).replace(/,/g, ''));
   return Number.isFinite(n) ? n : 0;
@@ -451,10 +462,12 @@ function dimensionLookups() {
     const supplier = normalize(row.supplier);
     const productLineDetailSupplier = normalize(row.productLineDetailSupplier) || supplier;
     const materialCode = normalize(row.materialCode);
-    if (supplier && normalize(row.supplierShortName) && !supplierMap.has(supplier)) supplierMap.set(supplier, row);
-    if (productLineDetailSupplier && normalize(row.supplierShortName) && !supplierMap.has(productLineDetailSupplier)) supplierMap.set(productLineDetailSupplier, row);
-    const key = [productLineDetailSupplier, materialCode].join('|');
-    if (productLineDetailSupplier && materialCode) assignmentMap.set(key, row);
+    const supplierCandidates = [productLineDetailSupplier, supplier, row.supplierShortName].map(normalize).filter(Boolean);
+    supplierCandidates.forEach((candidate) => {
+      const supplierKey = normalizeMatchPart(candidate);
+      if (supplierKey && normalize(row.supplierShortName) && !supplierMap.has(supplierKey)) supplierMap.set(supplierKey, row);
+      if (candidate && materialCode) assignmentMap.set(assignmentKey(candidate, materialCode), row);
+    });
   });
   return { productMap, assignmentMap, supplierMap };
 }
@@ -474,8 +487,8 @@ function assignmentOwner(row) {
 function enrichDemandFields(supplier, materialCode, orderCreator = '', lookups = dimensionLookups()) {
   const { productMap, assignmentMap, supplierMap } = lookups;
   const product = productMap.get(normalize(materialCode)) || {};
-  const assignment = assignmentMap.get([normalize(supplier), normalize(materialCode)].join('|')) || {};
-  const supplierAssignment = supplierMap.get(normalize(supplier)) || {};
+  const assignment = assignmentMap.get(assignmentKey(supplier, materialCode)) || {};
+  const supplierAssignment = supplierMap.get(normalizeMatchPart(supplier)) || {};
   return {
     sku: normalize(product.sku),
     logisticsCode: normalize(product.logisticsCode),
@@ -494,8 +507,8 @@ function applyDimensionEnrichment() {
   const { productMap, assignmentMap, supplierMap } = lookups;
   all('SELECT * FROM order_demands').forEach((demand) => {
     const product = productMap.get(demand.material_code) || {};
-    const assignment = assignmentMap.get([demand.supplier, demand.material_code].join('|')) || {};
-    const supplierAssignment = supplierMap.get(demand.supplier) || {};
+    const assignment = assignmentMap.get(assignmentKey(demand.supplier, demand.material_code)) || {};
+    const supplierAssignment = supplierMap.get(normalizeMatchPart(demand.supplier)) || {};
     run(
       `UPDATE order_demands
        SET sku = COALESCE(NULLIF(?, ''), sku),

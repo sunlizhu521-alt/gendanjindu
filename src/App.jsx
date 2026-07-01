@@ -229,7 +229,7 @@ function useFilteredDemands(rows) {
     const keyword = filters.keyword.toLowerCase();
     return rows.filter((row) => {
       const displaySupplier = supplierName(row);
-      const text = [row.demandKey, row.materialCode, row.supplier, displaySupplier, row.materialName, row.logisticsCode, row.sku, row.purchaseOwner, row.purchaseGroup].join(' ').toLowerCase();
+      const text = [row.demandKey, row.oaFlowNo, row.materialCode, row.supplier, displaySupplier, row.materialName, row.logisticsCode, row.sku, row.purchaseOwner, row.purchaseGroup].join(' ').toLowerCase();
       return (!keyword || text.includes(keyword))
         && (!filters.month || row.month === filters.month)
         && (!filters.supplier || displaySupplier === filters.supplier)
@@ -258,7 +258,7 @@ function FilterBar({ filters, setFilters, options, onSubmit }) {
       <SelectField label="采购下单人" value={filters.purchaseOwner} options={options.purchaseOwners} onChange={(value) => setFilters({ ...filters, purchaseOwner: value })} />
       <input
         className="search-input"
-        placeholder="搜索供应商、物料、物流编码、SKU、采购人"
+        placeholder="搜索供应商、物料、OA备货流程号、物流编码、SKU、采购人"
         value={filters.keyword}
         onChange={(event) => setFilters({ ...filters, keyword: event.target.value })}
       />
@@ -327,6 +327,7 @@ function Dashboard({ rows }) {
         row.productLine,
         row.productSeries,
         row.materialCode,
+        row.oaFlowNo,
         row.sku,
         row.materialName,
         row.orderCreator
@@ -381,7 +382,7 @@ function Dashboard({ rows }) {
         <SelectField label="创建人" value={filters.orderCreator} options={options.orderCreators} onChange={(value) => setFilters({ ...filters, orderCreator: value })} />
         <input
           className="search-input"
-          placeholder="搜索供应商、物料编码、SKU、物料名称、创建人"
+          placeholder="搜索供应商、物料编码、OA备货流程号、SKU、物料名称、创建人"
           value={filters.keyword}
           onChange={(event) => setFilters({ ...filters, keyword: event.target.value })}
         />
@@ -862,6 +863,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
       row.productLine,
       row.productSeries,
       row.materialCode,
+      row.oaFlowNo,
       row.sku,
       row.materialName,
       row.orderCreator
@@ -899,7 +901,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
         <SelectField label="创建人" value={filters.orderCreator} options={options.orderCreators} onChange={(value) => setFilters({ ...filters, orderCreator: value })} />
         <input
           className="search-input"
-          placeholder="搜索供应商、物料编码、SKU、物料名称、创建人"
+          placeholder="搜索供应商、物料编码、OA备货流程号、SKU、物料名称、创建人"
           value={filters.keyword}
           onChange={(event) => setFilters({ ...filters, keyword: event.target.value })}
         />

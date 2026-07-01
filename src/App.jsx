@@ -40,6 +40,7 @@ const DIMENSION_SLOTS = [
   { id: 'purchaseAssignment', title: '采购分工', fields: [
     ['supplier', '供应商'],
     ['supplierShortName', '供应商简称'],
+    ['productLineDetailSupplier', '产品明细供应商'],
     ['materialCode', '物料编码'],
     ['productLineDetailPurchaseGroup', '产品线明细-采购组'],
     ['productLineDetailPurchaseOwner', '产品线明细-采购下单人'],

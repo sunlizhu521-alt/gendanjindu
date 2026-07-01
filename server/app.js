@@ -207,7 +207,7 @@ function safeFilename(file) {
 
 const HEADER_HINTS = [
   '物料编码', '物流编码', 'SKU', '物料名称', '产品名称', '供应商', '供应商简称',
-  '采购下单人', '创建人', '采购组', '采购组织', '产品线', '系列',
+  '产品明细供应商', '产品线明细供应商', '采购下单人', '创建人', '采购组', '采购组织', '产品线', '系列',
   '事业部', '采购日期', '创建日期', '采购数量', '下单数量', 'OA备货流程号'
 ];
 
@@ -449,10 +449,12 @@ function dimensionLookups() {
   const supplierMap = new Map();
   assignmentRows.forEach((row) => {
     const supplier = normalize(row.supplier);
+    const productLineDetailSupplier = normalize(row.productLineDetailSupplier) || supplier;
     const materialCode = normalize(row.materialCode);
     if (supplier && normalize(row.supplierShortName) && !supplierMap.has(supplier)) supplierMap.set(supplier, row);
-    const key = [supplier, materialCode].join('|');
-    if (supplier && materialCode) assignmentMap.set(key, row);
+    if (productLineDetailSupplier && normalize(row.supplierShortName) && !supplierMap.has(productLineDetailSupplier)) supplierMap.set(productLineDetailSupplier, row);
+    const key = [productLineDetailSupplier, materialCode].join('|');
+    if (productLineDetailSupplier && materialCode) assignmentMap.set(key, row);
   });
   return { productMap, assignmentMap, supplierMap };
 }
@@ -1359,6 +1361,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requirePage('dimensionLi
       return {
         supplier: pick(row, mapping.supplier),
         supplierShortName: pick(row, mapping.supplierShortName),
+        productLineDetailSupplier: pick(row, mapping.productLineDetailSupplier) || pickAny(row, ['产品明细供应商', '产品明细-供应商', '产品线明细供应商', '产品线明细-供应商']),
         materialCode: pick(row, mapping.materialCode),
         productLineDetailPurchaseGroup: pick(row, mapping.productLineDetailPurchaseGroup) || pickAny(row, ['产品线明细-采购组', '产品线明细采购组', '产品线明细-采购分组', '产品线明细采购分组']),
         productLineDetailPurchaseOwner: pick(row, mapping.productLineDetailPurchaseOwner) || pickAny(row, ['产品线明细-采购下单人', '产品线明细采购下单人', '产品线明细-下单人', '产品线明细下单人']),

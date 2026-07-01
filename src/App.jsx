@@ -577,10 +577,13 @@ function PurchaseBoard({ rows }) {
   const clearFilters = () => setFilters({ months: [], businessUnit: '', supplier: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
 
   const board = useMemo(() => {
-    const months = unique(filteredRows.map((row) => row.month));
+    const monthsWithData = new Set();
     const businessUnits = unique(filteredRows.map((row) => row.businessUnit));
     const itemMap = new Map();
     filteredRows.forEach((row) => {
+      if (row.month && (numberValue(row.currentOrderQty) > 0 || progressTotal(row) > 0)) {
+        monthsWithData.add(row.month);
+      }
       const itemKey = [row.sku, row.materialCode, row.materialName || row.materialCode].map(normalize).join('|');
       const item = itemMap.get(itemKey) || {
         key: itemKey,
@@ -607,7 +610,7 @@ function PurchaseBoard({ rows }) {
       itemMap.set(itemKey, item);
     });
     return {
-      months,
+      months: unique([...monthsWithData]),
       businessUnits,
       items: [...itemMap.values()].sort((a, b) => a.materialCode.localeCompare(b.materialCode, 'zh-Hans-CN'))
     };

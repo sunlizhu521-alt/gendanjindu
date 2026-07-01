@@ -370,10 +370,21 @@ h3 {
   color: #dc2626;
 }
 
+.dashboard-heading {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
+.dashboard-heading h2 {
+  flex: 0 0 auto;
+}
+
 .dashboard-explain {
-  max-width: 860px;
-  line-height: 1.6;
-  text-align: right;
+  flex: 1 0 auto;
+  max-width: none;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-align: left;
 }
 
 .series-chart-grid {

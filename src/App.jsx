@@ -312,43 +312,45 @@ function Dashboard({ rows }) {
   const activeRows = useMemo(() => rows.filter((row) => row.active), [rows]);
   const [filters, setFilters] = useState({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
   const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
-  const options = useMemo(() => ({
-    months: unique(activeRows.map((row) => row.month)),
-    businessUnits: BUSINESS_UNITS,
-    suppliers: unique(activeRows.map((row) => supplierName(row))),
-    productLines: unique(activeRows.map((row) => row.productLine)),
-    series: unique(activeRows.map((row) => row.productSeries)),
-    skus: unique(activeRows.map((row) => row.sku)),
-    orderCreators: unique(activeRows.map((row) => row.orderCreator))
-  }), [activeRows]);
-  const filteredRows = useMemo(() => {
+  const matchesDashboardFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
-    return activeRows.filter((row) => {
-      const displaySupplier = supplierName(row);
-      const text = [
-        row.demandKey,
-        row.month,
-        row.businessUnit,
-        displaySupplier,
-        row.supplier,
-        row.productLine,
-        row.productSeries,
-        row.materialCode,
-        row.oaFlowNo,
-        row.sku,
-        row.materialName,
-        row.orderCreator
-      ].join(' ').toLowerCase();
-      return (!keyword || text.includes(keyword))
-        && (!filters.month || row.month === filters.month)
-        && (!filters.businessUnit || row.businessUnit === filters.businessUnit)
-        && (!filters.supplier || displaySupplier === filters.supplier)
-        && (!filters.productLine || row.productLine === filters.productLine)
-        && (!filters.series || row.productSeries === filters.series)
-        && (!filters.sku || row.sku === filters.sku)
-        && (!filters.orderCreator || row.orderCreator === filters.orderCreator);
-    });
+    const displaySupplier = supplierName(row);
+    const text = [
+      row.demandKey,
+      row.month,
+      row.businessUnit,
+      displaySupplier,
+      row.supplier,
+      row.productLine,
+      row.productSeries,
+      row.materialCode,
+      row.oaFlowNo,
+      row.sku,
+      row.materialName,
+      row.orderCreator
+    ].join(' ').toLowerCase();
+    return (!keyword || text.includes(keyword))
+      && (omit === 'month' || !filters.month || row.month === filters.month)
+      && (omit === 'businessUnit' || !filters.businessUnit || row.businessUnit === filters.businessUnit)
+      && (omit === 'supplier' || !filters.supplier || displaySupplier === filters.supplier)
+      && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
+      && (omit === 'series' || !filters.series || row.productSeries === filters.series)
+      && (omit === 'sku' || !filters.sku || row.sku === filters.sku)
+      && (omit === 'orderCreator' || !filters.orderCreator || row.orderCreator === filters.orderCreator);
+  };
+  const options = useMemo(() => {
+    const rowsFor = (field) => activeRows.filter((row) => matchesDashboardFilters(row, field));
+    return {
+      months: unique(rowsFor('month').map((row) => row.month)),
+      businessUnits: unique(rowsFor('businessUnit').map((row) => row.businessUnit)),
+      suppliers: unique(rowsFor('supplier').map((row) => supplierName(row))),
+      productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
+      series: unique(rowsFor('series').map((row) => row.productSeries)),
+      skus: unique(rowsFor('sku').map((row) => row.sku)),
+      orderCreators: unique(rowsFor('orderCreator').map((row) => row.orderCreator))
+    };
   }, [activeRows, filters]);
+  const filteredRows = useMemo(() => activeRows.filter((row) => matchesDashboardFilters(row)), [activeRows, filters]);
   const clearFilters = () => setFilters({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
   const summary = filteredRows.reduce((acc, row) => {
     acc.order += numberValue(row.currentOrderQty);
@@ -373,7 +375,7 @@ function Dashboard({ rows }) {
 
   return (
     <>
-      <div className="section-heading-row">
+      <div className="section-heading-row dashboard-heading">
         <h2>采购总览</h2>
         <span className="section-count dashboard-explain">
           当前显示 {filteredRows.length} / {activeRows.length} 条；下单数量=备货需求，已发货=采购入库，生产中=供应商在生产中，已完工=供应商已经生产完待入采购入库

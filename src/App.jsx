@@ -667,18 +667,64 @@ function KingdeeImport({ token, user, reloadDemands, setMessage }) {
 }
 
 function ProgressEditor({ row, token, reloadDemands, setMessage }) {
+  const qtyKeys = ['inProductionQty', 'finishedQty', 'shippedQty'];
   const [values, setValues] = useState({
     inProductionQty: row.inProductionQty,
     finishedQty: row.finishedQty,
     shippedQty: row.shippedQty,
     remark: row.remark || ''
   });
+  const [touchedQtyKeys, setTouchedQtyKeys] = useState([]);
+  const [autoKey, setAutoKey] = useState('');
+
+  useEffect(() => {
+    setValues({
+      inProductionQty: row.inProductionQty,
+      finishedQty: row.finishedQty,
+      shippedQty: row.shippedQty,
+      remark: row.remark || ''
+    });
+    setTouchedQtyKeys([]);
+    setAutoKey('');
+  }, [row.demandKey, row.inProductionQty, row.finishedQty, row.shippedQty, row.remark]);
+
+  function normalizeProgressValues(nextValues, targetAutoKey = autoKey || 'shippedQty') {
+    const orderQty = numberValue(row.currentOrderQty);
+    const manualTotal = qtyKeys
+      .filter((key) => key !== targetAutoKey)
+      .reduce((sum, key) => sum + numberValue(nextValues[key]), 0);
+    const autoQty = orderQty - manualTotal;
+    if (autoQty < 0) return null;
+    return { ...nextValues, [targetAutoKey]: autoQty };
+  }
+
+  function handleQtyChange(key, rawValue) {
+    const nextTouched = touchedQtyKeys.includes(key) ? touchedQtyKeys : [...touchedQtyKeys, key];
+    let nextAutoKey = autoKey;
+    const nextValues = { ...values, [key]: rawValue };
+    if (!nextAutoKey && nextTouched.length >= 2) {
+      nextAutoKey = qtyKeys.find((item) => !nextTouched.includes(item)) || 'shippedQty';
+    }
+    const normalized = nextAutoKey ? normalizeProgressValues(nextValues, nextAutoKey) : nextValues;
+    if (!normalized) {
+      setMessage('任意两项合计不能超过下单数量。');
+      return;
+    }
+    setTouchedQtyKeys(nextTouched);
+    setAutoKey(nextAutoKey);
+    setValues(normalized);
+  }
 
   async function save() {
+    const payload = normalizeProgressValues(values, autoKey || 'shippedQty');
+    if (!payload) {
+      setMessage('任意两项合计不能超过下单数量。');
+      return;
+    }
     await request(`/api/progress/${encodeURIComponent(row.demandKey)}`, {
       token,
       method: 'PATCH',
-      body: JSON.stringify(values)
+      body: JSON.stringify(payload)
     });
     setMessage('生产进度已保存。');
     await reloadDemands();
@@ -688,13 +734,16 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
     <input
       type="number"
       value={values[key]}
-      onChange={(event) => setValues({ ...values, [key]: event.target.value })}
+      readOnly={autoKey === key}
+      title={autoKey === key ? '自动计算' : ''}
+      onChange={(event) => handleQtyChange(key, event.target.value)}
     />
   );
 
   const cells = [
     row.purchaseGroup,
     row.purchaseOwner,
+    row.oaFlowNo,
     row.purchaseOrg,
     row.month,
     row.businessUnit,
@@ -769,7 +818,7 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
       <DataTable
         className="progress-table"
         rows={displayRows}
-        columns={['采购组', '采购下单人', '采购组织', '月份', '事业部', '供应商', '产品线', '系列', '物料编码', '物料', '物流编码', 'SKU', '下单数量', '生产中', '已完工', '已发货数量', '操作']}
+        columns={['采购组', '采购下单人', 'OA备货流程号', '采购组织', '月份', '事业部', '供应商', '产品线', '系列', '物料编码', '物料', '物流编码', 'SKU', '下单数量', '生产中', '已完工', '已发货数量', '操作']}
         renderRow={(row) => <ProgressEditor key={row.demandKey} row={row} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
       />
       {!onlyIssues && (
@@ -915,7 +964,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
         <DataTable
           className="diff-allocation-table"
           rows={filteredDiffRows}
-          columns={['主键', '创建人', '物料编码', '物料名称', '原采购数量', '新采购数量', '已发货', '生产中', '已完工', '差异', '原因', '操作', '备注', '提交人', '提交时间', '提交']}
+          columns={['主键', 'OA备货流程号', '创建人', '物料编码', '物料名称', '原采购数量', '新采购数量', '已发货', '生产中', '已完工', '差异', '原因', '操作', '备注', '提交人', '提交时间', '提交']}
           renderRow={(row) => {
             const input = rowInputs[row.id] || {};
             const allocated = allocatedRowIds.has(row.id);
@@ -924,6 +973,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
             return (
               <tr key={row.id}>
                 <td>{row.displayKey}</td>
+                <td>{row.oaFlowNo}</td>
                 <td>{row.orderCreator}</td>
                 <td>{row.materialCode}</td>
                 <td>{row.materialName || row.materialCode}</td>
@@ -970,8 +1020,8 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
         <DataTable
           className="compact-table"
           rows={filteredAllocations}
-          columns={['主键', '创建人', '物料编码', '原采购数量', '新采购数量', '差异', '原因', '操作', '备注', '提交人', '提交时间']}
-          render={(row) => [row.displayKey || row.demandKey, row.orderCreator || '', row.materialCode || '', row.oldQty, row.newQty, signedNumber(row.deltaQty), row.reason, row.actionType, row.remark, row.createdBy, row.createdAt]}
+          columns={['主键', 'OA备货流程号', '创建人', '物料编码', '原采购数量', '新采购数量', '差异', '原因', '操作', '备注', '提交人', '提交时间']}
+          render={(row) => [row.displayKey || row.demandKey, row.oaFlowNo || '', row.orderCreator || '', row.materialCode || '', row.oldQty, row.newQty, signedNumber(row.deltaQty), row.reason, row.actionType, row.remark, row.createdBy, row.createdAt]}
         />
       </section>
     </>

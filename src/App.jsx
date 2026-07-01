@@ -795,7 +795,8 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
         setMessage(`新采购订单已上传并应用：${payload.rowCount} 行，生成差异 ${payload.diffRows?.length || 0} 条`);
         await reloadDemands();
       } else {
-        setMessage(`上传保存完成：${payload.rowCount} 行，差异 ${payload.diffs.length} 条`);
+        setMessage(`上传保存完成：${payload.rowCount} 行已保存到腾讯云服务器，差异 ${payload.diffs.length} 条`);
+        await reloadDemands();
       }
       if (mode === 'current') await loadCurrentStatus();
       onImportApplied();
@@ -928,12 +929,12 @@ function KingdeeImport({ token, user, reloadDemands, setMessage }) {
   const refreshImportHistory = () => setHistoryVersion((value) => value + 1);
 
   async function clearOrderCache() {
-    const confirmed = window.confirm('将清空采购订单、订单需求、生产跟进、差异分配和相关历史记录。维度表、历史库存、用户权限、字段映射和变更备注不会清除。确定继续吗？');
+    const confirmed = window.confirm('将清空腾讯云服务器上的采购订单、订单需求、生产跟进、差异分配和相关历史记录。维度表、历史库存、用户权限、字段映射和变更备注不会清除。只有这里确认后才会清除服务器数据。确定继续吗？');
     if (!confirmed) return;
     try {
       const payload = await request('/api/imports/kingdee/cache', { token, method: 'DELETE' });
       const total = Object.values(payload.cleared || {}).reduce((sum, value) => sum + numberValue(value), 0);
-      setMessage(`采购订单缓存已清除，共 ${total} 条记录。`);
+      setMessage(`腾讯云服务器采购订单缓存已清除，共 ${total} 条记录。`);
       await reloadDemands();
       refreshImportHistory();
     } catch (err) {

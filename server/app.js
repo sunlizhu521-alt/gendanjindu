@@ -1006,7 +1006,7 @@ app.get('/api/imports/kingdee/current-status', requireAuth, requirePage('kingdee
       rowCount: numberValue(row.row_count)
     }));
   if (!batch) return res.json({ current: null, history });
-  const activeRows = numberValue(get('SELECT COUNT(*) AS count FROM order_demands WHERE active = 1 AND source_batch_id = ?', [batch.id])?.count);
+  const activeRows = numberValue(get('SELECT COUNT(*) AS count FROM order_demands WHERE active = 1')?.count);
   res.json({
     current: {
       batchId: batch.id,

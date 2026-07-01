@@ -621,9 +621,14 @@ function PurchaseBoard({ rows }) {
       ['inProduction', '生产中', order.inProduction],
       ['uncovered', '差额', order.uncovered]
     ].filter(([, , value]) => numberValue(value) > 0);
-    return blocks.map(([key, label, value]) => (
-      <span key={key} className={`board-chip ${key}`} title={label}>{numberValue(value).toLocaleString()}</span>
-    ));
+    if (blocks.length === 0) return null;
+    return (
+      <div className="board-cell-fill" style={{ gridTemplateRows: `repeat(${blocks.length}, minmax(0, 1fr))` }}>
+        {blocks.map(([key, label, value]) => (
+          <span key={key} className={`board-chip ${key}`} title={label}>{numberValue(value).toLocaleString()}</span>
+        ))}
+      </div>
+    );
   };
 
   return (
@@ -681,7 +686,7 @@ function PurchaseBoard({ rows }) {
                   <td className="board-sticky board-name-col board-name-cell">{item.materialName}</td>
                   {(board.businessUnits.length ? board.businessUnits : ['']).map((unit) => {
                     const value = numberValue(item.stock.get(unit));
-                    return <td key={`stock-${item.key}-${unit}`}>{value > 0 && <span className="board-chip stock">{value.toLocaleString()}</span>}</td>;
+                    return <td key={`stock-${item.key}-${unit}`} className="board-status-cell">{value > 0 && <span className="board-chip stock">{value.toLocaleString()}</span>}</td>;
                   })}
                   {board.months.map((month) => (
                     (board.businessUnits.length ? board.businessUnits : ['']).map((unit) => (

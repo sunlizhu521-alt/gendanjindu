@@ -553,20 +553,36 @@ h3 {
 }
 
 .board-status-cell {
+  padding: 0 !important;
   vertical-align: middle;
 }
 
+.board-cell-fill {
+  display: grid;
+  width: 100%;
+  min-height: 48px;
+}
+
 .board-chip {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 58px;
-  min-height: 26px;
-  margin: 2px;
-  padding: 4px 8px;
+  width: 100%;
+  min-width: 100%;
+  min-height: 48px;
+  margin: 0;
+  padding: 0 8px;
   border-radius: 0;
   color: #0f172a;
   font-weight: 700;
+}
+
+.board-cell-fill .board-chip {
+  min-height: 0;
+}
+
+.board-cell-fill .board-chip + .board-chip {
+  border-top: 1px solid rgba(15, 23, 42, .25);
 }
 
 .panel {

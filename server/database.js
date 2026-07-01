@@ -404,13 +404,71 @@ function uniqueKeyValues(values) {
   return [...new Set(values.flatMap((value) => normalizeKeyPart(value).split(/[+、]/)).map(normalizeKeyPart).filter(Boolean))].join('+');
 }
 
+function dateSortValue(value) {
+  const text = normalizeKeyPart(value).replace(/\./g, '-').replace(/\//g, '-');
+  if (!text) return Number.MAX_SAFE_INTEGER;
+  const parsed = new Date(text);
+  if (!Number.isNaN(parsed.getTime())) return parsed.getTime();
+  const match = text.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/);
+  if (!match) return Number.MAX_SAFE_INTEGER;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3] || 1)).getTime();
+}
+
+function rawDateSortValue(rawJson) {
+  try {
+    const raw = rawJson ? JSON.parse(rawJson) : {};
+    const direct = dateSortValue(
+      raw.createDate
+      || raw.purchaseDate
+      || raw.orderDate
+      || raw.date
+      || raw['采购日期']
+      || raw['创建日期']
+      || raw['下单日期']
+      || raw['订单日期']
+      || raw['日期']
+    );
+    if (direct !== Number.MAX_SAFE_INTEGER) return direct;
+    const dateEntry = Object.entries(raw).find(([key, value]) => {
+      const field = normalizeKeyPart(key).toLowerCase();
+      return value && (field.includes('日期') || field.includes('date'));
+    });
+    return dateSortValue(dateEntry?.[1]);
+  } catch {
+    return Number.MAX_SAFE_INTEGER;
+  }
+}
+
+function uniqueSortedOaValues(rows) {
+  return uniqueKeyValues(
+    [...rows]
+      .sort((a, b) => (a.dateSort - b.dateSort) || (a.sourceIndex - b.sourceIndex))
+      .map((row) => row.value)
+  );
+}
+
 function oaFlowNoForDemand(row) {
   const existing = normalizeKeyPart(row.oa_flow_no);
   if (existing) return existing;
   const sourceRows = row.source_batch_id
     ? all('SELECT oa_flow_no, raw_json FROM kingdee_orders WHERE batch_id = ? AND month = ? AND business_unit = ? AND supplier = ? AND material_code = ?', [row.source_batch_id, row.month, row.business_unit, row.supplier, row.material_code])
     : all('SELECT oa_flow_no, raw_json FROM kingdee_orders WHERE month = ? AND business_unit = ? AND supplier = ? AND material_code = ?', [row.month, row.business_unit, row.supplier, row.material_code]);
-  return uniqueKeyValues(sourceRows.map((sourceRow) => normalizeKeyPart(sourceRow.oa_flow_no) || pickRawOaFlowNo(sourceRow.raw_json)));
+  return uniqueSortedOaValues(sourceRows.map((sourceRow, index) => ({
+    value: normalizeKeyPart(sourceRow.oa_flow_no) || pickRawOaFlowNo(sourceRow.raw_json),
+    dateSort: rawDateSortValue(sourceRow.raw_json),
+    sourceIndex: index
+  })));
+}
+
+function orderDemandDateSort(row) {
+  const exactRows = all('SELECT raw_json FROM kingdee_orders WHERE demand_key = ?', [row.demand_key]);
+  if (exactRows.length > 0) {
+    return Math.min(...exactRows.map((sourceRow) => rawDateSortValue(sourceRow.raw_json)), Number.MAX_SAFE_INTEGER);
+  }
+  const sourceRows = row.source_batch_id
+    ? all('SELECT raw_json FROM kingdee_orders WHERE batch_id = ? AND month = ? AND business_unit = ? AND supplier = ? AND material_code = ?', [row.source_batch_id, row.month, row.business_unit, row.supplier, row.material_code])
+    : all('SELECT raw_json FROM kingdee_orders WHERE month = ? AND business_unit = ? AND supplier = ? AND material_code = ?', [row.month, row.business_unit, row.supplier, row.material_code]);
+  return Math.min(...sourceRows.map((sourceRow) => rawDateSortValue(sourceRow.raw_json)), Number.MAX_SAFE_INTEGER);
 }
 
 function rewriteDemandKeyInJson(value, keyMap) {
@@ -464,7 +522,11 @@ function migrateDemandKeysToCurrentShape() {
 
   groups.forEach((rows, targetKey) => {
     const needsMerge = rows.length > 1 || rows.some((row) => row.demand_key !== targetKey || hasLegacyDemandKey(row.demand_key));
-    const oaFlowNo = uniqueKeyValues(rows.map((row) => row.oa_flow_no || oaFlowNoForDemand(row)));
+    const oaFlowNo = uniqueSortedOaValues(rows.map((row, index) => ({
+      value: row.oa_flow_no || oaFlowNoForDemand(row),
+      dateSort: orderDemandDateSort(row),
+      sourceIndex: index
+    })));
     if (!needsMerge) {
       const row = rows[0];
       if (oaFlowNo && normalizeKeyPart(row.oa_flow_no) !== oaFlowNo) {

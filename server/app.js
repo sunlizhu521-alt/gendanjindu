@@ -92,6 +92,16 @@ function monthFromDate(value) {
   return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
 }
 
+function dateSortValue(value) {
+  const text = normalize(value).replace(/\./g, '-').replace(/\//g, '-');
+  if (!text) return Number.MAX_SAFE_INTEGER;
+  const parsed = new Date(text);
+  if (!Number.isNaN(parsed.getTime())) return parsed.getTime();
+  const match = text.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?/);
+  if (!match) return Number.MAX_SAFE_INTEGER;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3] || 1)).getTime();
+}
+
 function demandKey(purchaseOrg, month, businessUnit, supplier, materialCode) {
   return [purchaseOrg, month, businessUnit, supplier, materialCode].map(normalize).join('|');
 }
@@ -269,11 +279,32 @@ function appendUniqueDelimited(existing, next) {
   return uniqueDelimitedValues([existing, next]);
 }
 
+function rawDateSortValue(raw) {
+  const source = raw || {};
+  const direct = dateSortValue(pickAny(source, ['createDate', 'purchaseDate', 'orderDate', 'date', '采购日期', '创建日期', '下单日期', '订单日期', '日期']));
+  if (direct !== Number.MAX_SAFE_INTEGER) return direct;
+  const dateEntry = Object.entries(source).find(([key, value]) => {
+    const field = normalize(key).toLowerCase();
+    return value && (field.includes('日期') || field.includes('date'));
+  });
+  return dateSortValue(dateEntry?.[1]);
+}
+
+function compareOaRows(a, b) {
+  return (numberValue(a.dateSort) || Number.MAX_SAFE_INTEGER) - (numberValue(b.dateSort) || Number.MAX_SAFE_INTEGER)
+    || numberValue(a.sourceIndex) - numberValue(b.sourceIndex);
+}
+
+function orderedOaFlowNos(rows, valuePicker = (row) => row.oaFlowNo || row.oa_flow_no) {
+  return uniqueDelimitedValues([...rows].sort(compareOaRows).map(valuePicker));
+}
+
 function mappedKingdeeRows(rows, mapping) {
   const valid = [];
   const skipped = [];
   rows.forEach((row, index) => {
-    const month = monthFromDate(pickMapped(row, mapping, 'createDate', ['采购日期', '创建日期', '下单日期', '订单日期', '日期']));
+    const createDate = pickMapped(row, mapping, 'createDate', ['采购日期', '创建日期', '下单日期', '订单日期', '日期']);
+    const month = monthFromDate(createDate);
     const businessUnit = pickMapped(row, mapping, 'businessUnit', ['事业部', '业务部门', '部门']);
     const supplier = pickMapped(row, mapping, 'supplier', ['供应商', '供应商名称', '供应商全称']);
     const materialCode = pickMapped(row, mapping, 'materialCode', ['物料编码', '物料代码', '商品编码', '存货编码', '产品编码', '品号', '编码']);
@@ -298,6 +329,8 @@ function mappedKingdeeRows(rows, mapping) {
       purchaseOrg,
       creator,
       oaFlowNo,
+      dateSort: dateSortValue(createDate),
+      sourceIndex: index,
       orderNo: mapping.orderNo ? pick(row, mapping.orderNo) : '',
       quantity,
       raw: row,
@@ -309,7 +342,7 @@ function mappedKingdeeRows(rows, mapping) {
 
 function summarizeDemands(rows) {
   const map = new Map();
-  rows.forEach((row) => {
+  [...rows].sort(compareOaRows).forEach((row) => {
     const current = map.get(row.demandKey) || {
       demandKey: row.demandKey,
       month: row.month,
@@ -518,10 +551,21 @@ function rawOaFlowNo(row) {
     || pickAny(raw, ['OA备货流程号', 'OA流程号', '备货流程号', 'OA申请号', 'OA申请流程号', 'OA流程编号']);
 }
 
+function orderRowDateSort(row, index = 0) {
+  const raw = parseJson(row.raw_json, {});
+  return {
+    ...row,
+    dateSort: rawDateSortValue(raw),
+    sourceIndex: index
+  };
+}
+
 function oldOaFlowNosForDemand(demandKeyValue) {
   const demand = get('SELECT source_batch_id FROM order_demands WHERE demand_key = ?', [demandKeyValue]);
   if (!demand?.source_batch_id) return '';
-  return uniqueDelimitedValues(all('SELECT oa_flow_no, raw_json FROM kingdee_orders WHERE batch_id = ? AND demand_key = ?', [demand.source_batch_id, demandKeyValue]).map(rawOaFlowNo));
+  const rows = all('SELECT id, oa_flow_no, raw_json FROM kingdee_orders WHERE batch_id = ? AND demand_key = ?', [demand.source_batch_id, demandKeyValue])
+    .map(orderRowDateSort);
+  return orderedOaFlowNos(rows, rawOaFlowNo);
 }
 
 function uniqueCreators(rows) {

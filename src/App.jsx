@@ -1128,7 +1128,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage }) {
 
 function TracePage({ token, setMessage }) {
   const [data, setData] = useState({ batches: [], diffs: [], progress: [], inventory: [], notes: [] });
-  const [note, setNote] = useState({ purchaseOrg: '', month: '', businessUnit: '', supplier: '', materialCode: '', relatedQty: '', reason: '', changeDate: todayText(), remark: '' });
+  const [note, setNote] = useState({ purchaseOrg: '', month: '', businessUnit: '', supplier: '', materialCode: '', oaFlowNo: '', relatedQty: '', reason: '', changeDate: todayText(), remark: '' });
 
   async function load() {
     const payload = await request('/api/trace', { token });
@@ -1141,7 +1141,7 @@ function TracePage({ token, setMessage }) {
     event.preventDefault();
     await request('/api/change-notes', { token, method: 'POST', body: JSON.stringify(note) });
     setMessage('变更备注已保存。');
-    setNote({ purchaseOrg: '', month: '', businessUnit: '', supplier: '', materialCode: '', relatedQty: '', reason: '', changeDate: todayText(), remark: '' });
+    setNote({ purchaseOrg: '', month: '', businessUnit: '', supplier: '', materialCode: '', oaFlowNo: '', relatedQty: '', reason: '', changeDate: todayText(), remark: '' });
     await load();
   }
 
@@ -1155,6 +1155,7 @@ function TracePage({ token, setMessage }) {
           ['businessUnit', '事业部'],
           ['supplier', '供应商'],
           ['materialCode', '物料编码'],
+          ['oaFlowNo', 'OA备货流程号'],
           ['relatedQty', '关联数量'],
           ['reason', '原因'],
           ['changeDate', '日期'],

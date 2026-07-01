@@ -268,6 +268,7 @@ function migrate() {
       business_unit TEXT NOT NULL,
       supplier TEXT NOT NULL,
       material_code TEXT NOT NULL,
+      oa_flow_no TEXT NOT NULL DEFAULT '',
       related_qty REAL NOT NULL DEFAULT 0,
       reason TEXT NOT NULL,
       change_date TEXT NOT NULL,
@@ -364,19 +365,52 @@ function migrate() {
     run("ALTER TABLE difference_allocations ADD COLUMN new_order_nos TEXT NOT NULL DEFAULT ''");
   }
 
-  migrateDemandKeysToPurchaseOrg();
+  const noteColumns = all('PRAGMA table_info(demand_change_notes)').map((row) => row.name);
+  if (!noteColumns.includes('oa_flow_no')) {
+    run("ALTER TABLE demand_change_notes ADD COLUMN oa_flow_no TEXT NOT NULL DEFAULT ''");
+  }
+
+  migrateDemandKeysToCurrentShape();
 }
 
 function normalizeKeyPart(value) {
   return String(value ?? '').trim();
 }
 
-function newDemandKey(purchaseOrg, month, businessUnit, supplier, materialCode) {
-  return [purchaseOrg, month, businessUnit, supplier, materialCode].map(normalizeKeyPart).join('|');
+function newDemandKey(purchaseOrg, month, businessUnit, supplier, materialCode, oaFlowNo = '') {
+  return [purchaseOrg, month, businessUnit, supplier, materialCode, oaFlowNo].map(normalizeKeyPart).join('|');
 }
 
 function hasLegacyDemandKey(value) {
-  return normalizeKeyPart(value).split('|').length === 4;
+  return normalizeKeyPart(value).split('|').length < 6;
+}
+
+function pickRawOaFlowNo(rawJson) {
+  try {
+    const raw = rawJson ? JSON.parse(rawJson) : {};
+    return normalizeKeyPart(raw.oaFlowNo)
+      || normalizeKeyPart(raw['OA备货流程号'])
+      || normalizeKeyPart(raw['OA流程号'])
+      || normalizeKeyPart(raw['备货流程号'])
+      || normalizeKeyPart(raw['OA申请号'])
+      || normalizeKeyPart(raw['OA申请流程号'])
+      || normalizeKeyPart(raw['OA流程编号']);
+  } catch {
+    return '';
+  }
+}
+
+function uniqueKeyValues(values) {
+  return [...new Set(values.map(normalizeKeyPart).filter(Boolean))].join('、');
+}
+
+function oaFlowNoForDemand(row) {
+  const existing = normalizeKeyPart(row.oa_flow_no);
+  if (existing) return existing;
+  const sourceRows = row.source_batch_id
+    ? all('SELECT oa_flow_no, raw_json FROM kingdee_orders WHERE batch_id = ? AND month = ? AND business_unit = ? AND supplier = ? AND material_code = ?', [row.source_batch_id, row.month, row.business_unit, row.supplier, row.material_code])
+    : all('SELECT oa_flow_no, raw_json FROM kingdee_orders WHERE month = ? AND business_unit = ? AND supplier = ? AND material_code = ?', [row.month, row.business_unit, row.supplier, row.material_code]);
+  return uniqueKeyValues(sourceRows.map((sourceRow) => normalizeKeyPart(sourceRow.oa_flow_no) || pickRawOaFlowNo(sourceRow.raw_json)));
 }
 
 function rewriteDemandKeyInJson(value, keyMap) {
@@ -390,22 +424,45 @@ function rewriteDemandKeyInJson(value, keyMap) {
   if (!Array.isArray(parsed)) return value;
   let changed = false;
   parsed.forEach((row) => {
-    if (row && keyMap.has(row.demandKey)) {
-      row.demandKey = keyMap.get(row.demandKey);
+    if (!row) return;
+    const hasRowOaFlowNo = normalizeKeyPart(row.oaFlowNo || row.oa_flow_no);
+    const nextKey = (hasRowOaFlowNo ? jsonRowDemandKey(row) : '') || keyMap.get(row.demandKey) || jsonRowDemandKey(row);
+    if (nextKey && row.demandKey !== nextKey) {
+      row.demandKey = nextKey;
       changed = true;
     }
   });
   return changed ? JSON.stringify(parsed) : value;
 }
 
-function migrateDemandKeysToPurchaseOrg() {
-  const legacyDemands = all('SELECT demand_key, month, business_unit, supplier, material_code, purchase_org FROM order_demands')
+function jsonRowDemandKey(row) {
+  const month = normalizeKeyPart(row.month);
+  const businessUnit = normalizeKeyPart(row.businessUnit || row.business_unit);
+  const supplier = normalizeKeyPart(row.supplier);
+  const materialCode = normalizeKeyPart(row.materialCode || row.material_code);
+  if (!month || !supplier || !materialCode) return '';
+  return newDemandKey(
+    row.purchaseOrg || row.purchase_org,
+    month,
+    businessUnit,
+    supplier,
+    materialCode,
+    row.oaFlowNo || row.oa_flow_no
+  );
+}
+
+function migrateDemandKeysToCurrentShape() {
+  const legacyDemands = all('SELECT demand_key, month, business_unit, supplier, material_code, purchase_org, oa_flow_no, source_batch_id FROM order_demands')
     .filter((row) => hasLegacyDemandKey(row.demand_key));
   if (legacyDemands.length === 0) return;
 
   const keyMap = new Map();
   legacyDemands.forEach((row) => {
-    keyMap.set(row.demand_key, newDemandKey(row.purchase_org, row.month, row.business_unit, row.supplier, row.material_code));
+    const oaFlowNo = oaFlowNoForDemand(row);
+    if (oaFlowNo && normalizeKeyPart(row.oa_flow_no) !== oaFlowNo) {
+      run('UPDATE order_demands SET oa_flow_no = ? WHERE demand_key = ?', [oaFlowNo, row.demand_key]);
+    }
+    keyMap.set(row.demand_key, newDemandKey(row.purchase_org, row.month, row.business_unit, row.supplier, row.material_code, oaFlowNo));
   });
 
   keyMap.forEach((nextKey, oldKey) => {
@@ -421,20 +478,19 @@ function migrateDemandKeysToPurchaseOrg() {
     run('UPDATE kingdee_orders SET demand_key = ? WHERE demand_key = ?', [nextKey, oldKey]);
   });
 
-  all('SELECT id, demand_key, purchase_org FROM kingdee_orders').forEach((row) => {
+  all('SELECT id, demand_key, month, business_unit, supplier, material_code, purchase_org, oa_flow_no, raw_json FROM kingdee_orders').forEach((row) => {
     if (hasLegacyDemandKey(row.demand_key)) {
-      const parts = row.demand_key.split('|');
-      const nextKey = newDemandKey(row.purchase_org, parts[0], parts[1], parts[2], parts[3]);
+      const nextKey = newDemandKey(row.purchase_org, row.month, row.business_unit, row.supplier, row.material_code, normalizeKeyPart(row.oa_flow_no) || pickRawOaFlowNo(row.raw_json));
       run('UPDATE kingdee_orders SET demand_key = ? WHERE id = ?', [nextKey, row.id]);
     }
   });
 
-  all('SELECT id, month, business_unit, supplier, material_code FROM demand_change_notes').forEach((row) => {
+  all('SELECT id, month, business_unit, supplier, material_code, oa_flow_no FROM demand_change_notes').forEach((row) => {
     const demand = all(
-      'SELECT purchase_org FROM order_demands WHERE month = ? AND business_unit = ? AND supplier = ? AND material_code = ? ORDER BY active DESC, updated_at DESC LIMIT 1',
+      'SELECT purchase_org, oa_flow_no FROM order_demands WHERE month = ? AND business_unit = ? AND supplier = ? AND material_code = ? ORDER BY active DESC, updated_at DESC LIMIT 1',
       [row.month, row.business_unit, row.supplier, row.material_code]
     )[0];
-    const nextKey = newDemandKey(demand?.purchase_org || '', row.month, row.business_unit, row.supplier, row.material_code);
+    const nextKey = newDemandKey(demand?.purchase_org || '', row.month, row.business_unit, row.supplier, row.material_code, row.oa_flow_no || demand?.oa_flow_no || '');
     run('UPDATE demand_change_notes SET demand_key = ? WHERE id = ?', [nextKey, row.id]);
   });
 

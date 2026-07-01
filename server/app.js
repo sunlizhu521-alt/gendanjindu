@@ -464,11 +464,11 @@ function splitDelimited(value) {
 }
 
 function assignmentGroup(row) {
-  return normalize(row?.productLineDetailPurchaseGroup);
+  return normalize(row?.productLineDetailPurchaseGroup) || normalize(row?.purchaseGroup);
 }
 
 function assignmentOwner(row) {
-  return normalize(row?.productLineDetailPurchaseOwner);
+  return normalize(row?.productLineDetailPurchaseOwner) || normalize(row?.purchaseOwner);
 }
 
 function enrichDemandFields(supplier, materialCode, orderCreator = '', lookups = dimensionLookups()) {
@@ -1365,8 +1365,8 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requirePage('dimensionLi
         materialCode: pick(row, mapping.materialCode),
         productLineDetailPurchaseGroup: pick(row, mapping.productLineDetailPurchaseGroup) || pickAny(row, ['产品线明细-采购组', '产品线明细采购组', '产品线明细-采购分组', '产品线明细采购分组']),
         productLineDetailPurchaseOwner: pick(row, mapping.productLineDetailPurchaseOwner) || pickAny(row, ['产品线明细-采购下单人', '产品线明细采购下单人', '产品线明细-下单人', '产品线明细下单人']),
-        purchaseOwner: pick(row, mapping.purchaseOwner),
-        purchaseGroup: pick(row, mapping.purchaseGroup),
+        purchaseOwner: pick(row, mapping.purchaseOwner) || pickAny(row, ['采购下单人', '下单人', '采购负责人']),
+        purchaseGroup: pick(row, mapping.purchaseGroup) || pickAny(row, ['采购组', '采购分组']),
         purchaseOrg: pick(row, mapping.purchaseOrg)
       };
     }

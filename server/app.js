@@ -946,7 +946,7 @@ app.get('/api/imports/kingdee/current-status', requireAuth, requirePage('kingdee
      ORDER BY COALESCE(NULLIF(b.applied_at, ''), b.imported_at) DESC
      LIMIT 1`
   );
-  const history = all('SELECT id, file_name, imported_by, imported_at, applied_at, row_count FROM kingdee_import_batches ORDER BY imported_at DESC LIMIT 100')
+  const history = all('SELECT id, file_name, imported_by, imported_at, applied_at, row_count FROM kingdee_import_batches ORDER BY imported_at DESC LIMIT 10')
     .map((row) => ({
       batchId: row.id,
       fileName: row.file_name,

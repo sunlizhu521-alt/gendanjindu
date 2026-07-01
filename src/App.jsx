@@ -462,7 +462,7 @@ function Dashboard({ rows }) {
   );
 }
 
-function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, description, mode }) {
+function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, description, mode, showImportHistory = false, historyVersion = 0, onImportApplied = () => {} }) {
   const [file, setFile] = useState(null);
   const [columns, setColumns] = useState([]);
   const [mapping, setMapping] = useState({});
@@ -477,8 +477,8 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
 
   useEffect(() => {
     request('/api/mappings/kingdee', { token }).then((payload) => setMapping(payload.mapping || {})).catch(() => {});
-    if (mode === 'current') loadCurrentStatus().catch(() => {});
-  }, [token, mode]);
+    if (mode === 'current' || showImportHistory) loadCurrentStatus().catch(() => {});
+  }, [token, mode, showImportHistory, historyVersion]);
 
   async function loadCurrentStatus() {
     const payload = await request('/api/imports/kingdee/current-status', { token });
@@ -548,6 +548,7 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
         setMessage(`上传保存完成：${payload.rowCount} 行，差异 ${payload.diffs.length} 条`);
       }
       if (mode === 'current') await loadCurrentStatus();
+      onImportApplied();
     } catch (err) {
       setMessage('上传保存失败：' + err.message);
     } finally {
@@ -654,11 +655,11 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
           )}
         </section>
       )}
-      {mode === 'current' && (
+      {showImportHistory && (
         <section className="panel">
           <div className="section-heading-row">
             <h3>导入记录</h3>
-            <span className="section-count">最近 {importHistory.length} 次</span>
+            <span className="section-count">默认显示最近 {importHistory.length} 条</span>
           </div>
           <DataTable
             className="compact-table"
@@ -673,6 +674,9 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
 }
 
 function KingdeeImport({ token, user, reloadDemands, setMessage }) {
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const refreshImportHistory = () => setHistoryVersion((value) => value + 1);
+
   async function clearOrderCache() {
     const confirmed = window.confirm('将清空采购订单、订单需求、生产跟进、差异分配和相关历史记录。维度表、历史库存、用户权限、字段映射和变更备注不会清除。确定继续吗？');
     if (!confirmed) return;
@@ -681,6 +685,7 @@ function KingdeeImport({ token, user, reloadDemands, setMessage }) {
       const total = Object.values(payload.cleared || {}).reduce((sum, value) => sum + numberValue(value), 0);
       setMessage(`采购订单缓存已清除，共 ${total} 条记录。`);
       await reloadDemands();
+      refreshImportHistory();
     } catch (err) {
       setMessage('清除缓存失败：' + err.message);
     }
@@ -706,6 +711,8 @@ function KingdeeImport({ token, user, reloadDemands, setMessage }) {
         title="当前应用采购订单"
         description="首次导入或直接刷新当前金蝶基线"
         mode="current"
+        historyVersion={historyVersion}
+        onImportApplied={refreshImportHistory}
       />
       <KingdeeUploadPanel
         token={token}
@@ -714,6 +721,9 @@ function KingdeeImport({ token, user, reloadDemands, setMessage }) {
         title="新采购订单上传"
         description="生成差异分配并立即应用为新的当前采购订单"
         mode="new"
+        showImportHistory
+        historyVersion={historyVersion}
+        onImportApplied={refreshImportHistory}
       />
     </>
   );

@@ -38,12 +38,8 @@ jobs:
               tar -czf "$BACKUP_FILE" data
               ls -lh "$BACKUP_FILE"
             fi
-            find . -mindepth 1 \
-              ! -path './data' \
-              ! -path './data/*' \
-              ! -path './node_modules' \
-              ! -path './node_modules/*' \
-              -delete
+            # Extract over the existing app directory. Do not blanket-delete server files:
+            # Tencent runtime data, uploaded files, .env files, and local diagnostics must survive deploys.
             tar -xzf /tmp/gendanjindu-deploy/gendanjindu.tar.gz -C "$APP_DIR"
             npm ci --omit=dev
             npm run build

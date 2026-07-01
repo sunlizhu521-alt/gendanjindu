@@ -1063,6 +1063,9 @@ function clearKingdeeCache(req, res) {
   if (normalize(req.user.name) !== '孙立柱') {
     return res.status(403).json({ error: '仅孙立柱可以清除采购订单缓存' });
   }
+  const preserved = {
+    dimensionFiles: numberValue(get('SELECT COUNT(*) AS count FROM dimension_files')?.count)
+  };
   const counts = {
     kingdeeOrders: numberValue(get('SELECT COUNT(*) AS count FROM kingdee_orders')?.count),
     importBatches: numberValue(get('SELECT COUNT(*) AS count FROM kingdee_import_batches')?.count),
@@ -1084,8 +1087,12 @@ function clearKingdeeCache(req, res) {
     run('DELETE FROM kingdee_orders');
     run('DELETE FROM order_demands');
     run('DELETE FROM kingdee_import_batches');
+    const dimensionFilesAfter = numberValue(get('SELECT COUNT(*) AS count FROM dimension_files')?.count);
+    if (dimensionFilesAfter !== preserved.dimensionFiles) {
+      throw new Error('维度表保护校验失败，清除缓存已回滚');
+    }
   });
-  res.json({ ok: true, cleared: counts });
+  res.json({ ok: true, cleared: counts, preserved });
 }
 
 app.delete('/api/imports/kingdee/cache', requireAuth, requirePage('kingdeeImport'), clearKingdeeCache);

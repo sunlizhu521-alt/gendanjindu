@@ -2,6 +2,8 @@ import bcrypt from 'bcryptjs';
 import compression from 'compression';
 import cors from 'cors';
 import express from 'express';
+import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import multer from 'multer';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -48,7 +50,13 @@ const app = express();
 const UPLOAD_LIMIT_BYTES = 100 * 1024 * 1024;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: UPLOAD_LIMIT_BYTES } });
 
-app.use(cors());
+app.use(cors({ origin: 'https://zhugeaishiyanshi.com' }));
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: false,
+  crossOriginOpenerPolicy: false
+}));
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 500, standardHeaders: true, legacyHeaders: false }));
 app.use(compression());
 app.use(express.json({ limit: '30mb' }));
 

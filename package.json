@@ -18,12 +18,13 @@
     "concurrently": "^9.2.1",
     "cors": "^2.8.5",
     "express": "^5.1.0",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0",
     "multer": "^2.0.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "sql.js": "^1.14.1",
     "vite": "^7.1.5",
     "xlsx": "^0.18.5"
-  },
-  "devDependencies": {}
+  }
 }

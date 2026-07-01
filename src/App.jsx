@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import * as XLSX from 'xlsx';
 
 const API = import.meta.env.DEV ? 'http://localhost:4003' : '';
 const TOKEN_KEY = 'gendanjinduToken';

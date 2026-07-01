@@ -1406,11 +1406,17 @@ function DimensionLibrary({ token, reloadDemands, setMessage }) {
   useEffect(() => { load().catch(() => {}); }, []);
 
   async function inspect(slot, file) {
-    const data = new FormData();
-    data.append('file', file);
-    const payload = await request('/api/workbook/inspect', { token, method: 'POST', body: data });
-    const prevState = local[slot.id] || {};
-    setLocal({ ...local, [slot.id]: { ...prevState, file, columns: payload.columns || [], sheetNames: payload.sheetNames || [], sheetPreviews: payload.sheetPreviews || [], mapping: prevState.mapping || {}, sheetName: '' } });
+    try {
+      const data = new FormData();
+      data.append('file', file);
+      const payload = await request('/api/workbook/inspect', { token, method: 'POST', body: data });
+      const prevState = local[slot.id] || {};
+      const columns = payload.columns || [];
+      setLocal({ ...local, [slot.id]: { ...prevState, file, columns, sheetNames: payload.sheetNames || [], sheetPreviews: payload.sheetPreviews || [], mapping: prevState.mapping || {}, sheetName: '' } });
+      if (!columns.length) setMessage(`${slot.title} 未识别到表头，请检查前10行是否包含字段名`);
+    } catch (err) {
+      setMessage(`${slot.title} 文件解析失败：${err.message}`);
+    }
   }
 
   async function selectSheet(slot, sheetName) {
@@ -1420,14 +1426,18 @@ function DimensionLibrary({ token, reloadDemands, setMessage }) {
   }
 
   async function uploadSlot(slot) {
-    const state = local[slot.id];
-    const data = new FormData();
-    data.append('file', state.file);
-    data.append('mapping', JSON.stringify(state.mapping || {}));
-    if (state.sheetName) data.append('sheetName', state.sheetName);
-    const payload = await request(`/api/dimensions/${slot.id}/upload`, { token, method: 'POST', body: data });
-    setMessage(`${slot.title} 已上传 ${payload.rowCount} 行，请应用刷新。`);
-    await load();
+    try {
+      const state = local[slot.id];
+      const data = new FormData();
+      data.append('file', state.file);
+      data.append('mapping', JSON.stringify(state.mapping || {}));
+      if (state.sheetName) data.append('sheetName', state.sheetName);
+      const payload = await request(`/api/dimensions/${slot.id}/upload`, { token, method: 'POST', body: data });
+      setMessage(`${slot.title} 已上传 ${payload.rowCount} 行，请应用刷新。`);
+      await load();
+    } catch (err) {
+      setMessage(`${slot.title} 上传失败：${err.message}`);
+    }
   }
 
   async function applySlot(slot) {

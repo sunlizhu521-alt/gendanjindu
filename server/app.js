@@ -204,20 +204,54 @@ function safeFilename(file) {
   return Buffer.from(file.originalname, 'latin1').toString('utf8');
 }
 
-function previewRowsForSheet(sheet) {
-  if (!sheet?.['!ref']) return { columns: [], rowCount: 0, previewRows: [] };
-  const fullRange = xlsx.utils.decode_range(sheet['!ref']);
-  const previewRange = { ...fullRange, e: { ...fullRange.e, r: Math.min(fullRange.e.r, fullRange.s.r + 8) } };
-  const aoa = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false, range: previewRange });
-  const columns = (aoa[0] || []).map((value) => normalize(value));
-  const previewRows = aoa.slice(1).map((values) => {
+const HEADER_HINTS = [
+  '物料编码', '物流编码', 'SKU', '物料名称', '产品名称', '供应商', '供应商简称',
+  '采购下单人', '创建人', '采购组', '采购组织', '产品线', '系列',
+  '事业部', '采购日期', '创建日期', '采购数量', '下单数量', 'OA备货流程号'
+];
+
+function compactHeader(value) {
+  return normalize(value).replace(/\s+/g, '').toLowerCase();
+}
+
+function headerScore(values) {
+  const cells = values.map(compactHeader).filter(Boolean);
+  if (!cells.length) return 0;
+  const text = cells.join('|');
+  const hintHits = HEADER_HINTS.filter((hint) => text.includes(compactHeader(hint))).length;
+  return (hintHits * 20) + Math.min(cells.length, 12) + (cells.length >= 2 ? 5 : 0);
+}
+
+function uniqueColumns(values) {
+  const seen = new Map();
+  return values.map((value, index) => {
+    const column = normalize(value);
+    if (!column) return '';
+    const count = seen.get(column) || 0;
+    seen.set(column, count + 1);
+    return count ? `${column}_${count + 1}` : column;
+  });
+}
+
+function sheetData(sheet) {
+  if (!sheet?.['!ref']) return { columns: [], rowCount: 0, previewRows: [], rows: [], headerRow: 0 };
+  const aoa = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false, blankrows: false });
+  if (!aoa.length) return { columns: [], rowCount: 0, previewRows: [], rows: [], headerRow: 0 };
+  const scanRows = aoa.slice(0, Math.min(10, aoa.length));
+  const best = scanRows
+    .map((values, index) => ({ index, score: headerScore(values) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)[0];
+  const headerIndex = best && best.score > 0 ? best.index : 0;
+  const rowColumns = uniqueColumns(aoa[headerIndex] || []);
+  const columns = rowColumns.filter(Boolean);
+  const rows = aoa.slice(headerIndex + 1).map((values) => {
     const row = {};
-    columns.forEach((column, index) => {
+    rowColumns.forEach((column, index) => {
       if (column) row[column] = values[index] ?? '';
     });
     return row;
-  });
-  return { columns: columns.filter(Boolean), rowCount: Math.max(0, fullRange.e.r - fullRange.s.r), previewRows };
+  }).filter((row) => Object.values(row).some((value) => normalize(value)));
+  return { columns, rowCount: rows.length, previewRows: rows.slice(0, 8), rows, headerRow: headerIndex + 1 };
 }
 
 function workbookRows(file, sheetName = null, options = {}) {
@@ -227,23 +261,24 @@ function workbookRows(file, sheetName = null, options = {}) {
     ? workbook.SheetNames.filter((name) => name === sheetName)
     : workbook.SheetNames;
   const parsedRows = new Map();
-  const getRows = (name) => {
+  const getSheetData = (name) => {
     if (!parsedRows.has(name)) {
-      parsedRows.set(name, xlsx.utils.sheet_to_json(workbook.Sheets[name], { defval: '', raw: false }));
+      parsedRows.set(name, sheetData(workbook.Sheets[name]));
     }
     return parsedRows.get(name);
   };
   const sheets = targetSheets.map((name) => {
-    const rows = getRows(name);
-    return { sheetName: name, rows, columns: rows[0] ? Object.keys(rows[0]) : [] };
+    const data = getSheetData(name);
+    return { sheetName: name, rows: data.rows, columns: data.columns, headerRow: data.headerRow };
   });
   const includePreviews = options.includePreviews !== false;
   const sheetPreviews = includePreviews ? workbook.SheetNames.map((name) => {
     if (parsedRows.has(name)) {
-      const rows = parsedRows.get(name);
-      return { sheetName: name, columns: rows[0] ? Object.keys(rows[0]) : [], rowCount: rows.length, previewRows: rows.slice(0, 8) };
+      const data = parsedRows.get(name);
+      return { sheetName: name, columns: data.columns, rowCount: data.rowCount, previewRows: data.previewRows, headerRow: data.headerRow };
     }
-    return { sheetName: name, ...previewRowsForSheet(workbook.Sheets[name]) };
+    const data = sheetData(workbook.Sheets[name]);
+    return { sheetName: name, columns: data.columns, rowCount: data.rowCount, previewRows: data.previewRows, headerRow: data.headerRow };
   }) : [];
   return { sheetNames: workbook.SheetNames, sheetPreviews, sheets, rows: sheets.flatMap((sheet) => sheet.rows) };
 }
@@ -251,7 +286,10 @@ function workbookRows(file, sheetName = null, options = {}) {
 function workbookInspect(file, sheetName = null) {
   if (!file?.buffer) throw new Error('未收到上传文件');
   const workbook = xlsx.read(file.buffer, { type: 'buffer', cellDates: true });
-  const sheetPreviews = workbook.SheetNames.map((name) => ({ sheetName: name, ...previewRowsForSheet(workbook.Sheets[name]) }));
+  const sheetPreviews = workbook.SheetNames.map((name) => {
+    const data = sheetData(workbook.Sheets[name]);
+    return { sheetName: name, columns: data.columns, rowCount: data.rowCount, previewRows: data.previewRows, headerRow: data.headerRow };
+  });
   const targetName = sheetName && workbook.SheetNames.includes(sheetName) ? sheetName : workbook.SheetNames[0];
   const target = sheetPreviews.find((sheet) => sheet.sheetName === targetName) || { columns: [], previewRows: [] };
   return { sheetNames: workbook.SheetNames, sheetPreviews, columns: target.columns, previewRows: target.previewRows };

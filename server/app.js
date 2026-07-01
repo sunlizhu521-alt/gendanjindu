@@ -19,6 +19,7 @@ const ROLE_ADMIN = '管理员';
 const ROLE_USER = '普通用户';
 const ALL_PAGES = [
   'dashboard',
+  'purchaseBoard',
   'progressRefresh',
   'differenceAllocation',
   'trace',
@@ -29,6 +30,7 @@ const ALL_PAGES = [
 ];
 const PAGE_LABELS = {
   dashboard: '采购总览',
+  purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',
   progressRefresh: '生产跟进',
   differenceAllocation: '差异分配',

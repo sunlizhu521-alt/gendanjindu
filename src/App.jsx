@@ -6,6 +6,7 @@ const BUSINESS_UNITS = ['海外事业一部', '海外事业二部', '国内事�
 
 const PAGE_ORDER = [
   'dashboard',
+  'purchaseBoard',
   'progressRefresh',
   'differenceAllocation',
   'trace',
@@ -17,6 +18,7 @@ const PAGE_ORDER = [
 
 const PAGE_LABELS = {
   dashboard: '采购总览',
+  purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',
   progressRefresh: '生产跟进',
   differenceAllocation: '差异分配',
@@ -459,6 +461,175 @@ function Dashboard({ rows }) {
             row.oaFlowNo
           ]}
         />
+      </section>
+    </>
+  );
+}
+
+function PurchaseBoard({ rows }) {
+  const activeRows = useMemo(() => rows.filter((row) => row.active), [rows]);
+  const [filters, setFilters] = useState({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
+  const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+  const matchesFilters = (row, omit = '') => {
+    const keyword = filters.keyword.toLowerCase();
+    const displaySupplier = supplierName(row);
+    const text = [
+      row.demandKey,
+      row.month,
+      row.businessUnit,
+      displaySupplier,
+      row.supplier,
+      row.productLine,
+      row.productSeries,
+      row.materialCode,
+      row.oaFlowNo,
+      row.sku,
+      row.materialName,
+      row.orderCreator
+    ].join(' ').toLowerCase();
+    return (!keyword || text.includes(keyword))
+      && (omit === 'month' || !filters.month || row.month === filters.month)
+      && (omit === 'businessUnit' || !filters.businessUnit || row.businessUnit === filters.businessUnit)
+      && (omit === 'supplier' || !filters.supplier || displaySupplier === filters.supplier)
+      && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
+      && (omit === 'series' || !filters.series || row.productSeries === filters.series)
+      && (omit === 'sku' || !filters.sku || row.sku === filters.sku)
+      && (omit === 'orderCreator' || !filters.orderCreator || row.orderCreator === filters.orderCreator);
+  };
+  const options = useMemo(() => {
+    const rowsFor = (field) => activeRows.filter((row) => matchesFilters(row, field));
+    return {
+      months: unique(rowsFor('month').map((row) => row.month)),
+      businessUnits: unique(rowsFor('businessUnit').map((row) => row.businessUnit)),
+      suppliers: unique(rowsFor('supplier').map((row) => supplierName(row))),
+      productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
+      series: unique(rowsFor('series').map((row) => row.productSeries)),
+      skus: unique(rowsFor('sku').map((row) => row.sku)),
+      orderCreators: unique(rowsFor('orderCreator').map((row) => row.orderCreator))
+    };
+  }, [activeRows, filters]);
+  const filteredRows = useMemo(() => activeRows.filter((row) => matchesFilters(row)), [activeRows, filters]);
+  const clearFilters = () => setFilters({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', orderCreator: '', keyword: '' });
+
+  const board = useMemo(() => {
+    const months = unique(filteredRows.map((row) => row.month));
+    const businessUnits = unique(filteredRows.map((row) => row.businessUnit));
+    const itemMap = new Map();
+    filteredRows.forEach((row) => {
+      const itemKey = [row.sku, row.materialCode, row.materialName || row.materialCode].map(normalize).join('|');
+      const item = itemMap.get(itemKey) || {
+        key: itemKey,
+        sku: row.sku || '',
+        materialCode: row.materialCode || '',
+        materialName: row.materialName || row.materialCode || '',
+        stock: new Map(),
+        stockSeen: new Set(),
+        orders: new Map()
+      };
+      const stockKey = row.businessUnit || '未分事业部';
+      const stockSourceKey = [row.businessUnit, row.supplier, row.materialCode].map(normalize).join('|');
+      if (!item.stockSeen.has(stockSourceKey)) {
+        item.stock.set(stockKey, numberValue(item.stock.get(stockKey)) + numberValue(row.stockQty));
+        item.stockSeen.add(stockSourceKey);
+      }
+      const orderKey = `${row.month}|${row.businessUnit || '未分事业部'}`;
+      const order = item.orders.get(orderKey) || { shipped: 0, finished: 0, inProduction: 0, uncovered: 0 };
+      order.shipped += numberValue(row.shippedQty);
+      order.finished += numberValue(row.finishedQty);
+      order.inProduction += numberValue(row.inProductionQty);
+      order.uncovered += Math.max(numberValue(row.currentOrderQty) - progressTotal(row), 0);
+      item.orders.set(orderKey, order);
+      itemMap.set(itemKey, item);
+    });
+    return {
+      months,
+      businessUnits,
+      items: [...itemMap.values()].sort((a, b) => a.materialCode.localeCompare(b.materialCode, 'zh-Hans-CN'))
+    };
+  }, [filteredRows]);
+
+  const renderOrderCell = (order) => {
+    if (!order) return null;
+    const blocks = [
+      ['shipped', '已发货', order.shipped],
+      ['finished', '已完工', order.finished],
+      ['inProduction', '生产中', order.inProduction],
+      ['uncovered', '差额', order.uncovered]
+    ].filter(([, , value]) => numberValue(value) > 0);
+    return blocks.map(([key, label, value]) => (
+      <span key={key} className={`board-chip ${key}`} title={label}>{numberValue(value).toLocaleString()}</span>
+    ));
+  };
+
+  return (
+    <>
+      <div className="section-heading-row"><h2>采购看板</h2><span className="section-count">当前显示 {board.items.length} 个物料，按状态颜色区分</span></div>
+      <div className="toolbar filters-row">
+        <SelectField label="下单月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
+        <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
+        <SelectField label="供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
+        <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
+        <SelectField label="系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
+        <SelectField label="SKU" value={filters.sku} options={options.skus} onChange={(value) => setFilters({ ...filters, sku: value })} />
+        <SelectField label="创建人" value={filters.orderCreator} options={options.orderCreators} onChange={(value) => setFilters({ ...filters, orderCreator: value })} />
+        <input
+          className="search-input"
+          placeholder="搜索供应商、物料编码、OA备货流程号、SKU、物料名称、创建人"
+          value={filters.keyword}
+          onChange={(event) => setFilters({ ...filters, keyword: event.target.value })}
+        />
+        <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
+      </div>
+      <div className="board-legend">
+        <span><i className="legend-dot finished" />已完工</span>
+        <span><i className="legend-dot inProduction" />生产中</span>
+        <span><i className="legend-dot shipped" />已发货/入库</span>
+        <span><i className="legend-dot uncovered" />差额/未覆盖</span>
+      </div>
+      <section className="panel board-panel">
+        <div className="board-table-wrap">
+          <table className="purchase-board-table">
+            <thead>
+              <tr>
+                <th className="board-sticky board-sku-col" rowSpan="2">SKU</th>
+                <th className="board-sticky board-code-col" rowSpan="2">物料编码</th>
+                <th className="board-sticky board-name-col" rowSpan="2">产品名称</th>
+                <th colSpan={Math.max(board.businessUnits.length, 1)}>历史库存</th>
+                {board.months.map((month) => (
+                  <th key={month} colSpan={Math.max(board.businessUnits.length, 1)}>{month}订单</th>
+                ))}
+              </tr>
+              <tr>
+                {(board.businessUnits.length ? board.businessUnits : ['']).map((unit) => <th key={`stock-${unit}`}>{unit || '-'}</th>)}
+                {board.months.map((month) => (
+                  (board.businessUnits.length ? board.businessUnits : ['']).map((unit) => <th key={`${month}-${unit}`}>{unit || '-'}</th>)
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {board.items.length === 0 ? (
+                <tr><td className="empty" colSpan={3 + Math.max(board.businessUnits.length, 1) * (board.months.length + 1)}>暂无数据</td></tr>
+              ) : board.items.map((item) => (
+                <tr key={item.key}>
+                  <td className="board-sticky board-sku-col">{item.sku}</td>
+                  <td className="board-sticky board-code-col">{item.materialCode}</td>
+                  <td className="board-sticky board-name-col board-name-cell">{item.materialName}</td>
+                  {(board.businessUnits.length ? board.businessUnits : ['']).map((unit) => {
+                    const value = numberValue(item.stock.get(unit));
+                    return <td key={`stock-${item.key}-${unit}`}>{value > 0 && <span className="board-chip stock">{value.toLocaleString()}</span>}</td>;
+                  })}
+                  {board.months.map((month) => (
+                    (board.businessUnits.length ? board.businessUnits : ['']).map((unit) => (
+                      <td key={`${item.key}-${month}-${unit}`} className="board-status-cell">
+                        {renderOrderCell(item.orders.get(`${month}|${unit}`))}
+                      </td>
+                    ))
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </>
   );
@@ -1477,6 +1648,7 @@ function App() {
       <section className="content" onClick={(event) => event.stopPropagation()}>
         {message && <p className="message">{message}</p>}
         {activeTab === 'dashboard' && <Dashboard rows={demands} />}
+        {activeTab === 'purchaseBoard' && <PurchaseBoard rows={demands} />}
         {activeTab === 'kingdeeImport' && <KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'progressRefresh' && <ProgressPage rows={demands} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'differenceAllocation' && <DifferenceAllocationPage token={token} user={user} setMessage={setMessage} />}

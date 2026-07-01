@@ -448,6 +448,33 @@ function getDimensionRows(slotId) {
   return parseJson(record.rows_json, []);
 }
 
+function rowAliasValue(row, aliases = []) {
+  for (const alias of aliases) {
+    const value = normalize(row?.[alias]);
+    if (value) return value;
+  }
+  const compactAliases = new Set(aliases.map(compactHeader));
+  for (const [key, value] of Object.entries(row || {})) {
+    if (compactAliases.has(compactHeader(key))) {
+      const normalized = normalize(value);
+      if (normalized) return normalized;
+    }
+  }
+  return '';
+}
+
+function assignmentMaterialCode(row) {
+  return rowAliasValue(row, ['materialCode', '物料编码', '商品编码', '存货编码', '产品编码']);
+}
+
+function assignmentSupplierCandidates(row) {
+  return [
+    rowAliasValue(row, ['productLineDetailSupplier', '产品线明细供应商', '产品线明细-供应商', '产品明细供应商', '产品明细-供应商']),
+    rowAliasValue(row, ['supplier', '供应商']),
+    rowAliasValue(row, ['supplierShortName', '供应商简称'])
+  ].map(normalize).filter(Boolean);
+}
+
 function dimensionLookups() {
   const productRows = getDimensionRows('productCategory');
   const assignmentRows = getDimensionRows('purchaseAssignment');
@@ -459,14 +486,14 @@ function dimensionLookups() {
   const assignmentMap = new Map();
   const supplierMap = new Map();
   assignmentRows.forEach((row) => {
-    const supplier = normalize(row.supplier);
-    const productLineDetailSupplier = normalize(row.productLineDetailSupplier) || supplier;
-    const materialCode = normalize(row.materialCode);
-    const supplierCandidates = [productLineDetailSupplier, supplier, row.supplierShortName].map(normalize).filter(Boolean);
+    const materialCode = assignmentMaterialCode(row);
+    const supplierCandidates = assignmentSupplierCandidates(row);
     supplierCandidates.forEach((candidate) => {
       const supplierKey = normalizeMatchPart(candidate);
-      if (supplierKey && normalize(row.supplierShortName) && !supplierMap.has(supplierKey)) supplierMap.set(supplierKey, row);
-      if (candidate && materialCode) assignmentMap.set(assignmentKey(candidate, materialCode), row);
+      if (supplierKey && rowAliasValue(row, ['supplierShortName', '供应商简称']) && !supplierMap.has(supplierKey)) supplierMap.set(supplierKey, row);
+      const key = assignmentKey(candidate, materialCode);
+      const existing = assignmentMap.get(key);
+      if (candidate && materialCode && (!existing || (!assignmentOwner(existing) && assignmentOwner(row)))) assignmentMap.set(key, row);
     });
   });
   return { productMap, assignmentMap, supplierMap };
@@ -477,11 +504,15 @@ function splitDelimited(value) {
 }
 
 function assignmentGroup(row) {
-  return normalize(row?.productLineDetailPurchaseGroup) || normalize(row?.purchaseGroup);
+  return rowAliasValue(row, ['productLineDetailPurchaseGroup', '产品线明细-采购组', '产品线明细采购组', '产品线明细-采购分组', '产品线明细采购分组', 'purchaseGroup', '采购组', '采购分组']);
 }
 
 function assignmentOwner(row) {
-  return normalize(row?.productLineDetailPurchaseOwner) || normalize(row?.purchaseOwner);
+  return rowAliasValue(row, ['productLineDetailPurchaseOwner', '产品线明细-采购下单人', '产品线明细采购下单人', '产品线明细-下单人', '产品线明细下单人', 'purchaseOwner', '采购下单人', '下单人', '采购负责人']);
+}
+
+function realPurchaseOwner(...values) {
+  return values.map(normalize).find((value) => value && value !== UNASSIGNED_PURCHASE_OWNER) || '';
 }
 
 function enrichDemandFields(supplier, materialCode, orderCreator = '', lookups = dimensionLookups()) {
@@ -495,9 +526,9 @@ function enrichDemandFields(supplier, materialCode, orderCreator = '', lookups =
     materialName: normalize(product.materialName),
     productLine: normalize(product.productLine),
     productSeries: normalize(product.productSeries),
-    supplierShortName: normalize(assignment.supplierShortName || supplierAssignment.supplierShortName),
+    supplierShortName: rowAliasValue(assignment, ['supplierShortName', '供应商简称']) || rowAliasValue(supplierAssignment, ['supplierShortName', '供应商简称']),
     purchaseGroup: assignmentGroup(assignment),
-    purchaseOwner: assignmentOwner(assignment) || UNASSIGNED_PURCHASE_OWNER,
+    purchaseOwner: realPurchaseOwner(assignmentOwner(assignment)) || UNASSIGNED_PURCHASE_OWNER,
     purchaseOrg: normalize(assignment.purchaseOrg)
   };
 }
@@ -527,9 +558,9 @@ function applyDimensionEnrichment() {
         normalize(product.materialName),
         normalize(product.productLine),
         normalize(product.productSeries),
-        normalize(assignment.supplierShortName || supplierAssignment.supplierShortName),
+        rowAliasValue(assignment, ['supplierShortName', '供应商简称']) || rowAliasValue(supplierAssignment, ['supplierShortName', '供应商简称']),
         assignmentGroup(assignment),
-        assignmentOwner(assignment) || UNASSIGNED_PURCHASE_OWNER,
+        realPurchaseOwner(assignmentOwner(assignment), demand.purchase_owner) || UNASSIGNED_PURCHASE_OWNER,
         normalize(assignment.purchaseOrg),
         demand.demand_key
       ]
@@ -616,7 +647,7 @@ function demandRows(includeInactive = false, user = null) {
     const orderCreator = uniqueCreators(orderRows);
     const oaFlowNo = demand.oa_flow_no || orderedOaFlowNos(orderRows, rawOaFlowNo);
     const enriched = enrichDemandFields(demand.supplier, demand.material_code, orderCreator, context.lookups);
-    const purchaseOwner = enriched.purchaseOwner || UNASSIGNED_PURCHASE_OWNER;
+    const purchaseOwner = realPurchaseOwner(enriched.purchaseOwner, demand.purchase_owner) || UNASSIGNED_PURCHASE_OWNER;
     const purchaseGroup = enriched.purchaseGroup || '';
     const progressTotal = numberValue(progress.in_production_qty) + numberValue(progress.finished_qty) + numberValue(progress.shipped_qty);
     const stockQty = numberValue(stock.stock_qty);

@@ -473,6 +473,7 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
   const [currentStatus, setCurrentStatus] = useState(null);
+  const [importHistory, setImportHistory] = useState([]);
 
   useEffect(() => {
     request('/api/mappings/kingdee', { token }).then((payload) => setMapping(payload.mapping || {})).catch(() => {});
@@ -482,6 +483,7 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
   async function loadCurrentStatus() {
     const payload = await request('/api/imports/kingdee/current-status', { token });
     setCurrentStatus(payload.current || null);
+    setImportHistory(payload.history || []);
   }
 
   async function inspect(nextFile) {
@@ -650,6 +652,20 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
               />
             </>
           )}
+        </section>
+      )}
+      {mode === 'current' && (
+        <section className="panel">
+          <div className="section-heading-row">
+            <h3>导入记录</h3>
+            <span className="section-count">最近 {importHistory.length} 次</span>
+          </div>
+          <DataTable
+            className="compact-table"
+            rows={importHistory}
+            columns={['文件名', '行数', '导入人', '导入时间', '应用时间']}
+            render={(row) => [row.fileName, row.rowCount, row.importedBy, row.importedAt, row.appliedAt]}
+          />
         </section>
       )}
     </>

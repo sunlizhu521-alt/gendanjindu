@@ -946,7 +946,16 @@ app.get('/api/imports/kingdee/current-status', requireAuth, requirePage('kingdee
      ORDER BY COALESCE(NULLIF(b.applied_at, ''), b.imported_at) DESC
      LIMIT 1`
   );
-  if (!batch) return res.json({ current: null });
+  const history = all('SELECT id, file_name, imported_by, imported_at, applied_at, row_count FROM kingdee_import_batches ORDER BY imported_at DESC LIMIT 100')
+    .map((row) => ({
+      batchId: row.id,
+      fileName: row.file_name,
+      importedBy: row.imported_by,
+      importedAt: row.imported_at,
+      appliedAt: row.applied_at || row.imported_at,
+      rowCount: numberValue(row.row_count)
+    }));
+  if (!batch) return res.json({ current: null, history });
   const activeRows = numberValue(get('SELECT COUNT(*) AS count FROM order_demands WHERE active = 1 AND source_batch_id = ?', [batch.id])?.count);
   res.json({
     current: {
@@ -957,7 +966,8 @@ app.get('/api/imports/kingdee/current-status', requireAuth, requirePage('kingdee
       appliedAt: batch.applied_at || batch.imported_at,
       rowCount: numberValue(batch.row_count),
       activeRows
-    }
+    },
+    history
   });
 });
 

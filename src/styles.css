@@ -722,7 +722,7 @@ th {
 }
 
 .progress-table table {
-  min-width: 2020px;
+  min-width: 2160px;
 }
 
 .progress-sticky-top {
@@ -833,6 +833,11 @@ th {
 .progress-table th {
   top: 0;
   z-index: 4;
+}
+
+.progress-table th,
+.progress-table td {
+  white-space: nowrap;
 }
 
 .diff-allocation-table table {

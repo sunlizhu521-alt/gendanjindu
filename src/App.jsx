@@ -1170,24 +1170,23 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, selected = fals
   );
 
   const cells = [
-    <input type="checkbox" checked={selected} disabled={!row.canEdit} onChange={(event) => onSelect?.(row.demandKey, event.target.checked)} />,
     row.purchaseGroup,
     row.purchaseOwner,
-    row.oaFlowNo,
-    row.purchaseOrg,
     row.month,
-    row.businessUnit,
+    row.purchaseOrg,
     supplierName(row),
+    row.businessUnit,
     <TightCell value={row.productLine} />,
     <TightCell value={row.productSeries} />,
     row.materialCode,
-    row.materialName || row.materialCode,
-    row.logisticsCode,
     row.sku,
+    row.materialName || row.materialCode,
     row.remainingInboundQty,
     input('inProductionQty'),
     input('finishedQty'),
     input('shippedQty'),
+    row.oaFlowNo,
+    <input type="checkbox" checked={selected} disabled={!row.canEdit} onChange={(event) => onSelect?.(row.demandKey, event.target.checked)} />,
     <button type="button" className="compact-button" disabled={!row.canEdit || saving} onClick={save}>{saving ? '保存中...' : row.canEdit ? '提交' : '无权限'}</button>
   ];
 
@@ -1279,7 +1278,7 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
       <DataTable
         className="progress-table"
         rows={displayRows}
-        columns={['选择', '采购组', '采购下单人', 'OA备货流程号', '采购组织', '月份', '事业部', '供应商', '产品线', '系列', '物料编码', '物料', '物流编码', 'SKU', '未交付数量', '在产品', '完工产品', '已发货数量', '操作']}
+        columns={['采购组', '采购下单人', '月份', '采购组织', '供应商', '事业部', '产品线', '系列', '物料编码', 'SKU', '物料', '未交付数量', '在产品', '完工产品', '已发货数量', 'OA备货流程号', '选择', '操作']}
         renderRow={(row) => (
           <ProgressEditor
             key={row.demandKey}

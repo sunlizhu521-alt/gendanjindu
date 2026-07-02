@@ -1139,9 +1139,10 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
 
 function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产跟进', onlyIssues = false }) {
   const { filters, setFilters, options, filtered } = useFilteredDemands(rows.filter((row) => row.active), onlyIssues ? 'progressIssues' : 'progressRefresh');
+  const visibleFiltered = useMemo(() => filtered.filter((row) => numberValue(row.remainingInboundQty) > 0), [filtered]);
   const displayRows = onlyIssues
-    ? filtered.filter((row) => numberValue(row.gap) !== 0 || !row.progressUpdatedAt)
-    : filtered;
+    ? visibleFiltered.filter((row) => numberValue(row.gap) !== 0 || !row.progressUpdatedAt)
+    : visibleFiltered;
 
   async function handleExport() {
     const res = await fetch(`${API}/api/progress/export`, { headers: { Authorization: `Bearer ${token}` } });
@@ -1160,12 +1161,14 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
 
   return (
     <>
-      <div className="section-heading-row">
-        <h2>{title}</h2>
-        <span className="section-count">{displayRows.length} 条</span>
-        {!onlyIssues && <button type="button" className="compact-button" onClick={handleExport}>导出 Excel</button>}
+      <div className="progress-sticky-top">
+        <div className="section-heading-row">
+          <h2>{title}</h2>
+          <span className="section-count">{displayRows.length} 条</span>
+          {!onlyIssues && <button type="button" className="compact-button" onClick={handleExport}>导出 Excel</button>}
+        </div>
+        <FilterBar filters={filters} setFilters={setFilters} options={options} onSubmit={() => setMessage('筛选已确认，当前 ' + displayRows.length + ' 条')} />
       </div>
-      <FilterBar filters={filters} setFilters={setFilters} options={options} onSubmit={() => setMessage('筛选已确认，当前 ' + displayRows.length + ' 条')} />
       <DataTable
         className="progress-table"
         rows={displayRows}

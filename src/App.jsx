@@ -57,6 +57,13 @@ const DIMENSION_SLOTS = [
   { id: 'spare2', title: '备用 2', fields: [] }
 ];
 
+const WANGDIAN_SLOTS = [
+  { ...DIMENSION_SLOTS[0], title: '旺店通数据' },
+  { ...DIMENSION_SLOTS[1], title: '备用1' },
+  { ...DIMENSION_SLOTS[2], title: '备用2' },
+  { ...DIMENSION_SLOTS[3], title: '备用3' }
+];
+
 const KINGDEE_FIELDS = [
   ['createDate', '采购日期'],
   ['businessUnit', '事业部'],
@@ -1367,7 +1374,7 @@ function InventoryPage({ token, reloadDemands, setMessage }) {
   );
 }
 
-function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表库' }) {
+function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表库', slots = DIMENSION_SLOTS }) {
   const [records, setRecords] = useState([]);
   const [local, setLocal] = useState({});
 
@@ -1454,7 +1461,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
     <>
       <div className="section-heading-row"><h2>{title}</h2><span className="section-count">4 个槽位，字段映射后应用</span></div>
       <section className="library-grid">
-        {DIMENSION_SLOTS.map((slot, index) => {
+        {slots.map((slot, index) => {
           const record = records.find((item) => item.slot_id === slot.id);
           const state = local[slot.id] || {};
           const hasSheets = (state.sheetNames?.length || record?.sheetNames?.length || 0) > 1;
@@ -1770,7 +1777,7 @@ function App() {
         {activeTab === 'kingdeeImport' && <KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'progressRefresh' && <ProgressPage rows={demands} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'differenceAllocation' && <DifferenceAllocationPage token={token} user={user} setMessage={setMessage} />}
-        {activeTab === 'wangdianData' && <DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="旺店通数据" />}
+        {activeTab === 'wangdianData' && <DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="旺店通数据" slots={WANGDIAN_SLOTS} />}
         {activeTab === 'dimensionLibrary' && <DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'trace' && <TracePage token={token} setMessage={setMessage} />}
         {activeTab === 'permissions' && <PermissionsPage token={token} pages={pages} setMessage={setMessage} />}

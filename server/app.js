@@ -449,15 +449,25 @@ function getDimensionRows(slotId) {
 }
 
 function rowAliasValue(row, aliases = []) {
-  for (const alias of aliases) {
-    const value = normalize(row?.[alias]);
-    if (value) return value;
+  const sources = [row];
+  if (row && typeof row === 'object') {
+    [row.raw, row.rawRow, row._raw].forEach((source) => {
+      if (source && source !== row && typeof source === 'object') sources.push(source);
+    });
   }
   const compactAliases = new Set(aliases.map(compactHeader));
-  for (const [key, value] of Object.entries(row || {})) {
-    if (compactAliases.has(compactHeader(key))) {
-      const normalized = normalize(value);
-      if (normalized) return normalized;
+  for (const source of sources) {
+    for (const alias of aliases) {
+      const value = normalize(source?.[alias]);
+      if (value) return value;
+    }
+  }
+  for (const source of sources) {
+    for (const [key, value] of Object.entries(source || {})) {
+      if (compactAliases.has(compactHeader(key))) {
+        const normalized = normalize(value);
+        if (normalized) return normalized;
+      }
     }
   }
   return '';
@@ -469,8 +479,10 @@ function assignmentMaterialCode(row) {
 
 function assignmentSupplierCandidates(row) {
   return [
-    rowAliasValue(row, ['productLineDetailSupplier', '产品线明细供应商', '产品线明细-供应商', '产品明细供应商', '产品明细-供应商']),
-    rowAliasValue(row, ['supplier', '供应商']),
+    rowAliasValue(row, ['productLineDetailSupplier', '产品线明细供应商', '产品线明细-供应商', '产品明细供应商', '产品明细-供应商', '产品线明细供应商名称', '产品线明细-供应商名称']),
+    rowAliasValue(row, ['供应商全称', '供应商名称']),
+    rowAliasValue(row, ['供应商']),
+    rowAliasValue(row, ['supplier']),
     rowAliasValue(row, ['supplierShortName', '供应商简称'])
   ].map(normalize).filter(Boolean);
 }
@@ -1430,6 +1442,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requirePage('dimensionLi
   const rows = parsed.rows.map((row) => {
     if (slotId === 'productCategory') {
       return {
+        raw: row,
         materialCode: pick(row, mapping.materialCode),
         sku: pick(row, mapping.sku),
         logisticsCode: pick(row, mapping.logisticsCode),
@@ -1440,9 +1453,10 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requirePage('dimensionLi
     }
     if (slotId === 'purchaseAssignment') {
       return {
+        raw: row,
         supplier: pick(row, mapping.supplier),
         supplierShortName: pick(row, mapping.supplierShortName),
-        productLineDetailSupplier: pick(row, mapping.productLineDetailSupplier) || pickAny(row, ['产品明细供应商', '产品明细-供应商', '产品线明细供应商', '产品线明细-供应商']),
+        productLineDetailSupplier: pick(row, mapping.productLineDetailSupplier) || pickAny(row, ['产品明细供应商', '产品明细-供应商', '产品线明细供应商', '产品线明细-供应商', '产品线明细供应商名称', '产品线明细-供应商名称', '供应商全称', '供应商名称']),
         materialCode: pick(row, mapping.materialCode),
         productLineDetailPurchaseGroup: pick(row, mapping.productLineDetailPurchaseGroup) || pickAny(row, ['产品线明细-采购组', '产品线明细采购组', '产品线明细-采购分组', '产品线明细采购分组']),
         productLineDetailPurchaseOwner: pick(row, mapping.productLineDetailPurchaseOwner) || pickAny(row, ['产品线明细-采购下单人', '产品线明细采购下单人', '产品线明细-下单人', '产品线明细下单人']),
@@ -1452,7 +1466,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requirePage('dimensionLi
       };
     }
     return row;
-  }).filter((row) => Object.values(row).some(Boolean));
+  }).filter((row) => Object.entries(row).some(([key, value]) => key !== 'raw' && Boolean(value)));
   const now = nowText();
   run(
     `INSERT INTO dimension_files (slot_id, title, file_name, sheet_name, sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at)

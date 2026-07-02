@@ -235,6 +235,7 @@ function ProgressStackedChart({ title, rows, groupBy }) {
       .sort((a, b) => b.remainingQty - a.remainingQty)
       .slice(0, 10);
   }, [rows, groupBy]);
+  const maxRemainingQty = Math.max(...chartRows.map((row) => numberValue(row.remainingQty)), 1);
 
   return (
     <article className="panel progress-stack-chart">
@@ -246,15 +247,19 @@ function ProgressStackedChart({ title, rows, groupBy }) {
         {chartRows.length === 0 ? (
           <p className="empty-chart">暂无数据</p>
         ) : chartRows.map((row) => {
-          const total = Math.max(numberValue(row.remainingQty), 1);
-          const inProductionPct = Math.max(Math.min(numberValue(row.inProductionQty) / total * 100, 100), 0);
-          const finishedPct = Math.max(Math.min(numberValue(row.finishedQty) / total * 100, 100 - inProductionPct), 0);
+          const remainingQty = numberValue(row.remainingQty);
+          const workTotal = Math.max(numberValue(row.inProductionQty) + numberValue(row.finishedQty), 1);
+          const barPct = Math.max(Math.min(remainingQty / maxRemainingQty * 100, 100), 8);
+          const inProductionPct = Math.max(Math.min(numberValue(row.inProductionQty) / workTotal * 100, 100), 0);
+          const finishedPct = Math.max(Math.min(numberValue(row.finishedQty) / workTotal * 100, 100), 0);
           return (
             <div key={row.name} className="stack-row">
               <span title={row.name}>{row.name}</span>
               <div className="stack-track" title={`未交付 ${row.remainingQty}，在产品 ${row.inProductionQty}，完工产品 ${row.finishedQty}`}>
-                <i className="in-production" style={{ width: `${inProductionPct}%` }} />
-                <i className="finished" style={{ width: `${finishedPct}%` }} />
+                <div className="stack-fill" style={{ width: `${barPct}%` }}>
+                  <i className="in-production" style={{ width: `${inProductionPct}%` }} />
+                  <i className="finished" style={{ width: `${finishedPct}%` }} />
+                </div>
               </div>
               <strong>{numberValue(row.remainingQty).toLocaleString()}</strong>
             </div>

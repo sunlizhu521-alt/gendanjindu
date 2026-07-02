@@ -286,6 +286,15 @@ function FieldMapping({ fields, columns, mapping, onChange }) {
   );
 }
 
+function validMappingForColumns(mapping = {}, columns = [], fields = []) {
+  const validColumns = new Set(columns);
+  return fields.reduce((next, [key]) => {
+    const value = mapping[key] || '';
+    next[key] = value && validColumns.has(value) ? value : '';
+    return next;
+  }, {});
+}
+
 function useFilteredDemands(rows) {
   const [filters, setFilters] = useState({ keyword: '', month: '', supplier: '', purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
   const unique = (values) => [...new Set(values.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'zh-Hans-CN'));
@@ -1413,7 +1422,9 @@ function DimensionLibrary({ token, reloadDemands, setMessage }) {
       const payload = await request('/api/workbook/inspect', { token, method: 'POST', body: data });
       const prevState = local[slot.id] || {};
       const columns = payload.columns || [];
-      setLocal({ ...local, [slot.id]: { ...prevState, file, columns, sheetNames: payload.sheetNames || [], sheetPreviews: payload.sheetPreviews || [], mapping: prevState.mapping || {}, sheetName: '' } });
+      const sheetMappings = prevState.sheetMappings || {};
+      const mapping = validMappingForColumns(sheetMappings[''] || prevState.mapping || {}, columns, slot.fields);
+      setLocal({ ...local, [slot.id]: { ...prevState, file, columns, sheetNames: payload.sheetNames || [], sheetPreviews: payload.sheetPreviews || [], sheetMappings: { ...sheetMappings, '': mapping }, mapping, sheetName: '' } });
       if (!columns.length) setMessage(`${slot.title} 未识别到表头，请检查前10行是否包含字段名`);
     } catch (err) {
       setMessage(`${slot.title} 文件解析失败：${err.message}`);
@@ -1423,7 +1434,12 @@ function DimensionLibrary({ token, reloadDemands, setMessage }) {
   async function selectSheet(slot, sheetName) {
     const state = local[slot.id] || {};
     const sheet = state.sheetPreviews?.find((s) => s.sheetName === sheetName);
-    setLocal({ ...local, [slot.id]: { ...state, sheetName, columns: sheet?.columns || state.columns } });
+    const nextColumns = sheetName ? (sheet?.columns || []) : (state.sheetPreviews?.[0]?.columns || state.columns || []);
+    const currentKey = state.sheetName || '';
+    const nextKey = sheetName || '';
+    const sheetMappings = { ...(state.sheetMappings || {}), [currentKey]: state.mapping || {} };
+    const mapping = validMappingForColumns(sheetMappings[nextKey] || {}, nextColumns, slot.fields);
+    setLocal({ ...local, [slot.id]: { ...state, sheetName, columns: nextColumns, sheetMappings, mapping } });
   }
 
   async function uploadSlot(slot) {
@@ -1501,7 +1517,11 @@ function DimensionLibrary({ token, reloadDemands, setMessage }) {
                   fields={slot.fields}
                   columns={state.columns}
                   mapping={state.mapping || {}}
-                  onChange={(mapping) => setLocal({ ...local, [slot.id]: { ...state, mapping } })}
+                  onChange={(mapping) => {
+                    const nextMapping = validMappingForColumns(mapping, state.columns, slot.fields);
+                    const sheetKey = state.sheetName || '';
+                    setLocal({ ...local, [slot.id]: { ...state, mapping: nextMapping, sheetMappings: { ...(state.sheetMappings || {}), [sheetKey]: nextMapping } } });
+                  }}
                 />
               )}
               <div className="slot-info">

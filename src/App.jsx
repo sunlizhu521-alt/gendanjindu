@@ -95,6 +95,32 @@ function supplierName(row) {
   return normalize(row.supplierShortName) || normalize(row.supplier);
 }
 
+const FILTER_CACHE_PREFIX = 'gendanjindu:filters:';
+
+function useSessionFilters(cacheKey, initialFilters) {
+  const storageKey = `${FILTER_CACHE_PREFIX}${cacheKey}`;
+  const [filters, setFilters] = useState(() => {
+    if (typeof window === 'undefined') return initialFilters;
+    try {
+      const saved = window.sessionStorage.getItem(storageKey);
+      const parsed = saved ? JSON.parse(saved) : null;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return { ...initialFilters, ...parsed };
+      }
+    } catch {
+      // Ignore corrupted browser cache and fall back to defaults.
+    }
+    return initialFilters;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.sessionStorage.setItem(storageKey, JSON.stringify(filters));
+  }, [storageKey, filters]);
+
+  return [filters, setFilters];
+}
+
 function TightCell({ value }) {
   const text = normalize(value);
   return <span className="tight-cell" title={text}>{text}</span>;
@@ -314,8 +340,8 @@ function validMappingForColumns(mapping = {}, columns = [], fields = []) {
   }, {});
 }
 
-function useFilteredDemands(rows) {
-  const [filters, setFilters] = useState({ keyword: '', month: '', supplier: '', purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
+function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
+  const [filters, setFilters] = useSessionFilters(cacheKey, { keyword: '', month: '', supplier: '', purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
   const unique = (values) => [...new Set(values.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'zh-Hans-CN'));
   const matchesFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
@@ -405,9 +431,9 @@ function Login({ onLogin }) {
   );
 }
 
-function Dashboard({ rows, title = '采购总览' }) {
+function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard' }) {
   const activeRows = useMemo(() => rows.filter((row) => row.active), [rows]);
-  const [filters, setFilters] = useState({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
+  const [filters, setFilters] = useSessionFilters(filterKey, { month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
   const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const matchesDashboardFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
@@ -561,7 +587,7 @@ function Dashboard({ rows, title = '采购总览' }) {
 
 function PurchaseBoard({ rows }) {
   const activeRows = useMemo(() => rows.filter((row) => row.active), [rows]);
-  const [filters, setFilters] = useState({ months: [], businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
+  const [filters, setFilters] = useSessionFilters('purchaseBoard', { months: [], businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
   const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const matchesFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
@@ -1107,7 +1133,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
 }
 
 function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产跟进', onlyIssues = false }) {
-  const { filters, setFilters, options, filtered } = useFilteredDemands(rows.filter((row) => row.active));
+  const { filters, setFilters, options, filtered } = useFilteredDemands(rows.filter((row) => row.active), onlyIssues ? 'progressIssues' : 'progressRefresh');
   const displayRows = onlyIssues
     ? filtered.filter((row) => numberValue(row.gap) !== 0 || !row.progressUpdatedAt)
     : filtered;
@@ -1148,7 +1174,7 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
 function DifferenceAllocationPage({ token, user, setMessage }) {
   const [compare, setCompare] = useState({ diffRows: [], allocations: [], actions: [], reasons: [], status: { total: 0, allocated: 0 } });
   const [rowInputs, setRowInputs] = useState({});
-  const [filters, setFilters] = useState({ month: '', supplier: '', businessUnit: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
+  const [filters, setFilters] = useSessionFilters('differenceAllocation', { month: '', supplier: '', businessUnit: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
   const [loading, setLoading] = useState(false);
 
   async function loadLatest() {
@@ -1522,7 +1548,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
 
 function TracePage({ token }) {
   const [data, setData] = useState({ changeRecords: [] });
-  const [filters, setFilters] = useState({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
+  const [filters, setFilters] = useSessionFilters('trace', { month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
 
   async function load() {
     const payload = await request('/api/trace', { token });
@@ -1772,7 +1798,7 @@ function App() {
       <section className="content" onClick={(event) => event.stopPropagation()}>
         {message && <p className="message">{message}</p>}
         {activeTab === 'dashboard' && <Dashboard rows={demands} />}
-        {activeTab === 'operationBoard' && <Dashboard rows={demands} title="运营看板" />}
+        {activeTab === 'operationBoard' && <Dashboard rows={demands} title="运营看板" filterKey="operationBoard" />}
         {activeTab === 'purchaseBoard' && <PurchaseBoard rows={demands} />}
         {activeTab === 'kingdeeImport' && <KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'progressRefresh' && <ProgressPage rows={demands} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}

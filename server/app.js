@@ -1427,12 +1427,13 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requirePage('dimensionLi
   const now = nowText();
   run(
     `INSERT INTO dimension_files (slot_id, title, file_name, sheet_name, sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
-     ON CONFLICT(slot_id) DO UPDATE SET title = excluded.title, file_name = excluded.file_name, sheet_name = excluded.sheet_name, sheet_names = excluded.sheet_names, mapping_json = excluded.mapping_json, rows_json = excluded.rows_json, applied = 0, uploaded_by = excluded.uploaded_by, updated_at = excluded.updated_at`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+     ON CONFLICT(slot_id) DO UPDATE SET title = excluded.title, file_name = excluded.file_name, sheet_name = excluded.sheet_name, sheet_names = excluded.sheet_names, mapping_json = excluded.mapping_json, rows_json = excluded.rows_json, applied = 1, uploaded_by = excluded.uploaded_by, updated_at = excluded.updated_at`,
     [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), sheetName, JSON.stringify(parsed.sheetNames), JSON.stringify(mapping), JSON.stringify(rows), req.user.name, now]
   );
+  applyDimensionEnrichment();
   saveDatabase();
-  res.json({ rowCount: rows.length, sheetName, sheetNames: parsed.sheetNames });
+  res.json({ rowCount: rows.length, sheetName, sheetNames: parsed.sheetNames, applied: true, rows: demandRows(false, req.user) });
 });
 
 app.post('/api/dimensions/:slotId/apply', requireAuth, requirePage('dimensionLibrary'), (req, res) => {

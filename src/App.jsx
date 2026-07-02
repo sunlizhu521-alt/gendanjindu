@@ -1434,8 +1434,9 @@ function DimensionLibrary({ token, reloadDemands, setMessage }) {
       data.append('mapping', JSON.stringify(state.mapping || {}));
       if (state.sheetName) data.append('sheetName', state.sheetName);
       const payload = await request(`/api/dimensions/${slot.id}/upload`, { token, method: 'POST', body: data });
-      setMessage(`${slot.title} 已上传 ${payload.rowCount} 行，请应用刷新。`);
+      setMessage(`${slot.title} 已上传 ${payload.rowCount} 行，并已自动应用刷新。`);
       await load();
+      await reloadDemands();
     } catch (err) {
       setMessage(`${slot.title} 上传失败：${err.message}`);
     }

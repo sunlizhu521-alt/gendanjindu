@@ -19,20 +19,24 @@ const ROLE_ADMIN = '管理员';
 const ROLE_USER = '普通用户';
 const ALL_PAGES = [
   'dashboard',
+  'operationBoard',
   'purchaseBoard',
   'progressRefresh',
   'differenceAllocation',
   'trace',
   'kingdeeImport',
+  'wangdianData',
   'dimensionLibrary',
   'permissions'
 ];
 const PAGE_LABELS = {
   dashboard: '采购总览',
+  operationBoard: '运营看板',
   purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',
   progressRefresh: '生产跟进',
   differenceAllocation: '差异分配',
+  wangdianData: '旺店通数据',
   dimensionLibrary: '维度表库',
   trace: '变更追溯',
   permissions: '权限管理'
@@ -40,7 +44,7 @@ const PAGE_LABELS = {
 const DIMENSION_SLOTS = {
   productCategory: '商品分类',
   purchaseAssignment: '采购分工',
-  spare1: '备用 1',
+  spare1: '仓库名称',
   spare2: '备用 2'
 };
 const DIFF_ALLOCATION_ACTIONS = ['减少', '取消', '增加', '其他'];
@@ -201,6 +205,14 @@ async function requireAuth(req, res, next) {
 function requirePage(page) {
   return (req, res, next) => {
     if (req.user.role === ROLE_ADMIN || pageAccessFor(req.user).includes(page)) return next();
+    return res.status(403).json({ error: '没有页面权限' });
+  };
+}
+
+function requireAnyPage(pages) {
+  return (req, res, next) => {
+    const access = pageAccessFor(req.user);
+    if (req.user.role === ROLE_ADMIN || pages.some((page) => access.includes(page))) return next();
     return res.status(403).json({ error: '没有页面权限' });
   };
 }
@@ -1415,7 +1427,7 @@ app.post('/api/difference-allocations/:sessionId/apply', requireAuth, requirePag
   res.json({ batchId, status: { ...allocationStatus(req.params.sessionId), applied: true }, demands: demandRows(false, req.user) });
 });
 
-app.get('/api/dimensions', requireAuth, requirePage('dimensionLibrary'), (req, res) => {
+app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData']), (req, res) => {
   const rows = all('SELECT slot_id, title, file_name, sheet_name, sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at FROM dimension_files');
   res.json({
     rows: rows.map((row) => {
@@ -1432,7 +1444,7 @@ app.get('/api/dimensions', requireAuth, requirePage('dimensionLibrary'), (req, r
   });
 });
 
-app.post('/api/dimensions/:slotId/upload', requireAuth, requirePage('dimensionLibrary'), upload.single('file'), (req, res) => {
+app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData']), upload.single('file'), (req, res) => {
   const slotId = req.params.slotId;
   const mapping = parseJson(req.body.mapping, {});
   const sheetName = normalize(req.body.sheetName);
@@ -1463,6 +1475,13 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requirePage('dimensionLi
         purchaseOrg: pick(row, mapping.purchaseOrg)
       };
     }
+    if (slotId === 'spare1') {
+      return {
+        raw: row,
+        warehouseCode: pick(row, mapping.warehouseCode),
+        warehouseName: pick(row, mapping.warehouseName)
+      };
+    }
     return row;
   }).filter((row) => Object.entries(row).some(([key, value]) => key !== 'raw' && Boolean(value)));
   const now = nowText();
@@ -1477,14 +1496,14 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requirePage('dimensionLi
   res.json({ rowCount: rows.length, sheetName, sheetNames: parsed.sheetNames, applied: true, diagnostics: dimensionDiagnostics(slotId, rows), rows: demandRows(false, req.user) });
 });
 
-app.post('/api/dimensions/:slotId/apply', requireAuth, requirePage('dimensionLibrary'), (req, res) => {
+app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData']), (req, res) => {
   run('UPDATE dimension_files SET applied = 1, updated_at = ? WHERE slot_id = ?', [nowText(), req.params.slotId]);
   applyDimensionEnrichment();
   saveDatabase();
   res.json({ rows: demandRows(false, req.user) });
 });
 
-app.delete('/api/dimensions/:slotId', requireAuth, requirePage('dimensionLibrary'), (req, res) => {
+app.delete('/api/dimensions/:slotId', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData']), (req, res) => {
   run('DELETE FROM dimension_files WHERE slot_id = ?', [req.params.slotId]);
   saveDatabase();
   res.json({ ok: true });

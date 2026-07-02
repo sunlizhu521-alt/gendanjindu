@@ -6,21 +6,25 @@ const BUSINESS_UNITS = ['海外事业一部', '海外事业二部', '国内事�
 
 const PAGE_ORDER = [
   'dashboard',
+  'operationBoard',
   'purchaseBoard',
   'progressRefresh',
   'differenceAllocation',
   'trace',
   'kingdeeImport',
+  'wangdianData',
   'dimensionLibrary',
   'permissions'
 ];
 
 const PAGE_LABELS = {
   dashboard: '采购总览',
+  operationBoard: '运营看板',
   purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',
   progressRefresh: '生产跟进',
   differenceAllocation: '差异分配',
+  wangdianData: '旺店通数据',
   dimensionLibrary: '维度表库',
   trace: '变更追溯',
   permissions: '权限管理'
@@ -46,7 +50,10 @@ const DIMENSION_SLOTS = [
     ['purchaseGroup', '采购组'],
     ['purchaseOrg', '采购组织']
   ] },
-  { id: 'spare1', title: '备用 1', fields: [] },
+  { id: 'spare1', title: '仓库名称', fields: [
+    ['warehouseCode', '仓库编码'],
+    ['warehouseName', '仓库名称']
+  ] },
   { id: 'spare2', title: '备用 2', fields: [] }
 ];
 
@@ -384,7 +391,7 @@ function Login({ onLogin }) {
   );
 }
 
-function Dashboard({ rows }) {
+function Dashboard({ rows, title = '采购总览' }) {
   const activeRows = useMemo(() => rows.filter((row) => row.active), [rows]);
   const [filters, setFilters] = useState({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
   const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
@@ -479,7 +486,7 @@ function Dashboard({ rows }) {
   return (
     <>
       <div className="section-heading-row dashboard-heading">
-        <h2>采购总览</h2>
+        <h2>{title}</h2>
         <span className="section-count dashboard-explain">
           当前显示 {filteredRows.length} / {activeRows.length} 条；下单数量=备货需求，已发货=采购入库，在产品=供应商在生产中，完工产品=供应商已经生产完待入采购入库
         </span>
@@ -1353,7 +1360,7 @@ function InventoryPage({ token, reloadDemands, setMessage }) {
   );
 }
 
-function DimensionLibrary({ token, reloadDemands, setMessage }) {
+function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表库' }) {
   const [records, setRecords] = useState([]);
   const [local, setLocal] = useState({});
 
@@ -1438,7 +1445,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage }) {
 
   return (
     <>
-      <div className="section-heading-row"><h2>维度表库</h2><span className="section-count">4 个槽位，字段映射后应用</span></div>
+      <div className="section-heading-row"><h2>{title}</h2><span className="section-count">4 个槽位，字段映射后应用</span></div>
       <section className="library-grid">
         {DIMENSION_SLOTS.map((slot, index) => {
           const record = records.find((item) => item.slot_id === slot.id);
@@ -1751,10 +1758,12 @@ function App() {
       <section className="content" onClick={(event) => event.stopPropagation()}>
         {message && <p className="message">{message}</p>}
         {activeTab === 'dashboard' && <Dashboard rows={demands} />}
+        {activeTab === 'operationBoard' && <Dashboard rows={demands} title="运营看板" />}
         {activeTab === 'purchaseBoard' && <PurchaseBoard rows={demands} />}
         {activeTab === 'kingdeeImport' && <KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'progressRefresh' && <ProgressPage rows={demands} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'differenceAllocation' && <DifferenceAllocationPage token={token} user={user} setMessage={setMessage} />}
+        {activeTab === 'wangdianData' && <DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="旺店通数据" />}
         {activeTab === 'dimensionLibrary' && <DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'trace' && <TracePage token={token} setMessage={setMessage} />}
         {activeTab === 'permissions' && <PermissionsPage token={token} pages={pages} setMessage={setMessage} />}

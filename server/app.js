@@ -519,6 +519,34 @@ function realPurchaseOwner(...values) {
   return values.map(singlePurchaseOwner).find(Boolean) || '';
 }
 
+function dimensionDiagnostics(slotId, rows = []) {
+  if (slotId === 'purchaseAssignment') {
+    const demandKeys = new Set(all('SELECT supplier, material_code FROM order_demands WHERE active = 1').map((row) => assignmentKey(row.supplier, row.material_code)));
+    const assignmentKeys = new Set();
+    let ownerRows = 0;
+    let keyRows = 0;
+    rows.forEach((row) => {
+      const owner = assignmentOwner(row);
+      const materialCode = assignmentMaterialCode(row);
+      const suppliers = assignmentSupplierCandidates(row);
+      if (owner) ownerRows++;
+      if (materialCode && suppliers.length) keyRows++;
+      suppliers.forEach((supplier) => {
+        if (materialCode) assignmentKeys.add(assignmentKey(supplier, materialCode));
+      });
+    });
+    const matchedRows = [...demandKeys].filter((key) => assignmentKeys.has(key)).length;
+    return { totalRows: rows.length, ownerRows, keyRows, matchedRows };
+  }
+  if (slotId === 'productCategory') {
+    const demandMaterials = new Set(all('SELECT material_code FROM order_demands WHERE active = 1').map((row) => normalizeMatchPart(row.material_code)));
+    const materialSet = new Set(rows.map((row) => normalizeMatchPart(row.materialCode)).filter(Boolean));
+    const matchedRows = [...demandMaterials].filter((key) => materialSet.has(key)).length;
+    return { totalRows: rows.length, keyRows: materialSet.size, matchedRows };
+  }
+  return { totalRows: rows.length };
+}
+
 function enrichDemandFields(supplier, materialCode, orderCreator = '', lookups = dimensionLookups()) {
   const { productMap, assignmentMap, supplierMap } = lookups;
   const product = productMap.get(normalize(materialCode)) || {};
@@ -1387,7 +1415,8 @@ app.get('/api/dimensions', requireAuth, requirePage('dimensionLibrary'), (req, r
         ...safeRow,
         sheetNames: parseJson(row.sheet_names, []),
         mapping: parseJson(row.mapping_json, {}),
-        rowCount: dimensionRows.length
+        rowCount: dimensionRows.length,
+        diagnostics: dimensionDiagnostics(row.slot_id, dimensionRows)
       };
     })
   });
@@ -1433,7 +1462,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requirePage('dimensionLi
   );
   applyDimensionEnrichment();
   saveDatabase();
-  res.json({ rowCount: rows.length, sheetName, sheetNames: parsed.sheetNames, applied: true, rows: demandRows(false, req.user) });
+  res.json({ rowCount: rows.length, sheetName, sheetNames: parsed.sheetNames, applied: true, diagnostics: dimensionDiagnostics(slotId, rows), rows: demandRows(false, req.user) });
 });
 
 app.post('/api/dimensions/:slotId/apply', requireAuth, requirePage('dimensionLibrary'), (req, res) => {

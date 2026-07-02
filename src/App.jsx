@@ -1454,6 +1454,17 @@ function DimensionLibrary({ token, reloadDemands, setMessage }) {
     await load();
   }
 
+  function diagnosticsText(slotId, diagnostics) {
+    if (!diagnostics) return '';
+    if (slotId === 'purchaseAssignment') {
+      return `诊断：有采购下单人 ${diagnostics.ownerRows || 0} 行，供应商+物料编码 ${diagnostics.keyRows || 0} 行，可匹配当前订单 ${diagnostics.matchedRows || 0} 条`;
+    }
+    if (slotId === 'productCategory') {
+      return `诊断：物料编码 ${diagnostics.keyRows || 0} 个，可匹配当前订单 ${diagnostics.matchedRows || 0} 条`;
+    }
+    return '';
+  }
+
   return (
     <>
       <div className="section-heading-row"><h2>维度表库</h2><span className="section-count">4 个槽位，字段映射后应用</span></div>
@@ -1497,6 +1508,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage }) {
                 {record && <span>文件：{record.file_name}</span>}
                 {hasSheets && <span>工作表：{sheetNames.join('、')}</span>}
                 {record && <span>行数：{record.rowCount}</span>}
+                {record?.diagnostics && diagnosticsText(slot.id, record.diagnostics) && <span>{diagnosticsText(slot.id, record.diagnostics)}</span>}
                 {record && <span>更新：{record.updated_at}</span>}
               </div>
               <div className="card-actions">

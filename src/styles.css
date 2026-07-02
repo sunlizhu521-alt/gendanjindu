@@ -722,7 +722,7 @@ th {
 }
 
 .progress-table table {
-  min-width: 1920px;
+  min-width: 2020px;
 }
 
 .progress-sticky-top {
@@ -739,8 +739,95 @@ th {
   margin-bottom: 12px;
 }
 
+.progress-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(260px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.progress-stack-chart {
+  padding: 12px;
+}
+
+.chart-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.chart-title-row h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.chart-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #64748b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.chart-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.stack-list {
+  display: grid;
+  gap: 7px;
+  max-height: 160px;
+  overflow: auto;
+}
+
+.stack-row {
+  display: grid;
+  grid-template-columns: minmax(76px, 120px) minmax(100px, 1fr) 52px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.stack-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stack-row strong {
+  text-align: right;
+}
+
+.stack-track {
+  display: flex;
+  height: 14px;
+  border: 1px solid #dbe3ef;
+  border-radius: 4px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.stack-track i {
+  display: block;
+  min-width: 0;
+  height: 100%;
+}
+
+.progress-stack-chart .in-production {
+  background: #4f7ccf;
+}
+
+.progress-stack-chart .finished {
+  background: #74bd42;
+}
+
 .progress-table.table-wrap {
-  max-height: calc(100vh - 210px);
+  max-height: calc(100vh - 420px);
 }
 
 .progress-table th {
@@ -750,6 +837,14 @@ th {
 
 .diff-allocation-table table {
   min-width: 3400px;
+}
+
+.progress-table input[type="checkbox"],
+.diff-allocation-table input[type="checkbox"] {
+  width: 16px;
+  min-width: 0;
+  height: 16px;
+  padding: 0;
 }
 
 .ledger-table input,

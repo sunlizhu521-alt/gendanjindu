@@ -151,6 +151,15 @@ function progressTotal(row) {
   return numberValue(row.inProductionQty) + numberValue(row.finishedQty);
 }
 
+function progressPayloadFromRow(row) {
+  return {
+    inProductionQty: numberValue(row.inProductionQty),
+    finishedQty: numberValue(row.finishedQty),
+    shippedQty: numberValue(row.shippedQty),
+    remark: row.remark || ''
+  };
+}
+
 function authHeaders(token) {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
@@ -205,6 +214,52 @@ function SeriesBarChart({ title, rows, valueKey }) {
             <strong>{row.value.toLocaleString()}</strong>
           </div>
         ))}
+      </div>
+    </article>
+  );
+}
+
+function ProgressStackedChart({ title, rows, groupBy }) {
+  const chartRows = useMemo(() => {
+    const map = new Map();
+    rows.forEach((row) => {
+      const name = normalize(groupBy(row)) || '未分类';
+      const record = map.get(name) || { name, remainingQty: 0, inProductionQty: 0, finishedQty: 0 };
+      record.remainingQty += numberValue(row.remainingInboundQty);
+      record.inProductionQty += numberValue(row.inProductionQty);
+      record.finishedQty += numberValue(row.finishedQty);
+      map.set(name, record);
+    });
+    return [...map.values()]
+      .filter((row) => row.remainingQty > 0 || row.inProductionQty > 0 || row.finishedQty > 0)
+      .sort((a, b) => b.remainingQty - a.remainingQty)
+      .slice(0, 10);
+  }, [rows, groupBy]);
+
+  return (
+    <article className="panel progress-stack-chart">
+      <div className="chart-title-row">
+        <h3>{title}</h3>
+        <span className="chart-legend"><i className="in-production" />在产品 <i className="finished" />完工产品</span>
+      </div>
+      <div className="stack-list">
+        {chartRows.length === 0 ? (
+          <p className="empty-chart">暂无数据</p>
+        ) : chartRows.map((row) => {
+          const total = Math.max(numberValue(row.remainingQty), 1);
+          const inProductionPct = Math.max(Math.min(numberValue(row.inProductionQty) / total * 100, 100), 0);
+          const finishedPct = Math.max(Math.min(numberValue(row.finishedQty) / total * 100, 100 - inProductionPct), 0);
+          return (
+            <div key={row.name} className="stack-row">
+              <span title={row.name}>{row.name}</span>
+              <div className="stack-track" title={`未交付 ${row.remainingQty}，在产品 ${row.inProductionQty}，完工产品 ${row.finishedQty}`}>
+                <i className="in-production" style={{ width: `${inProductionPct}%` }} />
+                <i className="finished" style={{ width: `${finishedPct}%` }} />
+              </div>
+              <strong>{numberValue(row.remainingQty).toLocaleString()}</strong>
+            </div>
+          );
+        })}
       </div>
     </article>
   );
@@ -1022,9 +1077,15 @@ function KingdeeImport({ token, user, reloadDemands, setMessage }) {
   );
 }
 
-function ProgressEditor({ row, token, reloadDemands, setMessage }) {
+function ProgressEditor({ row, token, reloadDemands, setMessage, selected = false, onSelect, onDraftChange }) {
   const autoQtyKeys = ['inProductionQty', 'finishedQty'];
   const displayQty = (value) => (numberValue(value) ? String(numberValue(value)) : '');
+  const toPayload = (nextValues) => ({
+    inProductionQty: numberValue(nextValues.inProductionQty),
+    finishedQty: numberValue(nextValues.finishedQty),
+    shippedQty: numberValue(nextValues.shippedQty),
+    remark: nextValues.remark || ''
+  });
   const [values, setValues] = useState({
     inProductionQty: displayQty(row.inProductionQty),
     finishedQty: displayQty(row.finishedQty),
@@ -1035,13 +1096,15 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    setValues({
+    const nextValues = {
       inProductionQty: displayQty(row.inProductionQty),
       finishedQty: displayQty(row.finishedQty),
       shippedQty: displayQty(row.shippedQty),
       remark: row.remark || ''
-    });
+    };
+    setValues(nextValues);
     setAutoKey('');
+    onDraftChange?.(row.demandKey, toPayload(nextValues));
   }, [row.demandKey, row.inProductionQty, row.finishedQty, row.shippedQty, row.remark]);
 
   function normalizeProgressValues(nextValues, changedKey = '', targetAutoKey = '') {
@@ -1059,6 +1122,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
     const nextValues = { ...values, [key]: rawValue };
     if (key === 'shippedQty') {
       setValues(nextValues);
+      onDraftChange?.(row.demandKey, toPayload(nextValues));
       return;
     }
     const nextAutoKey = autoQtyKeys.includes(key) ? autoQtyKeys.find((item) => item !== key) : (autoKey || 'inProductionQty');
@@ -1069,6 +1133,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
     }
     setAutoKey(normalized.autoKey);
     setValues(normalized.values);
+    onDraftChange?.(row.demandKey, toPayload(normalized.values));
   }
 
   async function save() {
@@ -1077,12 +1142,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
       setMessage('在产品、完工产品合计不能超过未交付数量。');
       return;
     }
-    const payload = {
-      ...normalized.values,
-      inProductionQty: numberValue(normalized.values.inProductionQty),
-      finishedQty: numberValue(normalized.values.finishedQty),
-      shippedQty: numberValue(normalized.values.shippedQty)
-    };
+    const payload = toPayload(normalized.values);
     setSaving(true);
     try {
       await request(`/api/progress/${encodeURIComponent(row.demandKey)}`, {
@@ -1110,6 +1170,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
   );
 
   const cells = [
+    <input type="checkbox" checked={selected} disabled={!row.canEdit} onChange={(event) => onSelect?.(row.demandKey, event.target.checked)} />,
     row.purchaseGroup,
     row.purchaseOwner,
     row.oaFlowNo,
@@ -1139,10 +1200,48 @@ function ProgressEditor({ row, token, reloadDemands, setMessage }) {
 
 function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产跟进', onlyIssues = false }) {
   const { filters, setFilters, options, filtered } = useFilteredDemands(rows.filter((row) => row.active), onlyIssues ? 'progressIssues' : 'progressRefresh');
+  const [selectedKeys, setSelectedKeys] = useState([]);
+  const [drafts, setDrafts] = useState({});
+  const [batchSaving, setBatchSaving] = useState(false);
   const visibleFiltered = useMemo(() => filtered.filter((row) => numberValue(row.remainingInboundQty) > 0), [filtered]);
   const displayRows = onlyIssues
     ? visibleFiltered.filter((row) => numberValue(row.gap) !== 0 || !row.progressUpdatedAt)
     : visibleFiltered;
+  const selectedEditableCount = selectedKeys.filter((key) => displayRows.some((row) => row.demandKey === key && row.canEdit)).length;
+
+  function toggleProgressRow(demandKey, checked) {
+    setSelectedKeys(checked ? [...new Set([...selectedKeys, demandKey])] : selectedKeys.filter((key) => key !== demandKey));
+  }
+
+  function selectVisibleEditableRows() {
+    setSelectedKeys(displayRows.filter((row) => row.canEdit).map((row) => row.demandKey));
+  }
+
+  async function batchSubmitProgress() {
+    const selectedRows = displayRows.filter((row) => selectedKeys.includes(row.demandKey) && row.canEdit);
+    if (!selectedRows.length) {
+      setMessage('请先勾选可提交的生产跟进行。');
+      return;
+    }
+    setBatchSaving(true);
+    try {
+      for (const row of selectedRows) {
+        const payload = drafts[row.demandKey] || progressPayloadFromRow(row);
+        await request(`/api/progress/${encodeURIComponent(row.demandKey)}`, {
+          token,
+          method: 'PATCH',
+          body: JSON.stringify(payload)
+        });
+      }
+      setSelectedKeys([]);
+      setMessage(`生产跟进已批量提交 ${selectedRows.length} 条。`);
+      await reloadDemands();
+    } catch (err) {
+      setMessage('批量提交失败：' + err.message);
+    } finally {
+      setBatchSaving(false);
+    }
+  }
 
   async function handleExport() {
     const res = await fetch(`${API}/api/progress/export`, { headers: { Authorization: `Bearer ${token}` } });
@@ -1166,14 +1265,33 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
           <h2>{title}</h2>
           <span className="section-count">{displayRows.length} 条</span>
           {!onlyIssues && <button type="button" className="compact-button" onClick={handleExport}>导出 Excel</button>}
+          <button type="button" className="compact-button" disabled={!displayRows.some((row) => row.canEdit)} onClick={selectVisibleEditableRows}>勾选当前可编辑</button>
+          <button type="button" className="compact-button" disabled={!selectedEditableCount || batchSaving} onClick={batchSubmitProgress}>{batchSaving ? '提交中...' : `批量提交${selectedEditableCount ? ` ${selectedEditableCount}` : ''}`}</button>
+          <button type="button" className="ghost compact-button" disabled={!selectedKeys.length} onClick={() => setSelectedKeys([])}>取消勾选</button>
         </div>
+        <section className="progress-chart-grid">
+          <ProgressStackedChart title="供应商未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => supplierName(row)} />
+          <ProgressStackedChart title="系列未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => row.productSeries} />
+          <ProgressStackedChart title="SKU未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => row.sku} />
+        </section>
         <FilterBar filters={filters} setFilters={setFilters} options={options} onSubmit={() => setMessage('筛选已确认，当前 ' + displayRows.length + ' 条')} />
       </div>
       <DataTable
         className="progress-table"
         rows={displayRows}
-        columns={['采购组', '采购下单人', 'OA备货流程号', '采购组织', '月份', '事业部', '供应商', '产品线', '系列', '物料编码', '物料', '物流编码', 'SKU', '未交付数量', '在产品', '完工产品', '已发货数量', '操作']}
-        renderRow={(row) => <ProgressEditor key={row.demandKey} row={row} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
+        columns={['选择', '采购组', '采购下单人', 'OA备货流程号', '采购组织', '月份', '事业部', '供应商', '产品线', '系列', '物料编码', '物料', '物流编码', 'SKU', '未交付数量', '在产品', '完工产品', '已发货数量', '操作']}
+        renderRow={(row) => (
+          <ProgressEditor
+            key={row.demandKey}
+            row={row}
+            token={token}
+            reloadDemands={reloadDemands}
+            setMessage={setMessage}
+            selected={selectedKeys.includes(row.demandKey)}
+            onSelect={toggleProgressRow}
+            onDraftChange={(demandKey, payload) => setDrafts((current) => ({ ...current, [demandKey]: payload }))}
+          />
+        )}
       />
     </>
   );

@@ -211,11 +211,11 @@ function SelectField({ label, value, options, onChange }) {
   );
 }
 
-function MonthCalendarFilter({ label, value = [], options = [], onChange }) {
+function MonthCalendarFilter({ label, value = [], options = [], onChange, multiple = true }) {
   const [open, setOpen] = useState(false);
   const [calendarValue, setCalendarValue] = useState('');
   const rootRef = useRef(null);
-  const selected = Array.isArray(value) ? value : [];
+  const selected = multiple ? (Array.isArray(value) ? value : []) : (value ? [value] : []);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -227,15 +227,22 @@ function MonthCalendarFilter({ label, value = [], options = [], onChange }) {
   }, [open]);
 
   const updateSelected = (next) => {
-    onChange([...new Set(next.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')));
+    const normalized = [...new Set(next.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+    onChange(multiple ? normalized : (normalized[0] || ''));
   };
   const toggleMonth = (month) => {
+    if (!multiple) {
+      updateSelected(selected.includes(month) ? [] : [month]);
+      setOpen(false);
+      return;
+    }
     updateSelected(selected.includes(month) ? selected.filter((item) => item !== month) : [...selected, month]);
   };
   const addCalendarMonth = (month) => {
     if (!month) return;
-    updateSelected([...selected, month]);
+    updateSelected(multiple ? [...selected, month] : [month]);
     setCalendarValue('');
+    if (!multiple) setOpen(false);
   };
   const buttonText = selected.length === 0
     ? '全部'
@@ -260,12 +267,12 @@ function MonthCalendarFilter({ label, value = [], options = [], onChange }) {
             />
           </div>
           <label className="filter-option">
-            <input type="checkbox" checked={selected.length === 0} onChange={() => updateSelected([])} />
+            <input type={multiple ? 'checkbox' : 'radio'} checked={selected.length === 0} onChange={() => updateSelected([])} />
             <span>全部</span>
           </label>
           {options.map((month) => (
             <label key={month} className="filter-option">
-              <input type="checkbox" checked={selected.includes(month)} onChange={() => toggleMonth(month)} />
+              <input type={multiple ? 'checkbox' : 'radio'} checked={selected.includes(month)} onChange={() => toggleMonth(month)} />
               <span>{month}</span>
             </label>
           ))}
@@ -339,7 +346,7 @@ function FilterBar({ filters, setFilters, options, onSubmit }) {
   return (
     <div className="toolbar filters-row">
       <SelectField label="采购组织" value={filters.purchaseOrg} options={options.purchaseOrgs} onChange={(value) => setFilters({ ...filters, purchaseOrg: value })} />
-      <SelectField label="创建月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
+      <MonthCalendarFilter label="创建月份" value={filters.month} options={options.months} multiple={false} onChange={(value) => setFilters({ ...filters, month: value })} />
       <SelectField label="供应商" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
       <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
       <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
@@ -492,7 +499,7 @@ function Dashboard({ rows, title = '采购总览' }) {
         </span>
       </div>
       <div className="toolbar filters-row">
-        <SelectField label="下单月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
+        <MonthCalendarFilter label="下单月份" value={filters.month} options={options.months} multiple={false} onChange={(value) => setFilters({ ...filters, month: value })} />
         <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
         <SelectField label="供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
         <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
@@ -1229,7 +1236,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
         </span>
       </div>
       <div className="toolbar filters-row">
-        <SelectField label="下单月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
+        <MonthCalendarFilter label="下单月份" value={filters.month} options={options.months} multiple={false} onChange={(value) => setFilters({ ...filters, month: value })} />
         <SelectField label="供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
         <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
         <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
@@ -1566,7 +1573,7 @@ function TracePage({ token }) {
     <>
       <div className="section-heading-row"><h2>变更追溯</h2><span className="section-count">当前显示 {filteredRows.length} / {rows.length} 条</span></div>
       <div className="toolbar filters-row">
-        <SelectField label="下单月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
+        <MonthCalendarFilter label="下单月份" value={filters.month} options={options.months} multiple={false} onChange={(value) => setFilters({ ...filters, month: value })} />
         <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
         <SelectField label="供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
         <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />

@@ -223,6 +223,7 @@ h3 {
   gap: 10px;
   margin-bottom: 16px;
   flex-wrap: wrap;
+  overflow: visible;
 }
 
 .form-grid,
@@ -247,7 +248,7 @@ h3 {
 
 .filters-row {
   position: relative;
-  z-index: 5;
+  z-index: 2000;
   overflow: visible;
 }
 
@@ -286,6 +287,7 @@ h3 {
   min-width: 178px;
   color: #475569;
   font-size: 13px;
+  z-index: 2001;
 }
 
 .filter-button {
@@ -310,7 +312,7 @@ h3 {
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
-  z-index: 50;
+  z-index: 3000;
   width: 240px;
   max-height: 260px;
   overflow: auto;

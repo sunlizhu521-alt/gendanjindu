@@ -1302,7 +1302,7 @@ app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'
   };
   const total = values.inProduction + values.finished + values.shipped;
   if (Math.abs(total - numberValue(demand.current_order_qty)) > 0.000001) {
-    return res.status(400).json({ error: '生产中、已完工、已发货数量合计必须等于下单数量' });
+    return res.status(400).json({ error: '在产品、完工产品、已发货数量合计必须等于下单数量' });
   }
   const now = nowText();
   transaction(() => {
@@ -1519,7 +1519,7 @@ app.post('/api/inventory', requireAuth, requirePage('inventory'), (req, res) => 
 
 app.get('/api/progress/export', requireAuth, (req, res) => {
   const rows = demandRows(false, req.user);
-  const headers = ['demandKey', '采购组', '采购下单人', 'OA备货流程号', '采购组织', '月份', '事业部', '供应商', '产品线', '系列', '物料编码', '物料', '物流编码', 'SKU', '下单数量', '生产中', '已完工', '已发货数量', '备注'];
+  const headers = ['demandKey', '采购组', '采购下单人', 'OA备货流程号', '采购组织', '月份', '事业部', '供应商', '产品线', '系列', '物料编码', '物料', '物流编码', 'SKU', '下单数量', '在产品', '完工产品', '已发货数量', '备注'];
   const aoa = [headers];
   rows.forEach((row) => {
     aoa.push([
@@ -1551,8 +1551,8 @@ app.post('/api/progress/import', requireAuth, upload.single('file'), (req, res) 
       if (!demand) return;
       const qty = (col) => Math.max(0, numberValue(row[col] || 0));
       const remark = normalize(row['备注'] || row.remark || '');
-      const inProduction = qty('生产中');
-      const finished = qty('已完工');
+      const inProduction = qty('在产品') || qty('生产中');
+      const finished = qty('完工产品') || qty('已完工');
       const expectedQty = numberValue(demand.current_order_qty);
       if (inProduction + finished > expectedQty) return;
       const shipped = expectedQty - inProduction - finished;

@@ -453,7 +453,7 @@ function Dashboard({ rows }) {
 
   async function exportDashboardTable() {
     const XLSX = await import('xlsx');
-    const headers = ['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', '下单数量', '已发货', '生产中', '已完工', 'OA备货流程号'];
+    const headers = ['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', '下单数量', '已发货', '在产品', '完工产品', 'OA备货流程号'];
     const aoa = [
       headers,
       ...filteredRows.map((row) => [
@@ -483,7 +483,7 @@ function Dashboard({ rows }) {
       <div className="section-heading-row dashboard-heading">
         <h2>采购总览</h2>
         <span className="section-count dashboard-explain">
-          当前显示 {filteredRows.length} / {activeRows.length} 条；下单数量=备货需求，已发货=采购入库，生产中=供应商在生产中，已完工=供应商已经生产完待入采购入库
+          当前显示 {filteredRows.length} / {activeRows.length} 条；下单数量=备货需求，已发货=采购入库，在产品=供应商在生产中，完工产品=供应商已经生产完待入采购入库
         </span>
       </div>
       <div className="toolbar filters-row">
@@ -506,20 +506,20 @@ function Dashboard({ rows }) {
       <section className="metric-grid">
         <MetricCard label="下单数量" value={summary.order.toLocaleString()} />
         <MetricCard label="已发货" value={summary.shipped.toLocaleString()} />
-        <MetricCard label="生产中" value={summary.inProduction.toLocaleString()} />
-        <MetricCard label="已完工" value={summary.finished.toLocaleString()} />
+        <MetricCard label="在产品" value={summary.inProduction.toLocaleString()} />
+        <MetricCard label="完工产品" value={summary.finished.toLocaleString()} />
       </section>
       <section className="series-chart-grid">
         <SeriesBarChart title="系列下单数量" rows={seriesRows} valueKey="orderQty" />
-        <SeriesBarChart title="系列生产中数量" rows={seriesRows} valueKey="inProductionQty" />
-        <SeriesBarChart title="系列已完工数量" rows={seriesRows} valueKey="finishedQty" />
+        <SeriesBarChart title="系列在产品数量" rows={seriesRows} valueKey="inProductionQty" />
+        <SeriesBarChart title="系列完工产品数量" rows={seriesRows} valueKey="finishedQty" />
         <SeriesBarChart title="系列总数量" rows={seriesRows} valueKey="totalQty" />
       </section>
       <section className="panel">
         <DataTable
           className="compact-table"
           rows={filteredRows}
-          columns={['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', '下单数量', '已发货', '生产中', '已完工', 'OA备货流程号']}
+          columns={['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', '下单数量', '已发货', '在产品', '完工产品', 'OA备货流程号']}
           render={(row) => [
             row.businessUnit,
             supplierName(row),
@@ -632,8 +632,8 @@ function PurchaseBoard({ rows }) {
     if (!order) return null;
     const blocks = [
       ['shipped', '已发货', order.shipped],
-      ['finished', '已完工', order.finished],
-      ['inProduction', '生产中', order.inProduction],
+      ['finished', '完工产品', order.finished],
+      ['inProduction', '在产品', order.inProduction],
       ['uncovered', '差额', order.uncovered]
     ].filter(([, , value]) => numberValue(value) > 0);
     if (blocks.length === 0) return null;
@@ -666,8 +666,8 @@ function PurchaseBoard({ rows }) {
         <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
       </div>
       <div className="board-legend">
-        <span><i className="legend-dot finished" />已完工</span>
-        <span><i className="legend-dot inProduction" />生产中</span>
+        <span><i className="legend-dot finished" />完工产品</span>
+        <span><i className="legend-dot inProduction" />在产品</span>
         <span><i className="legend-dot shipped" />已发货/入库</span>
         <span><i className="legend-dot uncovered" />差额/未覆盖</span>
       </div>
@@ -991,61 +991,62 @@ function KingdeeImport({ token, user, reloadDemands, setMessage }) {
 }
 
 function ProgressEditor({ row, token, reloadDemands, setMessage }) {
-  const qtyKeys = ['inProductionQty', 'finishedQty', 'shippedQty'];
+  const autoQtyKeys = ['inProductionQty', 'finishedQty'];
+  const displayQty = (value) => (numberValue(value) ? String(numberValue(value)) : '');
   const [values, setValues] = useState({
-    inProductionQty: row.inProductionQty,
-    finishedQty: row.finishedQty,
-    shippedQty: row.shippedQty,
+    inProductionQty: displayQty(row.inProductionQty),
+    finishedQty: displayQty(row.finishedQty),
+    shippedQty: displayQty(row.shippedQty),
     remark: row.remark || ''
   });
-  const [touchedQtyKeys, setTouchedQtyKeys] = useState([]);
   const [autoKey, setAutoKey] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setValues({
-      inProductionQty: row.inProductionQty,
-      finishedQty: row.finishedQty,
-      shippedQty: row.shippedQty,
+      inProductionQty: displayQty(row.inProductionQty),
+      finishedQty: displayQty(row.finishedQty),
+      shippedQty: displayQty(row.shippedQty),
       remark: row.remark || ''
     });
-    setTouchedQtyKeys([]);
     setAutoKey('');
   }, [row.demandKey, row.inProductionQty, row.finishedQty, row.shippedQty, row.remark]);
 
-  function normalizeProgressValues(nextValues, targetAutoKey = autoKey || 'shippedQty') {
+  function normalizeProgressValues(nextValues, changedKey = '', targetAutoKey = '') {
     const orderQty = numberValue(row.currentOrderQty);
-    const manualTotal = qtyKeys
-      .filter((key) => key !== targetAutoKey)
+    const nextAutoKey = targetAutoKey || (changedKey === 'finishedQty' ? 'inProductionQty' : 'finishedQty');
+    const manualTotal = ['inProductionQty', 'finishedQty', 'shippedQty']
+      .filter((key) => key !== nextAutoKey)
       .reduce((sum, key) => sum + numberValue(nextValues[key]), 0);
     const autoQty = orderQty - manualTotal;
     if (autoQty < 0) return null;
-    return { ...nextValues, [targetAutoKey]: autoQty };
+    return { values: { ...nextValues, [nextAutoKey]: autoQty ? String(autoQty) : '' }, autoKey: nextAutoKey };
   }
 
   function handleQtyChange(key, rawValue) {
-    const nextTouched = touchedQtyKeys.includes(key) ? touchedQtyKeys : [...touchedQtyKeys, key];
-    let nextAutoKey = autoKey;
     const nextValues = { ...values, [key]: rawValue };
-    if (!nextAutoKey && nextTouched.length >= 2) {
-      nextAutoKey = qtyKeys.find((item) => !nextTouched.includes(item)) || 'shippedQty';
-    }
-    const normalized = nextAutoKey ? normalizeProgressValues(nextValues, nextAutoKey) : nextValues;
+    const nextAutoKey = autoQtyKeys.includes(key) ? autoQtyKeys.find((item) => item !== key) : (autoKey || 'inProductionQty');
+    const normalized = normalizeProgressValues(nextValues, key, nextAutoKey);
     if (!normalized) {
-      setMessage('任意两项合计不能超过下单数量。');
+      setMessage('在产品、完工产品、已发货数量合计不能超过下单数量。');
       return;
     }
-    setTouchedQtyKeys(nextTouched);
-    setAutoKey(nextAutoKey);
-    setValues(normalized);
+    setAutoKey(normalized.autoKey);
+    setValues(normalized.values);
   }
 
   async function save() {
-    const payload = normalizeProgressValues(values, autoKey || 'shippedQty');
-    if (!payload) {
-      setMessage('任意两项合计不能超过下单数量。');
+    const normalized = normalizeProgressValues(values, '', autoKey || 'inProductionQty');
+    if (!normalized) {
+      setMessage('在产品、完工产品、已发货数量合计不能超过下单数量。');
       return;
     }
+    const payload = {
+      ...normalized.values,
+      inProductionQty: numberValue(normalized.values.inProductionQty),
+      finishedQty: numberValue(normalized.values.finishedQty),
+      shippedQty: numberValue(normalized.values.shippedQty)
+    };
     setSaving(true);
     try {
       await request(`/api/progress/${encodeURIComponent(row.demandKey)}`, {
@@ -1150,7 +1151,7 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
       <DataTable
         className="progress-table"
         rows={displayRows}
-        columns={['采购组', '采购下单人', 'OA备货流程号', '采购组织', '月份', '事业部', '供应商', '产品线', '系列', '物料编码', '物料', '物流编码', 'SKU', '下单数量', '生产中', '已完工', '已发货数量', '操作']}
+        columns={['采购组', '采购下单人', 'OA备货流程号', '采购组织', '月份', '事业部', '供应商', '产品线', '系列', '物料编码', '物料', '物流编码', 'SKU', '下单数量', '在产品', '完工产品', '已发货数量', '操作']}
         renderRow={(row) => <ProgressEditor key={row.demandKey} row={row} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
       />
       {!onlyIssues && (
@@ -1296,7 +1297,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
         <DataTable
           className="diff-allocation-table"
           rows={filteredDiffRows}
-          columns={['主键', 'OA备货流程号', '采购下单人', '物料编码', '物料名称', '原采购数量', '新采购数量', '已发货', '生产中', '已完工', '差异', '原因', '操作', '备注', '提交人', '提交时间', '提交']}
+          columns={['主键', 'OA备货流程号', '采购下单人', '物料编码', '物料名称', '原采购数量', '新采购数量', '已发货', '在产品', '完工产品', '差异', '原因', '操作', '备注', '提交人', '提交时间', '提交']}
           renderRow={(row) => {
             const input = rowInputs[row.id] || {};
             const allocated = allocatedRowIds.has(row.id);

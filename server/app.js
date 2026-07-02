@@ -704,6 +704,8 @@ function demandRows(includeInactive = false, user = null) {
     const purchaseOwner = realPurchaseOwner(enriched.purchaseOwner, demand.purchase_owner) || UNASSIGNED_PURCHASE_OWNER;
     const purchaseGroup = enriched.purchaseGroup || '';
     const progressTotal = numberValue(progress.in_production_qty) + numberValue(progress.finished_qty) + numberValue(progress.shipped_qty);
+    const shippedQty = numberValue(progress.shipped_qty);
+    const remainingInboundQty = Math.max(numberValue(demand.current_order_qty) - shippedQty, 0);
     const stockQty = numberValue(stock.stock_qty);
     const demandAfterStock = Math.max(numberValue(demand.current_order_qty) - stockQty, 0);
     return {
@@ -715,6 +717,7 @@ function demandRows(includeInactive = false, user = null) {
       supplierShortName: demand.supplier_short_name || enriched.supplierShortName || '',
       materialCode: demand.material_code,
       currentOrderQty: numberValue(demand.current_order_qty),
+      remainingInboundQty,
       active: Boolean(demand.active),
       sku: demand.sku || enriched.sku || '',
       logisticsCode: demand.logistics_code || enriched.logisticsCode || '',
@@ -730,7 +733,7 @@ function demandRows(includeInactive = false, user = null) {
       demandAfterStock,
       inProductionQty: numberValue(progress.in_production_qty),
       finishedQty: numberValue(progress.finished_qty),
-      shippedQty: numberValue(progress.shipped_qty),
+      shippedQty,
       progressTotal,
       gap: numberValue(demand.current_order_qty) - progressTotal,
       shortageAfterStock: demandAfterStock - progressTotal,
@@ -1083,14 +1086,23 @@ function applyKingdeeSnapshot({ fileName, sourceRows, summary, diffs, mapping, u
          updated_at = excluded.updated_at`,
       [row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.currentOrderQty, row.purchaseOrg || '', row.oaFlowNo || '', batchId, now]
     );
-    const progress = get('SELECT demand_key FROM supplier_progress WHERE demand_key = ?', [row.demandKey]);
-    if (!progress) {
-      run(
-        `INSERT INTO supplier_progress (demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty, remark, updated_by, updated_at)
-         VALUES (?, 0, 0, ?, 0, 0, ?, ?, ?)`,
-        [row.demandKey, numberValue(row.currentOrderQty), '', userName, now]
-      );
-    }
+    const progress = get('SELECT * FROM supplier_progress WHERE demand_key = ?', [row.demandKey]);
+    const shippedQty = numberValue(progress?.shipped_qty);
+    const remainingInboundQty = Math.max(numberValue(row.currentOrderQty) - shippedQty, 0);
+    run(
+      `INSERT INTO supplier_progress (demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty, remark, updated_by, updated_at)
+       VALUES (?, 0, 0, ?, 0, ?, ?, ?, ?)
+       ON CONFLICT(demand_key) DO UPDATE SET
+         unprepared_qty = 0,
+         prepared_not_started_qty = 0,
+         in_production_qty = excluded.in_production_qty,
+         finished_qty = 0,
+         shipped_qty = excluded.shipped_qty,
+         remark = supplier_progress.remark,
+         updated_by = excluded.updated_by,
+         updated_at = excluded.updated_at`,
+      [row.demandKey, remainingInboundQty, shippedQty, progress?.remark || '', userName, now]
+    );
   });
   diffs.forEach((diff) => {
     run('INSERT INTO demand_snapshot_diffs (id, batch_id, demand_key, diff_type, old_qty, new_qty, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [randomUUID(), batchId, diff.demandKey, diff.diffType, diff.oldQty, diff.newQty, now]);
@@ -1312,7 +1324,7 @@ app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'
   };
   const total = values.inProduction + values.finished + values.shipped;
   if (Math.abs(total - numberValue(demand.current_order_qty)) > 0.000001) {
-    return res.status(400).json({ error: '在产品、完工产品、已发货数量合计必须等于下单数量' });
+    return res.status(400).json({ error: '在产品、完工产品、已发货数量合计必须等于采购数量' });
   }
   const now = nowText();
   transaction(() => {
@@ -1536,14 +1548,14 @@ app.post('/api/inventory', requireAuth, requirePage('inventory'), (req, res) => 
 
 app.get('/api/progress/export', requireAuth, (req, res) => {
   const rows = demandRows(false, req.user);
-  const headers = ['demandKey', '采购组', '采购下单人', 'OA备货流程号', '采购组织', '月份', '事业部', '供应商', '产品线', '系列', '物料编码', '物料', '物流编码', 'SKU', '下单数量', '在产品', '完工产品', '已发货数量', '备注'];
+  const headers = ['demandKey', '采购组', '采购下单人', 'OA备货流程号', '采购组织', '月份', '事业部', '供应商', '产品线', '系列', '物料编码', '物料', '物流编码', 'SKU', '未交付数量', '在产品', '完工产品', '已发货数量', '备注'];
   const aoa = [headers];
   rows.forEach((row) => {
     aoa.push([
       row.demandKey, row.purchaseGroup, row.purchaseOwner, row.oaFlowNo, row.purchaseOrg,
       row.month, row.businessUnit, row.supplierShortName || row.supplier,
       row.productLine, row.productSeries, row.materialCode, row.materialName || row.materialCode,
-      row.logisticsCode, row.sku, row.currentOrderQty,
+      row.logisticsCode, row.sku, row.remainingInboundQty,
       row.inProductionQty, row.finishedQty, row.shippedQty, row.remark
     ]);
   });

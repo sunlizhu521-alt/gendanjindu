@@ -673,10 +673,10 @@ function PurchaseBoard({ rows }) {
           <table className="purchase-board-table">
             <thead>
               <tr>
-                <th className="board-sticky board-sku-col" rowSpan="2">SKU</th>
-                <th className="board-sticky board-code-col" rowSpan="2">物料编码</th>
-                <th className="board-sticky board-name-col" rowSpan="2">产品名称</th>
                 <th className="board-sticky board-supplier-col" rowSpan="2">供应商</th>
+                <th className="board-sticky board-code-col" rowSpan="2">物料编码</th>
+                <th className="board-sticky board-sku-col" rowSpan="2">SKU</th>
+                <th className="board-sticky board-name-col" rowSpan="2">产品名称</th>
                 {board.months.map((month) => (
                   <th key={month} className="board-month-head" colSpan={Math.max(board.businessUnits.length, 1)}>{month}订单</th>
                 ))}
@@ -692,10 +692,10 @@ function PurchaseBoard({ rows }) {
                 <tr><td className="empty" colSpan={4 + Math.max(board.businessUnits.length, 1) * board.months.length}>暂无数据</td></tr>
               ) : board.items.map((item) => (
                 <tr key={item.key}>
-                  <td className="board-sticky board-sku-col">{item.sku}</td>
-                  <td className="board-sticky board-code-col">{item.materialCode}</td>
-                  <td className="board-sticky board-name-col board-name-cell">{item.materialName}</td>
                   <td className="board-sticky board-supplier-col">{item.supplier}</td>
+                  <td className="board-sticky board-code-col">{item.materialCode}</td>
+                  <td className="board-sticky board-sku-col">{item.sku}</td>
+                  <td className="board-sticky board-name-col board-name-cell">{item.materialName}</td>
                   {board.months.map((month) => (
                     (board.businessUnits.length ? board.businessUnits : ['']).map((unit) => (
                       <td key={`${item.key}-${month}-${unit}`} className="board-status-cell">

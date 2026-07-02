@@ -1289,10 +1289,11 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
       && (!filters.sku || row.sku === filters.sku)
       && (!filters.purchaseOwner || row.purchaseOwner === filters.purchaseOwner);
   };
-  const filteredDiffRows = useMemo(() => diffRows.filter(matchesFilters), [diffRows, filters]);
+  const pendingRows = useMemo(() => diffRows.filter((row) => !allocatedRowIds.has(row.id)), [diffRows, allocations]);
+  const filteredDiffRows = useMemo(() => pendingRows.filter(matchesFilters), [pendingRows, filters]);
   const filteredAllocations = useMemo(() => allocations.filter(matchesFilters), [allocations, filters]);
-  const pendingCount = filteredDiffRows.filter((row) => !allocatedRowIds.has(row.id)).length;
-  const totalPendingCount = diffRows.filter((row) => !allocatedRowIds.has(row.id)).length;
+  const pendingCount = filteredDiffRows.length;
+  const totalPendingCount = pendingRows.length;
   const selectedPendingCount = selectedRowIds.filter((id) => !allocatedRowIds.has(id)).length;
   const clearFilters = () => setFilters({ month: '', supplier: '', businessUnit: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
 
@@ -1301,7 +1302,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
       <div className="section-heading-row">
         <h2>差异分配</h2>
         <span className="section-count">
-          {loading ? '加载中...' : `当前显示 ${filteredDiffRows.length} / ${diffRows.length} 条，待分配 ${pendingCount} / ${totalPendingCount} 条`}
+          {loading ? '加载中...' : `当前显示 ${filteredDiffRows.length} / ${totalPendingCount} 条，待分配 ${pendingCount} / ${totalPendingCount} 条`}
         </span>
       </div>
       <div className="toolbar filters-row">

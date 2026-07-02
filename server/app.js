@@ -23,7 +23,6 @@ const ALL_PAGES = [
   'progressRefresh',
   'differenceAllocation',
   'trace',
-  'inventory',
   'kingdeeImport',
   'dimensionLibrary',
   'permissions'
@@ -34,7 +33,6 @@ const PAGE_LABELS = {
   kingdeeImport: '采购订单',
   progressRefresh: '生产跟进',
   differenceAllocation: '差异分配',
-  inventory: '历史库存',
   dimensionLibrary: '维度表库',
   trace: '变更追溯',
   permissions: '权限管理'

@@ -10,7 +10,6 @@ const PAGE_ORDER = [
   'progressRefresh',
   'differenceAllocation',
   'trace',
-  'inventory',
   'kingdeeImport',
   'dimensionLibrary',
   'permissions'
@@ -22,7 +21,6 @@ const PAGE_LABELS = {
   kingdeeImport: '采购订单',
   progressRefresh: '生产跟进',
   differenceAllocation: '差异分配',
-  inventory: '历史库存',
   dimensionLibrary: '维度表库',
   trace: '变更追溯',
   permissions: '权限管理'
@@ -602,16 +600,8 @@ function PurchaseBoard({ rows }) {
         materialCode: row.materialCode || '',
         materialName: row.materialName || row.materialCode || '',
         supplier: displaySupplier,
-        stock: new Map(),
-        stockSeen: new Set(),
         orders: new Map()
       };
-      const stockKey = row.businessUnit || '未分事业部';
-      const stockSourceKey = [row.businessUnit, row.supplier, row.materialCode].map(normalize).join('|');
-      if (!item.stockSeen.has(stockSourceKey)) {
-        item.stock.set(stockKey, numberValue(item.stock.get(stockKey)) + numberValue(row.stockQty));
-        item.stockSeen.add(stockSourceKey);
-      }
       const orderKey = `${row.month}|${row.businessUnit || '未分事业部'}`;
       const order = item.orders.get(orderKey) || { shipped: 0, finished: 0, inProduction: 0, uncovered: 0 };
       order.shipped += numberValue(row.shippedQty);
@@ -680,13 +670,11 @@ function PurchaseBoard({ rows }) {
                 <th className="board-sticky board-code-col" rowSpan="2">物料编码</th>
                 <th className="board-sticky board-name-col" rowSpan="2">产品名称</th>
                 <th className="board-sticky board-supplier-col" rowSpan="2">供应商</th>
-                <th className="board-stock-head" colSpan={Math.max(board.businessUnits.length, 1)}>历史库存</th>
                 {board.months.map((month) => (
                   <th key={month} className="board-month-head" colSpan={Math.max(board.businessUnits.length, 1)}>{month}订单</th>
                 ))}
               </tr>
               <tr>
-                {(board.businessUnits.length ? board.businessUnits : ['']).map((unit) => <th key={`stock-${unit}`} className="board-unit-head">{unit || '-'}</th>)}
                 {board.months.map((month) => (
                   (board.businessUnits.length ? board.businessUnits : ['']).map((unit) => <th key={`${month}-${unit}`} className="board-unit-head">{unit || '-'}</th>)
                 ))}
@@ -694,17 +682,13 @@ function PurchaseBoard({ rows }) {
             </thead>
             <tbody>
               {board.items.length === 0 ? (
-                <tr><td className="empty" colSpan={4 + Math.max(board.businessUnits.length, 1) * (board.months.length + 1)}>暂无数据</td></tr>
+                <tr><td className="empty" colSpan={4 + Math.max(board.businessUnits.length, 1) * board.months.length}>暂无数据</td></tr>
               ) : board.items.map((item) => (
                 <tr key={item.key}>
                   <td className="board-sticky board-sku-col">{item.sku}</td>
                   <td className="board-sticky board-code-col">{item.materialCode}</td>
                   <td className="board-sticky board-name-col board-name-cell">{item.materialName}</td>
                   <td className="board-sticky board-supplier-col">{item.supplier}</td>
-                  {(board.businessUnits.length ? board.businessUnits : ['']).map((unit) => {
-                    const value = numberValue(item.stock.get(unit));
-                    return <td key={`stock-${item.key}-${unit}`} className="board-status-cell">{value > 0 && <span className="board-chip stock">{value.toLocaleString()}</span>}</td>;
-                  })}
                   {board.months.map((month) => (
                     (board.businessUnits.length ? board.businessUnits : ['']).map((unit) => (
                       <td key={`${item.key}-${month}-${unit}`} className="board-status-cell">
@@ -1106,25 +1090,6 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
   const displayRows = onlyIssues
     ? filtered.filter((row) => numberValue(row.gap) !== 0 || !row.progressUpdatedAt)
     : filtered;
-  const [importFile, setImportFile] = useState(null);
-  const [importing, setImporting] = useState(false);
-
-  async function handleTemplateImport() {
-    if (!importFile) return;
-    setImporting(true);
-    try {
-      const data = new FormData();
-      data.append('file', importFile);
-      const payload = await request('/api/progress/import', { token, method: 'POST', body: data });
-      setMessage(`进度导入完成：${payload.updated || 0} 行`);
-      setImportFile(null);
-      await reloadDemands();
-    } catch {
-      setMessage('进度导入失败');
-    } finally {
-      setImporting(false);
-    }
-  }
 
   async function handleExport() {
     const res = await fetch(`${API}/api/progress/export`, { headers: { Authorization: `Bearer ${token}` } });
@@ -1146,6 +1111,7 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
       <div className="section-heading-row">
         <h2>{title}</h2>
         <span className="section-count">{displayRows.length} 条</span>
+        {!onlyIssues && <button type="button" className="compact-button" onClick={handleExport}>导出 Excel</button>}
       </div>
       <FilterBar filters={filters} setFilters={setFilters} options={options} onSubmit={() => setMessage('筛选已确认，当前 ' + displayRows.length + ' 条')} />
       <DataTable
@@ -1154,24 +1120,6 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
         columns={['采购组', '采购下单人', 'OA备货流程号', '采购组织', '月份', '事业部', '供应商', '产品线', '系列', '物料编码', '物料', '物流编码', 'SKU', '下单数量', '在产品', '完工产品', '已发货数量', '操作']}
         renderRow={(row) => <ProgressEditor key={row.demandKey} row={row} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
       />
-      {!onlyIssues && (
-        <section className="panel" style={{ marginTop: 16 }}>
-          <h4>模板导入</h4>
-          <label className="drop-zone">
-            <input type="file" accept=".xlsx,.xls,.csv" onChange={(event) => setImportFile(event.target.files?.[0] || null)} />
-            <strong>{importFile ? importFile.name : '上传本地生产进度 Excel'}</strong>
-            <span>按模板格式导入，覆盖本地进度数据</span>
-          </label>
-          <div className="card-actions" style={{ marginTop: 8 }}>
-            <button type="button" className="compact-button" onClick={handleExport}>导出 Excel</button>
-            {importFile && (
-              <button type="button" className="compact-button" disabled={importing} onClick={handleTemplateImport}>
-                {importing ? '导入中...' : '确认导入'}
-              </button>
-            )}
-          </div>
-        </section>
-      )}
     </>
   );
 }
@@ -1422,10 +1370,16 @@ function DimensionLibrary({ token, reloadDemands, setMessage }) {
       data.append('file', file);
       const payload = await request('/api/workbook/inspect', { token, method: 'POST', body: data });
       const prevState = local[slot.id] || {};
+      const record = records.find((item) => item.slot_id === slot.id);
       const columns = payload.columns || [];
-      const sheetMappings = prevState.sheetMappings || {};
-      const mapping = validMappingForColumns(sheetMappings[''] || prevState.mapping || {}, columns, slot.fields);
-      setLocal({ ...local, [slot.id]: { ...prevState, file, columns, sheetNames: payload.sheetNames || [], sheetPreviews: payload.sheetPreviews || [], sheetMappings: { ...sheetMappings, '': mapping }, mapping, sheetName: '' } });
+      const savedMapping = prevState.savedMapping || prevState.mapping || record?.mapping || {};
+      const sheetMappings = { ...(prevState.sheetMappings || {}) };
+      const mapping = validMappingForColumns(sheetMappings[''] || savedMapping, columns, slot.fields);
+      if (record?.sheetName) {
+        const recordSheet = (payload.sheetPreviews || []).find((item) => item.sheetName === record.sheetName);
+        sheetMappings[record.sheetName] = validMappingForColumns(record.mapping || {}, recordSheet?.columns || columns, slot.fields);
+      }
+      setLocal({ ...local, [slot.id]: { ...prevState, file, columns, sheetNames: payload.sheetNames || [], sheetPreviews: payload.sheetPreviews || [], savedMapping, sheetMappings: { ...sheetMappings, '': mapping }, mapping, sheetName: '' } });
       if (!columns.length) setMessage(`${slot.title} 未识别到表头，请检查前10行是否包含字段名`);
     } catch (err) {
       setMessage(`${slot.title} 文件解析失败：${err.message}`);
@@ -1439,7 +1393,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage }) {
     const currentKey = state.sheetName || '';
     const nextKey = sheetName || '';
     const sheetMappings = { ...(state.sheetMappings || {}), [currentKey]: state.mapping || {} };
-    const mapping = validMappingForColumns(sheetMappings[nextKey] || {}, nextColumns, slot.fields);
+    const mapping = validMappingForColumns(sheetMappings[nextKey] || state.savedMapping || {}, nextColumns, slot.fields);
     setLocal({ ...local, [slot.id]: { ...state, sheetName, columns: nextColumns, sheetMappings, mapping } });
   }
 
@@ -1648,10 +1602,13 @@ function TracePage({ token }) {
 function PermissionsPage({ token, pages, setMessage }) {
   const [users, setUsers] = useState([]);
   const [form, setForm] = useState({ name: '', password: '' });
+  const [draftAccess, setDraftAccess] = useState({});
 
   async function load() {
     const payload = await request('/api/users', { token });
-    setUsers(payload.rows || []);
+    const rows = payload.rows || [];
+    setUsers(rows);
+    setDraftAccess(Object.fromEntries(rows.map((user) => [user.id, user.pageAccess || []])));
   }
 
   useEffect(() => { load().catch(() => {}); }, []);
@@ -1665,10 +1622,20 @@ function PermissionsPage({ token, pages, setMessage }) {
   }
 
   async function togglePage(user, page) {
-    const current = user.pageAccess || [];
+    const current = draftAccess[user.id] || user.pageAccess || [];
     const next = current.includes(page) ? current.filter((item) => item !== page) : [...current, page];
-    await request(`/api/users/${user.id}`, { token, method: 'PATCH', body: JSON.stringify({ pageAccess: next }) });
-    await load();
+    setDraftAccess({ ...draftAccess, [user.id]: next });
+  }
+
+  async function authorizeUser(user) {
+    const next = draftAccess[user.id] || [];
+    try {
+      await request(`/api/users/${user.id}`, { token, method: 'PATCH', body: JSON.stringify({ pageAccess: next }) });
+      setMessage(`${user.name} 授权成功：${next.length ? next.map((page) => pages[page] || PAGE_LABELS[page] || page).join('、') : '未分配页面权限'}`);
+      await load();
+    } catch (err) {
+      setMessage(`${user.name} 授权失败：${err.message}`);
+    }
   }
 
   async function resetPassword(user) {
@@ -1696,12 +1663,15 @@ function PermissionsPage({ token, pages, setMessage }) {
           <div className="permission-grid">
             {PAGE_ORDER.map((page) => (
               <label key={page} className="check-row">
-                <input type="checkbox" disabled={user.role === '管理员'} checked={user.role === '管理员' || (user.pageAccess || []).includes(page)} onChange={() => togglePage(user, page)} />
+                <input type="checkbox" disabled={user.role === '管理员'} checked={user.role === '管理员' || (draftAccess[user.id] || user.pageAccess || []).includes(page)} onChange={() => togglePage(user, page)} />
                 {pages[page] || PAGE_LABELS[page]}
               </label>
             ))}
           </div>,
-          <button type="button" className="ghost compact-button" onClick={() => resetPassword(user)}>重置密码</button>
+          <div className="card-actions">
+            <button type="button" className="compact-button" disabled={user.role === '管理员'} onClick={() => authorizeUser(user)}>授权</button>
+            <button type="button" className="ghost compact-button" onClick={() => resetPassword(user)}>重置密码</button>
+          </div>
         ]}
       />
     </>
@@ -1785,7 +1755,6 @@ function App() {
         {activeTab === 'kingdeeImport' && <KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'progressRefresh' && <ProgressPage rows={demands} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'differenceAllocation' && <DifferenceAllocationPage token={token} user={user} setMessage={setMessage} />}
-        {activeTab === 'inventory' && <InventoryPage token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'dimensionLibrary' && <DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'trace' && <TracePage token={token} setMessage={setMessage} />}
         {activeTab === 'permissions' && <PermissionsPage token={token} pages={pages} setMessage={setMessage} />}

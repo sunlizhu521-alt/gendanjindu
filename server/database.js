@@ -117,6 +117,7 @@ function migrate() {
       oa_flow_no TEXT NOT NULL DEFAULT '',
       order_no TEXT,
       quantity REAL NOT NULL,
+      inbound_qty REAL NOT NULL DEFAULT 0,
       raw_json TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS order_demands (
@@ -206,6 +207,7 @@ function migrate() {
       diff_type TEXT NOT NULL,
       old_order_nos TEXT NOT NULL DEFAULT '',
       new_order_nos TEXT NOT NULL DEFAULT '',
+      inbound_qty REAL NOT NULL DEFAULT 0,
       progress_total REAL NOT NULL DEFAULT 0,
       stock_qty REAL NOT NULL DEFAULT 0,
       new_snapshot_json TEXT NOT NULL DEFAULT '{}',
@@ -310,6 +312,9 @@ function migrate() {
   if (!kingdeeColumns.includes('oa_flow_no')) {
     run("ALTER TABLE kingdee_orders ADD COLUMN oa_flow_no TEXT NOT NULL DEFAULT ''");
   }
+  if (!kingdeeColumns.includes('inbound_qty')) {
+    run("ALTER TABLE kingdee_orders ADD COLUMN inbound_qty REAL NOT NULL DEFAULT 0");
+  }
 
   const kingdeeBatchColumns = all('PRAGMA table_info(kingdee_import_batches)').map((row) => row.name);
   if (!kingdeeBatchColumns.includes('applied_at')) {
@@ -352,6 +357,9 @@ function migrate() {
   }
   if (!compareRowColumns.includes('new_order_nos')) {
     run("ALTER TABLE difference_compare_rows ADD COLUMN new_order_nos TEXT NOT NULL DEFAULT ''");
+  }
+  if (!compareRowColumns.includes('inbound_qty')) {
+    run("ALTER TABLE difference_compare_rows ADD COLUMN inbound_qty REAL NOT NULL DEFAULT 0");
   }
 
   const allocationColumns = all('PRAGMA table_info(difference_allocations)').map((row) => row.name);

@@ -1283,7 +1283,7 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
           <ProgressStackedChart title="系列未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => row.productSeries} />
           <ProgressStackedChart title="SKU未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => row.sku} />
         </section>
-        <FilterBar filters={filters} setFilters={setFilters} options={options} onSubmit={() => setMessage('筛选已确认，当前 ' + displayRows.length + ' 条')} />
+        <FilterBar filters={filters} setFilters={setFilters} options={options} />
       </div>
       <DataTable
         className="progress-table"

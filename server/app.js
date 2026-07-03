@@ -640,11 +640,16 @@ function progressForDemand(demandKeyValue) {
   };
 }
 
-function progressAfterInbound(orderQty, progress, inboundQty) {
+function progressAfterInbound(orderQty, progress, inboundQty, options = {}) {
   const hasProgress = Boolean(progress?.demand_key);
   const currentShipped = numberValue(progress?.shipped_qty);
   const nextShipped = Math.max(0, numberValue(inboundQty));
   const remainingInboundQty = Math.max(numberValue(orderQty) - nextShipped, 0);
+  if (options.preserveExistingProgress && hasProgress) {
+    const finished = numberValue(progress?.finished_qty);
+    const inProduction = numberValue(progress?.in_production_qty);
+    return { inProduction, finished, shipped: nextShipped, gap: remainingInboundQty - finished - inProduction };
+  }
   let finished = numberValue(progress?.finished_qty);
   let inProduction = hasProgress ? numberValue(progress?.in_production_qty) : remainingInboundQty;
   let deductQty = Math.max(nextShipped - currentShipped, 0);
@@ -665,6 +670,10 @@ function progressAfterInbound(orderQty, progress, inboundQty) {
   }
   const gap = remainingInboundQty - finished - inProduction;
   return { inProduction, finished, shipped: nextShipped, gap };
+}
+
+function hasManualProgressHistory(demandKeyValue) {
+  return numberValue(get('SELECT COUNT(*) AS count FROM supplier_progress_snapshots WHERE demand_key = ?', [demandKeyValue])?.count) > 0;
 }
 
 function inventoryForDemand(demand) {
@@ -1131,7 +1140,9 @@ function applyKingdeeSnapshot({ fileName, sourceRows, summary, diffs, mapping, u
       [row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.currentOrderQty, row.purchaseOrg || '', row.oaFlowNo || '', batchId, now]
     );
     const progress = get('SELECT * FROM supplier_progress WHERE demand_key = ?', [row.demandKey]);
-    const nextProgress = progressAfterInbound(row.currentOrderQty, progress, row.inboundQty);
+    const nextProgress = progressAfterInbound(row.currentOrderQty, progress, row.inboundQty, {
+      preserveExistingProgress: Boolean(progress) && hasManualProgressHistory(row.demandKey)
+    });
     run(
       `INSERT INTO supplier_progress (demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty, remark, updated_by, updated_at)
        VALUES (?, 0, 0, ?, ?, ?, ?, ?, ?)

@@ -779,31 +779,25 @@ th {
 }
 
 .stack-list {
-  display: flex;
-  align-items: end;
-  gap: 12px;
-  min-height: 190px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 4px 2px 0;
+  display: grid;
+  gap: 8px;
+  max-height: 166px;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .stack-row {
   display: grid;
-  grid-template-rows: 150px 28px 18px;
-  justify-items: center;
-  align-items: end;
-  gap: 5px;
-  min-width: 76px;
+  grid-template-columns: minmax(76px, 118px) minmax(120px, 1fr) 52px;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
 }
 
 .stack-row span {
-  max-width: 84px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-align: center;
 }
 
 .stack-row strong {
@@ -811,30 +805,25 @@ th {
   font-size: 12px;
   font-weight: 700;
   line-height: 1;
-  text-align: center;
+  text-align: right;
 }
 
 .stack-track {
-  position: relative;
-  display: flex;
-  align-items: end;
-  justify-content: center;
-  width: 68px;
-  height: 150px;
+  width: 100%;
+  height: 18px;
   border: 1px solid #dbe3ef;
-  border-radius: 2px;
+  border-radius: 8px;
   background: #f8fafc;
   overflow: hidden;
 }
 
 .stack-total {
-  position: absolute;
-  bottom: 0;
   display: flex;
-  flex-direction: column-reverse;
-  width: 100%;
+  height: 100%;
+  min-width: 8px;
   min-height: 6px;
   overflow: hidden;
+  border-radius: 7px;
   background: #dbead2;
 }
 
@@ -843,8 +832,8 @@ th {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  min-height: 0;
+  height: 100%;
+  min-width: 0;
   color: #fff;
   font-size: 12px;
   font-weight: 700;
@@ -853,7 +842,7 @@ th {
 }
 
 .stack-fill[data-has-value="true"] {
-  min-height: 20px;
+  min-width: 28px;
 }
 
 .stack-fill b {
@@ -862,7 +851,7 @@ th {
   top: 50%;
   display: block;
   transform: translate(-50%, -50%);
-  max-width: 62px;
+  max-width: 54px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -794,12 +794,12 @@ th {
   justify-items: center;
   align-items: end;
   gap: 5px;
-  min-width: 56px;
+  min-width: 76px;
   font-size: 12px;
 }
 
 .stack-row span {
-  max-width: 66px;
+  max-width: 84px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -819,7 +819,7 @@ th {
   display: flex;
   align-items: end;
   justify-content: center;
-  width: 52px;
+  width: 68px;
   height: 150px;
   border: 1px solid #dbe3ef;
   border-radius: 2px;
@@ -839,6 +839,7 @@ th {
 }
 
 .stack-fill {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -851,9 +852,21 @@ th {
   overflow: hidden;
 }
 
+.stack-fill[data-has-value="true"] {
+  min-height: 20px;
+}
+
 .stack-fill b {
+  position: absolute;
+  left: 50%;
+  top: 50%;
   display: block;
-  transform: rotate(0deg);
+  transform: translate(-50%, -50%);
+  max-width: 62px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(15, 23, 42, 0.3);
 }
 
 .progress-stack-chart .in-production {

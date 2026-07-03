@@ -257,10 +257,10 @@ function ProgressStackedChart({ title, rows, groupBy }) {
             <div key={row.name} className="stack-row">
               <div className="stack-track" title={`未交付 ${row.remainingQty}，在产品 ${row.inProductionQty}，完工产品 ${row.finishedQty}`}>
                 <div className="stack-total" style={{ height: `${columnPct}%` }}>
-                  <div className="stack-fill in-production" style={{ height: `${inProductionPct}%` }}>
+                  <div className="stack-fill in-production" data-has-value={numberValue(row.inProductionQty) > 0 ? 'true' : 'false'} style={{ height: `${inProductionPct}%` }}>
                     {numberValue(row.inProductionQty) > 0 && <b>{numberValue(row.inProductionQty).toLocaleString()}</b>}
                   </div>
-                  <div className="stack-fill finished" style={{ height: `${finishedPct}%` }}>
+                  <div className="stack-fill finished" data-has-value={numberValue(row.finishedQty) > 0 ? 'true' : 'false'} style={{ height: `${finishedPct}%` }}>
                     {numberValue(row.finishedQty) > 0 && <b>{numberValue(row.finishedQty).toLocaleString()}</b>}
                   </div>
                 </div>

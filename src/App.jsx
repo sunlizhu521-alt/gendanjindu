@@ -1305,18 +1305,42 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
   }
 
   async function handleExport() {
-    const res = await fetch(`${API}/api/progress/export`, { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) {
-      setMessage('导出失败');
-      return;
+    try {
+      const XLSX = await import('xlsx');
+      const headers = ['采购组', '采购下单人', '月份', '采购组织', '供应商', '事业部', '产品线', '系列', '物料编码', 'SKU', '物料', '未交付数量', '在产品', '完工产品', '已发货数量', 'OA备货流程号'];
+      const aoa = [
+        headers,
+        ...displayRows.map((row) => {
+          const draft = drafts[row.demandKey] || {};
+          return [
+            row.purchaseGroup,
+            row.purchaseOwner,
+            row.month,
+            row.purchaseOrg,
+            supplierName(row),
+            row.businessUnit,
+            row.productLine,
+            row.productSeries,
+            row.materialCode,
+            row.sku,
+            row.materialName || row.materialCode,
+            numberValue(row.remainingInboundQty),
+            numberValue(draft.inProductionQty ?? row.inProductionQty),
+            numberValue(draft.finishedQty ?? row.finishedQty),
+            numberValue(draft.shippedQty ?? row.shippedQty),
+            row.oaFlowNo
+          ];
+        })
+      ];
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+      worksheet['!cols'] = headers.map((header) => ({ wch: Math.max(12, header.length + 4) }));
+      XLSX.utils.book_append_sheet(workbook, worksheet, '生产跟进');
+      XLSX.writeFile(workbook, `生产跟进_${todayText()}.xlsx`);
+      setMessage(`已导出当前筛选 ${displayRows.length} 条生产跟进。`);
+    } catch (err) {
+      setMessage('导出失败：' + err.message);
     }
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = '生产跟进导出.xlsx';
-    a.click();
-    URL.revokeObjectURL(url);
   }
 
   return (

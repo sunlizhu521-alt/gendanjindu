@@ -312,9 +312,12 @@ function SelectField({ label, value, options, onChange }) {
 
 function MonthCalendarFilter({ label, value = [], options = [], onChange, multiple = true }) {
   const [open, setOpen] = useState(false);
-  const [calendarValue, setCalendarValue] = useState('');
   const rootRef = useRef(null);
   const selected = multiple ? (Array.isArray(value) ? value : []) : (value ? [value] : []);
+  const yearSource = selected[0] || options[0] || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+  const [calendarYear, setCalendarYear] = useState(Number(yearSource.slice(0, 4)) || new Date().getFullYear());
+  const optionSet = useMemo(() => new Set(options), [options]);
+  const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
 
   useEffect(() => {
     if (!open) return undefined;
@@ -324,6 +327,10 @@ function MonthCalendarFilter({ label, value = [], options = [], onChange, multip
     document.addEventListener('mousedown', closeOnOutsideClick);
     return () => document.removeEventListener('mousedown', closeOnOutsideClick);
   }, [open]);
+
+  useEffect(() => {
+    if (selected[0]) setCalendarYear(Number(selected[0].slice(0, 4)) || calendarYear);
+  }, [selected[0]]);
 
   const updateSelected = (next) => {
     const normalized = [...new Set(next.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
@@ -337,17 +344,12 @@ function MonthCalendarFilter({ label, value = [], options = [], onChange, multip
     }
     updateSelected(selected.includes(month) ? selected.filter((item) => item !== month) : [...selected, month]);
   };
-  const addCalendarMonth = (month) => {
-    if (!month) return;
-    updateSelected(multiple ? [...selected, month] : [month]);
-    setCalendarValue('');
-    if (!multiple) setOpen(false);
-  };
   const buttonText = selected.length === 0
     ? '全部'
     : selected.length <= 2
-      ? selected.join('、')
+      ? selected.map((month) => `${Number(month.slice(0, 4))}年${Number(month.slice(5, 7))}月`).join('、')
       : `已选${selected.length}项`;
+  const monthKeys = monthNames.map((_, index) => `${calendarYear}-${String(index + 1).padStart(2, '0')}`);
 
   return (
     <div className="filter-control month-calendar-filter" ref={rootRef}>
@@ -355,26 +357,32 @@ function MonthCalendarFilter({ label, value = [], options = [], onChange, multip
       <button type="button" className="filter-button" onClick={() => setOpen(!open)} title={buttonText}>{buttonText}</button>
       {open && (
         <div className="filter-menu month-calendar-menu">
-          <div className="month-picker-row">
-            <input
-              type="month"
-              value={calendarValue}
-              onChange={(event) => {
-                setCalendarValue(event.target.value);
-                addCalendarMonth(event.target.value);
-              }}
-            />
+          <div className="month-calendar-head">
+            <button type="button" onClick={() => setCalendarYear(calendarYear - 1)}>‹</button>
+            <strong>{calendarYear}年</strong>
+            <button type="button" onClick={() => setCalendarYear(calendarYear + 1)}>›</button>
           </div>
-          <label className="filter-option">
-            <input type={multiple ? 'checkbox' : 'radio'} checked={selected.length === 0} onChange={() => updateSelected([])} />
-            <span>全部</span>
-          </label>
-          {options.map((month) => (
-            <label key={month} className="filter-option">
-              <input type={multiple ? 'checkbox' : 'radio'} checked={selected.includes(month)} onChange={() => toggleMonth(month)} />
-              <span>{month}</span>
-            </label>
-          ))}
+          <div className="month-calendar-grid">
+            {monthKeys.map((month, index) => {
+              const isSelected = selected.includes(month);
+              const hasData = optionSet.has(month);
+              return (
+                <button
+                  type="button"
+                  key={month}
+                  className={`month-calendar-cell ${isSelected ? 'selected' : ''} ${hasData ? 'has-data' : ''}`}
+                  onClick={() => toggleMonth(month)}
+                >
+                  <strong>{monthNames[index]}</strong>
+                  <span>{hasData ? '有数据' : '无数据'}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="month-calendar-actions">
+            <button type="button" onClick={() => updateSelected([])}>全部月份</button>
+            <button type="button" onClick={() => setOpen(false)}>确定</button>
+          </div>
         </div>
       )}
     </div>

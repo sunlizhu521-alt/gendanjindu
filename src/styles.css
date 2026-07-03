@@ -970,6 +970,10 @@ th {
   padding: 0;
 }
 
+.progress-remark-input {
+  min-width: 180px;
+}
+
 .select-all-header {
   display: inline-flex;
   align-items: center;

@@ -1650,6 +1650,10 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
   const [records, setRecords] = useState([]);
   const [local, setLocal] = useState({});
 
+  function setSlotState(slotId, patch) {
+    setLocal((prev) => ({ ...prev, [slotId]: { ...(prev[slotId] || {}), ...patch } }));
+  }
+
   async function load() {
     const payload = await request('/api/dimensions', { token });
     setRecords(payload.rows || []);
@@ -1658,23 +1662,64 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
   useEffect(() => { load().catch(() => {}); }, []);
 
   async function inspect(slot, file) {
+    setSlotState(slot.id, {
+      file,
+      columns: [],
+      sheetNames: [],
+      sheetPreviews: [],
+      progress: 12,
+      statusText: '正在读取文件...',
+      statusType: 'active',
+      busy: 'inspect'
+    });
     try {
       const data = new FormData();
       data.append('file', file);
       const payload = await request('/api/workbook/inspect', { token, method: 'POST', body: data });
-      const prevState = local[slot.id] || {};
       const record = records.find((item) => item.slot_id === slot.id);
       const columns = payload.columns || [];
-      const savedMapping = prevState.savedMapping || prevState.mapping || record?.mapping || {};
-      const sheetMappings = { ...(prevState.sheetMappings || {}) };
-      const mapping = validMappingForColumns(sheetMappings[''] || savedMapping, columns, slot.fields);
-      if (record?.sheetName) {
-        const recordSheet = (payload.sheetPreviews || []).find((item) => item.sheetName === record.sheetName);
-        sheetMappings[record.sheetName] = validMappingForColumns(record.mapping || {}, recordSheet?.columns || columns, slot.fields);
+      setLocal((prev) => {
+        const prevState = prev[slot.id] || {};
+        const savedMapping = prevState.savedMapping || prevState.mapping || record?.mapping || {};
+        const sheetMappings = { ...(prevState.sheetMappings || {}) };
+        const mapping = validMappingForColumns(sheetMappings[''] || savedMapping, columns, slot.fields);
+        if (record?.sheetName) {
+          const recordSheet = (payload.sheetPreviews || []).find((item) => item.sheetName === record.sheetName);
+          sheetMappings[record.sheetName] = validMappingForColumns(record.mapping || {}, recordSheet?.columns || columns, slot.fields);
+        }
+        return {
+          ...prev,
+          [slot.id]: {
+            ...prevState,
+            file,
+            columns,
+            sheetNames: payload.sheetNames || [],
+            sheetPreviews: payload.sheetPreviews || [],
+            savedMapping,
+            sheetMappings: { ...sheetMappings, '': mapping },
+            mapping,
+            sheetName: '',
+            progress: columns.length ? 100 : 70,
+            statusText: columns.length
+              ? `解析完成：识别 ${payload.sheetNames?.length || 1} 个工作表，请检查字段映射`
+              : '未识别到表头，请检查前10行是否包含字段名',
+            statusType: columns.length ? 'success' : 'warning',
+            busy: ''
+          }
+        };
+      });
+      if (!columns.length) {
+        setMessage(`${slot.title} 未识别到表头，请检查前10行是否包含字段名`);
+      } else {
+        setMessage(`${slot.title} 解析完成，请检查字段映射后上传保存`);
       }
-      setLocal({ ...local, [slot.id]: { ...prevState, file, columns, sheetNames: payload.sheetNames || [], sheetPreviews: payload.sheetPreviews || [], savedMapping, sheetMappings: { ...sheetMappings, '': mapping }, mapping, sheetName: '' } });
-      if (!columns.length) setMessage(`${slot.title} 未识别到表头，请检查前10行是否包含字段名`);
     } catch (err) {
+      setSlotState(slot.id, {
+        progress: 100,
+        statusText: `文件解析失败：${err.message}`,
+        statusType: 'error',
+        busy: ''
+      });
       setMessage(`${slot.title} 文件解析失败：${err.message}`);
     }
   }
@@ -1687,35 +1732,121 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
     const nextKey = sheetName || '';
     const sheetMappings = { ...(state.sheetMappings || {}), [currentKey]: state.mapping || {} };
     const mapping = validMappingForColumns(sheetMappings[nextKey] || state.savedMapping || {}, nextColumns, slot.fields);
-    setLocal({ ...local, [slot.id]: { ...state, sheetName, columns: nextColumns, sheetMappings, mapping } });
+    setSlotState(slot.id, {
+      sheetName,
+      columns: nextColumns,
+      sheetMappings,
+      mapping,
+      progress: 100,
+      statusText: sheetName ? `已切换到工作表：${sheetName}` : '已切换到全部工作表',
+      statusType: 'success'
+    });
   }
 
   async function uploadSlot(slot) {
+    const state = local[slot.id];
+    if (!state?.file) {
+      setMessage(`${slot.title} 请先选择文件`);
+      return;
+    }
+    setSlotState(slot.id, {
+      progress: 35,
+      statusText: '正在上传保存...',
+      statusType: 'active',
+      busy: 'upload'
+    });
     try {
-      const state = local[slot.id];
       const data = new FormData();
       data.append('file', state.file);
       data.append('mapping', JSON.stringify(state.mapping || {}));
       if (state.sheetName) data.append('sheetName', state.sheetName);
       const payload = await request(`/api/dimensions/${slot.id}/upload`, { token, method: 'POST', body: data });
+      setSlotState(slot.id, {
+        progress: 78,
+        statusText: `上传保存完成：${payload.rowCount} 行，正在应用刷新...`,
+        statusType: 'active',
+        busy: 'apply'
+      });
       setMessage(`${slot.title} 已上传 ${payload.rowCount} 行，并已自动应用刷新。`);
       await load();
       await reloadDemands();
+      setSlotState(slot.id, {
+        progress: 100,
+        statusText: `已应用刷新：${payload.rowCount} 行`,
+        statusType: 'success',
+        busy: ''
+      });
     } catch (err) {
+      setSlotState(slot.id, {
+        progress: 100,
+        statusText: `上传失败：${err.message}`,
+        statusType: 'error',
+        busy: ''
+      });
       setMessage(`${slot.title} 上传失败：${err.message}`);
     }
   }
 
   async function applySlot(slot) {
-    await request(`/api/dimensions/${slot.id}/apply`, { token, method: 'POST' });
-    setMessage(`${slot.title} 已应用。`);
-    await load();
-    await reloadDemands();
+    setSlotState(slot.id, {
+      progress: 50,
+      statusText: '正在应用刷新...',
+      statusType: 'active',
+      busy: 'apply'
+    });
+    try {
+      await request(`/api/dimensions/${slot.id}/apply`, { token, method: 'POST' });
+      setMessage(`${slot.title} 已应用。`);
+      await load();
+      await reloadDemands();
+      setSlotState(slot.id, {
+        progress: 100,
+        statusText: '应用刷新完成',
+        statusType: 'success',
+        busy: ''
+      });
+    } catch (err) {
+      setSlotState(slot.id, {
+        progress: 100,
+        statusText: `应用失败：${err.message}`,
+        statusType: 'error',
+        busy: ''
+      });
+      setMessage(`${slot.title} 应用失败：${err.message}`);
+    }
   }
 
   async function deleteSlot(slot) {
-    await request(`/api/dimensions/${slot.id}`, { token, method: 'DELETE' });
-    await load();
+    setSlotState(slot.id, {
+      progress: 40,
+      statusText: '正在删除...',
+      statusType: 'active',
+      busy: 'delete'
+    });
+    try {
+      await request(`/api/dimensions/${slot.id}`, { token, method: 'DELETE' });
+      await load();
+      setSlotState(slot.id, {
+        file: null,
+        columns: [],
+        sheetNames: [],
+        sheetPreviews: [],
+        mapping: {},
+        sheetName: '',
+        progress: 100,
+        statusText: '已删除',
+        statusType: 'success',
+        busy: ''
+      });
+    } catch (err) {
+      setSlotState(slot.id, {
+        progress: 100,
+        statusText: `删除失败：${err.message}`,
+        statusType: 'error',
+        busy: ''
+      });
+      setMessage(`${slot.title} 删除失败：${err.message}`);
+    }
   }
 
   function diagnosticsText(slotId, diagnostics) {
@@ -1736,6 +1867,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
         {slots.map((slot, index) => {
           const record = records.find((item) => item.slot_id === slot.id);
           const state = local[slot.id] || {};
+          const busy = Boolean(state.busy);
           const hasSheets = (state.sheetNames?.length || record?.sheetNames?.length || 0) > 1;
           const sheetNames = state.sheetNames?.length ? state.sheetNames : (record?.sheetNames || []);
           const currentSheet = state.sheetName || record?.sheetName || '';
@@ -1746,14 +1878,25 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
                 <span className={`slot-state ${record?.applied ? 'applied' : record ? 'pending' : ''}`}>{record?.applied ? '已应用' : record ? '待应用' : '缺失'}</span>
               </div>
               <label className="drop-zone">
-                <input type="file" accept=".xlsx,.xls,.csv" onChange={(event) => event.target.files?.[0] && inspect(slot, event.target.files[0])} />
+                <input type="file" accept=".xlsx,.xls,.csv" disabled={busy} onChange={(event) => event.target.files?.[0] && inspect(slot, event.target.files[0])} />
                 <strong>{state.file?.name || record?.file_name || '上传维度表'}</strong>
-                <span>点击选择 Excel / CSV</span>
+                <span>{busy ? '处理中，请稍候' : '点击选择 Excel / CSV'}</span>
               </label>
+              {state.statusText && (
+                <div className={`slot-progress ${state.statusType || ''}`}>
+                  <div className="slot-progress-meta">
+                    <span>{state.statusText}</span>
+                    <strong>{Math.min(100, Math.max(0, Math.round(state.progress || 0)))}%</strong>
+                  </div>
+                  <div className="slot-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.min(100, Math.max(0, Math.round(state.progress || 0)))}>
+                    <span style={{ width: `${Math.min(100, Math.max(0, Math.round(state.progress || 0)))}%` }} />
+                  </div>
+                </div>
+              )}
               {hasSheets && (
                 <div className="sheet-selector">
                   <label>选择工作表
-                    <select value={currentSheet} onChange={(e) => selectSheet(slot, e.target.value)}>
+                    <select value={currentSheet} disabled={busy} onChange={(e) => selectSheet(slot, e.target.value)}>
                       <option value="">全部工作表</option>
                       {sheetNames.map((name) => <option key={name} value={name}>{name}</option>)}
                     </select>
@@ -1780,9 +1923,9 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
                 {record && <span>更新：{record.updated_at}</span>}
               </div>
               <div className="card-actions">
-                {state.file && <button type="button" className="compact-button" onClick={() => uploadSlot(slot)}>上传保存</button>}
-                {record && <button type="button" className="compact-button" onClick={() => applySlot(slot)}>应用刷新</button>}
-                {record && <button type="button" className="ghost compact-button" onClick={() => deleteSlot(slot)}>删除</button>}
+                {state.file && <button type="button" className="compact-button" disabled={busy} onClick={() => uploadSlot(slot)}>{state.busy === 'upload' ? '上传中...' : '上传保存'}</button>}
+                {record && <button type="button" className="compact-button" disabled={busy} onClick={() => applySlot(slot)}>{state.busy === 'apply' ? '应用中...' : '应用刷新'}</button>}
+                {record && <button type="button" className="ghost compact-button" disabled={busy} onClick={() => deleteSlot(slot)}>{state.busy === 'delete' ? '删除中...' : '删除'}</button>}
               </div>
             </article>
           );

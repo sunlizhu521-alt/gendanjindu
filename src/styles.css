@@ -1095,6 +1095,102 @@ th {
   font-size: 13px;
 }
 
+.slot-progress {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #eff6ff;
+}
+
+.slot-progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #1e40af;
+  font-size: 13px;
+}
+
+.slot-progress-meta span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slot-progress-meta strong {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+
+.slot-progress-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dbeafe;
+}
+
+.slot-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #2563eb;
+  transition: width .2s ease;
+}
+
+.slot-progress.success {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.slot-progress.success .slot-progress-meta {
+  color: #166534;
+}
+
+.slot-progress.success .slot-progress-track {
+  background: #dcfce7;
+}
+
+.slot-progress.success .slot-progress-track span {
+  background: #16a34a;
+}
+
+.slot-progress.warning {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.slot-progress.warning .slot-progress-meta {
+  color: #9a3412;
+}
+
+.slot-progress.warning .slot-progress-track {
+  background: #ffedd5;
+}
+
+.slot-progress.warning .slot-progress-track span {
+  background: #f97316;
+}
+
+.slot-progress.error {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.slot-progress.error .slot-progress-meta {
+  color: #b91c1c;
+}
+
+.slot-progress.error .slot-progress-track {
+  background: #fee2e2;
+}
+
+.slot-progress.error .slot-progress-track span {
+  background: #dc2626;
+}
+
 .sheet-preview {
   display: grid;
   gap: 6px;

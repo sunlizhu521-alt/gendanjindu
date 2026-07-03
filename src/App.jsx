@@ -280,7 +280,7 @@ function DataTable({ columns, rows, render, renderRow, className = '' }) {
     <div className={`table-wrap ${className}`}>
       <table>
         <thead>
-          <tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr>
+          <tr>{columns.map((column, index) => <th key={typeof column === 'string' ? column : `column-${index}`}>{column}</th>)}</tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
@@ -1216,14 +1216,24 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
   const displayRows = onlyIssues
     ? visibleFiltered.filter((row) => numberValue(row.gap) !== 0 || !row.progressUpdatedAt)
     : visibleFiltered;
+  const editableKeys = displayRows.filter((row) => row.canEdit).map((row) => row.demandKey);
   const selectedEditableCount = selectedKeys.filter((key) => displayRows.some((row) => row.demandKey === key && row.canEdit)).length;
+  const allVisibleEditableSelected = editableKeys.length > 0 && editableKeys.every((key) => selectedKeys.includes(key));
 
   function toggleProgressRow(demandKey, checked) {
     setSelectedKeys(checked ? [...new Set([...selectedKeys, demandKey])] : selectedKeys.filter((key) => key !== demandKey));
   }
 
   function selectVisibleEditableRows() {
-    setSelectedKeys(displayRows.filter((row) => row.canEdit).map((row) => row.demandKey));
+    setSelectedKeys(editableKeys);
+  }
+
+  function toggleAllVisibleEditableRows(checked) {
+    if (checked) {
+      setSelectedKeys([...new Set([...selectedKeys, ...editableKeys])]);
+      return;
+    }
+    setSelectedKeys(selectedKeys.filter((key) => !editableKeys.includes(key)));
   }
 
   async function batchSubmitProgress() {
@@ -1288,7 +1298,17 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
       <DataTable
         className="progress-table"
         rows={displayRows}
-        columns={['采购组', '采购下单人', '月份', '采购组织', '供应商', '事业部', '产品线', '系列', '物料编码', 'SKU', '物料', '未交付数量', '在产品', '完工产品', '已发货数量', 'OA备货流程号', '选择', '操作']}
+        columns={['采购组', '采购下单人', '月份', '采购组织', '供应商', '事业部', '产品线', '系列', '物料编码', 'SKU', '物料', '未交付数量', '在产品', '完工产品', '已发货数量', 'OA备货流程号', (
+          <label className="select-all-header" title="勾选当前显示的可编辑行">
+            <input
+              type="checkbox"
+              checked={allVisibleEditableSelected}
+              disabled={!editableKeys.length}
+              onChange={(event) => toggleAllVisibleEditableRows(event.target.checked)}
+            />
+            <span>全选</span>
+          </label>
+        ), '操作']}
         renderRow={(row) => (
           <ProgressEditor
             key={row.demandKey}

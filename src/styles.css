@@ -892,6 +892,21 @@ th {
   padding: 0;
 }
 
+.select-all-header {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.select-all-header input[type="checkbox"] {
+  width: 15px;
+  min-width: 0;
+  height: 15px;
+  padding: 0;
+}
+
 .ledger-table input,
 .ledger-table select,
 .ledger-table textarea,

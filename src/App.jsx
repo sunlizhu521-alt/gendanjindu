@@ -248,19 +248,24 @@ function ProgressStackedChart({ title, rows, groupBy }) {
           <p className="empty-chart">暂无数据</p>
         ) : chartRows.map((row) => {
           const remainingQty = numberValue(row.remainingQty);
-          const workTotal = Math.max(numberValue(row.inProductionQty) + numberValue(row.finishedQty), 1);
-          const barPct = Math.max(Math.min(remainingQty / maxRemainingQty * 100, 100), 8);
-          const inProductionPct = Math.max(Math.min(numberValue(row.inProductionQty) / workTotal * 100, 100), 0);
-          const finishedPct = Math.max(Math.min(numberValue(row.finishedQty) / workTotal * 100, 100), 0);
+          const chartMax = Math.max(maxRemainingQty, 1);
+          const rowTotal = Math.max(remainingQty, 1);
+          const columnPct = Math.max(Math.min(remainingQty / chartMax * 100, 100), 8);
+          const inProductionPct = Math.max(Math.min(numberValue(row.inProductionQty) / rowTotal * 100, 100), 0);
+          const finishedPct = Math.max(Math.min(numberValue(row.finishedQty) / rowTotal * 100, 100 - inProductionPct), 0);
           return (
             <div key={row.name} className="stack-row">
-              <span title={row.name}>{row.name}</span>
               <div className="stack-track" title={`未交付 ${row.remainingQty}，在产品 ${row.inProductionQty}，完工产品 ${row.finishedQty}`}>
-                <div className="stack-fill" style={{ width: `${barPct}%` }}>
-                  <i className="in-production" style={{ width: `${inProductionPct}%` }} />
-                  <i className="finished" style={{ width: `${finishedPct}%` }} />
+                <div className="stack-total" style={{ height: `${columnPct}%` }}>
+                  <div className="stack-fill in-production" style={{ height: `${inProductionPct}%` }}>
+                    {numberValue(row.inProductionQty) > 0 && <b>{numberValue(row.inProductionQty).toLocaleString()}</b>}
+                  </div>
+                  <div className="stack-fill finished" style={{ height: `${finishedPct}%` }}>
+                    {numberValue(row.finishedQty) > 0 && <b>{numberValue(row.finishedQty).toLocaleString()}</b>}
+                  </div>
                 </div>
               </div>
+              <span title={row.name}>{row.name}</span>
               <strong>{numberValue(row.remainingQty).toLocaleString()}</strong>
             </div>
           );

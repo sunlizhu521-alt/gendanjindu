@@ -779,61 +779,81 @@ th {
 }
 
 .stack-list {
-  display: grid;
-  gap: 7px;
-  max-height: 160px;
-  overflow: auto;
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  min-height: 190px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 2px 0;
 }
 
 .stack-row {
   display: grid;
-  grid-template-columns: minmax(76px, 120px) minmax(100px, 1fr) 52px;
-  align-items: center;
-  gap: 8px;
+  grid-template-rows: 150px 28px 18px;
+  justify-items: center;
+  align-items: end;
+  gap: 5px;
+  min-width: 56px;
   font-size: 12px;
 }
 
 .stack-row span {
+  max-width: 66px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: center;
 }
 
 .stack-row strong {
-  text-align: right;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
 }
 
 .stack-track {
-  height: 14px;
+  position: relative;
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  width: 52px;
+  height: 150px;
   border: 1px solid #dbe3ef;
-  border-radius: 4px;
+  border-radius: 2px;
   background: #f8fafc;
   overflow: hidden;
 }
 
+.stack-total {
+  position: absolute;
+  bottom: 0;
+  display: flex;
+  flex-direction: column-reverse;
+  width: 100%;
+  min-height: 6px;
+  overflow: hidden;
+  background: #dbead2;
+}
+
 .stack-fill {
   display: flex;
-  height: 100%;
-  min-width: 8px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 0;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
   overflow: hidden;
-  border-radius: 3px;
 }
 
-.stack-fill i {
+.stack-fill b {
   display: block;
-  min-width: 0;
-  height: 100%;
-}
-
-.stack-fill i:only-child,
-.stack-fill i:first-child {
-  border-top-left-radius: 3px;
-  border-bottom-left-radius: 3px;
-}
-
-.stack-fill i:last-child {
-  border-top-right-radius: 3px;
-  border-bottom-right-radius: 3px;
+  transform: rotate(0deg);
 }
 
 .progress-stack-chart .in-production {

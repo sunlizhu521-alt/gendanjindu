@@ -1215,11 +1215,12 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, selected = fals
   );
 }
 
-function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产跟进', onlyIssues = false }) {
+function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '生产跟进', onlyIssues = false }) {
   const { filters, setFilters, options, filtered } = useFilteredDemands(rows.filter((row) => row.active), onlyIssues ? 'progressIssues' : 'progressRefresh');
   const [selectedKeys, setSelectedKeys] = useState([]);
   const [drafts, setDrafts] = useState({});
   const [batchSaving, setBatchSaving] = useState(false);
+  const [redistributing, setRedistributing] = useState(false);
   const visibleFiltered = useMemo(() => filtered.filter((row) => numberValue(row.remainingInboundQty) > 0), [filtered]);
   const displayRows = onlyIssues
     ? visibleFiltered.filter((row) => numberValue(row.gap) !== 0 || !row.progressUpdatedAt)
@@ -1270,6 +1271,39 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
     }
   }
 
+  async function redistributeSelectedProgress() {
+    const selectedRows = displayRows.filter((row) => selectedKeys.includes(row.demandKey) && row.canEdit);
+    if (!selectedRows.length) {
+      setMessage('请先勾选要重新分配的生产跟进行。');
+      return;
+    }
+    if (!window.confirm(`确认重新分配 ${selectedRows.length} 条？未交付数量将重新放到在产品，完工产品会清零。`)) return;
+    setRedistributing(true);
+    try {
+      for (const row of selectedRows) {
+        const payload = {
+          inProductionQty: numberValue(row.remainingInboundQty),
+          finishedQty: 0,
+          shippedQty: numberValue(row.shippedQty),
+          remark: row.remark || ''
+        };
+        await request(`/api/progress/${encodeURIComponent(row.demandKey)}`, {
+          token,
+          method: 'PATCH',
+          body: JSON.stringify(payload)
+        });
+      }
+      setSelectedKeys([]);
+      setDrafts({});
+      setMessage(`已重新分配 ${selectedRows.length} 条生产跟进。`);
+      await reloadDemands();
+    } catch (err) {
+      setMessage('重新分配失败：' + err.message);
+    } finally {
+      setRedistributing(false);
+    }
+  }
+
   async function handleExport() {
     const res = await fetch(`${API}/api/progress/export`, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) {
@@ -1294,6 +1328,9 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
           {!onlyIssues && <button type="button" className="compact-button" onClick={handleExport}>导出 Excel</button>}
           <button type="button" className="compact-button" disabled={!displayRows.some((row) => row.canEdit)} onClick={selectVisibleEditableRows}>勾选当前可编辑</button>
           <button type="button" className="compact-button" disabled={!selectedEditableCount || batchSaving} onClick={batchSubmitProgress}>{batchSaving ? '提交中...' : `批量提交${selectedEditableCount ? ` ${selectedEditableCount}` : ''}`}</button>
+          {user?.name === '孙立柱' && (
+            <button type="button" className="compact-button" disabled={!selectedEditableCount || redistributing} onClick={redistributeSelectedProgress}>{redistributing ? '分配中...' : '重新分配'}</button>
+          )}
           <button type="button" className="ghost compact-button" disabled={!selectedKeys.length} onClick={() => setSelectedKeys([])}>取消勾选</button>
         </div>
         <section className="progress-chart-grid">
@@ -2010,7 +2047,7 @@ function App() {
         {activeTab === 'operationBoard' && <Dashboard rows={demands} title="运营看板" filterKey="operationBoard" />}
         {activeTab === 'purchaseBoard' && <PurchaseBoard rows={demands} />}
         {activeTab === 'kingdeeImport' && <KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} />}
-        {activeTab === 'progressRefresh' && <ProgressPage rows={demands} token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
+        {activeTab === 'progressRefresh' && <ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} />}
         {activeTab === 'differenceAllocation' && <DifferenceAllocationPage token={token} user={user} setMessage={setMessage} />}
         {activeTab === 'wangdianData' && <DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="旺店通数据" slots={WANGDIAN_SLOTS} />}
         {activeTab === 'dimensionLibrary' && <DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}

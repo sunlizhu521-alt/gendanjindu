@@ -1004,6 +1004,14 @@ th {
   white-space: nowrap;
 }
 
+.diff-allocation-table th:nth-child(1),
+.diff-allocation-table td:nth-child(1) {
+  width: 46px;
+  max-width: 52px;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
 .diff-allocation-table th:nth-child(2),
 .diff-allocation-table td:nth-child(2) {
   width: 86px;

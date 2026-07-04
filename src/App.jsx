@@ -1522,6 +1522,14 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
     setSelectedRowIds(ids);
   }
 
+  function toggleAllFilteredPending(checked) {
+    if (!checked) {
+      setSelectedRowIds([]);
+      return;
+    }
+    selectFilteredPending();
+  }
+
   async function submitSelectedNormal() {
     if (!selectedRowIds.length) {
       setMessage('请先勾选要批量提交的差异行。');
@@ -1535,7 +1543,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
       });
       setCompare({ ...compare, allocations: payload.rows || [], status: payload.status });
       setSelectedRowIds([]);
-      setMessage(`已批量提交正常订单 ${payload.updated || 0} 条。`);
+      setMessage(`已批量提交 ${payload.updated || 0} 条。`);
     } catch (err) {
       setMessage('批量提交失败：' + err.message);
     }
@@ -1588,6 +1596,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
   const pendingCount = filteredDiffRows.length;
   const totalPendingCount = pendingRows.length;
   const selectedPendingCount = selectedRowIds.filter((id) => !allocatedRowIds.has(id)).length;
+  const allFilteredPendingSelected = pendingCount > 0 && filteredDiffRows.every((row) => selectedRowIds.includes(row.id));
   const clearFilters = () => setFilters({ month: '', supplier: '', businessUnit: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
 
   return (
@@ -1622,15 +1631,24 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
           <span className="section-count">{compare.fileName ? `来源：${compare.fileName}，原采购订单应用时间：${compare.oldAppliedAt || '暂无'}，新采购订单应用时间：${compare.newAppliedAt || '暂无'}` : '请先在采购订单页上传新采购订单'}</span>
         </div>
         <div className="card-actions">
-          <button type="button" className="compact-button" disabled={!pendingCount} onClick={selectFilteredPending}>勾选当前待分配</button>
-          <button type="button" className="compact-button" disabled={!selectedPendingCount || !compare.sessionId} onClick={submitSelectedNormal}>批量提交正常订单</button>
-          <button type="button" className="ghost compact-button" disabled={!selectedRowIds.length} onClick={() => setSelectedRowIds([])}>取消勾选</button>
+          <button type="button" className="compact-button" disabled={!selectedPendingCount || !compare.sessionId} onClick={submitSelectedNormal}>批量提交</button>
           <span className="section-count">已勾选 {selectedPendingCount} 条</span>
         </div>
         <DataTable
           className="diff-allocation-table"
           rows={filteredDiffRows}
-          columns={['选择', '采购下单人', '原采购订单号', '原采购订单创建时间', '新采购订单号', '新采购订单创建时间', '原采购数量', '新采购数量', '差异', '订单类型', '原因', '操作', '备注', '提交人', '提交时间', '提交']}
+          columns={[
+            <label className="select-all-header" key="select-all">
+              <input
+                type="checkbox"
+                checked={allFilteredPendingSelected}
+                disabled={!pendingCount}
+                onChange={(event) => toggleAllFilteredPending(event.target.checked)}
+              />
+              <span>选择</span>
+            </label>,
+            '采购下单人', '原采购订单号', '原采购订单创建时间', '新采购订单号', '新采购订单创建时间', '原采购数量', '新采购数量', '差异', '订单类型', '原因', '操作', '备注', '提交人', '提交时间', '提交'
+          ]}
           renderRow={(row) => {
             const input = rowInputs[row.id] || {};
             const allocated = allocatedRowIds.has(row.id);

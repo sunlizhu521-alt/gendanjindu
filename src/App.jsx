@@ -134,12 +134,15 @@ function actionsForDelta(deltaQty) {
   return ['其他'];
 }
 
-const DIFF_ORDER_COMPLETE_REASON = '订单完结';
+const DIFF_NORMAL_ORDER = '正常订单';
+const DIFF_ORDER_TYPES = [DIFF_NORMAL_ORDER, '订单已完结'];
+const DIFF_ORDER_COMPLETE_REASON = '订单已完结';
 const DIFF_ORDER_COMPLETE_ACTION = '订单已完结';
 
 function actionsForDiffReason(deltaQty, reason) {
   const actions = actionsForDelta(deltaQty);
-  if (normalize(reason) === DIFF_ORDER_COMPLETE_REASON) return [...new Set([...actions, DIFF_ORDER_COMPLETE_ACTION])];
+  if (normalize(reason) === DIFF_NORMAL_ORDER) return [DIFF_NORMAL_ORDER];
+  if (normalize(reason) === DIFF_ORDER_COMPLETE_REASON) return [DIFF_ORDER_COMPLETE_ACTION];
   return actions;
 }
 
@@ -1457,10 +1460,18 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
   function setRowValue(rowId, key, value) {
     const current = rowInputs[rowId] || {};
     const next = { ...current, [key]: value };
-    if (key === 'reason') {
-      if (value === DIFF_ORDER_COMPLETE_REASON) {
+    if (key === 'orderType') {
+      next.reason = value;
+      next.actionType = value;
+    } else if (key === 'reason') {
+      if (value === DIFF_NORMAL_ORDER) {
+        next.orderType = DIFF_NORMAL_ORDER;
+        next.actionType = DIFF_NORMAL_ORDER;
+      } else if (value === DIFF_ORDER_COMPLETE_REASON) {
+        next.orderType = DIFF_ORDER_COMPLETE_REASON;
         next.actionType = DIFF_ORDER_COMPLETE_ACTION;
-      } else if (current.actionType === DIFF_ORDER_COMPLETE_ACTION) {
+      } else if (current.actionType === DIFF_ORDER_COMPLETE_ACTION || current.actionType === DIFF_NORMAL_ORDER) {
+        next.orderType = '';
         next.actionType = '';
       }
     }
@@ -1469,14 +1480,18 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
 
   async function submitRow(row) {
     const input = rowInputs[row.id] || {};
+    if (!input.orderType) {
+      setMessage('请选择订单类型。');
+      return;
+    }
     try {
       const payload = await request(`/api/difference-allocations/${encodeURIComponent(compare.sessionId)}/rows/${encodeURIComponent(row.id)}`, {
         token,
         method: 'POST',
         body: JSON.stringify({
-          actionType: input.actionType || (input.reason === DIFF_ORDER_COMPLETE_REASON ? DIFF_ORDER_COMPLETE_ACTION : ''),
+          actionType: input.actionType || input.orderType || '',
           allocatedQty: row.diffQty,
-          reason: input.reason || '',
+          reason: input.reason || input.orderType || '',
           remark: input.remark || ''
         })
       });
@@ -1605,14 +1620,12 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
         <DataTable
           className="diff-allocation-table"
           rows={filteredDiffRows}
-          columns={['选择', '主键', 'OA备货流程号', '采购下单人', '物料编码', '物料名称', '原采购订单号', '原采购订单创建时间', '新采购订单号', '新采购订单创建时间', '原采购数量', '新采购数量', '入库数量', '在产品', '完工产品', '差异', '原因', '操作', '备注', '提交人', '提交时间', '提交']}
+          columns={['选择', '采购下单人', '原采购订单号', '原采购订单创建时间', '新采购订单号', '新采购订单创建时间', '原采购数量', '新采购数量', '差异', '订单类型', '原因', '操作', '备注', '提交人', '提交时间', '提交']}
           renderRow={(row) => {
             const input = rowInputs[row.id] || {};
             const allocated = allocatedRowIds.has(row.id);
             const allocation = allocations.find((item) => item.rowId === row.id);
-            const availableActions = input.reason === DIFF_ORDER_COMPLETE_REASON
-              ? actionsForDiffReason(row.deltaQty, input.reason)
-              : (row.availableActions || actionsForDelta(row.deltaQty));
+            const selectedOrderType = input.orderType || (input.reason === DIFF_NORMAL_ORDER || input.reason === DIFF_ORDER_COMPLETE_REASON ? input.reason : '');
             return (
               <tr key={row.id}>
                 <td>
@@ -1623,35 +1636,40 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
                     onChange={(event) => toggleSelected(row.id, event.target.checked)}
                   />
                 </td>
-                <td>{row.displayKey}</td>
-                <td>{row.oaFlowNo}</td>
                 <td>{row.purchaseOwner}</td>
-                <td>{row.materialCode}</td>
-                <td>{row.materialName || row.materialCode}</td>
                 <td>{row.oldOrderNos}</td>
                 <td>{row.oldOrderDates}</td>
                 <td>{row.newOrderNos}</td>
                 <td>{row.newOrderDates}</td>
                 <td>{row.oldQty}</td>
                 <td>{row.newQty}</td>
-                <td>{row.inboundQty}</td>
-                <td>{row.inProductionQty}</td>
-                <td>{row.finishedQty}</td>
                 <td>{signedNumber(row.deltaQty)}</td>
                 <td>
                   {allocated ? allocation?.reason : (
-                    <select value={input.reason || ''} onChange={(event) => setRowValue(row.id, 'reason', event.target.value)}>
-                      <option value="">选择原因</option>
-                      {(compare.reasons || []).map((reason) => <option key={reason} value={reason}>{reason}</option>)}
-                    </select>
+                    <div className="order-type-options">
+                      {DIFF_ORDER_TYPES.map((type) => (
+                        <label key={type}>
+                          <input
+                            type="radio"
+                            name={`orderType-${row.id}`}
+                            value={type}
+                            checked={selectedOrderType === type}
+                            onChange={(event) => setRowValue(row.id, 'orderType', event.target.value)}
+                          />
+                          <span>{type}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </td>
+                <td>
+                  {allocated ? allocation?.reason : (
+                    <span>{input.reason || '-'}</span>
                   )}
                 </td>
                 <td>
                   {allocated ? allocation?.actionType : (
-                    <select value={input.actionType || ''} onChange={(event) => setRowValue(row.id, 'actionType', event.target.value)}>
-                      <option value="">选择操作</option>
-                      {availableActions.map((action) => <option key={action} value={action}>{action}</option>)}
-                    </select>
+                    <span>{input.actionType || '-'}</span>
                   )}
                 </td>
                 <td>

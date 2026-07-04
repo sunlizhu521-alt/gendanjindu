@@ -1347,3 +1347,5 @@ th {
 .error-text { color: #dc2626; font-weight: 600; }
 .skipped-details { margin-top: 8px; }
 .skipped-details summary { cursor: pointer; color: #6b7280; font-size: 13px; }
+.order-type-options { display: flex; gap: 10px; white-space: nowrap; }
+.order-type-options label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }

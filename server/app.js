@@ -47,10 +47,12 @@ const DIMENSION_SLOTS = {
   spare1: '仓库名称',
   spare2: '备用 2'
 };
-const DIFF_ORDER_COMPLETE_REASON = '订单完结';
+const DIFF_NORMAL_ORDER = '正常订单';
+const DIFF_ORDER_COMPLETE_REASON = '订单已完结';
+const DIFF_LEGACY_ORDER_COMPLETE_REASON = '订单完结';
 const DIFF_ORDER_COMPLETE_ACTION = '订单已完结';
-const DIFF_ALLOCATION_ACTIONS = ['减少', '取消', '增加', '其他', DIFF_ORDER_COMPLETE_ACTION];
-const DIFF_ALLOCATION_REASONS = ['正常订单', '业务调整', '型号迭代', '涨价', '降价', DIFF_ORDER_COMPLETE_REASON, '其他'];
+const DIFF_ALLOCATION_ACTIONS = [DIFF_NORMAL_ORDER, '减少', '取消', '增加', '其他', DIFF_ORDER_COMPLETE_ACTION];
+const DIFF_ALLOCATION_REASONS = [DIFF_NORMAL_ORDER, '业务调整', '型号迭代', '涨价', '降价', DIFF_ORDER_COMPLETE_REASON, '其他'];
 const UNASSIGNED_PURCHASE_OWNER = '未分配采购下单人';
 
 const app = express();
@@ -102,7 +104,9 @@ function actionsForDelta(deltaQty) {
 
 function allocationActionsForReason(deltaQty, reason) {
   const actions = actionsForDelta(deltaQty);
-  if (normalize(reason) === DIFF_ORDER_COMPLETE_REASON) return [...new Set([...actions, DIFF_ORDER_COMPLETE_ACTION])];
+  const normalizedReason = normalize(reason);
+  if (normalizedReason === DIFF_NORMAL_ORDER) return [DIFF_NORMAL_ORDER];
+  if (normalizedReason === DIFF_ORDER_COMPLETE_REASON || normalizedReason === DIFF_LEGACY_ORDER_COMPLETE_REASON) return [DIFF_ORDER_COMPLETE_ACTION];
   return actions;
 }
 
@@ -1493,7 +1497,8 @@ function saveDifferenceAllocation({ sessionId, row, user, actionType, reason, re
     throw error;
   }
   const finalActionType = normalize(actionType);
-  const finalReason = normalize(reason);
+  const rawReason = normalize(reason);
+  const finalReason = rawReason === DIFF_LEGACY_ORDER_COMPLETE_REASON ? DIFF_ORDER_COMPLETE_REASON : rawReason;
   const finalRemark = normalize(remark);
   const requiredQty = Math.abs(numberValue(row.delta_qty));
   const availableActions = allocationActionsForReason(row.delta_qty, finalReason);
@@ -1553,8 +1558,8 @@ app.post('/api/difference-allocations/:sessionId/bulk-normal', requireAuth, requ
           sessionId: req.params.sessionId,
           row,
           user: req.user,
-          actionType: actionsForDelta(row.delta_qty)[0],
-          reason: '正常订单',
+          actionType: DIFF_NORMAL_ORDER,
+          reason: DIFF_NORMAL_ORDER,
           remark: normalize(req.body.remark)
         });
       });

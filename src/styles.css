@@ -916,7 +916,7 @@ th {
   display: grid;
   grid-template-columns: 92px minmax(260px, 1fr) max-content;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   font-size: 12px;
   min-width: 0;
 }
@@ -936,6 +936,8 @@ th {
 }
 
 .stack-track {
+  display: flex;
+  justify-content: flex-end;
   width: 100%;
   min-width: 0;
   height: 18px;

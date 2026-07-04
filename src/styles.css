@@ -893,8 +893,23 @@ th {
   gap: 6px;
   max-height: 360px;
   overflow-x: hidden;
-  overflow-y: auto;
-  padding-right: 2px;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+  padding-right: 4px;
+}
+
+.stack-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.stack-list::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: #edf2f7;
+}
+
+.stack-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #b8c4d6;
 }
 
 .stack-row {

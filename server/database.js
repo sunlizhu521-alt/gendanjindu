@@ -209,6 +209,8 @@ function migrate() {
       diff_type TEXT NOT NULL,
       old_order_nos TEXT NOT NULL DEFAULT '',
       new_order_nos TEXT NOT NULL DEFAULT '',
+      old_order_dates TEXT NOT NULL DEFAULT '',
+      new_order_dates TEXT NOT NULL DEFAULT '',
       inbound_qty REAL NOT NULL DEFAULT 0,
       progress_total REAL NOT NULL DEFAULT 0,
       stock_qty REAL NOT NULL DEFAULT 0,
@@ -365,6 +367,12 @@ function migrate() {
   }
   if (!compareRowColumns.includes('new_order_nos')) {
     run("ALTER TABLE difference_compare_rows ADD COLUMN new_order_nos TEXT NOT NULL DEFAULT ''");
+  }
+  if (!compareRowColumns.includes('old_order_dates')) {
+    run("ALTER TABLE difference_compare_rows ADD COLUMN old_order_dates TEXT NOT NULL DEFAULT ''");
+  }
+  if (!compareRowColumns.includes('new_order_dates')) {
+    run("ALTER TABLE difference_compare_rows ADD COLUMN new_order_dates TEXT NOT NULL DEFAULT ''");
   }
   if (!compareRowColumns.includes('inbound_qty')) {
     run("ALTER TABLE difference_compare_rows ADD COLUMN inbound_qty REAL NOT NULL DEFAULT 0");

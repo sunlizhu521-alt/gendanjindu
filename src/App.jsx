@@ -675,6 +675,10 @@ function PurchaseBoard({ rows }) {
       row.productLine,
       row.productSeries,
       row.materialCode,
+      row.oldOrderNos,
+      row.oldOrderDates,
+      row.newOrderNos,
+      row.newOrderDates,
       row.oaFlowNo,
       row.sku,
       row.materialName,
@@ -1545,27 +1549,29 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
 
   return (
     <>
-      <div className="section-heading-row">
-        <h2>差异分配</h2>
-        <span className="section-count">
-          {loading ? '加载中...' : `当前显示 ${filteredDiffRows.length} / ${totalPendingCount} 条，待分配 ${pendingCount} / ${totalPendingCount} 条`}
-        </span>
-      </div>
-      <div className="toolbar filters-row">
-        <MonthCalendarFilter label="下单月份" value={filters.month} options={options.months} multiple={false} onChange={(value) => setFilters({ ...filters, month: value })} />
-        <SelectField label="供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
-        <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
-        <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
-        <SelectField label="系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
-        <SelectField label="SKU" value={filters.sku} options={options.skus} onChange={(value) => setFilters({ ...filters, sku: value })} />
-        <SelectField label="采购下单人" value={filters.purchaseOwner} options={options.purchaseOwners} onChange={(value) => setFilters({ ...filters, purchaseOwner: value })} />
-        <input
-          className="search-input"
-          placeholder="搜索供应商、物料编码、OA备货流程号、SKU、物料名称、采购下单人"
-          value={filters.keyword}
-          onChange={(event) => setFilters({ ...filters, keyword: event.target.value })}
-        />
-        <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
+      <div className="diff-sticky-top">
+        <div className="section-heading-row">
+          <h2>差异分配</h2>
+          <span className="section-count">
+            {loading ? '加载中...' : `当前显示 ${filteredDiffRows.length} / ${totalPendingCount} 条，待分配 ${pendingCount} / ${totalPendingCount} 条`}
+          </span>
+        </div>
+        <div className="toolbar filters-row">
+          <MonthCalendarFilter label="下单月份" value={filters.month} options={options.months} multiple={false} onChange={(value) => setFilters({ ...filters, month: value })} />
+          <SelectField label="供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
+          <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
+          <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
+          <SelectField label="系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
+          <SelectField label="SKU" value={filters.sku} options={options.skus} onChange={(value) => setFilters({ ...filters, sku: value })} />
+          <SelectField label="采购下单人" value={filters.purchaseOwner} options={options.purchaseOwners} onChange={(value) => setFilters({ ...filters, purchaseOwner: value })} />
+          <input
+            className="search-input"
+            placeholder="搜索供应商、物料编码、采购订单号、OA备货流程号、SKU、物料名称、采购下单人"
+            value={filters.keyword}
+            onChange={(event) => setFilters({ ...filters, keyword: event.target.value })}
+          />
+          <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
+        </div>
       </div>
       <section className="panel">
         <div className="section-heading-row">
@@ -1581,7 +1587,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
         <DataTable
           className="diff-allocation-table"
           rows={filteredDiffRows}
-          columns={['选择', '主键', 'OA备货流程号', '采购下单人', '物料编码', '物料名称', '原采购数量', '新采购数量', '入库数量', '在产品', '完工产品', '差异', '原因', '操作', '备注', '提交人', '提交时间', '提交']}
+          columns={['选择', '主键', 'OA备货流程号', '采购下单人', '物料编码', '物料名称', '原采购订单号', '原采购订单创建时间', '新采购订单号', '新采购订单创建时间', '原采购数量', '新采购数量', '入库数量', '在产品', '完工产品', '差异', '原因', '操作', '备注', '提交人', '提交时间', '提交']}
           renderRow={(row) => {
             const input = rowInputs[row.id] || {};
             const allocated = allocatedRowIds.has(row.id);
@@ -1602,6 +1608,10 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
                 <td>{row.purchaseOwner}</td>
                 <td>{row.materialCode}</td>
                 <td>{row.materialName || row.materialCode}</td>
+                <td>{row.oldOrderNos}</td>
+                <td>{row.oldOrderDates}</td>
+                <td>{row.newOrderNos}</td>
+                <td>{row.newOrderDates}</td>
                 <td>{row.oldQty}</td>
                 <td>{row.newQty}</td>
                 <td>{row.inboundQty}</td>
@@ -1645,8 +1655,8 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
         <DataTable
           className="compact-table"
           rows={filteredAllocations}
-          columns={['主键', 'OA备货流程号', '采购下单人', '物料编码', '原采购数量', '新采购数量', '入库数量', '差异', '原因', '操作', '备注', '提交人', '提交时间']}
-          render={(row) => [row.displayKey || row.demandKey, row.oaFlowNo || '', row.purchaseOwner || '', row.materialCode || '', row.oldQty, row.newQty, row.inboundQty || '', signedNumber(row.deltaQty), row.reason, row.actionType, row.remark, row.createdBy, row.createdAt]}
+          columns={['主键', 'OA备货流程号', '采购下单人', '物料编码', '原采购订单号', '原采购订单创建时间', '新采购订单号', '新采购订单创建时间', '原采购数量', '新采购数量', '入库数量', '差异', '原因', '操作', '备注', '提交人', '提交时间']}
+          render={(row) => [row.displayKey || row.demandKey, row.oaFlowNo || '', row.purchaseOwner || '', row.materialCode || '', row.oldOrderNos || '', row.oldOrderDates || '', row.newOrderNos || '', row.newOrderDates || '', row.oldQty, row.newQty, row.inboundQty || '', signedNumber(row.deltaQty), row.reason, row.actionType, row.remark, row.createdBy, row.createdAt]}
         />
       </section>
     </>

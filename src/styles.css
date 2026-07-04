@@ -830,6 +830,20 @@ th {
   margin-bottom: 12px;
 }
 
+.diff-sticky-top {
+  position: sticky;
+  top: 0;
+  z-index: 9;
+  margin: -28px -28px 16px;
+  padding: 28px 28px 1px;
+  border-bottom: 1px solid #dde5f0;
+  background: #f5f7fb;
+}
+
+.diff-sticky-top .toolbar {
+  margin-bottom: 12px;
+}
+
 .progress-chart-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(260px, 1fr));
@@ -972,7 +986,12 @@ th {
 }
 
 .diff-allocation-table table {
-  min-width: 3400px;
+  min-width: 4300px;
+}
+
+.diff-allocation-table th {
+  top: 0;
+  z-index: 4;
 }
 
 .progress-table input[type="checkbox"],

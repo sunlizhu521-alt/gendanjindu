@@ -386,6 +386,7 @@ function mappedKingdeeRows(rows, mapping) {
     }
     valid.push({
       month,
+      createDate,
       businessUnit,
       supplier,
       materialCode,
@@ -789,10 +790,28 @@ function uniqueOrderNos(rows) {
   return uniqueDelimitedValues(rows.map((row) => row.orderNo || row.order_no));
 }
 
+function rawOrderDate(row) {
+  const raw = parseJson(row.raw_json, row.raw || {});
+  return normalize(row.createDate || row.create_date)
+    || pickAny(raw, ['采购日期', '创建日期', '下单日期', '订单日期', '日期', 'createDate', 'purchaseDate', 'orderDate', 'date']);
+}
+
+function uniqueOrderDates(rows) {
+  return uniqueDelimitedValues([...rows].sort(compareOaRows).map(rawOrderDate));
+}
+
 function oldOrderNosForDemand(demandKeyValue) {
   const demand = get('SELECT source_batch_id FROM order_demands WHERE demand_key = ?', [demandKeyValue]);
   if (!demand?.source_batch_id) return '';
   return uniqueOrderNos(all('SELECT order_no FROM kingdee_orders WHERE batch_id = ? AND demand_key = ?', [demand.source_batch_id, demandKeyValue]));
+}
+
+function oldOrderDatesForDemand(demandKeyValue) {
+  const demand = get('SELECT source_batch_id FROM order_demands WHERE demand_key = ?', [demandKeyValue]);
+  if (!demand?.source_batch_id) return '';
+  const rows = all('SELECT order_no, raw_json FROM kingdee_orders WHERE batch_id = ? AND demand_key = ?', [demand.source_batch_id, demandKeyValue])
+    .map(orderRowDateSort);
+  return uniqueOrderDates(rows);
 }
 
 function rawOaFlowNo(row) {
@@ -921,6 +940,8 @@ function compareRowsFromSummary(summary, sourceRows, user) {
       diffType: !current ? '新增' : !next ? '消失' : deltaQty > 0 ? '数量增加' : '数量减少',
       oldOrderNos: oldOrderNosForDemand(key),
       newOrderNos: uniqueOrderNos(sourceRowsByDemand.get(key) || []),
+      oldOrderDates: oldOrderDatesForDemand(key),
+      newOrderDates: uniqueOrderDates(sourceRowsByDemand.get(key) || []),
       inboundQty: numberValue(next?.inboundQty),
       stockQty: numberValue(stock?.stock_qty),
       inProductionQty: numberValue(projectedProgress.inProduction),
@@ -946,9 +967,9 @@ function persistDifferenceCompare({ file, sheetName, mapping, parsed, result, su
     rows.forEach((row) => {
       const rowId = randomUUID();
       run(
-        `INSERT INTO difference_compare_rows (id, session_id, demand_key, month, business_unit, supplier, supplier_short_name, material_code, purchase_org, order_creator, old_qty, new_qty, delta_qty, diff_type, old_order_nos, new_order_nos, inbound_qty, progress_total, stock_qty, new_snapshot_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [rowId, sessionId, row.demandKey, row.month, row.businessUnit, row.supplier, row.supplierShortName, row.materialCode, row.purchaseOrg, row.orderCreator || '', row.oldQty, row.newQty, row.deltaQty, row.diffType, row.oldOrderNos, row.newOrderNos, row.inboundQty, row.progressTotal, row.stockQty, JSON.stringify(row.newSnapshot), now]
+        `INSERT INTO difference_compare_rows (id, session_id, demand_key, month, business_unit, supplier, supplier_short_name, material_code, purchase_org, order_creator, old_qty, new_qty, delta_qty, diff_type, old_order_nos, new_order_nos, old_order_dates, new_order_dates, inbound_qty, progress_total, stock_qty, new_snapshot_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [rowId, sessionId, row.demandKey, row.month, row.businessUnit, row.supplier, row.supplierShortName, row.materialCode, row.purchaseOrg, row.orderCreator || '', row.oldQty, row.newQty, row.deltaQty, row.diffType, row.oldOrderNos, row.newOrderNos, row.oldOrderDates, row.newOrderDates, row.inboundQty, row.progressTotal, row.stockQty, JSON.stringify(row.newSnapshot), now]
       );
       row.id = rowId;
       row.sessionId = sessionId;
@@ -961,7 +982,7 @@ function allocationRows(sessionId = '') {
   const params = sessionId ? [sessionId] : [];
   const where = sessionId ? 'WHERE a.session_id = ?' : '';
   return all(
-    `SELECT a.*, r.month, r.business_unit, r.supplier, r.supplier_short_name, r.material_code, r.purchase_org, r.order_creator, r.inbound_qty
+    `SELECT a.*, r.month, r.business_unit, r.supplier, r.supplier_short_name, r.material_code, r.purchase_org, r.order_creator, r.inbound_qty, r.old_order_dates, r.new_order_dates
      FROM difference_allocations a
      LEFT JOIN difference_compare_rows r ON r.id = a.row_id
      ${where}
@@ -995,6 +1016,8 @@ function allocationRows(sessionId = '') {
       remark: row.remark || '',
       oldOrderNos: row.old_order_nos || '',
       newOrderNos: row.new_order_nos || '',
+      oldOrderDates: row.old_order_dates || '',
+      newOrderDates: row.new_order_dates || '',
       oldQty: numberValue(row.old_qty),
       newQty: numberValue(row.new_qty),
       inboundQty: numberValue(row.inbound_qty),
@@ -1022,17 +1045,17 @@ function backfillCompareRowsFromSnapshot(session) {
       const businessUnit = demand?.business_unit || parts[2] || '';
       const supplier = demand?.supplier || parts[3] || '';
       const materialCode = demand?.material_code || parts[4] || '';
-      const newOrderRows = all('SELECT order_no, creator FROM kingdee_orders WHERE batch_id = ? AND demand_key = ?', [session.applied_batch_id, diff.demand_key]);
+      const newOrderRows = all('SELECT order_no, creator, raw_json FROM kingdee_orders WHERE batch_id = ? AND demand_key = ?', [session.applied_batch_id, diff.demand_key]).map(orderRowDateSort);
       const progress = progressForDemand(diff.demand_key);
       const stock = demand ? inventoryForDemand(demand) : { stock_qty: 0 };
       run(
-        `INSERT INTO difference_compare_rows (id, session_id, demand_key, month, business_unit, supplier, supplier_short_name, material_code, purchase_org, order_creator, old_qty, new_qty, delta_qty, diff_type, old_order_nos, new_order_nos, progress_total, stock_qty, new_snapshot_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO difference_compare_rows (id, session_id, demand_key, month, business_unit, supplier, supplier_short_name, material_code, purchase_org, order_creator, old_qty, new_qty, delta_qty, diff_type, old_order_nos, new_order_nos, old_order_dates, new_order_dates, progress_total, stock_qty, new_snapshot_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           randomUUID(), session.id, diff.demand_key, month, businessUnit, supplier, demand?.supplier_short_name || '', materialCode, purchaseOrg,
           uniqueCreators(newOrderRows) || oldCreatorsForDemand(diff.demand_key),
           numberValue(diff.old_qty), numberValue(diff.new_qty), numberValue(diff.new_qty) - numberValue(diff.old_qty), diff.diff_type,
-          oldOrderNosForDemand(diff.demand_key), uniqueOrderNos(newOrderRows),
+          oldOrderNosForDemand(diff.demand_key), uniqueOrderNos(newOrderRows), oldOrderDatesForDemand(diff.demand_key), uniqueOrderDates(newOrderRows),
           numberValue(progress.in_production_qty) + numberValue(progress.finished_qty),
           numberValue(stock.stock_qty), '{}', session.created_at || diff.created_at
         ]
@@ -1078,6 +1101,8 @@ function compareRowsForSession(sessionId, user) {
       diffType: row.diff_type,
       oldOrderNos: row.old_order_nos || '',
       newOrderNos: row.new_order_nos || '',
+      oldOrderDates: row.old_order_dates || '',
+      newOrderDates: row.new_order_dates || '',
       shippedQty: numberValue(progress.shipped_qty),
       inboundQty: numberValue(row.inbound_qty),
       inProductionQty: numberValue(progress.in_production_qty),

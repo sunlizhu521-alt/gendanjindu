@@ -986,7 +986,8 @@ th {
 }
 
 .diff-allocation-table table {
-  min-width: 1880px;
+  width: max-content;
+  min-width: 100%;
   table-layout: auto;
 }
 
@@ -997,9 +998,9 @@ th {
 
 .diff-allocation-table th,
 .diff-allocation-table td {
-  padding: 6px 8px;
-  font-size: 12px;
-  line-height: 1.15;
+  padding: 4px 7px;
+  font-size: 13px;
+  line-height: 1.2;
   white-space: nowrap;
 }
 
@@ -1034,20 +1035,31 @@ th {
 .ledger-table select,
 .ledger-table textarea,
 .progress-table input,
-.progress-table textarea,
-.diff-allocation-table input,
-.diff-allocation-table select,
-.diff-allocation-table textarea {
+.progress-table textarea {
   min-width: 92px;
   padding: 4px 6px;
   font-size: 12px;
   line-height: 1.2;
 }
 
-.ledger-table textarea,
-.progress-table textarea,
+.diff-allocation-table input,
+.diff-allocation-table select,
 .diff-allocation-table textarea {
+  min-width: max-content;
+  padding: 4px 6px;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.ledger-table textarea,
+.progress-table textarea {
   min-width: 130px;
+  height: 28px;
+  resize: horizontal;
+}
+
+.diff-allocation-table textarea {
+  min-width: 110px;
   height: 28px;
   resize: horizontal;
 }

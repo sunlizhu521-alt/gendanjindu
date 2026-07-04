@@ -846,13 +846,15 @@ th {
 
 .progress-chart-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
   gap: 12px;
   margin-bottom: 12px;
+  width: 100%;
 }
 
 .progress-stack-chart {
   padding: 12px;
+  min-width: 0;
 }
 
 .chart-title-row {
@@ -861,6 +863,7 @@ th {
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 8px;
+  flex-wrap: wrap;
 }
 
 .chart-title-row h3 {
@@ -887,16 +890,18 @@ th {
   display: grid;
   gap: 8px;
   max-height: 166px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding-right: 2px;
 }
 
 .stack-row {
   display: grid;
-  grid-template-columns: minmax(76px, 118px) minmax(120px, 1fr) 52px;
+  grid-template-columns: minmax(96px, 22%) minmax(180px, 1fr) max-content;
   align-items: center;
   gap: 8px;
   font-size: 12px;
+  min-width: 0;
 }
 
 .stack-row span {
@@ -915,6 +920,7 @@ th {
 
 .stack-track {
   width: 100%;
+  min-width: 0;
   height: 18px;
   border: 1px solid #dbe3ef;
   border-radius: 8px;

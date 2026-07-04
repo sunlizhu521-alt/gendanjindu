@@ -134,6 +134,15 @@ function actionsForDelta(deltaQty) {
   return ['其他'];
 }
 
+const DIFF_ORDER_COMPLETE_REASON = '订单完结';
+const DIFF_ORDER_COMPLETE_ACTION = '订单已完结';
+
+function actionsForDiffReason(deltaQty, reason) {
+  const actions = actionsForDelta(deltaQty);
+  if (normalize(reason) === DIFF_ORDER_COMPLETE_REASON) return [...new Set([...actions, DIFF_ORDER_COMPLETE_ACTION])];
+  return actions;
+}
+
 function todayText() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
@@ -1446,7 +1455,16 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
   useEffect(() => { loadLatest().catch(() => {}); }, [token]);
 
   function setRowValue(rowId, key, value) {
-    setRowInputs({ ...rowInputs, [rowId]: { ...(rowInputs[rowId] || {}), [key]: value } });
+    const current = rowInputs[rowId] || {};
+    const next = { ...current, [key]: value };
+    if (key === 'reason') {
+      if (value === DIFF_ORDER_COMPLETE_REASON) {
+        next.actionType = DIFF_ORDER_COMPLETE_ACTION;
+      } else if (current.actionType === DIFF_ORDER_COMPLETE_ACTION) {
+        next.actionType = '';
+      }
+    }
+    setRowInputs({ ...rowInputs, [rowId]: next });
   }
 
   async function submitRow(row) {
@@ -1456,7 +1474,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
         token,
         method: 'POST',
         body: JSON.stringify({
-          actionType: input.actionType || '',
+          actionType: input.actionType || (input.reason === DIFF_ORDER_COMPLETE_REASON ? DIFF_ORDER_COMPLETE_ACTION : ''),
           allocatedQty: row.diffQty,
           reason: input.reason || '',
           remark: input.remark || ''
@@ -1592,7 +1610,9 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
             const input = rowInputs[row.id] || {};
             const allocated = allocatedRowIds.has(row.id);
             const allocation = allocations.find((item) => item.rowId === row.id);
-            const availableActions = row.availableActions || actionsForDelta(row.deltaQty);
+            const availableActions = input.reason === DIFF_ORDER_COMPLETE_REASON
+              ? actionsForDiffReason(row.deltaQty, input.reason)
+              : (row.availableActions || actionsForDelta(row.deltaQty));
             return (
               <tr key={row.id}>
                 <td>

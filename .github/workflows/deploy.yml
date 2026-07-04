@@ -43,7 +43,13 @@ jobs:
             tar -xzf /tmp/gendanjindu-deploy/gendanjindu.tar.gz -C "$APP_DIR"
             npm ci --omit=dev
             npm run build
-            pm2 restart gendanjindu
+            pm2 restart gendanjindu --update-env
             pm2 save
+            sleep 3
+            if ! curl -fsS http://127.0.0.1:4003/ >/dev/null; then
+              pm2 status
+              pm2 logs gendanjindu --lines 80 --nostream
+              exit 1
+            fi
             rm -f /tmp/gendanjindu-deploy/gendanjindu.tar.gz
           EOF

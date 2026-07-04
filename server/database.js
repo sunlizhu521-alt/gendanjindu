@@ -283,6 +283,15 @@ function migrate() {
       created_at TEXT NOT NULL
     );
   `);
+  db.run(`
+    CREATE INDEX IF NOT EXISTS idx_order_demands_active ON order_demands(active);
+    CREATE INDEX IF NOT EXISTS idx_order_demands_source_batch ON order_demands(source_batch_id);
+    CREATE INDEX IF NOT EXISTS idx_kingdee_orders_batch_demand ON kingdee_orders(batch_id, demand_key);
+    CREATE INDEX IF NOT EXISTS idx_supplier_progress_snapshots_demand ON supplier_progress_snapshots(demand_key);
+    CREATE INDEX IF NOT EXISTS idx_demand_snapshot_diffs_batch ON demand_snapshot_diffs(batch_id);
+    CREATE INDEX IF NOT EXISTS idx_difference_compare_rows_session ON difference_compare_rows(session_id);
+    CREATE INDEX IF NOT EXISTS idx_difference_allocations_session_row ON difference_allocations(session_id, row_id);
+  `);
 
   const dimensionColumns = all('PRAGMA table_info(dimension_files)').map((row) => row.name);
   if (!dimensionColumns.includes('sheet_name')) {
@@ -647,6 +656,16 @@ export function run(sql, params = []) {
   const statement = db.prepare(sql);
   try {
     statement.run(params);
+  } finally {
+    statement.free();
+  }
+}
+
+export function runMany(sql, rows = []) {
+  if (!rows.length) return;
+  const statement = db.prepare(sql);
+  try {
+    rows.forEach((params) => statement.run(params));
   } finally {
     statement.free();
   }

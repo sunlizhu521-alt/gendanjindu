@@ -9,7 +9,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import xlsx from 'xlsx';
-import { all, get, initDatabase, run, saveDatabase, transaction } from './database.js';
+import { all, get, initDatabase, run, runMany, saveDatabase, transaction } from './database.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -607,36 +607,37 @@ function enrichDemandFields(supplier, materialCode, orderCreator = '', lookups =
 function applyDimensionEnrichment() {
   const lookups = dimensionLookups();
   const { productMap, assignmentMap, supplierMap } = lookups;
-  all('SELECT * FROM order_demands').forEach((demand) => {
+  const params = all('SELECT * FROM order_demands').map((demand) => {
     const product = productMap.get(demand.material_code) || {};
     const assignment = assignmentMap.get(assignmentKey(demand.supplier, demand.material_code)) || {};
     const supplierAssignment = supplierMap.get(normalizeMatchPart(demand.supplier)) || {};
-    run(
-      `UPDATE order_demands
-       SET sku = COALESCE(NULLIF(?, ''), sku),
-           logistics_code = COALESCE(NULLIF(?, ''), logistics_code),
-           material_name = COALESCE(NULLIF(?, ''), material_name),
-           product_line = COALESCE(NULLIF(?, ''), product_line),
-           product_series = COALESCE(NULLIF(?, ''), product_series),
-           supplier_short_name = COALESCE(NULLIF(?, ''), supplier_short_name),
-           purchase_group = COALESCE(NULLIF(?, ''), purchase_group),
-           purchase_owner = COALESCE(NULLIF(?, ''), purchase_owner),
-           purchase_org = COALESCE(NULLIF(?, ''), purchase_org)
-       WHERE demand_key = ?`,
-      [
-        normalize(product.sku),
-        normalize(product.logisticsCode),
-        normalize(product.materialName),
-        normalize(product.productLine),
-        normalize(product.productSeries),
-        rowAliasValue(assignment, ['supplierShortName', '供应商简称']) || rowAliasValue(supplierAssignment, ['supplierShortName', '供应商简称']),
-        assignmentGroup(assignment),
-        realPurchaseOwner(assignmentOwner(assignment), demand.purchase_owner) || UNASSIGNED_PURCHASE_OWNER,
-        normalize(assignment.purchaseOrg),
-        demand.demand_key
-      ]
-    );
+    return [
+      normalize(product.sku),
+      normalize(product.logisticsCode),
+      normalize(product.materialName),
+      normalize(product.productLine),
+      normalize(product.productSeries),
+      rowAliasValue(assignment, ['supplierShortName', '供应商简称']) || rowAliasValue(supplierAssignment, ['supplierShortName', '供应商简称']),
+      assignmentGroup(assignment),
+      realPurchaseOwner(assignmentOwner(assignment), demand.purchase_owner) || UNASSIGNED_PURCHASE_OWNER,
+      normalize(assignment.purchaseOrg),
+      demand.demand_key
+    ];
   });
+  runMany(
+    `UPDATE order_demands
+     SET sku = COALESCE(NULLIF(?, ''), sku),
+         logistics_code = COALESCE(NULLIF(?, ''), logistics_code),
+         material_name = COALESCE(NULLIF(?, ''), material_name),
+         product_line = COALESCE(NULLIF(?, ''), product_line),
+         product_series = COALESCE(NULLIF(?, ''), product_series),
+         supplier_short_name = COALESCE(NULLIF(?, ''), supplier_short_name),
+         purchase_group = COALESCE(NULLIF(?, ''), purchase_group),
+         purchase_owner = COALESCE(NULLIF(?, ''), purchase_owner),
+         purchase_org = COALESCE(NULLIF(?, ''), purchase_org)
+     WHERE demand_key = ?`,
+    params
+  );
 }
 
 function progressForDemand(demandKeyValue) {
@@ -1162,47 +1163,52 @@ function applyKingdeeSnapshot({ fileName, sourceRows, summary, diffs, mapping, u
     'INSERT INTO kingdee_import_batches (id, file_name, imported_by, imported_at, applied_at, row_count, skipped_rows, skipped_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     [batchId, fileName, userName, now, now, sourceRows.length, numberValue(skippedRows), JSON.stringify(skipped.slice(0, 100))]
   );
-  sourceRows.forEach((row) => {
-    run(
-      'INSERT INTO kingdee_orders (id, batch_id, demand_key, month, business_unit, supplier, material_code, purchase_org, creator, oa_flow_no, order_no, quantity, inbound_qty, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [randomUUID(), batchId, row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.purchaseOrg || '', row.creator || '', row.oaFlowNo || '', row.orderNo || '', row.quantity, numberValue(row.inboundQty), JSON.stringify(row.raw || row)]
-    );
-  });
+  runMany(
+    'INSERT INTO kingdee_orders (id, batch_id, demand_key, month, business_unit, supplier, material_code, purchase_org, creator, oa_flow_no, order_no, quantity, inbound_qty, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    sourceRows.map((row) => [randomUUID(), batchId, row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.purchaseOrg || '', row.creator || '', row.oaFlowNo || '', row.orderNo || '', row.quantity, numberValue(row.inboundQty), JSON.stringify(row.raw || row)])
+  );
+  const progressMap = new Map(all('SELECT * FROM supplier_progress').map((row) => [row.demand_key, row]));
+  const manualProgressKeys = new Set(all('SELECT DISTINCT demand_key FROM supplier_progress_snapshots').map((row) => row.demand_key));
+  const demandParams = [];
+  const progressParams = [];
   summary.forEach((row) => {
-    run(
-      `INSERT INTO order_demands (demand_key, month, business_unit, supplier, material_code, current_order_qty, active, purchase_org, oa_flow_no, source_batch_id, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
-       ON CONFLICT(demand_key) DO UPDATE SET
-         current_order_qty = excluded.current_order_qty,
-         purchase_org = COALESCE(NULLIF(excluded.purchase_org, ''), order_demands.purchase_org),
-         oa_flow_no = COALESCE(NULLIF(excluded.oa_flow_no, ''), order_demands.oa_flow_no),
-         active = 1,
-         source_batch_id = excluded.source_batch_id,
-         updated_at = excluded.updated_at`,
-      [row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.currentOrderQty, row.purchaseOrg || '', row.oaFlowNo || '', batchId, now]
-    );
-    const progress = get('SELECT * FROM supplier_progress WHERE demand_key = ?', [row.demandKey]);
+    demandParams.push([row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.currentOrderQty, row.purchaseOrg || '', row.oaFlowNo || '', batchId, now]);
+    const progress = progressMap.get(row.demandKey);
     const nextProgress = progressAfterInbound(row.currentOrderQty, progress, row.inboundQty, {
-      preserveExistingProgress: Boolean(progress) && hasManualProgressHistory(row.demandKey)
+      preserveExistingProgress: Boolean(progress) && manualProgressKeys.has(row.demandKey)
     });
-    run(
-      `INSERT INTO supplier_progress (demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty, remark, updated_by, updated_at)
-       VALUES (?, 0, 0, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(demand_key) DO UPDATE SET
-         unprepared_qty = 0,
-         prepared_not_started_qty = 0,
-         in_production_qty = excluded.in_production_qty,
-         finished_qty = excluded.finished_qty,
-         shipped_qty = excluded.shipped_qty,
-         remark = supplier_progress.remark,
-         updated_by = excluded.updated_by,
-         updated_at = excluded.updated_at`,
-      [row.demandKey, nextProgress.inProduction, nextProgress.finished, nextProgress.shipped, progress?.remark || '', userName, now]
-    );
+    progressParams.push([row.demandKey, nextProgress.inProduction, nextProgress.finished, nextProgress.shipped, progress?.remark || '', userName, now]);
   });
-  diffs.forEach((diff) => {
-    run('INSERT INTO demand_snapshot_diffs (id, batch_id, demand_key, diff_type, old_qty, new_qty, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [randomUUID(), batchId, diff.demandKey, diff.diffType, diff.oldQty, diff.newQty, now]);
-  });
+  runMany(
+    `INSERT INTO order_demands (demand_key, month, business_unit, supplier, material_code, current_order_qty, active, purchase_org, oa_flow_no, source_batch_id, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+     ON CONFLICT(demand_key) DO UPDATE SET
+       current_order_qty = excluded.current_order_qty,
+       purchase_org = COALESCE(NULLIF(excluded.purchase_org, ''), order_demands.purchase_org),
+       oa_flow_no = COALESCE(NULLIF(excluded.oa_flow_no, ''), order_demands.oa_flow_no),
+       active = 1,
+       source_batch_id = excluded.source_batch_id,
+       updated_at = excluded.updated_at`,
+    demandParams
+  );
+  runMany(
+    `INSERT INTO supplier_progress (demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty, remark, updated_by, updated_at)
+     VALUES (?, 0, 0, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(demand_key) DO UPDATE SET
+       unprepared_qty = 0,
+       prepared_not_started_qty = 0,
+       in_production_qty = excluded.in_production_qty,
+       finished_qty = excluded.finished_qty,
+       shipped_qty = excluded.shipped_qty,
+       remark = supplier_progress.remark,
+       updated_by = excluded.updated_by,
+       updated_at = excluded.updated_at`,
+    progressParams
+  );
+  runMany(
+    'INSERT INTO demand_snapshot_diffs (id, batch_id, demand_key, diff_type, old_qty, new_qty, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    diffs.map((diff) => [randomUUID(), batchId, diff.demandKey, diff.diffType, diff.oldQty, diff.newQty, now])
+  );
   run(
     `INSERT INTO import_mappings (kind, mapping_json, updated_by, updated_at)
      VALUES ('kingdee', ?, ?, ?)
@@ -1371,7 +1377,7 @@ app.post('/api/imports/kingdee/apply', requireAuth, requirePage('kingdeeImport')
   transaction(() => {
     batchId = applyKingdeeSnapshot({ fileName: safeFilename(req.file), sourceRows: result.rows, summary, diffs, mapping, userName: req.user.name, now, skippedRows: result.skippedRows, skipped: result.skipped });
   });
-  res.json({ batchId, rowCount: result.rows.length, diffs, demands: demandRows(false, req.user) });
+  res.json({ batchId, rowCount: result.rows.length, diffs });
 });
 
 app.post('/api/imports/kingdee/new-snapshot', requireAuth, requirePage('kingdeeImport'), upload.single('file'), (req, res) => {
@@ -1400,8 +1406,7 @@ app.post('/api/imports/kingdee/new-snapshot', requireAuth, requirePage('kingdeeI
     allocations: allocationRows(compare.sessionId),
     actions: DIFF_ALLOCATION_ACTIONS,
     reasons: DIFF_ALLOCATION_REASONS,
-    status: allocationStatus(compare.sessionId),
-    demands: demandRows(false, req.user)
+    status: allocationStatus(compare.sessionId)
   });
 });
 

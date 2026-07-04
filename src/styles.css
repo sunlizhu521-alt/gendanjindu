@@ -846,7 +846,7 @@ th {
 
 .progress-chart-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
   gap: 12px;
   margin-bottom: 12px;
   width: 100%;
@@ -888,8 +888,8 @@ th {
 
 .stack-list {
   display: grid;
-  gap: 8px;
-  max-height: 166px;
+  gap: 6px;
+  max-height: 248px;
   overflow-x: hidden;
   overflow-y: auto;
   padding-right: 2px;
@@ -897,9 +897,9 @@ th {
 
 .stack-row {
   display: grid;
-  grid-template-columns: minmax(96px, 22%) minmax(180px, 1fr) max-content;
+  grid-template-columns: 92px minmax(260px, 1fr) max-content;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-size: 12px;
   min-width: 0;
 }

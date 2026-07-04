@@ -986,12 +986,21 @@ th {
 }
 
 .diff-allocation-table table {
-  min-width: 4300px;
+  min-width: 1880px;
+  table-layout: auto;
 }
 
 .diff-allocation-table th {
   top: 0;
   z-index: 4;
+}
+
+.diff-allocation-table th,
+.diff-allocation-table td {
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 
 .progress-table input[type="checkbox"],
@@ -1029,14 +1038,18 @@ th {
 .diff-allocation-table input,
 .diff-allocation-table select,
 .diff-allocation-table textarea {
-  min-width: 116px;
-  padding: 6px 8px;
+  min-width: 92px;
+  padding: 4px 6px;
+  font-size: 12px;
+  line-height: 1.2;
 }
 
 .ledger-table textarea,
 .progress-table textarea,
 .diff-allocation-table textarea {
-  min-width: 180px;
+  min-width: 130px;
+  height: 28px;
+  resize: horizontal;
 }
 
 .empty,
@@ -1347,5 +1360,6 @@ th {
 .error-text { color: #dc2626; font-weight: 600; }
 .skipped-details { margin-top: 8px; }
 .skipped-details summary { cursor: pointer; color: #6b7280; font-size: 13px; }
-.order-type-options { display: flex; gap: 10px; white-space: nowrap; }
-.order-type-options label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.order-type-options { display: flex; gap: 6px; white-space: nowrap; }
+.order-type-options label { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; }
+.order-type-options input[type="radio"] { width: 13px; min-width: 0; height: 13px; padding: 0; }

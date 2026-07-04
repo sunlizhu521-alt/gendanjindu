@@ -135,7 +135,8 @@ function actionsForDelta(deltaQty) {
 }
 
 const DIFF_NORMAL_ORDER = '正常订单';
-const DIFF_ORDER_TYPES = [DIFF_NORMAL_ORDER, '订单已完结'];
+const DIFF_CHANGE_ORDER = '订单变更';
+const DIFF_ORDER_TYPES = [DIFF_NORMAL_ORDER, '订单已完结', DIFF_CHANGE_ORDER];
 const DIFF_ORDER_COMPLETE_REASON = '订单已完结';
 const DIFF_ORDER_COMPLETE_ACTION = '订单已完结';
 
@@ -1461,8 +1462,13 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
     const current = rowInputs[rowId] || {};
     const next = { ...current, [key]: value };
     if (key === 'orderType') {
-      next.reason = value;
-      next.actionType = value;
+      if (value === DIFF_CHANGE_ORDER) {
+        next.reason = '';
+        next.actionType = '';
+      } else {
+        next.reason = value;
+        next.actionType = value;
+      }
     } else if (key === 'reason') {
       if (value === DIFF_NORMAL_ORDER) {
         next.orderType = DIFF_NORMAL_ORDER;
@@ -1482,6 +1488,10 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
     const input = rowInputs[row.id] || {};
     if (!input.orderType) {
       setMessage('请选择订单类型。');
+      return;
+    }
+    if (input.orderType === DIFF_CHANGE_ORDER && (!input.reason || !input.actionType)) {
+      setMessage('订单变更需要手动选择原因和操作。');
       return;
     }
     try {
@@ -1626,6 +1636,8 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
             const allocated = allocatedRowIds.has(row.id);
             const allocation = allocations.find((item) => item.rowId === row.id);
             const selectedOrderType = input.orderType || (input.reason === DIFF_NORMAL_ORDER || input.reason === DIFF_ORDER_COMPLETE_REASON ? input.reason : '');
+            const changeReasonOptions = (compare.reasons || []).filter((reason) => reason !== DIFF_NORMAL_ORDER && reason !== DIFF_ORDER_COMPLETE_REASON);
+            const changeActionOptions = row.availableActions || actionsForDelta(row.deltaQty);
             return (
               <tr key={row.id}>
                 <td>
@@ -1663,12 +1675,22 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
                   )}
                 </td>
                 <td>
-                  {allocated ? allocation?.reason : (
+                  {allocated ? allocation?.reason : selectedOrderType === DIFF_CHANGE_ORDER ? (
+                    <select value={input.reason || ''} onChange={(event) => setRowValue(row.id, 'reason', event.target.value)}>
+                      <option value="">选择原因</option>
+                      {changeReasonOptions.map((reason) => <option key={reason} value={reason}>{reason}</option>)}
+                    </select>
+                  ) : (
                     <span>{input.reason || '-'}</span>
                   )}
                 </td>
                 <td>
-                  {allocated ? allocation?.actionType : (
+                  {allocated ? allocation?.actionType : selectedOrderType === DIFF_CHANGE_ORDER ? (
+                    <select value={input.actionType || ''} onChange={(event) => setRowValue(row.id, 'actionType', event.target.value)}>
+                      <option value="">选择操作</option>
+                      {changeActionOptions.map((action) => <option key={action} value={action}>{action}</option>)}
+                    </select>
+                  ) : (
                     <span>{input.actionType || '-'}</span>
                   )}
                 </td>

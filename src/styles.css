@@ -889,7 +889,7 @@ th {
 .stack-list {
   display: grid;
   gap: 6px;
-  max-height: 248px;
+  max-height: 360px;
   overflow-x: hidden;
   overflow-y: auto;
   padding-right: 2px;

@@ -1060,6 +1060,7 @@ th {
   max-width: 330px;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: center;
 }
 
 .diff-allocation-table th:nth-child(11),
@@ -1466,7 +1467,7 @@ th {
 .error-text { color: #dc2626; font-weight: 600; }
 .skipped-details { margin-top: 8px; }
 .skipped-details summary { cursor: pointer; color: #6b7280; font-size: 13px; }
-.order-type-options { display: flex; gap: 5px; white-space: nowrap; }
+.order-type-options { display: flex; justify-content: center; gap: 5px; white-space: nowrap; }
 .order-type-options label {
   display: inline-flex;
   align-items: center;

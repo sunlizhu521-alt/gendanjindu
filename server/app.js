@@ -1301,14 +1301,14 @@ function clearKingdeeCache(req, res) {
     return res.status(403).json({ error: '仅孙立柱可以清除采购订单缓存' });
   }
   const preserved = {
-    dimensionFiles: numberValue(get('SELECT COUNT(*) AS count FROM dimension_files')?.count)
+    dimensionFiles: numberValue(get('SELECT COUNT(*) AS count FROM dimension_files')?.count),
+    progress: numberValue(get('SELECT COUNT(*) AS count FROM supplier_progress')?.count),
+    progressSnapshots: numberValue(get('SELECT COUNT(*) AS count FROM supplier_progress_snapshots')?.count)
   };
   const counts = {
     kingdeeOrders: numberValue(get('SELECT COUNT(*) AS count FROM kingdee_orders')?.count),
     importBatches: numberValue(get('SELECT COUNT(*) AS count FROM kingdee_import_batches')?.count),
     demands: numberValue(get('SELECT COUNT(*) AS count FROM order_demands')?.count),
-    progress: numberValue(get('SELECT COUNT(*) AS count FROM supplier_progress')?.count),
-    progressSnapshots: numberValue(get('SELECT COUNT(*) AS count FROM supplier_progress_snapshots')?.count),
     snapshotDiffs: numberValue(get('SELECT COUNT(*) AS count FROM demand_snapshot_diffs')?.count),
     compareSessions: numberValue(get('SELECT COUNT(*) AS count FROM difference_compare_sessions')?.count),
     compareRows: numberValue(get('SELECT COUNT(*) AS count FROM difference_compare_rows')?.count),
@@ -1319,14 +1319,17 @@ function clearKingdeeCache(req, res) {
     run('DELETE FROM difference_compare_rows');
     run('DELETE FROM difference_compare_sessions');
     run('DELETE FROM demand_snapshot_diffs');
-    run('DELETE FROM supplier_progress_snapshots');
-    run('DELETE FROM supplier_progress');
     run('DELETE FROM kingdee_orders');
     run('DELETE FROM order_demands');
     run('DELETE FROM kingdee_import_batches');
     const dimensionFilesAfter = numberValue(get('SELECT COUNT(*) AS count FROM dimension_files')?.count);
     if (dimensionFilesAfter !== preserved.dimensionFiles) {
       throw new Error('维度表保护校验失败，清除缓存已回滚');
+    }
+    const progressAfter = numberValue(get('SELECT COUNT(*) AS count FROM supplier_progress')?.count);
+    const progressSnapshotsAfter = numberValue(get('SELECT COUNT(*) AS count FROM supplier_progress_snapshots')?.count);
+    if (progressAfter !== preserved.progress || progressSnapshotsAfter !== preserved.progressSnapshots) {
+      throw new Error('生产跟进保护校验失败，清除缓存已回滚');
     }
   });
   res.json({ ok: true, cleared: counts, preserved });

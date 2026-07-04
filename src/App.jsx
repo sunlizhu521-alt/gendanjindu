@@ -1080,7 +1080,7 @@ function KingdeeImport({ token, user, reloadDemands, setMessage }) {
   const refreshImportHistory = () => setHistoryVersion((value) => value + 1);
 
   async function clearOrderCache() {
-    const confirmed = window.confirm('将清空腾讯云服务器上的采购订单、订单需求、生产跟进、差异分配和相关历史记录。维度表、历史库存、用户权限、字段映射和变更备注不会清除。只有这里确认后才会清除服务器数据。确定继续吗？');
+    const confirmed = window.confirm('将清空腾讯云服务器上的采购订单列表、订单需求、差异分配和采购订单导入记录。生产跟进、维度表、历史库存、用户权限、字段映射和变更备注不会清除。只有这里确认后才会清除服务器采购订单数据。确定继续吗？');
     if (!confirmed) return;
     try {
       const payload = await request('/api/imports/kingdee/cache', { token, method: 'DELETE' });

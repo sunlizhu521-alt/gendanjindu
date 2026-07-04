@@ -854,6 +854,7 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
   const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [operationProgress, setOperationProgress] = useState(null);
   const [currentStatus, setCurrentStatus] = useState(null);
   const [importHistory, setImportHistory] = useState([]);
   const skippedImportRows = importHistory.flatMap((record) => (record.skipped || []).map((row) => ({
@@ -877,41 +878,58 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
     setFile(nextFile);
     setPreview(null);
     setSheetName('');
+    setOperationProgress({ label: '正在读取文件并识别工作表...', progress: 15 });
     try {
       const data = new FormData();
       data.append('file', nextFile);
+      setOperationProgress({ label: '正在解析表头字段...', progress: 55 });
       const payload = await request('/api/workbook/inspect', { token, method: 'POST', body: data });
       setColumns(payload.columns || []);
       setSheetNames(payload.sheetNames || []);
+      setOperationProgress({ label: `文件读取完成，识别到 ${payload.columns?.length || 0} 个字段`, progress: 100, statusType: 'success' });
     } catch (err) {
+      setOperationProgress({ label: `文件读取失败：${err.message}`, progress: 100, statusType: 'error' });
       setMessage('文件读取失败：' + err.message);
     }
   }
 
   async function selectSheet(name) {
     setSheetName(name);
+    setOperationProgress({ label: name ? `正在切换工作表：${name}` : '正在切换为全部工作表', progress: 25 });
     const data = new FormData();
     data.append('file', file);
     if (name) data.append('sheetName', name);
-    const payload = await request('/api/workbook/inspect', { token, method: 'POST', body: data });
-    setColumns(payload.columns || []);
+    try {
+      const payload = await request('/api/workbook/inspect', { token, method: 'POST', body: data });
+      setColumns(payload.columns || []);
+      setOperationProgress({ label: `工作表字段已更新，共 ${payload.columns?.length || 0} 个字段`, progress: 100, statusType: 'success' });
+    } catch (err) {
+      setOperationProgress({ label: `工作表切换失败：${err.message}`, progress: 100, statusType: 'error' });
+      setMessage('工作表切换失败：' + err.message);
+    }
   }
 
   async function doParse() {
     setParsing(true);
+    setOperationProgress({ label: '正在上传文件并开始解析...', progress: 20 });
     try {
       const data = new FormData();
       data.append('file', file);
       data.append('mapping', JSON.stringify(mapping));
       if (sheetName) data.append('sheetName', sheetName);
+      setOperationProgress({ label: '正在按字段映射解析采购订单...', progress: 55 });
       const payload = await request('/api/imports/kingdee/preview', { token, method: 'POST', body: data });
+      setOperationProgress({ label: '正在生成解析结果和差异预览...', progress: 85 });
       setPreview(payload);
       if (payload.validRows === 0) {
+        setOperationProgress({ label: '解析完成，但没有有效行', progress: 100, statusType: 'warning' });
         setMessage('解析失败：0行有效，请检查字段映射和Excel列是否匹配');
       } else {
+        setOperationProgress({ label: `解析完成：${payload.validRows}/${payload.totalRows} 行有效`, progress: 100, statusType: 'success' });
         setMessage(`解析完成：${payload.validRows}/${payload.totalRows} 行有效，差异 ${payload.diffs.length} 条`);
       }
     } catch (err) {
+      setOperationProgress({ label: `解析失败：${err.message}`, progress: 100, statusType: 'error' });
       setMessage('解析失败：' + err.message);
     } finally {
       setParsing(false);
@@ -920,13 +938,16 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
 
   async function doSave() {
     setSaving(true);
+    setOperationProgress({ label: mode === 'new' ? '正在上传新采购订单...' : '正在上传保存采购订单...', progress: 20 });
     try {
       const data = new FormData();
       data.append('file', file);
       data.append('mapping', JSON.stringify(mapping));
       if (sheetName) data.append('sheetName', sheetName);
       const path = mode === 'new' ? '/api/imports/kingdee/new-snapshot' : '/api/imports/kingdee/apply';
+      setOperationProgress({ label: mode === 'new' ? '正在生成差异并应用新基线...' : '正在写入采购订单基线...', progress: 60 });
       const payload = await request(path, { token, method: 'POST', body: data });
+      setOperationProgress({ label: '正在刷新页面数据...', progress: 85 });
       if (mode === 'new') {
         setPreview({ ...payload, diffs: payload.diffRows || [] });
         setMessage(`新采购订单已上传并应用：${payload.rowCount} 行，生成差异 ${payload.diffRows?.length || 0} 条`);
@@ -937,7 +958,9 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
       }
       if (mode === 'current') await loadCurrentStatus();
       onImportApplied();
+      setOperationProgress({ label: mode === 'new' ? '新采购订单上传并应用完成' : '上传保存完成', progress: 100, statusType: 'success' });
     } catch (err) {
+      setOperationProgress({ label: `上传保存失败：${err.message}`, progress: 100, statusType: 'error' });
       setMessage('上传保存失败：' + err.message);
     } finally {
       setSaving(false);
@@ -946,12 +969,18 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
 
   async function doApplyRefresh() {
     setApplying(true);
+    setOperationProgress({ label: '正在应用刷新采购总览...', progress: 35 });
     const currentPreview = preview;
     try {
       await reloadDemands();
+      setOperationProgress({ label: '正在刷新当前采购订单状态...', progress: 75 });
       if (mode === 'current') await loadCurrentStatus();
       setPreview(currentPreview);
+      setOperationProgress({ label: '应用刷新完成', progress: 100, statusType: 'success' });
       setMessage('应用刷新完成，采购总览已更新');
+    } catch (err) {
+      setOperationProgress({ label: `应用刷新失败：${err.message}`, progress: 100, statusType: 'error' });
+      setMessage('应用刷新失败：' + err.message);
     } finally {
       setApplying(false);
     }
@@ -989,6 +1018,17 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
                 )}
               </>
             )}
+          </div>
+        )}
+        {operationProgress && (
+          <div className={`slot-progress ${operationProgress.statusType || ''}`}>
+            <div className="slot-progress-meta">
+              <span>{operationProgress.label}</span>
+              <strong>{Math.min(100, Math.max(0, Math.round(operationProgress.progress || 0)))}%</strong>
+            </div>
+            <div className="slot-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.min(100, Math.max(0, Math.round(operationProgress.progress || 0)))}>
+              <span style={{ width: `${Math.min(100, Math.max(0, Math.round(operationProgress.progress || 0)))}%` }} />
+            </div>
           </div>
         )}
         <label className="drop-zone">

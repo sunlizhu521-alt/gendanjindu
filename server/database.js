@@ -533,30 +533,26 @@ function jsonRowDemandKey(row) {
 function migrateDemandKeysToCurrentShape() {
   const demandRows = all('SELECT * FROM order_demands');
   if (demandRows.length === 0) return;
-  const keyMap = new Map();
   const groups = new Map();
   demandRows.forEach((row) => {
     const targetKey = newDemandKey(row.purchase_org, row.month, row.business_unit, row.supplier, row.material_code);
-    keyMap.set(row.demand_key, targetKey);
     const list = groups.get(targetKey) || [];
     list.push(row);
     groups.set(targetKey, list);
   });
+  const groupsNeedingMerge = [...groups.entries()].filter(([targetKey, rows]) => (
+    rows.length > 1 || rows.some((row) => row.demand_key !== targetKey || hasLegacyDemandKey(row.demand_key))
+  ));
+  if (groupsNeedingMerge.length === 0) return;
 
-  groups.forEach((rows, targetKey) => {
-    const needsMerge = rows.length > 1 || rows.some((row) => row.demand_key !== targetKey || hasLegacyDemandKey(row.demand_key));
+  const keyMap = new Map();
+
+  groupsNeedingMerge.forEach(([targetKey, rows]) => {
     const oaFlowNo = uniqueSortedOaValues(rows.map((row, index) => ({
       value: row.oa_flow_no || oaFlowNoForDemand(row),
       dateSort: orderDemandDateSort(row),
       sourceIndex: index
     })));
-    if (!needsMerge) {
-      const row = rows[0];
-      if (oaFlowNo && normalizeKeyPart(row.oa_flow_no) !== oaFlowNo) {
-        run('UPDATE order_demands SET oa_flow_no = ? WHERE demand_key = ?', [oaFlowNo, row.demand_key]);
-      }
-      return;
-    }
 
     const base = rows.find((row) => Number(row.active)) || rows[0];
     const active = rows.some((row) => Number(row.active)) ? 1 : 0;
@@ -573,7 +569,12 @@ function migrateDemandKeysToCurrentShape() {
         pick('purchase_group'), pick('purchase_owner'), base.purchase_org || '', oaFlowNo, pick('source_batch_id'), pick('updated_at')
       ]
     );
+    rows.forEach((row) => {
+      if (row.demand_key !== targetKey) keyMap.set(row.demand_key, targetKey);
+    });
   });
+
+  if (keyMap.size === 0) return;
 
   consolidateSupplierProgress(keyMap);
 

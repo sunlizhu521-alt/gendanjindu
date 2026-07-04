@@ -914,7 +914,7 @@ th {
 
 .stack-row {
   display: grid;
-  grid-template-columns: 92px minmax(260px, 1fr) max-content;
+  grid-template-columns: 128px minmax(260px, 1fr) max-content;
   align-items: center;
   gap: 4px;
   font-size: 12px;
@@ -936,8 +936,6 @@ th {
 }
 
 .stack-track {
-  display: flex;
-  justify-content: flex-end;
   width: 100%;
   min-width: 0;
   height: 18px;

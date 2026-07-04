@@ -1647,7 +1647,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
               />
               <span>选择</span>
             </label>,
-            '采购下单人', '原采购订单号', '原采购订单创建时间', '新采购订单号', '新采购订单创建时间', '原采购数量', '新采购数量', '差异', '订单类型', '原因', '操作', '备注', '提交人', '提交时间', '提交'
+            '采购下单人', '供应商', '事业部', '采购组织', '采购订单创建人', '原采购订单号', '原采购订单创建时间', '新采购订单号', '新采购订单创建时间', '原采购数量', '新采购数量', '差异', '订单类型', '原因', '操作', '备注', '提交人', '提交时间', '提交'
           ]}
           renderRow={(row) => {
             const input = rowInputs[row.id] || {};
@@ -1667,6 +1667,10 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
                   />
                 </td>
                 <td>{row.purchaseOwner}</td>
+                <td>{supplierName(row)}</td>
+                <td>{row.businessUnit}</td>
+                <td>{row.purchaseOrg}</td>
+                <td>{row.orderCreator}</td>
                 <td>{row.oldOrderNos}</td>
                 <td>{row.oldOrderDates}</td>
                 <td>{row.newOrderNos}</td>

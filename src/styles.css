@@ -890,12 +890,16 @@ th {
 
 .stack-list {
   display: grid;
+  align-content: start;
   gap: 6px;
-  max-height: 360px;
+  height: 260px;
   overflow-x: hidden;
   overflow-y: scroll;
+  overscroll-behavior: contain;
   scrollbar-gutter: stable;
   padding-right: 4px;
+  scrollbar-color: #b8c4d6 #edf2f7;
+  scrollbar-width: thin;
 }
 
 .stack-list::-webkit-scrollbar {

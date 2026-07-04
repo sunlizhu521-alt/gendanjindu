@@ -246,7 +246,7 @@ function ProgressStackedChart({ title, rows, groupBy }) {
     return [...map.values()]
       .filter((row) => row.remainingQty > 0 || row.inProductionQty > 0 || row.finishedQty > 0)
       .sort((a, b) => b.remainingQty - a.remainingQty)
-      .slice(0, 10);
+      .slice(0, 15);
   }, [rows, groupBy]);
   const maxRemainingQty = Math.max(...chartRows.map((row) => numberValue(row.remainingQty)), 1);
 

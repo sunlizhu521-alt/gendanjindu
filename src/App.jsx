@@ -641,12 +641,21 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard' }) {
         <MetricCard label="在产品" value={summary.inProduction.toLocaleString()} />
         <MetricCard label="完工产品" value={summary.finished.toLocaleString()} />
       </section>
-      <section className="series-chart-grid">
-        <SeriesBarChart title="系列未交付数量" rows={seriesRows} valueKey="orderQty" />
-        <SeriesBarChart title="系列在产品数量" rows={seriesRows} valueKey="inProductionQty" />
-        <SeriesBarChart title="系列完工产品数量" rows={seriesRows} valueKey="finishedQty" />
-        <SeriesBarChart title="系列总数量" rows={seriesRows} valueKey="totalQty" />
-      </section>
+      {filterKey === 'operationBoard' ? (
+        <section className="progress-chart-grid">
+          <ProgressStackedChart title="供应商未交付 / 在产品 / 完工产品" rows={filteredRows} groupBy={(row) => supplierName(row)} />
+          <ProgressStackedChart title="事业部未交付 / 在产品 / 完工产品" rows={filteredRows} groupBy={(row) => row.businessUnit} />
+          <ProgressStackedChart title="系列未交付 / 在产品 / 完工产品" rows={filteredRows} groupBy={(row) => row.productSeries} />
+          <ProgressStackedChart title="SKU未交付 / 在产品 / 完工产品" rows={filteredRows} groupBy={(row) => row.sku} />
+        </section>
+      ) : (
+        <section className="series-chart-grid">
+          <SeriesBarChart title="系列未交付数量" rows={seriesRows} valueKey="orderQty" />
+          <SeriesBarChart title="系列在产品数量" rows={seriesRows} valueKey="inProductionQty" />
+          <SeriesBarChart title="系列完工产品数量" rows={seriesRows} valueKey="finishedQty" />
+          <SeriesBarChart title="系列总数量" rows={seriesRows} valueKey="totalQty" />
+        </section>
+      )}
       <section className="panel">
         <DataTable
           className="compact-table"

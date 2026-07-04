@@ -1004,6 +1004,64 @@ th {
   white-space: nowrap;
 }
 
+.diff-allocation-table th:nth-child(2),
+.diff-allocation-table td:nth-child(2) {
+  width: 86px;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-allocation-table th:nth-child(3),
+.diff-allocation-table td:nth-child(3),
+.diff-allocation-table th:nth-child(5),
+.diff-allocation-table td:nth-child(5) {
+  width: 150px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-allocation-table th:nth-child(4),
+.diff-allocation-table td:nth-child(4),
+.diff-allocation-table th:nth-child(6),
+.diff-allocation-table td:nth-child(6),
+.diff-allocation-table th:nth-child(15),
+.diff-allocation-table td:nth-child(15) {
+  width: 138px;
+  max-width: 156px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-allocation-table th:nth-child(7),
+.diff-allocation-table td:nth-child(7),
+.diff-allocation-table th:nth-child(8),
+.diff-allocation-table td:nth-child(8),
+.diff-allocation-table th:nth-child(9),
+.diff-allocation-table td:nth-child(9) {
+  width: 72px;
+  max-width: 82px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-allocation-table th:nth-child(10),
+.diff-allocation-table td:nth-child(10) {
+  width: 210px;
+  max-width: 230px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-allocation-table th:nth-child(14),
+.diff-allocation-table td:nth-child(14) {
+  width: 78px;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .progress-table input[type="checkbox"],
 .diff-allocation-table input[type="checkbox"] {
   width: 16px;

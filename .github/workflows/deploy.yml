@@ -45,12 +45,14 @@ jobs:
             npm run build
             pm2 restart gendanjindu --update-env
             pm2 save
-            sleep 3
-            ss -ltnp | grep ':4003' || true
-            curl -i http://127.0.0.1:4003/ || true
-            curl -i http://127.0.0.1:4003/gendanjindu/ || true
-            grep -R "4003" /etc/nginx/ || true
+            for i in $(seq 1 30); do
+              if curl -fsS http://127.0.0.1:4003/gendanjindu/ >/dev/null; then
+                break
+              fi
+              sleep 2
+            done
             if ! curl -fsS http://127.0.0.1:4003/gendanjindu/ >/dev/null; then
+              ss -ltnp | grep ':4003' || true
               pm2 status
               pm2 logs gendanjindu --lines 80 --nostream
               exit 1

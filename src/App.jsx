@@ -952,7 +952,7 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
             <span>当前文件：{currentStatus?.fileName || '暂无'}</span>
             <span>导入时间：{currentStatus?.importedAt || '暂无'}</span>
             <span>应用时间：{currentStatus?.appliedAt || '暂无'}</span>
-            <span>当前有效行：{currentStatus?.activeRows ?? 0}</span>
+            <span>合并后总行数：{currentStatus?.activeRows ?? 0}</span>
           </div>
         )}
         {file && (

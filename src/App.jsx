@@ -427,6 +427,27 @@ function validMappingForColumns(mapping = {}, columns = [], fields = []) {
   }, {});
 }
 
+function clearInvalidFilterValues(filters, optionMap) {
+  const next = { ...filters };
+  let changed = false;
+  Object.entries(optionMap).forEach(([key, options]) => {
+    const available = new Set(options || []);
+    if (Array.isArray(next[key])) {
+      const filteredValues = next[key].filter((value) => available.has(value));
+      if (filteredValues.length !== next[key].length) {
+        next[key] = filteredValues;
+        changed = true;
+      }
+      return;
+    }
+    if (next[key] && !available.has(next[key])) {
+      next[key] = '';
+      changed = true;
+    }
+  });
+  return changed ? next : null;
+}
+
 function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
   const [filters, setFilters] = useSessionFilters(cacheKey, { keyword: '', month: '', supplier: '', purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
   const unique = (values) => [...new Set(values.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'zh-Hans-CN'));
@@ -457,6 +478,19 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
       purchaseOwners: unique(rowsFor('purchaseOwner').map((row) => row.purchaseOwner))
     };
   }, [rows, filters]);
+  useEffect(() => {
+    const next = clearInvalidFilterValues(filters, {
+      month: options.months,
+      supplier: options.suppliers,
+      purchaseOrg: options.purchaseOrgs,
+      businessUnit: options.businessUnits,
+      productLine: options.productLines,
+      series: options.series,
+      purchaseGroup: options.purchaseGroups,
+      purchaseOwner: options.purchaseOwners
+    });
+    if (next) setFilters(next);
+  }, [options, filters, setFilters]);
   const filtered = useMemo(() => rows.filter((row) => matchesFilters(row)), [rows, filters]);
   return { filters, setFilters, options, filtered };
 }
@@ -560,6 +594,18 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard' }) {
       purchaseOwners: unique(rowsFor('purchaseOwner').map((row) => row.purchaseOwner))
     };
   }, [activeRows, filters]);
+  useEffect(() => {
+    const next = clearInvalidFilterValues(filters, {
+      month: options.months,
+      businessUnit: options.businessUnits,
+      supplier: options.suppliers,
+      productLine: options.productLines,
+      series: options.series,
+      sku: options.skus,
+      purchaseOwner: options.purchaseOwners
+    });
+    if (next) setFilters(next);
+  }, [options, filters, setFilters]);
   const filteredRows = useMemo(() => activeRows.filter((row) => matchesDashboardFilters(row)), [activeRows, filters]);
   const clearFilters = () => setFilters({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
   const summary = filteredRows.reduce((acc, row) => {
@@ -728,6 +774,18 @@ function PurchaseBoard({ rows }) {
       purchaseOwners: unique(rowsFor('purchaseOwner').map((row) => row.purchaseOwner))
     };
   }, [activeRows, filters]);
+  useEffect(() => {
+    const next = clearInvalidFilterValues(filters, {
+      months: options.months,
+      businessUnit: options.businessUnits,
+      supplier: options.suppliers,
+      productLine: options.productLines,
+      series: options.series,
+      sku: options.skus,
+      purchaseOwner: options.purchaseOwners
+    });
+    if (next) setFilters(next);
+  }, [options, filters, setFilters]);
   const filteredRows = useMemo(() => activeRows.filter((row) => matchesFilters(row)), [activeRows, filters]);
   const clearFilters = () => setFilters({ months: [], businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
 

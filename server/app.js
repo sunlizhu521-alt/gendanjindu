@@ -475,6 +475,23 @@ function getDimensionRows(slotId) {
   return parseJson(record.rows_json, []);
 }
 
+function orderDataCounts() {
+  return {
+    demands: numberValue(get('SELECT COUNT(*) AS count FROM order_demands')?.count),
+    activeDemands: numberValue(get('SELECT COUNT(*) AS count FROM order_demands WHERE active = 1')?.count),
+    kingdeeOrders: numberValue(get('SELECT COUNT(*) AS count FROM kingdee_orders')?.count),
+    importBatches: numberValue(get('SELECT COUNT(*) AS count FROM kingdee_import_batches')?.count)
+  };
+}
+
+function assertOrderDataUnchanged(before, message = '维度表操作不能修改采购订单数据') {
+  const after = orderDataCounts();
+  const changed = Object.keys(before).some((key) => before[key] !== after[key]);
+  if (changed) {
+    throw new Error(`${message}，已回滚`);
+  }
+}
+
 function rowAliasValue(row, aliases = []) {
   const sources = [row];
   if (row && typeof row === 'object') {
@@ -608,7 +625,7 @@ function applyDimensionEnrichment() {
   const lookups = dimensionLookups();
   const { productMap, assignmentMap, supplierMap } = lookups;
   const params = all('SELECT * FROM order_demands').map((demand) => {
-    const product = productMap.get(demand.material_code) || {};
+    const product = productMap.get(normalize(demand.material_code)) || {};
     const assignment = assignmentMap.get(assignmentKey(demand.supplier, demand.material_code)) || {};
     const supplierAssignment = supplierMap.get(normalizeMatchPart(demand.supplier)) || {};
     return [
@@ -1657,21 +1674,27 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     return row;
   }).filter((row) => Object.entries(row).some(([key, value]) => key !== 'raw' && Boolean(value)));
   const now = nowText();
-  run(
-    `INSERT INTO dimension_files (slot_id, title, file_name, sheet_name, sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-     ON CONFLICT(slot_id) DO UPDATE SET title = excluded.title, file_name = excluded.file_name, sheet_name = excluded.sheet_name, sheet_names = excluded.sheet_names, mapping_json = excluded.mapping_json, rows_json = excluded.rows_json, applied = 1, uploaded_by = excluded.uploaded_by, updated_at = excluded.updated_at`,
-    [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), sheetName, JSON.stringify(parsed.sheetNames), JSON.stringify(mapping), JSON.stringify(rows), req.user.name, now]
-  );
-  applyDimensionEnrichment();
-  saveDatabase();
+  const beforeOrderCounts = orderDataCounts();
+  transaction(() => {
+    run(
+      `INSERT INTO dimension_files (slot_id, title, file_name, sheet_name, sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+       ON CONFLICT(slot_id) DO UPDATE SET title = excluded.title, file_name = excluded.file_name, sheet_name = excluded.sheet_name, sheet_names = excluded.sheet_names, mapping_json = excluded.mapping_json, rows_json = excluded.rows_json, applied = 1, uploaded_by = excluded.uploaded_by, updated_at = excluded.updated_at`,
+      [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), sheetName, JSON.stringify(parsed.sheetNames), JSON.stringify(mapping), JSON.stringify(rows), req.user.name, now]
+    );
+    applyDimensionEnrichment();
+    assertOrderDataUnchanged(beforeOrderCounts);
+  });
   res.json({ rowCount: rows.length, sheetName, sheetNames: parsed.sheetNames, applied: true, diagnostics: dimensionDiagnostics(slotId, rows), rows: demandRows(false, req.user) });
 });
 
 app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData']), (req, res) => {
-  run('UPDATE dimension_files SET applied = 1, updated_at = ? WHERE slot_id = ?', [nowText(), req.params.slotId]);
-  applyDimensionEnrichment();
-  saveDatabase();
+  const beforeOrderCounts = orderDataCounts();
+  transaction(() => {
+    run('UPDATE dimension_files SET applied = 1, updated_at = ? WHERE slot_id = ?', [nowText(), req.params.slotId]);
+    applyDimensionEnrichment();
+    assertOrderDataUnchanged(beforeOrderCounts);
+  });
   res.json({ rows: demandRows(false, req.user) });
 });
 

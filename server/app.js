@@ -1117,9 +1117,12 @@ function allocationStatus(sessionId) {
   return { total, allocated, complete: total > 0 && allocated >= total };
 }
 
-function applyKingdeeSnapshot({ fileName, sourceRows, summary, diffs, mapping, userName, now }) {
+function applyKingdeeSnapshot({ fileName, sourceRows, summary, diffs, mapping, userName, now, skippedRows = 0, skipped = [] }) {
   const batchId = randomUUID();
-  run('INSERT INTO kingdee_import_batches (id, file_name, imported_by, imported_at, applied_at, row_count) VALUES (?, ?, ?, ?, ?, ?)', [batchId, fileName, userName, now, now, sourceRows.length]);
+  run(
+    'INSERT INTO kingdee_import_batches (id, file_name, imported_by, imported_at, applied_at, row_count, skipped_rows, skipped_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [batchId, fileName, userName, now, now, sourceRows.length, numberValue(skippedRows), JSON.stringify(skipped.slice(0, 100))]
+  );
   sourceRows.forEach((row) => {
     run(
       'INSERT INTO kingdee_orders (id, batch_id, demand_key, month, business_unit, supplier, material_code, purchase_org, creator, oa_flow_no, order_no, quantity, inbound_qty, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -1227,14 +1230,16 @@ app.get('/api/imports/kingdee/current-status', requireAuth, requirePage('kingdee
      ORDER BY COALESCE(NULLIF(b.applied_at, ''), b.imported_at) DESC
      LIMIT 1`
   );
-  const history = all('SELECT id, file_name, imported_by, imported_at, applied_at, row_count FROM kingdee_import_batches ORDER BY imported_at DESC LIMIT 10')
+  const history = all('SELECT id, file_name, imported_by, imported_at, applied_at, row_count, skipped_rows, skipped_json FROM kingdee_import_batches ORDER BY imported_at DESC LIMIT 10')
     .map((row) => ({
       batchId: row.id,
       fileName: row.file_name,
       importedBy: row.imported_by,
       importedAt: row.imported_at,
       appliedAt: row.applied_at || row.imported_at,
-      rowCount: numberValue(row.row_count)
+      rowCount: numberValue(row.row_count),
+      skippedRows: numberValue(row.skipped_rows),
+      skipped: parseJson(row.skipped_json, [])
     }));
   if (!batch) return res.json({ current: null, history });
   const activeRows = numberValue(get('SELECT COUNT(*) AS count FROM order_demands WHERE active = 1')?.count);
@@ -1322,7 +1327,7 @@ app.post('/api/imports/kingdee/apply', requireAuth, requirePage('kingdeeImport')
   const now = nowText();
   let batchId = '';
   transaction(() => {
-    batchId = applyKingdeeSnapshot({ fileName: safeFilename(req.file), sourceRows: result.rows, summary, diffs, mapping, userName: req.user.name, now });
+    batchId = applyKingdeeSnapshot({ fileName: safeFilename(req.file), sourceRows: result.rows, summary, diffs, mapping, userName: req.user.name, now, skippedRows: result.skippedRows, skipped: result.skipped });
   });
   res.json({ batchId, rowCount: result.rows.length, diffs, demands: demandRows(false, req.user) });
 });
@@ -1338,7 +1343,7 @@ app.post('/api/imports/kingdee/new-snapshot', requireAuth, requirePage('kingdeeI
   const compare = persistDifferenceCompare({ file: req.file, sheetName, mapping, parsed, result, summary, user: req.user });
   let batchId = '';
   transaction(() => {
-    batchId = applyKingdeeSnapshot({ fileName: safeFilename(req.file), sourceRows: result.rows, summary, diffs, mapping, userName: req.user.name, now });
+    batchId = applyKingdeeSnapshot({ fileName: safeFilename(req.file), sourceRows: result.rows, summary, diffs, mapping, userName: req.user.name, now, skippedRows: result.skippedRows, skipped: result.skipped });
     run('UPDATE difference_compare_sessions SET status = ?, applied_batch_id = ?, applied_at = ?, new_applied_at = ? WHERE id = ?', ['snapshot_applied', batchId, now, now, compare.sessionId]);
   });
   res.json({
@@ -1540,7 +1545,7 @@ app.post('/api/difference-allocations/:sessionId/apply', requireAuth, requirePag
   const now = nowText();
   let batchId = '';
   transaction(() => {
-    batchId = applyKingdeeSnapshot({ fileName: session.file_name, sourceRows, summary, diffs, mapping, userName: req.user.name, now });
+    batchId = applyKingdeeSnapshot({ fileName: session.file_name, sourceRows, summary, diffs, mapping, userName: req.user.name, now, skippedRows: numberValue(session.skipped_rows), skipped: [] });
     run('UPDATE difference_compare_sessions SET status = ?, applied_batch_id = ?, applied_at = ?, new_applied_at = ? WHERE id = ?', ['applied', batchId, now, now, req.params.sessionId]);
   });
   res.json({ batchId, status: { ...allocationStatus(req.params.sessionId), applied: true }, demands: demandRows(false, req.user) });

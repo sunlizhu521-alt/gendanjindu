@@ -101,6 +101,8 @@ function migrate() {
       imported_by TEXT NOT NULL,
       imported_at TEXT NOT NULL,
       applied_at TEXT NOT NULL DEFAULT '',
+      skipped_rows INTEGER NOT NULL DEFAULT 0,
+      skipped_json TEXT NOT NULL DEFAULT '[]',
       row_count INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS kingdee_orders (
@@ -320,6 +322,12 @@ function migrate() {
   if (!kingdeeBatchColumns.includes('applied_at')) {
     run("ALTER TABLE kingdee_import_batches ADD COLUMN applied_at TEXT NOT NULL DEFAULT ''");
     run("UPDATE kingdee_import_batches SET applied_at = imported_at WHERE applied_at = ''");
+  }
+  if (!kingdeeBatchColumns.includes('skipped_rows')) {
+    run("ALTER TABLE kingdee_import_batches ADD COLUMN skipped_rows INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!kingdeeBatchColumns.includes('skipped_json')) {
+    run("ALTER TABLE kingdee_import_batches ADD COLUMN skipped_json TEXT NOT NULL DEFAULT '[]'");
   }
 
   const progressColumns = all('PRAGMA table_info(supplier_progress)').map((row) => row.name);

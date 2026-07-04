@@ -839,6 +839,11 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
   const [applying, setApplying] = useState(false);
   const [currentStatus, setCurrentStatus] = useState(null);
   const [importHistory, setImportHistory] = useState([]);
+  const skippedImportRows = importHistory.flatMap((record) => (record.skipped || []).map((row) => ({
+    ...row,
+    fileName: record.fileName,
+    importedAt: record.importedAt
+  })));
 
   useEffect(() => {
     request('/api/mappings/kingdee', { token }).then((payload) => setMapping(payload.mapping || {})).catch(() => {});
@@ -1030,9 +1035,23 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
           <DataTable
             className="compact-table"
             rows={importHistory}
-            columns={['文件名', '行数', '导入人', '导入时间', '应用时间']}
-            render={(row) => [row.fileName, row.rowCount, row.importedBy, row.importedAt, row.appliedAt]}
+            columns={['文件名', '有效行数', '跳过行数', '导入人', '导入时间', '应用时间']}
+            render={(row) => [row.fileName, row.rowCount, row.skippedRows || 0, row.importedBy, row.importedAt, row.appliedAt]}
           />
+          <div className="section-heading-row sub-heading-row">
+            <h4>跳过行内容</h4>
+            <span className="section-count">显示最近导入记录中保存的前 {skippedImportRows.length} 条</span>
+          </div>
+          {skippedImportRows.length > 0 ? (
+            <DataTable
+              className="compact-table skipped-history-table"
+              rows={skippedImportRows}
+              columns={['文件名', '导入时间', 'Excel行号', '跳过原因', '原始数据']}
+              render={(row) => [row.fileName, row.importedAt, row.row, row.reasons, row.preview]}
+            />
+          ) : (
+            <p className="empty-text">最近导入记录没有保存跳过行。</p>
+          )}
         </section>
       )}
     </>

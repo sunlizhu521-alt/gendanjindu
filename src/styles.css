@@ -200,6 +200,19 @@ h3 {
   margin: 0;
 }
 
+.sub-heading-row {
+  margin-top: 16px;
+}
+
+.sub-heading-row h4 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.skipped-history-table table {
+  min-width: 1100px;
+}
+
 .section-count {
   color: #64748b;
 }

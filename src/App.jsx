@@ -1198,7 +1198,8 @@ function DomesticBoard({ token, setMessage }) {
   const [sources, setSources] = useState({});
   const [drafts, setDrafts] = useState({});
   const [saving, setSaving] = useState('');
-  const [selectedMerchantCodes, setSelectedMerchantCodes] = useState([]);
+  const [operationSelectedMerchantCodes, setOperationSelectedMerchantCodes] = useState([]);
+  const [purchaseSelectedMerchantCodes, setPurchaseSelectedMerchantCodes] = useState([]);
   const [filters, setFilters] = useSessionFilters('domesticBoard', {
     keyword: '',
     stockupStatus: '',
@@ -1280,18 +1281,19 @@ function DomesticBoard({ token, setMessage }) {
 
   const filtered = useMemo(() => rows.filter((row) => matchesDomesticFilters(row)), [rows, filters]);
   const filteredMerchantCodes = useMemo(() => filtered.map((row) => row.merchantCode).filter(Boolean), [filtered]);
-  const allFilteredSelected = filteredMerchantCodes.length > 0 && filteredMerchantCodes.every((code) => selectedMerchantCodes.includes(code));
+  const allOperationFilteredSelected = filteredMerchantCodes.length > 0 && filteredMerchantCodes.every((code) => operationSelectedMerchantCodes.includes(code));
+  const allPurchaseFilteredSelected = filteredMerchantCodes.length > 0 && filteredMerchantCodes.every((code) => purchaseSelectedMerchantCodes.includes(code));
 
-  function toggleAllFilteredRows() {
-    setSelectedMerchantCodes((prev) => {
+  function toggleAllFilteredRows(selectedCodes, setSelectedCodes, allSelected) {
+    setSelectedCodes((prev) => {
       const visibleSet = new Set(filteredMerchantCodes);
-      if (allFilteredSelected) return prev.filter((code) => !visibleSet.has(code));
+      if (allSelected) return prev.filter((code) => !visibleSet.has(code));
       return [...new Set([...prev, ...filteredMerchantCodes])];
     });
   }
 
-  function toggleRowSelection(merchantCode) {
-    setSelectedMerchantCodes((prev) => (
+  function toggleRowSelection(merchantCode, setSelectedCodes) {
+    setSelectedCodes((prev) => (
       prev.includes(merchantCode) ? prev.filter((code) => code !== merchantCode) : [...prev, merchantCode]
     ));
   }
@@ -1350,15 +1352,16 @@ function DomesticBoard({ token, setMessage }) {
     }
   }
 
-  async function submitSelectedRows() {
+  async function submitSelectedRows(selectedCodes, mode) {
     const selectedRows = rows
-      .filter((row) => selectedMerchantCodes.includes(row.merchantCode))
+      .filter((row) => selectedCodes.includes(row.merchantCode))
       .map((row) => payloadFor(row));
     if (!selectedRows.length) {
       setMessage('请先勾选需要提交的行。');
       return;
     }
-    setSaving('bulk');
+    const savingKey = mode === 'operation' ? 'operationBulk' : 'purchaseBulk';
+    setSaving(savingKey);
     try {
       const payload = await request('/api/domestic-board/bulk', { token, method: 'POST', body: JSON.stringify({ rows: selectedRows }) });
       setRows(payload.rows || []);
@@ -1367,17 +1370,21 @@ function DomesticBoard({ token, setMessage }) {
         selectedRows.forEach((row) => delete next[row.merchantCode]);
         return next;
       });
-      setSelectedMerchantCodes([]);
-      setMessage(`已批量提交 ${payload.updated || 0} 行。`);
+      if (mode === 'operation') {
+        setOperationSelectedMerchantCodes([]);
+      } else {
+        setPurchaseSelectedMerchantCodes([]);
+      }
+      setMessage(`${mode === 'operation' ? '运营' : '采购'}已批量提交 ${payload.updated || 0} 行。`);
     } catch (err) {
-      setMessage(`批量提交失败：${err.message}`);
+      setMessage(`${mode === 'operation' ? '运营' : '采购'}批量提交失败：${err.message}`);
     } finally {
       setSaving('');
     }
   }
 
   async function exportSelectedRows() {
-    const selectedSet = new Set(selectedMerchantCodes);
+    const selectedSet = new Set(purchaseSelectedMerchantCodes);
     const exportRows = (selectedSet.size ? filtered.filter((row) => selectedSet.has(row.merchantCode)) : filtered);
     if (!exportRows.length) {
       setMessage('当前没有可导出的数据。');
@@ -1467,7 +1474,8 @@ function DomesticBoard({ token, setMessage }) {
             onChange={(event) => setFilters({ ...filters, keyword: event.target.value })}
           />
           <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
-          <button type="button" className="compact-button" disabled={saving === 'bulk'} onClick={submitSelectedRows}>{saving === 'bulk' ? '提交中...' : '批量提交'}</button>
+          <button type="button" className="compact-button" disabled={saving === 'operationBulk'} onClick={() => submitSelectedRows(operationSelectedMerchantCodes, 'operation')}>{saving === 'operationBulk' ? '提交中...' : '运营批量提交'}</button>
+          <button type="button" className="compact-button" disabled={saving === 'purchaseBulk'} onClick={() => submitSelectedRows(purchaseSelectedMerchantCodes, 'purchase')}>{saving === 'purchaseBulk' ? '提交中...' : '采购批量提交'}</button>
           <button type="button" className="compact-button" onClick={exportSelectedRows}>批量导出</button>
         </div>
         <div className="slot-info domestic-source-info">
@@ -1484,13 +1492,17 @@ function DomesticBoard({ token, setMessage }) {
           '是否正常备货', '品牌', '产品类型', '商家编码', '系统SKU-必填',
           '旺店通在库量', '非自营近7天出库', '非自营近30天出库', '非自营日销', '非自营未来两周需求量',
           '京仓现货库存', '自营近7天出库', '自营近30天出库', '自营日销', '自营未来两周入仓量',
+          <label className="select-all-header">
+            <input type="checkbox" checked={allOperationFilteredSelected} onChange={() => toggleAllFilteredRows(operationSelectedMerchantCodes, setOperationSelectedMerchantCodes, allOperationFilteredSelected)} />
+            运营选择
+          </label>,
           '全渠道未来两周最低需求量', '是否需要生产', '预计断货时间', '现库存可销天数', '风险判断',
           '未交付数据', '下批给货时间', '下批给货数量', '备注信息',
           <label className="select-all-header">
-            <input type="checkbox" checked={allFilteredSelected} onChange={toggleAllFilteredRows} />
-            选择
+            <input type="checkbox" checked={allPurchaseFilteredSelected} onChange={() => toggleAllFilteredRows(purchaseSelectedMerchantCodes, setPurchaseSelectedMerchantCodes, allPurchaseFilteredSelected)} />
+            采购选择
           </label>,
-          '操作'
+          '采购提交'
         ]}
         render={(row) => [
           row.stockupStatus,
@@ -1508,6 +1520,7 @@ function DomesticBoard({ token, setMessage }) {
           editInput(row, 'self30dOutQty'),
           editInput(row, 'selfDailySales'),
           editInput(row, 'selfFuture14dInboundQty'),
+          <input type="checkbox" checked={operationSelectedMerchantCodes.includes(row.merchantCode)} onChange={() => toggleRowSelection(row.merchantCode, setOperationSelectedMerchantCodes)} />,
           numberCell(row.allChannelFuture14dMinDemandQty),
           row.needProduction,
           row.estimatedStockoutDate,
@@ -1517,8 +1530,8 @@ function DomesticBoard({ token, setMessage }) {
           editInput(row, 'nextSupplyDate', 'date'),
           editInput(row, 'nextSupplyQty'),
           textInput(row, 'remark'),
-          <input type="checkbox" checked={selectedMerchantCodes.includes(row.merchantCode)} onChange={() => toggleRowSelection(row.merchantCode)} />,
-          <button type="button" className="compact-button" disabled={saving === row.merchantCode} onClick={() => saveRow(row)}>{saving === row.merchantCode ? '保存中...' : '保存'}</button>
+          <input type="checkbox" checked={purchaseSelectedMerchantCodes.includes(row.merchantCode)} onChange={() => toggleRowSelection(row.merchantCode, setPurchaseSelectedMerchantCodes)} />,
+          <button type="button" className="compact-button" disabled={saving === row.merchantCode} onClick={() => saveRow(row)}>{saving === row.merchantCode ? '提交中...' : '采购提交'}</button>
         ]}
       />
     </>

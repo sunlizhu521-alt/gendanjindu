@@ -323,6 +323,14 @@ function DataTable({ columns, rows, render, renderRow, className = '' }) {
   );
 }
 
+function PagePane({ page, activeTab, children }) {
+  return (
+    <div className="page-pane" hidden={activeTab !== page}>
+      {children}
+    </div>
+  );
+}
+
 function SelectField({ label, value, options, onChange }) {
   return (
     <label className="filter-control">
@@ -2781,6 +2789,7 @@ function App() {
   if (!token || !user) return <Login onLogin={handleLogin} />;
 
   const visiblePages = PAGE_ORDER.filter((page) => user.role === '管理员' || user.pageAccess?.includes(page));
+  const canView = (page) => visiblePages.includes(page);
 
   return (
     <main className="app-shell" onClick={() => setMessage('')}>
@@ -2802,16 +2811,16 @@ function App() {
       </aside>
       <section className="content" onClick={(event) => event.stopPropagation()}>
         {message && <p className="message">{message}</p>}
-        {activeTab === 'domesticBoard' && <DomesticBoard token={token} setMessage={setMessage} />}
-        {activeTab === 'operationBoard' && <Dashboard rows={demands} title="运营看板" filterKey="operationBoard" />}
-        {activeTab === 'purchaseBoard' && <PurchaseBoard rows={demands} />}
-        {activeTab === 'kingdeeImport' && <KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} />}
-        {activeTab === 'progressRefresh' && <ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} />}
-        {activeTab === 'differenceAllocation' && <DifferenceAllocationPage token={token} user={user} setMessage={setMessage} />}
-        {activeTab === 'wangdianData' && <DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="旺店通数据" slots={WANGDIAN_SLOTS} />}
-        {activeTab === 'dimensionLibrary' && <DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
-        {activeTab === 'trace' && <TracePage token={token} setMessage={setMessage} />}
-        {activeTab === 'permissions' && <PermissionsPage token={token} pages={pages} setMessage={setMessage} />}
+        {canView('domesticBoard') && <PagePane page="domesticBoard" activeTab={activeTab}><DomesticBoard token={token} setMessage={setMessage} /></PagePane>}
+        {canView('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><Dashboard rows={demands} title="运营看板" filterKey="operationBoard" /></PagePane>}
+        {canView('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
+        {canView('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
+        {canView('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
+        {canView('differenceAllocation') && <PagePane page="differenceAllocation" activeTab={activeTab}><DifferenceAllocationPage token={token} user={user} setMessage={setMessage} /></PagePane>}
+        {canView('wangdianData') && <PagePane page="wangdianData" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="旺店通数据" slots={WANGDIAN_SLOTS} /></PagePane>}
+        {canView('dimensionLibrary') && <PagePane page="dimensionLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
+        {canView('trace') && <PagePane page="trace" activeTab={activeTab}><TracePage token={token} setMessage={setMessage} /></PagePane>}
+        {canView('permissions') && <PagePane page="permissions" activeTab={activeTab}><PermissionsPage token={token} pages={pages} setMessage={setMessage} /></PagePane>}
       </section>
     </main>
   );

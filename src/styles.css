@@ -766,6 +766,10 @@ h3 {
   background: #fff;
 }
 
+.page-pane[hidden] {
+  display: none !important;
+}
+
 table {
   width: 100%;
   min-width: 980px;

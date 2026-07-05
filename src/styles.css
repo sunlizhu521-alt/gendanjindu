@@ -1173,7 +1173,7 @@ th {
 }
 
 .domestic-board-table table {
-  min-width: 3150px;
+  min-width: 3270px;
   table-layout: auto;
 }
 
@@ -1258,8 +1258,8 @@ th {
 
 .domestic-board-table th:nth-child(15),
 .domestic-board-table td:nth-child(15),
-.domestic-board-table th:nth-child(27),
-.domestic-board-table td:nth-child(27) {
+.domestic-board-table th:nth-child(28),
+.domestic-board-table td:nth-child(28) {
   width: 86px;
   min-width: 86px;
   max-width: 96px;
@@ -1270,8 +1270,8 @@ th {
 
 .domestic-board-table th:nth-child(16),
 .domestic-board-table td:nth-child(16),
-.domestic-board-table th:nth-child(28),
-.domestic-board-table td:nth-child(28) {
+.domestic-board-table th:nth-child(29),
+.domestic-board-table td:nth-child(29) {
   width: 88px;
   min-width: 88px;
   max-width: 98px;
@@ -1282,8 +1282,8 @@ th {
 
 .domestic-board-table th:nth-child(15),
 .domestic-board-table th:nth-child(16),
-.domestic-board-table th:nth-child(27),
-.domestic-board-table th:nth-child(28) {
+.domestic-board-table th:nth-child(28),
+.domestic-board-table th:nth-child(29) {
   overflow: visible;
 }
 

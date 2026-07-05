@@ -709,16 +709,30 @@ function domesticBoardRows() {
   });
   const manualMap = new Map(all('SELECT * FROM domestic_board_inputs').map((row) => [normalize(row.merchant_code), row]));
   const domesticUndeliveredMap = new Map();
+  const domesticMetaMap = new Map();
+  const productCategoryMap = new Map();
+  getDimensionRows('productCategory').forEach((product) => {
+    const materialCode = normalize(product.materialCode);
+    if (materialCode && !productCategoryMap.has(materialCode)) productCategoryMap.set(materialCode, product);
+  });
   demandRows(false).forEach((demand) => {
     if (normalize(demand.businessUnit) !== '国内事业部') return;
     const materialCode = normalize(demand.materialCode);
     if (!materialCode) return;
     domesticUndeliveredMap.set(materialCode, numberValue(domesticUndeliveredMap.get(materialCode)) + numberValue(demand.remainingInboundQty));
+    const existing = domesticMetaMap.get(materialCode) || {};
+    domesticMetaMap.set(materialCode, {
+      productLine: uniqueDelimitedValues([existing.productLine, demand.productLine]),
+      productSeries: uniqueDelimitedValues([existing.productSeries, demand.productSeries]),
+      purchaseOwner: uniqueDelimitedValues([existing.purchaseOwner, demand.purchaseOwner])
+    });
   });
   return defaultRows.map((row) => {
     const merchantCode = normalize(domesticMerchantCode(row));
     const wdt = wangdianMap.get(merchantCode) || {};
     const manual = manualMap.get(merchantCode) || {};
+    const domesticMeta = domesticMetaMap.get(merchantCode) || {};
+    const product = productCategoryMap.get(merchantCode) || {};
     const wdtStockQty = numberValue(wdt.wdtStockQty ?? rowAliasValue(wdt, ['旺店通在库量']));
     const nonSelf7dOutQty = numberValue(wdt.nonSelf7dOutQty ?? rowAliasValue(wdt, ['非自营近7天出库']));
     const nonSelf30dOutQty = numberValue(wdt.nonSelf30dOutQty ?? rowAliasValue(wdt, ['非自营近30天出库']));
@@ -737,6 +751,10 @@ function domesticBoardRows() {
       productType: normalize(row.productType || rowAliasValue(row, ['产品类型'])),
       merchantCode,
       systemSku: normalize(row.systemSku || rowAliasValue(row, ['系统SKU-必填', '系统SKU', 'SKU'])),
+      salesProductLine: normalize(domesticMeta.productLine || product.productLine || rowAliasValue(row, ['销售产品线', '产品线'])),
+      salesSeries: normalize(domesticMeta.productSeries || product.productSeries || rowAliasValue(row, ['销售系列', '系列'])),
+      model: normalize(row.model || rowAliasValue(row, ['型号', '产品型号', '款式', '规格型号']) || row.systemSku || rowAliasValue(row, ['系统SKU-必填', '系统SKU', 'SKU'])),
+      purchaseOwner: normalize(domesticMeta.purchaseOwner || rowAliasValue(row, ['采购下单人', '下单人', '采购负责人'])),
       wdtStockQty,
       nonSelf7dOutQty,
       nonSelf30dOutQty,

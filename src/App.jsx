@@ -1199,7 +1199,18 @@ function DomesticBoard({ token, setMessage }) {
   const [drafts, setDrafts] = useState({});
   const [saving, setSaving] = useState('');
   const [selectedMerchantCodes, setSelectedMerchantCodes] = useState([]);
-  const [filters, setFilters] = useSessionFilters('domesticBoard', { keyword: '', stockupStatus: '', brand: '', productType: '', needProduction: '', risk: '' });
+  const [filters, setFilters] = useSessionFilters('domesticBoard', {
+    keyword: '',
+    stockupStatus: '',
+    brand: '',
+    productType: '',
+    salesProductLine: '',
+    salesSeries: '',
+    model: '',
+    purchaseOwner: '',
+    needProduction: '',
+    risk: ''
+  });
   const unique = (field) => [...new Set(rows.map((row) => normalize(row[field])).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
 
   async function load() {
@@ -1211,34 +1222,63 @@ function DomesticBoard({ token, setMessage }) {
 
   useEffect(() => { load().catch((err) => setMessage(`国内事业部看板加载失败：${err.message}`)); }, [token]);
 
-  const options = useMemo(() => ({
-    stockupStatuses: unique('stockupStatus'),
-    brands: unique('brand'),
-    productTypes: unique('productType'),
-    needProductions: unique('needProduction'),
-    risks: unique('risk')
-  }), [rows]);
-
-  const filtered = useMemo(() => {
+  const matchesDomesticFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
-    return rows.filter((row) => {
-      const text = [
-        row.stockupStatus,
-        row.brand,
-        row.productType,
-        row.merchantCode,
-        row.systemSku,
-        row.needProduction,
-        row.risk
-      ].join(' ').toLowerCase();
-      return (!keyword || text.includes(keyword))
-        && (!filters.stockupStatus || row.stockupStatus === filters.stockupStatus)
-        && (!filters.brand || row.brand === filters.brand)
-        && (!filters.productType || row.productType === filters.productType)
-        && (!filters.needProduction || row.needProduction === filters.needProduction)
-        && (!filters.risk || row.risk === filters.risk);
-    });
+    const text = [
+      row.stockupStatus,
+      row.brand,
+      row.productType,
+      row.salesProductLine,
+      row.salesSeries,
+      row.model,
+      row.purchaseOwner,
+      row.merchantCode,
+      row.systemSku,
+      row.needProduction,
+      row.risk
+    ].join(' ').toLowerCase();
+    return (!keyword || text.includes(keyword))
+      && (omit === 'stockupStatus' || !filters.stockupStatus || row.stockupStatus === filters.stockupStatus)
+      && (omit === 'brand' || !filters.brand || row.brand === filters.brand)
+      && (omit === 'productType' || !filters.productType || row.productType === filters.productType)
+      && (omit === 'salesProductLine' || !filters.salesProductLine || row.salesProductLine === filters.salesProductLine)
+      && (omit === 'salesSeries' || !filters.salesSeries || row.salesSeries === filters.salesSeries)
+      && (omit === 'model' || !filters.model || row.model === filters.model)
+      && (omit === 'purchaseOwner' || !filters.purchaseOwner || row.purchaseOwner === filters.purchaseOwner)
+      && (omit === 'needProduction' || !filters.needProduction || row.needProduction === filters.needProduction)
+      && (omit === 'risk' || !filters.risk || row.risk === filters.risk);
+  };
+
+  const options = useMemo(() => {
+    const rowsFor = (field) => rows.filter((row) => matchesDomesticFilters(row, field));
+    return {
+      stockupStatuses: [...new Set(rowsFor('stockupStatus').map((row) => normalize(row.stockupStatus)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')),
+      brands: [...new Set(rowsFor('brand').map((row) => normalize(row.brand)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')),
+      productTypes: [...new Set(rowsFor('productType').map((row) => normalize(row.productType)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')),
+      salesProductLines: [...new Set(rowsFor('salesProductLine').map((row) => normalize(row.salesProductLine)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')),
+      salesSeries: [...new Set(rowsFor('salesSeries').map((row) => normalize(row.salesSeries)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')),
+      models: [...new Set(rowsFor('model').map((row) => normalize(row.model)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')),
+      purchaseOwners: [...new Set(rowsFor('purchaseOwner').map((row) => normalize(row.purchaseOwner)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')),
+      needProductions: [...new Set(rowsFor('needProduction').map((row) => normalize(row.needProduction)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')),
+      risks: [...new Set(rowsFor('risk').map((row) => normalize(row.risk)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
+    };
   }, [rows, filters]);
+  useEffect(() => {
+    const next = clearInvalidFilterValues(filters, {
+      stockupStatus: options.stockupStatuses,
+      brand: options.brands,
+      productType: options.productTypes,
+      salesProductLine: options.salesProductLines,
+      salesSeries: options.salesSeries,
+      model: options.models,
+      purchaseOwner: options.purchaseOwners,
+      needProduction: options.needProductions,
+      risk: options.risks
+    });
+    if (next) setFilters(next);
+  }, [options, filters, setFilters]);
+
+  const filtered = useMemo(() => rows.filter((row) => matchesDomesticFilters(row)), [rows, filters]);
   const filteredMerchantCodes = useMemo(() => filtered.map((row) => row.merchantCode).filter(Boolean), [filtered]);
   const allFilteredSelected = filteredMerchantCodes.length > 0 && filteredMerchantCodes.every((code) => selectedMerchantCodes.includes(code));
 
@@ -1392,7 +1432,7 @@ function DomesticBoard({ token, setMessage }) {
     }
   }
 
-  const clearFilters = () => setFilters({ keyword: '', stockupStatus: '', brand: '', productType: '', needProduction: '', risk: '' });
+  const clearFilters = () => setFilters({ keyword: '', stockupStatus: '', brand: '', productType: '', salesProductLine: '', salesSeries: '', model: '', purchaseOwner: '', needProduction: '', risk: '' });
   const numberCell = (value) => numberValue(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
   const editInput = (row, key, type = 'number') => {
     const value = draftFor(row)[key];
@@ -1414,6 +1454,10 @@ function DomesticBoard({ token, setMessage }) {
           <SelectField label="是否正常备货" value={filters.stockupStatus} options={options.stockupStatuses} onChange={(value) => setFilters({ ...filters, stockupStatus: value })} />
           <SelectField label="品牌" value={filters.brand} options={options.brands} onChange={(value) => setFilters({ ...filters, brand: value })} />
           <SelectField label="产品类型" value={filters.productType} options={options.productTypes} onChange={(value) => setFilters({ ...filters, productType: value })} />
+          <SelectField label="销售产品线" value={filters.salesProductLine} options={options.salesProductLines} onChange={(value) => setFilters({ ...filters, salesProductLine: value })} />
+          <SelectField label="销售系列" value={filters.salesSeries} options={options.salesSeries} onChange={(value) => setFilters({ ...filters, salesSeries: value })} />
+          <SelectField label="型号" value={filters.model} options={options.models} onChange={(value) => setFilters({ ...filters, model: value })} />
+          <SelectField label="采购下单人" value={filters.purchaseOwner} options={options.purchaseOwners} onChange={(value) => setFilters({ ...filters, purchaseOwner: value })} />
           <SelectField label="是否需要生产" value={filters.needProduction} options={options.needProductions} onChange={(value) => setFilters({ ...filters, needProduction: value })} />
           <SelectField label="风险判断" value={filters.risk} options={options.risks} onChange={(value) => setFilters({ ...filters, risk: value })} />
           <input

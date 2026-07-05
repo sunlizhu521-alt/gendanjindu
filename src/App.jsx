@@ -37,7 +37,8 @@ const DIMENSION_SLOTS = [
     ['logisticsCode', '物流编码'],
     ['materialName', '物料名称'],
     ['productLine', '销售产品线'],
-    ['productSeries', '销售系列']
+    ['productSeries', '销售系列'],
+    ['model', '型号']
   ] },
   { id: 'purchaseAssignment', title: '采购分工', fields: [
     ['supplier', '供应商'],

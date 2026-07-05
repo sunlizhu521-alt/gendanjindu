@@ -615,6 +615,10 @@ function domesticMerchantCode(row) {
   return rowAliasValue(row, ['merchantCode', '商家编码', '商家编码 ', '商品编码']);
 }
 
+function productCategoryModel(row) {
+  return rowAliasValue(row, ['model', '型号', '产品型号', '款式', '规格型号', '规格']);
+}
+
 function roundQty(value, digits = 2) {
   const factor = 10 ** digits;
   return Math.round(numberValue(value) * factor) / factor;
@@ -753,7 +757,7 @@ function domesticBoardRows() {
       systemSku: normalize(row.systemSku || rowAliasValue(row, ['系统SKU-必填', '系统SKU', 'SKU'])),
       salesProductLine: normalize(domesticMeta.productLine || product.productLine || rowAliasValue(row, ['销售产品线', '产品线'])),
       salesSeries: normalize(domesticMeta.productSeries || product.productSeries || rowAliasValue(row, ['销售系列', '系列'])),
-      model: normalize(row.model || rowAliasValue(row, ['型号', '产品型号', '款式', '规格型号']) || row.systemSku || rowAliasValue(row, ['系统SKU-必填', '系统SKU', 'SKU'])),
+      model: normalize(productCategoryModel(product)),
       purchaseOwner: normalize(domesticMeta.purchaseOwner || rowAliasValue(row, ['采购下单人', '下单人', '采购负责人'])),
       wdtStockQty,
       nonSelf7dOutQty,
@@ -1859,7 +1863,8 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         logisticsCode: pick(row, mapping.logisticsCode),
         materialName: pick(row, mapping.materialName),
         productLine: pick(row, mapping.productLine),
-        productSeries: pick(row, mapping.productSeries)
+        productSeries: pick(row, mapping.productSeries),
+        model: pick(row, mapping.model) || pickAny(row, ['型号', '产品型号', '款式', '规格型号', '规格'])
       };
     }
     if (slotId === 'purchaseAssignment') {

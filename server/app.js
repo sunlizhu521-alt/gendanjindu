@@ -18,7 +18,7 @@ const ADMIN_NAME = process.env.ADMIN_NAME || '孙立柱';
 const ROLE_ADMIN = '管理员';
 const ROLE_USER = '普通用户';
 const ALL_PAGES = [
-  'dashboard',
+  'domesticBoard',
   'operationBoard',
   'purchaseBoard',
   'progressRefresh',
@@ -30,7 +30,7 @@ const ALL_PAGES = [
   'permissions'
 ];
 const PAGE_LABELS = {
-  dashboard: '采购总览',
+  domesticBoard: '国内事业部看板',
   operationBoard: '运营看板',
   purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',

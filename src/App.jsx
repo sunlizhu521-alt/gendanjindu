@@ -5,7 +5,7 @@ const TOKEN_KEY = 'gendanjinduToken';
 const BUSINESS_UNITS = ['海外事业一部', '海外事业二部', '国内事业部', '全球招商部', '其他部门'];
 
 const PAGE_ORDER = [
-  'dashboard',
+  'domesticBoard',
   'operationBoard',
   'purchaseBoard',
   'progressRefresh',
@@ -18,7 +18,7 @@ const PAGE_ORDER = [
 ];
 
 const PAGE_LABELS = {
-  dashboard: '采购总览',
+  domesticBoard: '国内事业部看板',
   operationBoard: '运营看板',
   purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',
@@ -1179,6 +1179,14 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
         </section>
       )}
     </>
+  );
+}
+
+function DomesticBoard() {
+  return (
+    <div className="section-heading-row">
+      <h2>国内事业部看板</h2>
+    </div>
   );
 }
 
@@ -2371,7 +2379,7 @@ function App() {
   const [token, setToken] = useState(() => window.localStorage.getItem(TOKEN_KEY) || '');
   const [user, setUser] = useState(null);
   const [pages, setPages] = useState(PAGE_LABELS);
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('domesticBoard');
   const [demands, setDemands] = useState([]);
   const [message, setMessage] = useState('');
 
@@ -2387,7 +2395,7 @@ function App() {
     ]);
     setUser(payload.user);
     setPages(payload.pages || PAGE_LABELS);
-    setActiveTab(PAGE_ORDER.find((page) => payload.user.role === '管理员' || payload.user.pageAccess?.includes(page)) || 'dashboard');
+    setActiveTab(PAGE_ORDER.find((page) => payload.user.role === '管理员' || payload.user.pageAccess?.includes(page)) || 'domesticBoard');
     setDemands(demandPayload.rows || []);
   }
 
@@ -2405,7 +2413,7 @@ function App() {
     setToken(payload.token);
     setUser(payload.user);
     setPages(payload.pages || PAGE_LABELS);
-    setActiveTab(PAGE_ORDER.find((page) => payload.user.role === '管理员' || payload.user.pageAccess?.includes(page)) || 'dashboard');
+    setActiveTab(PAGE_ORDER.find((page) => payload.user.role === '管理员' || payload.user.pageAccess?.includes(page)) || 'domesticBoard');
   }
 
   async function logout() {
@@ -2439,7 +2447,7 @@ function App() {
       </aside>
       <section className="content" onClick={(event) => event.stopPropagation()}>
         {message && <p className="message">{message}</p>}
-        {activeTab === 'dashboard' && <Dashboard rows={demands} />}
+        {activeTab === 'domesticBoard' && <DomesticBoard />}
         {activeTab === 'operationBoard' && <Dashboard rows={demands} title="运营看板" filterKey="operationBoard" />}
         {activeTab === 'purchaseBoard' && <PurchaseBoard rows={demands} />}
         {activeTab === 'kingdeeImport' && <KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} />}

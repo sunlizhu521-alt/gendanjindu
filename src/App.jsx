@@ -1330,7 +1330,7 @@ function DomesticBoard({ token, setMessage }) {
     return { merchantCode: row.merchantCode, ...draft };
   }
 
-  async function saveRow(row) {
+  async function saveRow(row, mode = 'purchase') {
     setSaving(row.merchantCode);
     try {
       const payload = await request(`/api/domestic-board/${encodeURIComponent(row.merchantCode)}`, {
@@ -1344,9 +1344,9 @@ function DomesticBoard({ token, setMessage }) {
         delete next[row.merchantCode];
         return next;
       });
-      setMessage(`${row.merchantCode} 已保存。`);
+      setMessage(`${row.merchantCode} ${mode === 'operation' ? '运营' : '采购'}已提交。`);
     } catch (err) {
-      setMessage(`保存失败：${err.message}`);
+      setMessage(`${mode === 'operation' ? '运营' : '采购'}提交失败：${err.message}`);
     } finally {
       setSaving('');
     }
@@ -1496,6 +1496,7 @@ function DomesticBoard({ token, setMessage }) {
             <input type="checkbox" checked={allOperationFilteredSelected} onChange={() => toggleAllFilteredRows(operationSelectedMerchantCodes, setOperationSelectedMerchantCodes, allOperationFilteredSelected)} />
             运营选择
           </label>,
+          '运营提交',
           '全渠道未来两周最低需求量', '是否需要生产', '预计断货时间', '现库存可销天数', '风险判断',
           '未交付数据', '下批给货时间', '下批给货数量', '备注信息',
           <label className="select-all-header">
@@ -1521,6 +1522,7 @@ function DomesticBoard({ token, setMessage }) {
           editInput(row, 'selfDailySales'),
           editInput(row, 'selfFuture14dInboundQty'),
           <input type="checkbox" checked={operationSelectedMerchantCodes.includes(row.merchantCode)} onChange={() => toggleRowSelection(row.merchantCode, setOperationSelectedMerchantCodes)} />,
+          <button type="button" className="compact-button" disabled={saving === row.merchantCode} onClick={() => saveRow(row, 'operation')}>{saving === row.merchantCode ? '提交中...' : '运营提交'}</button>,
           numberCell(row.allChannelFuture14dMinDemandQty),
           row.needProduction,
           row.estimatedStockoutDate,
@@ -1531,7 +1533,7 @@ function DomesticBoard({ token, setMessage }) {
           editInput(row, 'nextSupplyQty'),
           textInput(row, 'remark'),
           <input type="checkbox" checked={purchaseSelectedMerchantCodes.includes(row.merchantCode)} onChange={() => toggleRowSelection(row.merchantCode, setPurchaseSelectedMerchantCodes)} />,
-          <button type="button" className="compact-button" disabled={saving === row.merchantCode} onClick={() => saveRow(row)}>{saving === row.merchantCode ? '提交中...' : '采购提交'}</button>
+          <button type="button" className="compact-button" disabled={saving === row.merchantCode} onClick={() => saveRow(row, 'purchase')}>{saving === row.merchantCode ? '提交中...' : '采购提交'}</button>
         ]}
       />
     </>

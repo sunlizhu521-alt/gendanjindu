@@ -1168,7 +1168,7 @@ th {
 }
 
 .domestic-board-table table {
-  min-width: 3020px;
+  min-width: 3150px;
   table-layout: auto;
 }
 
@@ -1190,14 +1190,33 @@ th {
 
 .domestic-board-table th:nth-child(16),
 .domestic-board-table td:nth-child(16),
-.domestic-board-table th:nth-child(26),
-.domestic-board-table td:nth-child(26) {
-  width: 58px;
-  min-width: 58px;
-  max-width: 66px;
+.domestic-board-table th:nth-child(27),
+.domestic-board-table td:nth-child(27) {
+  width: 86px;
+  min-width: 86px;
+  max-width: 96px;
   padding-left: 4px;
   padding-right: 4px;
   text-align: center;
+}
+
+.domestic-board-table th:nth-child(17),
+.domestic-board-table td:nth-child(17),
+.domestic-board-table th:nth-child(28),
+.domestic-board-table td:nth-child(28) {
+  width: 88px;
+  min-width: 88px;
+  max-width: 98px;
+  padding-left: 4px;
+  padding-right: 4px;
+  text-align: center;
+}
+
+.domestic-board-table th:nth-child(16),
+.domestic-board-table th:nth-child(17),
+.domestic-board-table th:nth-child(27),
+.domestic-board-table th:nth-child(28) {
+  overflow: visible;
 }
 
 .domestic-board-table input[type="checkbox"] {

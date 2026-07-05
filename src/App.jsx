@@ -58,10 +58,10 @@ const DIMENSION_SLOTS = [
 ];
 
 const WANGDIAN_SLOTS = [
-  { ...DIMENSION_SLOTS[0], title: '旺店通数据' },
-  { ...DIMENSION_SLOTS[1], title: '备用1' },
-  { ...DIMENSION_SLOTS[2], title: '备用2' },
-  { ...DIMENSION_SLOTS[3], title: '备用3' }
+  { ...DIMENSION_SLOTS[0], id: 'wangdianDataMain', title: '旺店通数据' },
+  { ...DIMENSION_SLOTS[1], id: 'wangdianSpare1', title: '备用1' },
+  { ...DIMENSION_SLOTS[2], id: 'wangdianSpare2', title: '备用2' },
+  { ...DIMENSION_SLOTS[3], id: 'wangdianSpare3', title: '备用3' }
 ];
 
 const KINGDEE_FIELDS = [

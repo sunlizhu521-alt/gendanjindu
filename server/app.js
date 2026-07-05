@@ -45,7 +45,11 @@ const DIMENSION_SLOTS = {
   productCategory: '商品分类',
   purchaseAssignment: '采购分工',
   spare1: '仓库名称',
-  spare2: '备用 2'
+  spare2: '备用 2',
+  wangdianDataMain: '旺店通数据',
+  wangdianSpare1: '备用1',
+  wangdianSpare2: '备用2',
+  wangdianSpare3: '备用3'
 };
 const DIFF_NORMAL_ORDER = '正常订单';
 const DIFF_ORDER_COMPLETE_REASON = '订单已完结';

@@ -1167,6 +1167,11 @@ th {
   padding: 2px 0 0;
 }
 
+.domestic-board-table {
+  max-height: calc(100vh - 230px);
+  overflow: auto;
+}
+
 .domestic-board-table table {
   min-width: 3150px;
   table-layout: auto;
@@ -1180,6 +1185,12 @@ th {
   white-space: nowrap;
 }
 
+.domestic-board-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
 .domestic-board-table tbody tr:nth-child(even) td {
   background: #fbfdff;
 }
@@ -1188,8 +1199,65 @@ th {
   background: #f0f7ff;
 }
 
-.domestic-board-table th:nth-child(16),
-.domestic-board-table td:nth-child(16),
+.domestic-board-table th:nth-child(1),
+.domestic-board-table td:nth-child(1) {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  width: 120px;
+  min-width: 120px;
+  max-width: 120px;
+}
+
+.domestic-board-table th:nth-child(2),
+.domestic-board-table td:nth-child(2) {
+  position: sticky;
+  left: 120px;
+  z-index: 4;
+  width: 130px;
+  min-width: 130px;
+  max-width: 130px;
+}
+
+.domestic-board-table th:nth-child(3),
+.domestic-board-table td:nth-child(3) {
+  position: sticky;
+  left: 250px;
+  z-index: 4;
+  width: 132px;
+  min-width: 132px;
+  max-width: 132px;
+}
+
+.domestic-board-table th:nth-child(4),
+.domestic-board-table td:nth-child(4) {
+  position: sticky;
+  left: 382px;
+  z-index: 4;
+  width: 150px;
+  min-width: 150px;
+  max-width: 150px;
+  box-shadow: 8px 0 10px -10px rgba(15, 23, 42, .45);
+}
+
+.domestic-board-table thead th:nth-child(-n+4) {
+  z-index: 7;
+}
+
+.domestic-board-table tbody td:nth-child(-n+4) {
+  background: #fff;
+}
+
+.domestic-board-table tbody tr:nth-child(even) td:nth-child(-n+4) {
+  background: #fbfdff;
+}
+
+.domestic-board-table tbody tr:hover td:nth-child(-n+4) {
+  background: #f0f7ff;
+}
+
+.domestic-board-table th:nth-child(15),
+.domestic-board-table td:nth-child(15),
 .domestic-board-table th:nth-child(27),
 .domestic-board-table td:nth-child(27) {
   width: 86px;
@@ -1200,8 +1268,8 @@ th {
   text-align: center;
 }
 
-.domestic-board-table th:nth-child(17),
-.domestic-board-table td:nth-child(17),
+.domestic-board-table th:nth-child(16),
+.domestic-board-table td:nth-child(16),
 .domestic-board-table th:nth-child(28),
 .domestic-board-table td:nth-child(28) {
   width: 88px;
@@ -1212,8 +1280,8 @@ th {
   text-align: center;
 }
 
+.domestic-board-table th:nth-child(15),
 .domestic-board-table th:nth-child(16),
-.domestic-board-table th:nth-child(17),
 .domestic-board-table th:nth-child(27),
 .domestic-board-table th:nth-child(28) {
   overflow: visible;

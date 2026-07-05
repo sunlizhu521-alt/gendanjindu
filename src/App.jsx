@@ -1336,6 +1336,62 @@ function DomesticBoard({ token, setMessage }) {
     }
   }
 
+  async function exportSelectedRows() {
+    const selectedSet = new Set(selectedMerchantCodes);
+    const exportRows = (selectedSet.size ? filtered.filter((row) => selectedSet.has(row.merchantCode)) : filtered);
+    if (!exportRows.length) {
+      setMessage('当前没有可导出的数据。');
+      return;
+    }
+    try {
+      const XLSX = await import('xlsx');
+      const headers = [
+        '是否正常备货', '品牌', '产品类型', '商家编码', '系统SKU-必填',
+        '旺店通在库量', '非自营近7天出库', '非自营近30天出库', '非自营日销', '非自营未来两周需求量',
+        '京仓现货库存', '自营近7天出库', '自营近30天出库', '自营日销', '自营未来两周入仓量',
+        '全渠道未来两周最低需求量', '是否需要生产', '预计断货时间', '现库存可销天数', '风险判断',
+        '未交付数据', '下批给货时间', '下批给货数量', '备注信息'
+      ];
+      const aoa = [headers];
+      exportRows.forEach((row) => {
+        const draft = draftFor(row);
+        aoa.push([
+          row.stockupStatus,
+          row.brand,
+          row.productType,
+          row.merchantCode,
+          row.systemSku,
+          numberValue(row.wdtStockQty),
+          numberValue(row.nonSelf7dOutQty),
+          numberValue(row.nonSelf30dOutQty),
+          numberValue(row.nonSelfDailySales),
+          numberValue(row.nonSelfFuture14dDemandQty),
+          numberValue(draft.jdStockQty),
+          numberValue(draft.self7dOutQty),
+          numberValue(draft.self30dOutQty),
+          numberValue(draft.selfDailySales),
+          numberValue(draft.selfFuture14dInboundQty),
+          numberValue(row.allChannelFuture14dMinDemandQty),
+          row.needProduction,
+          row.estimatedStockoutDate,
+          numberValue(row.sellableDays),
+          row.risk,
+          numberValue(row.domesticUndeliveredQty),
+          draft.nextSupplyDate,
+          numberValue(draft.nextSupplyQty),
+          draft.remark
+        ]);
+      });
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+      XLSX.utils.book_append_sheet(workbook, worksheet, '国内事业部看板');
+      XLSX.writeFile(workbook, `国内事业部看板_${selectedSet.size ? '已选择' : '当前筛选'}_${todayText()}.xlsx`);
+      setMessage(`已导出 ${exportRows.length} 行国内事业部看板数据。`);
+    } catch (err) {
+      setMessage(`导出失败：${err.message}`);
+    }
+  }
+
   const clearFilters = () => setFilters({ keyword: '', stockupStatus: '', brand: '', productType: '', needProduction: '', risk: '' });
   const numberCell = (value) => numberValue(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
   const editInput = (row, key, type = 'number') => {
@@ -1368,6 +1424,7 @@ function DomesticBoard({ token, setMessage }) {
           />
           <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
           <button type="button" className="compact-button" disabled={saving === 'bulk'} onClick={submitSelectedRows}>{saving === 'bulk' ? '提交中...' : '批量提交'}</button>
+          <button type="button" className="compact-button" onClick={exportSelectedRows}>批量导出</button>
         </div>
         <div className="slot-info domestic-source-info">
           <span>默认数据：{sources.defaultData?.file_name || '未上传'}</span>

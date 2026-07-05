@@ -1310,23 +1310,27 @@ function DomesticBoard({ token, setMessage }) {
     }
   }
 
-  async function saveChangedRows() {
-    const changedRows = Object.keys(drafts).map((merchantCode) => {
-      const row = rows.find((item) => item.merchantCode === merchantCode);
-      return row ? payloadFor(row) : null;
-    }).filter(Boolean);
-    if (!changedRows.length) {
-      setMessage('没有需要保存的修改。');
+  async function submitSelectedRows() {
+    const selectedRows = rows
+      .filter((row) => selectedMerchantCodes.includes(row.merchantCode))
+      .map((row) => payloadFor(row));
+    if (!selectedRows.length) {
+      setMessage('请先勾选需要提交的行。');
       return;
     }
     setSaving('bulk');
     try {
-      const payload = await request('/api/domestic-board/bulk', { token, method: 'POST', body: JSON.stringify({ rows: changedRows }) });
+      const payload = await request('/api/domestic-board/bulk', { token, method: 'POST', body: JSON.stringify({ rows: selectedRows }) });
       setRows(payload.rows || []);
-      setDrafts({});
-      setMessage(`已批量保存 ${payload.updated || 0} 行。`);
+      setDrafts((prev) => {
+        const next = { ...prev };
+        selectedRows.forEach((row) => delete next[row.merchantCode]);
+        return next;
+      });
+      setSelectedMerchantCodes([]);
+      setMessage(`已批量提交 ${payload.updated || 0} 行。`);
     } catch (err) {
-      setMessage(`批量保存失败：${err.message}`);
+      setMessage(`批量提交失败：${err.message}`);
     } finally {
       setSaving('');
     }
@@ -1363,7 +1367,7 @@ function DomesticBoard({ token, setMessage }) {
             onChange={(event) => setFilters({ ...filters, keyword: event.target.value })}
           />
           <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
-          <button type="button" className="compact-button" disabled={saving === 'bulk'} onClick={saveChangedRows}>{saving === 'bulk' ? '保存中...' : '批量保存'}</button>
+          <button type="button" className="compact-button" disabled={saving === 'bulk'} onClick={submitSelectedRows}>{saving === 'bulk' ? '提交中...' : '批量提交'}</button>
         </div>
         <div className="slot-info domestic-source-info">
           <span>默认数据：{sources.defaultData?.file_name || '未上传'}</span>

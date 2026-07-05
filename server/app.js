@@ -45,7 +45,7 @@ const DIMENSION_SLOTS = {
   productCategory: '商品分类',
   purchaseAssignment: '采购分工',
   spare1: '仓库名称',
-  spare2: '备用 2',
+  spare2: '国内运营默认数据',
   wangdianDataMain: '旺店通数据',
   wangdianSpare1: '备用1',
   wangdianSpare2: '备用2',
@@ -604,7 +604,151 @@ function dimensionDiagnostics(slotId, rows = []) {
     const matchedRows = [...demandMaterials].filter((key) => materialSet.has(key)).length;
     return { totalRows: rows.length, keyRows: materialSet.size, matchedRows };
   }
+  if (slotId === 'spare2' || slotId === 'wangdianDataMain') {
+    const merchantCodes = new Set(rows.map((row) => normalize(domesticMerchantCode(row))).filter(Boolean));
+    return { totalRows: rows.length, keyRows: merchantCodes.size };
+  }
   return { totalRows: rows.length };
+}
+
+function domesticMerchantCode(row) {
+  return rowAliasValue(row, ['merchantCode', '商家编码', '商家编码 ', '商品编码']);
+}
+
+function roundQty(value, digits = 2) {
+  const factor = 10 ** digits;
+  return Math.round(numberValue(value) * factor) / factor;
+}
+
+function dateOnly(value) {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function addDaysText(days) {
+  const numericDays = numberValue(days);
+  if (!Number.isFinite(numericDays) || numericDays <= 0) return '';
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + Math.max(Math.ceil(numericDays) - 1, 0));
+  return dateOnly(d);
+}
+
+function riskLabel(days, wdtStockQty) {
+  const stock = numberValue(wdtStockQty);
+  const value = numberValue(days);
+  if (!value) return '';
+  if (value < 15) return '🔴断货风险';
+  if (value < 30) return '🟡备货紧张';
+  if (value <= 90) return '🟢安全健康';
+  if (value <= 150) return '🟡关注/较慢';
+  return stock >= 50 ? '🔴严重积压' : '🟡正常库存周转偏慢';
+}
+
+function domesticManualPayload(body = {}) {
+  const selfDailySalesRaw = normalize(body.selfDailySales ?? body.self_daily_sales ?? '');
+  const explicitManual = body.selfDailySalesManual ?? body.self_daily_sales_manual;
+  return {
+    jdStockQty: numberValue(body.jdStockQty ?? body.jd_stock_qty),
+    self7dOutQty: numberValue(body.self7dOutQty ?? body.self_7d_out_qty),
+    self30dOutQty: numberValue(body.self30dOutQty ?? body.self_30d_out_qty),
+    selfDailySales: numberValue(selfDailySalesRaw),
+    selfDailySalesManual: explicitManual === undefined ? (selfDailySalesRaw ? 1 : 0) : (explicitManual ? 1 : 0),
+    selfFuture14dInboundQty: numberValue(body.selfFuture14dInboundQty ?? body.self_future_14d_inbound_qty),
+    nextSupplyDate: normalize(body.nextSupplyDate ?? body.next_supply_date),
+    nextSupplyQty: numberValue(body.nextSupplyQty ?? body.next_supply_qty)
+  };
+}
+
+function saveDomesticManualInput(merchantCode, payload, userName) {
+  const now = nowText();
+  run(
+    `INSERT INTO domestic_board_inputs
+      (merchant_code, jd_stock_qty, self_7d_out_qty, self_30d_out_qty, self_daily_sales, self_daily_sales_manual, self_future_14d_inbound_qty, next_supply_date, next_supply_qty, updated_by, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(merchant_code) DO UPDATE SET
+       jd_stock_qty = excluded.jd_stock_qty,
+       self_7d_out_qty = excluded.self_7d_out_qty,
+       self_30d_out_qty = excluded.self_30d_out_qty,
+       self_daily_sales = excluded.self_daily_sales,
+       self_daily_sales_manual = excluded.self_daily_sales_manual,
+       self_future_14d_inbound_qty = excluded.self_future_14d_inbound_qty,
+       next_supply_date = excluded.next_supply_date,
+       next_supply_qty = excluded.next_supply_qty,
+       updated_by = excluded.updated_by,
+       updated_at = excluded.updated_at`,
+    [
+      merchantCode,
+      payload.jdStockQty,
+      payload.self7dOutQty,
+      payload.self30dOutQty,
+      payload.selfDailySales,
+      payload.selfDailySalesManual,
+      payload.selfFuture14dInboundQty,
+      payload.nextSupplyDate,
+      payload.nextSupplyQty,
+      userName,
+      now
+    ]
+  );
+  return now;
+}
+
+function domesticBoardRows() {
+  const defaultRows = getDimensionRows('spare2');
+  const wangdianRows = getDimensionRows('wangdianDataMain');
+  const wangdianMap = new Map();
+  wangdianRows.forEach((row) => {
+    const merchantCode = normalize(domesticMerchantCode(row));
+    if (merchantCode && !wangdianMap.has(merchantCode)) wangdianMap.set(merchantCode, row);
+  });
+  const manualMap = new Map(all('SELECT * FROM domestic_board_inputs').map((row) => [normalize(row.merchant_code), row]));
+  return defaultRows.map((row) => {
+    const merchantCode = normalize(domesticMerchantCode(row));
+    const wdt = wangdianMap.get(merchantCode) || {};
+    const manual = manualMap.get(merchantCode) || {};
+    const wdtStockQty = numberValue(wdt.wdtStockQty ?? rowAliasValue(wdt, ['旺店通在库量']));
+    const nonSelf7dOutQty = numberValue(wdt.nonSelf7dOutQty ?? rowAliasValue(wdt, ['非自营近7天出库']));
+    const nonSelf30dOutQty = numberValue(wdt.nonSelf30dOutQty ?? rowAliasValue(wdt, ['非自营近30天出库']));
+    const nonSelfDailySales = roundQty((nonSelf7dOutQty + nonSelf30dOutQty) / 37);
+    const nonSelfFuture14dDemandQty = roundQty(nonSelfDailySales * 14);
+    const self7dOutQty = numberValue(manual.self_7d_out_qty);
+    const self30dOutQty = numberValue(manual.self_30d_out_qty);
+    const calculatedSelfDailySales = roundQty((self7dOutQty + self30dOutQty) / 37);
+    const selfDailySales = manual.self_daily_sales_manual ? numberValue(manual.self_daily_sales) : calculatedSelfDailySales;
+    const selfFuture14dInboundQty = numberValue(manual.self_future_14d_inbound_qty);
+    const allChannelFuture14dMinDemandQty = roundQty(selfFuture14dInboundQty + nonSelfFuture14dDemandQty);
+    const sellableDays = (nonSelfDailySales + selfDailySales) > 0 ? roundQty(wdtStockQty / (nonSelfDailySales + selfDailySales)) : 0;
+    return {
+      stockupStatus: normalize(row.stockupStatus || rowAliasValue(row, ['是否正常备货'])),
+      brand: normalize(row.brand || rowAliasValue(row, ['品牌'])),
+      productType: normalize(row.productType || rowAliasValue(row, ['产品类型'])),
+      merchantCode,
+      systemSku: normalize(row.systemSku || rowAliasValue(row, ['系统SKU-必填', '系统SKU', 'SKU'])),
+      wdtStockQty,
+      nonSelf7dOutQty,
+      nonSelf30dOutQty,
+      nonSelfDailySales,
+      nonSelfFuture14dDemandQty,
+      jdStockQty: numberValue(manual.jd_stock_qty),
+      self7dOutQty,
+      self30dOutQty,
+      selfDailySales,
+      selfDailySalesManual: Boolean(manual.self_daily_sales_manual),
+      selfFuture14dInboundQty,
+      allChannelFuture14dMinDemandQty,
+      needProduction: wdtStockQty < allChannelFuture14dMinDemandQty ? '需要生产' : '',
+      estimatedStockoutDate: sellableDays ? addDaysText(sellableDays) : '',
+      sellableDays,
+      risk: riskLabel(sellableDays, wdtStockQty),
+      nextSupplyDate: normalize(manual.next_supply_date),
+      nextSupplyQty: numberValue(manual.next_supply_qty),
+      updatedBy: normalize(manual.updated_by),
+      updatedAt: normalize(manual.updated_at)
+    };
+  }).filter((row) => row.merchantCode);
 }
 
 function enrichDemandFields(supplier, materialCode, orderCreator = '', lookups = dimensionLookups()) {
@@ -1264,6 +1408,40 @@ app.get('/api/bootstrap', requireAuth, (req, res) => {
   res.json({ user: userPayload(req.user), pages: PAGE_LABELS, dimensionSlots: DIMENSION_SLOTS });
 });
 
+app.get('/api/domestic-board', requireAuth, requirePage('domesticBoard'), (req, res) => {
+  const defaultRecord = get('SELECT file_name, updated_at FROM dimension_files WHERE slot_id = ? AND applied = 1', ['spare2']);
+  const wangdianRecord = get('SELECT file_name, updated_at FROM dimension_files WHERE slot_id = ? AND applied = 1', ['wangdianDataMain']);
+  res.json({
+    rows: domesticBoardRows(),
+    sources: {
+      defaultData: defaultRecord || null,
+      wangdianData: wangdianRecord || null
+    }
+  });
+});
+
+app.patch('/api/domestic-board/:merchantCode', requireAuth, requirePage('domesticBoard'), (req, res) => {
+  const merchantCode = normalize(req.params.merchantCode);
+  if (!merchantCode) return res.status(400).json({ error: '商家编码不能为空' });
+  const updatedAt = saveDomesticManualInput(merchantCode, domesticManualPayload(req.body), req.user.name);
+  saveDatabase();
+  res.json({ ok: true, merchantCode, updatedAt, rows: domesticBoardRows() });
+});
+
+app.post('/api/domestic-board/bulk', requireAuth, requirePage('domesticBoard'), (req, res) => {
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+  let updated = 0;
+  transaction(() => {
+    rows.forEach((row) => {
+      const merchantCode = normalize(row.merchantCode || row.merchant_code);
+      if (!merchantCode) return;
+      saveDomesticManualInput(merchantCode, domesticManualPayload(row), req.user.name);
+      updated++;
+    });
+  });
+  res.json({ ok: true, updated, rows: domesticBoardRows() });
+});
+
 app.get('/api/mappings/:kind', requireAuth, (req, res) => {
   const row = get('SELECT * FROM import_mappings WHERE kind = ?', [req.params.kind]);
   res.json({ mapping: parseJson(row?.mapping_json, {}) });
@@ -1675,6 +1853,25 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         warehouseName: pick(row, mapping.warehouseName)
       };
     }
+    if (slotId === 'spare2') {
+      return {
+        raw: row,
+        stockupStatus: pick(row, mapping.stockupStatus) || pickAny(row, ['是否正常备货']),
+        brand: pick(row, mapping.brand) || pickAny(row, ['品牌']),
+        productType: pick(row, mapping.productType) || pickAny(row, ['产品类型']),
+        merchantCode: pick(row, mapping.merchantCode) || pickAny(row, ['商家编码', '商品编码']),
+        systemSku: pick(row, mapping.systemSku) || pickAny(row, ['系统SKU-必填', '系统SKU', 'SKU'])
+      };
+    }
+    if (slotId === 'wangdianDataMain') {
+      return {
+        raw: row,
+        merchantCode: pick(row, mapping.merchantCode) || pickAny(row, ['商家编码', '商品编码']),
+        wdtStockQty: pick(row, mapping.wdtStockQty) || pickAny(row, ['旺店通在库量', '在库量', '库存']),
+        nonSelf7dOutQty: pick(row, mapping.nonSelf7dOutQty) || pickAny(row, ['非自营近7天出库', '非自营7天出库', '近7天出库']),
+        nonSelf30dOutQty: pick(row, mapping.nonSelf30dOutQty) || pickAny(row, ['非自营近30天出库', '非自营30天出库', '近30天出库'])
+      };
+    }
     return row;
   }).filter((row) => Object.entries(row).some(([key, value]) => key !== 'raw' && Boolean(value)));
   const now = nowText();
@@ -1683,10 +1880,10 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     run(
       `INSERT INTO dimension_files (slot_id, title, file_name, sheet_name, sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-       ON CONFLICT(slot_id) DO UPDATE SET title = excluded.title, file_name = excluded.file_name, sheet_name = excluded.sheet_name, sheet_names = excluded.sheet_names, mapping_json = excluded.mapping_json, rows_json = excluded.rows_json, applied = 1, uploaded_by = excluded.uploaded_by, updated_at = excluded.updated_at`,
+      ON CONFLICT(slot_id) DO UPDATE SET title = excluded.title, file_name = excluded.file_name, sheet_name = excluded.sheet_name, sheet_names = excluded.sheet_names, mapping_json = excluded.mapping_json, rows_json = excluded.rows_json, applied = 1, uploaded_by = excluded.uploaded_by, updated_at = excluded.updated_at`,
       [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), sheetName, JSON.stringify(parsed.sheetNames), JSON.stringify(mapping), JSON.stringify(rows), req.user.name, now]
     );
-    applyDimensionEnrichment();
+    if (slotId === 'productCategory' || slotId === 'purchaseAssignment') applyDimensionEnrichment();
     assertOrderDataUnchanged(beforeOrderCounts);
   });
   res.json({ rowCount: rows.length, sheetName, sheetNames: parsed.sheetNames, applied: true, diagnostics: dimensionDiagnostics(slotId, rows), rows: demandRows(false, req.user) });
@@ -1696,7 +1893,7 @@ app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensio
   const beforeOrderCounts = orderDataCounts();
   transaction(() => {
     run('UPDATE dimension_files SET applied = 1, updated_at = ? WHERE slot_id = ?', [nowText(), req.params.slotId]);
-    applyDimensionEnrichment();
+    if (req.params.slotId === 'productCategory' || req.params.slotId === 'purchaseAssignment') applyDimensionEnrichment();
     assertOrderDataUnchanged(beforeOrderCounts);
   });
   res.json({ rows: demandRows(false, req.user) });

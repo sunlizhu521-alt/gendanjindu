@@ -282,6 +282,19 @@ function migrate() {
       created_by TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS domestic_board_inputs (
+      merchant_code TEXT PRIMARY KEY,
+      jd_stock_qty REAL NOT NULL DEFAULT 0,
+      self_7d_out_qty REAL NOT NULL DEFAULT 0,
+      self_30d_out_qty REAL NOT NULL DEFAULT 0,
+      self_daily_sales REAL NOT NULL DEFAULT 0,
+      self_daily_sales_manual INTEGER NOT NULL DEFAULT 0,
+      self_future_14d_inbound_qty REAL NOT NULL DEFAULT 0,
+      next_supply_date TEXT NOT NULL DEFAULT '',
+      next_supply_qty REAL NOT NULL DEFAULT 0,
+      updated_by TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT ''
+    );
   `);
   const dimensionColumns = all('PRAGMA table_info(dimension_files)').map((row) => row.name);
   if (!dimensionColumns.includes('sheet_name')) {

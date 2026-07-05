@@ -1139,6 +1139,51 @@ th {
   padding: 4px 8px;
 }
 
+.domestic-filter-panel {
+  margin-bottom: 12px;
+  overflow: visible;
+}
+
+.domestic-source-info {
+  padding: 2px 0 0;
+}
+
+.domestic-board-table table {
+  min-width: 2920px;
+  table-layout: auto;
+}
+
+.domestic-board-table th,
+.domestic-board-table td {
+  padding: 7px 8px;
+  font-size: 12px;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.domestic-board-table tbody tr:nth-child(even) td {
+  background: #fbfdff;
+}
+
+.domestic-board-table tbody tr:hover td {
+  background: #f0f7ff;
+}
+
+.domestic-input {
+  width: 112px;
+  min-width: 92px;
+  padding: 5px 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 12px;
+  text-align: center;
+  background: #fff;
+}
+
+.domestic-input[type="date"] {
+  width: 136px;
+}
+
 .progress-table input[type="checkbox"],
 .diff-allocation-table input[type="checkbox"] {
   width: 16px;

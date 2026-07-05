@@ -54,11 +54,22 @@ const DIMENSION_SLOTS = [
     ['warehouseCode', '仓库编码'],
     ['warehouseName', '仓库名称']
   ] },
-  { id: 'spare2', title: '备用 2', fields: [] }
+  { id: 'spare2', title: '国内运营默认数据', fields: [
+    ['stockupStatus', '是否正常备货'],
+    ['brand', '品牌'],
+    ['productType', '产品类型'],
+    ['merchantCode', '商家编码'],
+    ['systemSku', '系统SKU-必填']
+  ] }
 ];
 
 const WANGDIAN_SLOTS = [
-  { ...DIMENSION_SLOTS[0], id: 'wangdianDataMain', title: '旺店通数据' },
+  { id: 'wangdianDataMain', title: '旺店通数据', fields: [
+    ['merchantCode', '商家编码'],
+    ['wdtStockQty', '旺店通在库量'],
+    ['nonSelf7dOutQty', '非自营近7天出库'],
+    ['nonSelf30dOutQty', '非自营近30天出库']
+  ] },
   { ...DIMENSION_SLOTS[1], id: 'wangdianSpare1', title: '备用1' },
   { ...DIMENSION_SLOTS[2], id: 'wangdianSpare2', title: '备用2' },
   { ...DIMENSION_SLOTS[3], id: 'wangdianSpare3', title: '备用3' }
@@ -1182,11 +1193,200 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
   );
 }
 
-function DomesticBoard() {
+function DomesticBoard({ token, setMessage }) {
+  const [rows, setRows] = useState([]);
+  const [sources, setSources] = useState({});
+  const [drafts, setDrafts] = useState({});
+  const [saving, setSaving] = useState('');
+  const [filters, setFilters] = useSessionFilters('domesticBoard', { keyword: '', stockupStatus: '', brand: '', productType: '', needProduction: '', risk: '' });
+  const unique = (field) => [...new Set(rows.map((row) => normalize(row[field])).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+
+  async function load() {
+    const payload = await request('/api/domestic-board', { token });
+    setRows(payload.rows || []);
+    setSources(payload.sources || {});
+    setDrafts({});
+  }
+
+  useEffect(() => { load().catch((err) => setMessage(`国内事业部看板加载失败：${err.message}`)); }, [token]);
+
+  const options = useMemo(() => ({
+    stockupStatuses: unique('stockupStatus'),
+    brands: unique('brand'),
+    productTypes: unique('productType'),
+    needProductions: unique('needProduction'),
+    risks: unique('risk')
+  }), [rows]);
+
+  const filtered = useMemo(() => {
+    const keyword = filters.keyword.toLowerCase();
+    return rows.filter((row) => {
+      const text = [
+        row.stockupStatus,
+        row.brand,
+        row.productType,
+        row.merchantCode,
+        row.systemSku,
+        row.needProduction,
+        row.risk
+      ].join(' ').toLowerCase();
+      return (!keyword || text.includes(keyword))
+        && (!filters.stockupStatus || row.stockupStatus === filters.stockupStatus)
+        && (!filters.brand || row.brand === filters.brand)
+        && (!filters.productType || row.productType === filters.productType)
+        && (!filters.needProduction || row.needProduction === filters.needProduction)
+        && (!filters.risk || row.risk === filters.risk);
+    });
+  }, [rows, filters]);
+
+  function draftFor(row) {
+    const draft = drafts[row.merchantCode] || {};
+    return {
+      jdStockQty: draft.jdStockQty ?? row.jdStockQty ?? '',
+      self7dOutQty: draft.self7dOutQty ?? row.self7dOutQty ?? '',
+      self30dOutQty: draft.self30dOutQty ?? row.self30dOutQty ?? '',
+      selfDailySales: draft.selfDailySales ?? row.selfDailySales ?? '',
+      selfDailySalesManual: draft.selfDailySalesManual ?? row.selfDailySalesManual ?? false,
+      selfFuture14dInboundQty: draft.selfFuture14dInboundQty ?? row.selfFuture14dInboundQty ?? '',
+      nextSupplyDate: draft.nextSupplyDate ?? row.nextSupplyDate ?? '',
+      nextSupplyQty: draft.nextSupplyQty ?? row.nextSupplyQty ?? ''
+    };
+  }
+
+  function updateDraft(row, key, value) {
+    setDrafts((prev) => ({
+      ...prev,
+      [row.merchantCode]: {
+        ...draftFor(row),
+        ...(prev[row.merchantCode] || {}),
+        [key]: value,
+        ...(key === 'selfDailySales' ? { selfDailySalesManual: true } : {})
+      }
+    }));
+  }
+
+  function payloadFor(row) {
+    const draft = draftFor(row);
+    return { merchantCode: row.merchantCode, ...draft };
+  }
+
+  async function saveRow(row) {
+    setSaving(row.merchantCode);
+    try {
+      const payload = await request(`/api/domestic-board/${encodeURIComponent(row.merchantCode)}`, {
+        token,
+        method: 'PATCH',
+        body: JSON.stringify(payloadFor(row))
+      });
+      setRows(payload.rows || []);
+      setDrafts((prev) => {
+        const next = { ...prev };
+        delete next[row.merchantCode];
+        return next;
+      });
+      setMessage(`${row.merchantCode} 已保存。`);
+    } catch (err) {
+      setMessage(`保存失败：${err.message}`);
+    } finally {
+      setSaving('');
+    }
+  }
+
+  async function saveChangedRows() {
+    const changedRows = Object.keys(drafts).map((merchantCode) => {
+      const row = rows.find((item) => item.merchantCode === merchantCode);
+      return row ? payloadFor(row) : null;
+    }).filter(Boolean);
+    if (!changedRows.length) {
+      setMessage('没有需要保存的修改。');
+      return;
+    }
+    setSaving('bulk');
+    try {
+      const payload = await request('/api/domestic-board/bulk', { token, method: 'POST', body: JSON.stringify({ rows: changedRows }) });
+      setRows(payload.rows || []);
+      setDrafts({});
+      setMessage(`已批量保存 ${payload.updated || 0} 行。`);
+    } catch (err) {
+      setMessage(`批量保存失败：${err.message}`);
+    } finally {
+      setSaving('');
+    }
+  }
+
+  const clearFilters = () => setFilters({ keyword: '', stockupStatus: '', brand: '', productType: '', needProduction: '', risk: '' });
+  const numberCell = (value) => numberValue(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const editInput = (row, key, type = 'number') => {
+    const value = draftFor(row)[key];
+    return <input className="domestic-input" type={type} value={value} onChange={(event) => updateDraft(row, key, event.target.value)} />;
+  };
+
   return (
-    <div className="section-heading-row">
-      <h2>国内事业部看板</h2>
-    </div>
+    <>
+      <div className="section-heading-row">
+        <h2>国内事业部看板</h2>
+        <span className="section-count">当前显示 {filtered.length} / {rows.length} 条</span>
+      </div>
+      <section className="panel domestic-filter-panel">
+        <div className="toolbar filters-row">
+          <SelectField label="是否正常备货" value={filters.stockupStatus} options={options.stockupStatuses} onChange={(value) => setFilters({ ...filters, stockupStatus: value })} />
+          <SelectField label="品牌" value={filters.brand} options={options.brands} onChange={(value) => setFilters({ ...filters, brand: value })} />
+          <SelectField label="产品类型" value={filters.productType} options={options.productTypes} onChange={(value) => setFilters({ ...filters, productType: value })} />
+          <SelectField label="是否需要生产" value={filters.needProduction} options={options.needProductions} onChange={(value) => setFilters({ ...filters, needProduction: value })} />
+          <SelectField label="风险判断" value={filters.risk} options={options.risks} onChange={(value) => setFilters({ ...filters, risk: value })} />
+          <input
+            className="search-input"
+            placeholder="搜索商家编码、SKU、品牌"
+            value={filters.keyword}
+            onChange={(event) => setFilters({ ...filters, keyword: event.target.value })}
+          />
+          <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
+          <button type="button" className="compact-button" disabled={saving === 'bulk'} onClick={saveChangedRows}>{saving === 'bulk' ? '保存中...' : '批量保存'}</button>
+        </div>
+        <div className="slot-info domestic-source-info">
+          <span>默认数据：{sources.defaultData?.file_name || '未上传'}</span>
+          <span>更新时间：{sources.defaultData?.updated_at || '-'}</span>
+          <span>旺店通数据：{sources.wangdianData?.file_name || '未上传'}</span>
+          <span>更新时间：{sources.wangdianData?.updated_at || '-'}</span>
+        </div>
+      </section>
+      <DataTable
+        className="domestic-board-table"
+        rows={filtered}
+        columns={[
+          '是否正常备货', '品牌', '产品类型', '商家编码', '系统SKU-必填',
+          '旺店通在库量', '非自营近7天出库', '非自营近30天出库', '非自营日销', '非自营未来两周需求量',
+          '京仓现货库存', '自营近7天出库', '自营近30天出库', '自营日销', '自营未来两周入仓量',
+          '全渠道未来两周最低需求量', '是否需要生产', '预计断货时间', '现库存可销天数', '风险判断',
+          '下批给货时间', '下批给货数量', '操作'
+        ]}
+        render={(row) => [
+          row.stockupStatus,
+          row.brand,
+          row.productType,
+          row.merchantCode,
+          row.systemSku,
+          numberCell(row.wdtStockQty),
+          numberCell(row.nonSelf7dOutQty),
+          numberCell(row.nonSelf30dOutQty),
+          numberCell(row.nonSelfDailySales),
+          numberCell(row.nonSelfFuture14dDemandQty),
+          editInput(row, 'jdStockQty'),
+          editInput(row, 'self7dOutQty'),
+          editInput(row, 'self30dOutQty'),
+          editInput(row, 'selfDailySales'),
+          editInput(row, 'selfFuture14dInboundQty'),
+          numberCell(row.allChannelFuture14dMinDemandQty),
+          row.needProduction,
+          row.estimatedStockoutDate,
+          numberCell(row.sellableDays),
+          row.risk,
+          editInput(row, 'nextSupplyDate', 'date'),
+          editInput(row, 'nextSupplyQty'),
+          <button type="button" className="compact-button" disabled={saving === row.merchantCode} onClick={() => saveRow(row)}>{saving === row.merchantCode ? '保存中...' : '保存'}</button>
+        ]}
+      />
+    </>
   );
 }
 
@@ -2447,7 +2647,7 @@ function App() {
       </aside>
       <section className="content" onClick={(event) => event.stopPropagation()}>
         {message && <p className="message">{message}</p>}
-        {activeTab === 'domesticBoard' && <DomesticBoard />}
+        {activeTab === 'domesticBoard' && <DomesticBoard token={token} setMessage={setMessage} />}
         {activeTab === 'operationBoard' && <Dashboard rows={demands} title="运营看板" filterKey="operationBoard" />}
         {activeTab === 'purchaseBoard' && <PurchaseBoard rows={demands} />}
         {activeTab === 'kingdeeImport' && <KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} />}

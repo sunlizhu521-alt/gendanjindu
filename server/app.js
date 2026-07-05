@@ -658,7 +658,8 @@ function domesticManualPayload(body = {}) {
     selfDailySalesManual: explicitManual === undefined ? (selfDailySalesRaw ? 1 : 0) : (explicitManual ? 1 : 0),
     selfFuture14dInboundQty: numberValue(body.selfFuture14dInboundQty ?? body.self_future_14d_inbound_qty),
     nextSupplyDate: normalize(body.nextSupplyDate ?? body.next_supply_date),
-    nextSupplyQty: numberValue(body.nextSupplyQty ?? body.next_supply_qty)
+    nextSupplyQty: numberValue(body.nextSupplyQty ?? body.next_supply_qty),
+    remark: normalize(body.remark)
   };
 }
 
@@ -666,8 +667,8 @@ function saveDomesticManualInput(merchantCode, payload, userName) {
   const now = nowText();
   run(
     `INSERT INTO domestic_board_inputs
-      (merchant_code, jd_stock_qty, self_7d_out_qty, self_30d_out_qty, self_daily_sales, self_daily_sales_manual, self_future_14d_inbound_qty, next_supply_date, next_supply_qty, updated_by, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (merchant_code, jd_stock_qty, self_7d_out_qty, self_30d_out_qty, self_daily_sales, self_daily_sales_manual, self_future_14d_inbound_qty, next_supply_date, next_supply_qty, remark, updated_by, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(merchant_code) DO UPDATE SET
        jd_stock_qty = excluded.jd_stock_qty,
        self_7d_out_qty = excluded.self_7d_out_qty,
@@ -677,6 +678,7 @@ function saveDomesticManualInput(merchantCode, payload, userName) {
        self_future_14d_inbound_qty = excluded.self_future_14d_inbound_qty,
        next_supply_date = excluded.next_supply_date,
        next_supply_qty = excluded.next_supply_qty,
+       remark = excluded.remark,
        updated_by = excluded.updated_by,
        updated_at = excluded.updated_at`,
     [
@@ -689,6 +691,7 @@ function saveDomesticManualInput(merchantCode, payload, userName) {
       payload.selfFuture14dInboundQty,
       payload.nextSupplyDate,
       payload.nextSupplyQty,
+      payload.remark,
       userName,
       now
     ]
@@ -745,6 +748,7 @@ function domesticBoardRows() {
       risk: riskLabel(sellableDays, wdtStockQty),
       nextSupplyDate: normalize(manual.next_supply_date),
       nextSupplyQty: numberValue(manual.next_supply_qty),
+      remark: normalize(manual.remark),
       updatedBy: normalize(manual.updated_by),
       updatedAt: normalize(manual.updated_at)
     };

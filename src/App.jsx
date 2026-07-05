@@ -1198,6 +1198,7 @@ function DomesticBoard({ token, setMessage }) {
   const [sources, setSources] = useState({});
   const [drafts, setDrafts] = useState({});
   const [saving, setSaving] = useState('');
+  const [selectedMerchantCodes, setSelectedMerchantCodes] = useState([]);
   const [filters, setFilters] = useSessionFilters('domesticBoard', { keyword: '', stockupStatus: '', brand: '', productType: '', needProduction: '', risk: '' });
   const unique = (field) => [...new Set(rows.map((row) => normalize(row[field])).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
 
@@ -1238,6 +1239,22 @@ function DomesticBoard({ token, setMessage }) {
         && (!filters.risk || row.risk === filters.risk);
     });
   }, [rows, filters]);
+  const filteredMerchantCodes = useMemo(() => filtered.map((row) => row.merchantCode).filter(Boolean), [filtered]);
+  const allFilteredSelected = filteredMerchantCodes.length > 0 && filteredMerchantCodes.every((code) => selectedMerchantCodes.includes(code));
+
+  function toggleAllFilteredRows() {
+    setSelectedMerchantCodes((prev) => {
+      const visibleSet = new Set(filteredMerchantCodes);
+      if (allFilteredSelected) return prev.filter((code) => !visibleSet.has(code));
+      return [...new Set([...prev, ...filteredMerchantCodes])];
+    });
+  }
+
+  function toggleRowSelection(merchantCode) {
+    setSelectedMerchantCodes((prev) => (
+      prev.includes(merchantCode) ? prev.filter((code) => code !== merchantCode) : [...prev, merchantCode]
+    ));
+  }
 
   function draftFor(row) {
     const draft = drafts[row.merchantCode] || {};
@@ -1249,7 +1266,8 @@ function DomesticBoard({ token, setMessage }) {
       selfDailySalesManual: draft.selfDailySalesManual ?? row.selfDailySalesManual ?? false,
       selfFuture14dInboundQty: draft.selfFuture14dInboundQty ?? row.selfFuture14dInboundQty ?? '',
       nextSupplyDate: draft.nextSupplyDate ?? row.nextSupplyDate ?? '',
-      nextSupplyQty: draft.nextSupplyQty ?? row.nextSupplyQty ?? ''
+      nextSupplyQty: draft.nextSupplyQty ?? row.nextSupplyQty ?? '',
+      remark: draft.remark ?? row.remark ?? ''
     };
   }
 
@@ -1320,6 +1338,10 @@ function DomesticBoard({ token, setMessage }) {
     const value = draftFor(row)[key];
     return <input className="domestic-input" type={type} value={value} onChange={(event) => updateDraft(row, key, event.target.value)} />;
   };
+  const textInput = (row, key) => {
+    const value = draftFor(row)[key];
+    return <input className="domestic-input domestic-text-input" type="text" value={value} onChange={(event) => updateDraft(row, key, event.target.value)} />;
+  };
 
   return (
     <>
@@ -1358,7 +1380,12 @@ function DomesticBoard({ token, setMessage }) {
           '旺店通在库量', '非自营近7天出库', '非自营近30天出库', '非自营日销', '非自营未来两周需求量',
           '京仓现货库存', '自营近7天出库', '自营近30天出库', '自营日销', '自营未来两周入仓量',
           '全渠道未来两周最低需求量', '是否需要生产', '预计断货时间', '现库存可销天数', '风险判断',
-          '下批给货时间', '下批给货数量', '操作'
+          '下批给货时间', '下批给货数量', '备注信息',
+          <label className="select-all-header">
+            <input type="checkbox" checked={allFilteredSelected} onChange={toggleAllFilteredRows} />
+            选择
+          </label>,
+          '操作'
         ]}
         render={(row) => [
           row.stockupStatus,
@@ -1383,6 +1410,8 @@ function DomesticBoard({ token, setMessage }) {
           row.risk,
           editInput(row, 'nextSupplyDate', 'date'),
           editInput(row, 'nextSupplyQty'),
+          textInput(row, 'remark'),
+          <input type="checkbox" checked={selectedMerchantCodes.includes(row.merchantCode)} onChange={() => toggleRowSelection(row.merchantCode)} />,
           <button type="button" className="compact-button" disabled={saving === row.merchantCode} onClick={() => saveRow(row)}>{saving === row.merchantCode ? '保存中...' : '保存'}</button>
         ]}
       />

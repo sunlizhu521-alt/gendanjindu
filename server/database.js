@@ -292,6 +292,7 @@ function migrate() {
       self_future_14d_inbound_qty REAL NOT NULL DEFAULT 0,
       next_supply_date TEXT NOT NULL DEFAULT '',
       next_supply_qty REAL NOT NULL DEFAULT 0,
+      remark TEXT NOT NULL DEFAULT '',
       updated_by TEXT NOT NULL DEFAULT '',
       updated_at TEXT NOT NULL DEFAULT ''
     );
@@ -302,6 +303,11 @@ function migrate() {
   }
   if (!dimensionColumns.includes('sheet_names')) {
     run("ALTER TABLE dimension_files ADD COLUMN sheet_names TEXT NOT NULL DEFAULT '[]'");
+  }
+
+  const domesticInputColumns = all('PRAGMA table_info(domestic_board_inputs)').map((row) => row.name);
+  if (!domesticInputColumns.includes('remark')) {
+    run("ALTER TABLE domestic_board_inputs ADD COLUMN remark TEXT NOT NULL DEFAULT ''");
   }
 
   const demandColumns = all('PRAGMA table_info(order_demands)').map((row) => row.name);

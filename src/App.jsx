@@ -1380,7 +1380,7 @@ function DomesticBoard({ token, setMessage }) {
           '旺店通在库量', '非自营近7天出库', '非自营近30天出库', '非自营日销', '非自营未来两周需求量',
           '京仓现货库存', '自营近7天出库', '自营近30天出库', '自营日销', '自营未来两周入仓量',
           '全渠道未来两周最低需求量', '是否需要生产', '预计断货时间', '现库存可销天数', '风险判断',
-          '下批给货时间', '下批给货数量', '备注信息',
+          '未交付数据', '下批给货时间', '下批给货数量', '备注信息',
           <label className="select-all-header">
             <input type="checkbox" checked={allFilteredSelected} onChange={toggleAllFilteredRows} />
             选择
@@ -1408,6 +1408,7 @@ function DomesticBoard({ token, setMessage }) {
           row.estimatedStockoutDate,
           numberCell(row.sellableDays),
           row.risk,
+          numberCell(row.domesticUndeliveredQty),
           editInput(row, 'nextSupplyDate', 'date'),
           editInput(row, 'nextSupplyQty'),
           textInput(row, 'remark'),

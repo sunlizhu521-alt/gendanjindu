@@ -1188,8 +1188,8 @@ th {
   background: #f0f7ff;
 }
 
-.domestic-board-table th:nth-child(24),
-.domestic-board-table td:nth-child(24) {
+.domestic-board-table th:nth-child(25),
+.domestic-board-table td:nth-child(25) {
   width: 58px;
   min-width: 58px;
   max-width: 66px;

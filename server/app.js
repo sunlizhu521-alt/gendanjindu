@@ -708,6 +708,13 @@ function domesticBoardRows() {
     if (merchantCode && !wangdianMap.has(merchantCode)) wangdianMap.set(merchantCode, row);
   });
   const manualMap = new Map(all('SELECT * FROM domestic_board_inputs').map((row) => [normalize(row.merchant_code), row]));
+  const domesticUndeliveredMap = new Map();
+  demandRows(false).forEach((demand) => {
+    if (normalize(demand.businessUnit) !== '国内事业部') return;
+    const materialCode = normalize(demand.materialCode);
+    if (!materialCode) return;
+    domesticUndeliveredMap.set(materialCode, numberValue(domesticUndeliveredMap.get(materialCode)) + numberValue(demand.remainingInboundQty));
+  });
   return defaultRows.map((row) => {
     const merchantCode = normalize(domesticMerchantCode(row));
     const wdt = wangdianMap.get(merchantCode) || {};
@@ -746,6 +753,7 @@ function domesticBoardRows() {
       estimatedStockoutDate: sellableDays ? addDaysText(sellableDays) : '',
       sellableDays,
       risk: riskLabel(sellableDays, wdtStockQty),
+      domesticUndeliveredQty: numberValue(domesticUndeliveredMap.get(merchantCode)),
       nextSupplyDate: normalize(manual.next_supply_date),
       nextSupplyQty: numberValue(manual.next_supply_qty),
       remark: normalize(manual.remark),

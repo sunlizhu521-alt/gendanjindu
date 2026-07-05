@@ -903,6 +903,7 @@ th {
 
 .stack-list {
   display: grid;
+  grid-template-columns: max-content 420px 64px;
   align-content: start;
   gap: 7px;
   height: 260px;
@@ -931,10 +932,10 @@ th {
 
 .stack-row {
   display: grid;
-  grid-template-columns: minmax(max-content, 128px) minmax(280px, 1fr) 64px;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
   align-items: center;
   gap: 8px;
-  min-width: 480px;
   min-height: 22px;
   font-size: 12px;
 }
@@ -957,8 +958,8 @@ th {
 }
 
 .stack-track {
-  width: 100%;
-  min-width: 280px;
+  width: 420px;
+  min-width: 420px;
   height: 16px;
   border: 0;
   border-radius: 999px;

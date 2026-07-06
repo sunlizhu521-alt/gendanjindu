@@ -625,7 +625,7 @@ function domesticMerchantCode(row) {
 }
 
 function jdIdValue(row) {
-  return rowAliasValue(row, ['jdId', 'ID', 'id', '京东ID', '京东id']);
+  return rowAliasValue(row, ['jdId', 'SKU', 'sku', '京东SKU', '京东sku', '京东商品SKU', '商品SKU', '系统SKU', '京东编码', '京东商品编码', '京东货号', 'ID', 'id', '京东ID', '京东id']);
 }
 
 function jdMappedMaterialCode(row) {
@@ -746,8 +746,9 @@ function domesticBoardRows() {
   const resolveDomesticMaterialCode = (row) => {
     const directMaterialCode = normalize(jdMappedMaterialCode(row));
     if (directMaterialCode) return directMaterialCode;
+    const jdKey = normalize(jdIdValue(row));
     const merchantCode = normalize(domesticMerchantCode(row));
-    return normalize(jdMaterialMap.get(merchantCode) || merchantCode);
+    return normalize(jdMaterialMap.get(jdKey) || jdMaterialMap.get(merchantCode) || merchantCode || jdKey);
   };
   const wangdianMap = new Map();
   wangdianRows.forEach((row) => {
@@ -1963,7 +1964,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     if (slotId === 'wangdianSpare1') {
       return {
         raw: row,
-        jdId: pick(row, mapping.jdId) || pickAny(row, ['ID', 'id', '京东ID', '京东id']),
+        jdId: pick(row, mapping.jdId) || pickAny(row, ['SKU', 'sku', '京东SKU', '京东sku', '京东商品SKU', '商品SKU', '系统SKU', '京东编码', '京东商品编码', '京东货号', 'ID', 'id', '京东ID', '京东id']),
         jdStockQty: pick(row, mapping.jdStockQty) || pickAny(row, ['全国现货库存', '京东库存', '库存数量', '库存', '可用库存', '现货库存']),
         self7dOutQty: pick(row, mapping.self7dOutQty) || pickAny(row, ['全国近7日出库商品件数', '近7日出库商品件数', '全国近7天出库商品件数', '自营近7天出库']),
         self30dOutQty: pick(row, mapping.self30dOutQty) || pickAny(row, ['全国近30日出库商品件数', '近30日出库商品件数', '全国近30天出库商品件数', '自营近30天出库'])
@@ -1972,7 +1973,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     if (slotId === 'wangdianSpare2') {
       return {
         raw: row,
-        jdId: pick(row, mapping.jdId) || pickAny(row, ['ID', 'id', '京东ID', '京东id']),
+        jdId: pick(row, mapping.jdId) || pickAny(row, ['SKU', 'sku', '京东SKU', '京东sku', '京东商品SKU', '商品SKU', '系统SKU', '京东编码', '京东商品编码', '京东货号', 'ID', 'id', '京东ID', '京东id']),
         materialCode: pick(row, mapping.materialCode) || pickAny(row, ['品号', '物料编码', '商品编码', '货品编号', '存货编码'])
       };
     }

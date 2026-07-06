@@ -36,7 +36,7 @@ const PAGE_LABELS = {
   kingdeeImport: '采购订单',
   progressRefresh: '生产跟进',
   differenceAllocation: '差异分配',
-  wangdianData: '旺店通数据',
+  wangdianData: '国内数据',
   dimensionLibrary: '维度表库',
   trace: '变更追溯',
   permissions: '权限管理'
@@ -46,9 +46,9 @@ const DIMENSION_SLOTS = {
   purchaseAssignment: '采购分工',
   spare1: '仓库名称',
   spare2: '国内运营默认数据',
-  wangdianDataMain: '旺店通数据',
-  wangdianSpare1: '备用1',
-  wangdianSpare2: '备用2',
+  wangdianDataMain: '国内数据',
+  wangdianSpare1: '京东库存',
+  wangdianSpare2: '京东ID与品号匹配',
   wangdianSpare3: '备用3'
 };
 const DIFF_NORMAL_ORDER = '正常订单';

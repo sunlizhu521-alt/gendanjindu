@@ -24,7 +24,7 @@ const PAGE_LABELS = {
   kingdeeImport: '采购订单',
   progressRefresh: '生产跟进',
   differenceAllocation: '差异分配',
-  wangdianData: '旺店通数据',
+  wangdianData: '国内数据',
   dimensionLibrary: '维度表库',
   trace: '变更追溯',
   permissions: '权限管理'
@@ -65,14 +65,14 @@ const DIMENSION_SLOTS = [
 ];
 
 const WANGDIAN_SLOTS = [
-  { id: 'wangdianDataMain', title: '旺店通数据', fields: [
+  { id: 'wangdianDataMain', title: '国内数据', fields: [
     ['merchantCode', '商家编码'],
     ['wdtStockQty', '旺店通在库量'],
     ['nonSelf7dOutQty', '非自营近7天出库'],
     ['nonSelf30dOutQty', '非自营近30天出库']
   ] },
-  { ...DIMENSION_SLOTS[1], id: 'wangdianSpare1', title: '备用1' },
-  { ...DIMENSION_SLOTS[2], id: 'wangdianSpare2', title: '备用2' },
+  { ...DIMENSION_SLOTS[1], id: 'wangdianSpare1', title: '京东库存' },
+  { ...DIMENSION_SLOTS[2], id: 'wangdianSpare2', title: '京东ID与品号匹配' },
   { ...DIMENSION_SLOTS[3], id: 'wangdianSpare3', title: '备用3' }
 ];
 
@@ -1492,7 +1492,7 @@ function DomesticBoard({ token, setMessage }) {
         <div className="slot-info domestic-source-info">
           <span>默认数据：{sources.defaultData?.file_name || '未上传'}</span>
           <span>更新时间：{sources.defaultData?.updated_at || '-'}</span>
-          <span>旺店通数据：{sources.wangdianData?.file_name || '未上传'}</span>
+          <span>国内数据：{sources.wangdianData?.file_name || '未上传'}</span>
           <span>更新时间：{sources.wangdianData?.updated_at || '-'}</span>
         </div>
       </section>
@@ -2817,7 +2817,7 @@ function App() {
         {canView('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
         {canView('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
         {canView('differenceAllocation') && <PagePane page="differenceAllocation" activeTab={activeTab}><DifferenceAllocationPage token={token} user={user} setMessage={setMessage} /></PagePane>}
-        {canView('wangdianData') && <PagePane page="wangdianData" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="旺店通数据" slots={WANGDIAN_SLOTS} /></PagePane>}
+        {canView('wangdianData') && <PagePane page="wangdianData" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="国内数据" slots={WANGDIAN_SLOTS} /></PagePane>}
         {canView('dimensionLibrary') && <PagePane page="dimensionLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
         {canView('trace') && <PagePane page="trace" activeTab={activeTab}><TracePage token={token} setMessage={setMessage} /></PagePane>}
         {canView('permissions') && <PagePane page="permissions" activeTab={activeTab}><PermissionsPage token={token} pages={pages} setMessage={setMessage} /></PagePane>}

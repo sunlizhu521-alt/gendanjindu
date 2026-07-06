@@ -73,7 +73,9 @@ const WANGDIAN_SLOTS = [
   ] },
   { id: 'wangdianSpare1', title: '京东库存', fields: [
     ['jdId', 'ID'],
-    ['jdStockQty', '京东库存']
+    ['jdStockQty', '全国现货库存'],
+    ['self7dOutQty', '全国近7日出库商品件数'],
+    ['self30dOutQty', '全国近30日出库商品件数']
   ] },
   { id: 'wangdianSpare2', title: '京东ID与品号匹配', fields: [
     ['jdId', 'ID'],
@@ -1318,11 +1320,11 @@ function DomesticBoard({ token, setMessage }) {
   function draftFor(row) {
     const draft = drafts[row.merchantCode] || {};
     return {
-      jdStockQty: draft.jdStockQty ?? row.jdStockQty ?? '',
-      self7dOutQty: draft.self7dOutQty ?? row.self7dOutQty ?? '',
-      self30dOutQty: draft.self30dOutQty ?? row.self30dOutQty ?? '',
-      selfDailySales: draft.selfDailySales ?? row.selfDailySales ?? '',
-      selfDailySalesManual: draft.selfDailySalesManual ?? row.selfDailySalesManual ?? false,
+      jdStockQty: row.jdStockQty ?? '',
+      self7dOutQty: row.self7dOutQty ?? '',
+      self30dOutQty: row.self30dOutQty ?? '',
+      selfDailySales: row.selfDailySales ?? '',
+      selfDailySalesManual: false,
       selfFuture14dInboundQty: draft.selfFuture14dInboundQty ?? row.selfFuture14dInboundQty ?? '',
       nextSupplyDate: draft.nextSupplyDate ?? row.nextSupplyDate ?? '',
       nextSupplyQty: draft.nextSupplyQty ?? row.nextSupplyQty ?? '',
@@ -1412,7 +1414,7 @@ function DomesticBoard({ token, setMessage }) {
       const headers = [
         '品牌', '产品类型', '商家编码', '系统SKU-必填',
         '旺店通在库量', '非自营近7天出库', '非自营近30天出库', '非自营日销', '非自营未来两周需求量',
-        '京仓现货库存', '自营近7天出库', '自营近30天出库', '自营日销', '自营未来两周入仓量',
+        '京东现货库存', '自营近7天出库', '自营近30天出库', '自营日销', '自营未来两周入仓量',
         '全渠道未来两周最低需求量', '是否需要生产', '预计断货时间', '现库存可销天数', '风险判断', '是否正常备货',
         '采购下单人',
         '未交付数据', '下批给货时间', '下批给货数量', '备注信息'
@@ -1430,10 +1432,10 @@ function DomesticBoard({ token, setMessage }) {
           numberValue(row.nonSelf30dOutQty),
           numberValue(row.nonSelfDailySales),
           numberValue(row.nonSelfFuture14dDemandQty),
-          numberValue(draft.jdStockQty),
-          numberValue(draft.self7dOutQty),
-          numberValue(draft.self30dOutQty),
-          numberValue(draft.selfDailySales),
+          numberValue(row.jdStockQty),
+          numberValue(row.self7dOutQty),
+          numberValue(row.self30dOutQty),
+          numberValue(row.selfDailySales),
           numberValue(draft.selfFuture14dInboundQty),
           numberValue(row.allChannelFuture14dMinDemandQty),
           row.needProduction,
@@ -1510,7 +1512,7 @@ function DomesticBoard({ token, setMessage }) {
         columns={[
           '品牌', '产品类型', '商家编码', '系统SKU-必填',
           '旺店通在库量', '非自营近7天出库', '非自营近30天出库', '非自营日销', '非自营未来两周需求量',
-          '京仓现货库存', '自营近7天出库', '自营近30天出库', '自营日销', '自营未来两周入仓量',
+          '京东现货库存', '自营近7天出库', '自营近30天出库', '自营日销', '自营未来两周入仓量',
           <label className="select-all-header">
             <input type="checkbox" checked={allOperationFilteredSelected} onChange={() => toggleAllFilteredRows(operationSelectedMerchantCodes, setOperationSelectedMerchantCodes, allOperationFilteredSelected)} />
             运营选择
@@ -1535,10 +1537,10 @@ function DomesticBoard({ token, setMessage }) {
           numberCell(row.nonSelf30dOutQty),
           numberCell(row.nonSelfDailySales),
           numberCell(row.nonSelfFuture14dDemandQty),
-          editInput(row, 'jdStockQty'),
-          editInput(row, 'self7dOutQty'),
-          editInput(row, 'self30dOutQty'),
-          editInput(row, 'selfDailySales'),
+          numberCell(row.jdStockQty),
+          numberCell(row.self7dOutQty),
+          numberCell(row.self30dOutQty),
+          numberCell(row.selfDailySales),
           editInput(row, 'selfFuture14dInboundQty'),
           <input type="checkbox" checked={operationSelectedMerchantCodes.includes(row.merchantCode)} onChange={() => toggleRowSelection(row.merchantCode, setOperationSelectedMerchantCodes)} />,
           <button type="button" className="compact-button" disabled={saving === row.merchantCode} onClick={() => saveRow(row, 'operation')}>{saving === row.merchantCode ? '提交中...' : '运营提交'}</button>,

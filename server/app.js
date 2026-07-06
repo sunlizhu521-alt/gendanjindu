@@ -632,6 +632,18 @@ function jdMappedMaterialCode(row) {
   return rowAliasValue(row, ['materialCode', '品号', '物料编码', '商品编码', '货品编号', '存货编码']);
 }
 
+function jdStockQtyValue(row) {
+  return rowAliasValue(row, ['jdStockQty', '全国现货库存', '京东库存', '库存数量', '库存', '可用库存', '现货库存']);
+}
+
+function jdSelf7dOutQtyValue(row) {
+  return rowAliasValue(row, ['self7dOutQty', '全国近7日出库商品件数', '近7日出库商品件数', '全国近7天出库商品件数', '自营近7天出库']);
+}
+
+function jdSelf30dOutQtyValue(row) {
+  return rowAliasValue(row, ['self30dOutQty', '全国近30日出库商品件数', '近30日出库商品件数', '全国近30天出库商品件数', '自营近30天出库']);
+}
+
 function productCategoryModel(row) {
   return rowAliasValue(row, ['model', '型号', '产品型号', '款式', '规格型号', '规格']);
 }
@@ -782,13 +794,11 @@ function domesticBoardRows() {
     const nonSelf30dOutQty = numberValue(wdt.nonSelf30dOutQty ?? rowAliasValue(wdt, ['非自营近30天出库']));
     const nonSelfDailySales = roundQty((nonSelf7dOutQty + nonSelf30dOutQty) / 37);
     const nonSelfFuture14dDemandQty = roundQty(nonSelfDailySales * 14);
-    const jdStockQty = manual.merchant_code
-      ? numberValue(manual.jd_stock_qty)
-      : numberValue(jdInventory.jdStockQty || rowAliasValue(jdInventory, ['京东库存', '库存数量', '库存', '可用库存', '现货库存']));
-    const self7dOutQty = numberValue(manual.self_7d_out_qty);
-    const self30dOutQty = numberValue(manual.self_30d_out_qty);
+    const jdStockQty = numberValue(jdStockQtyValue(jdInventory));
+    const self7dOutQty = numberValue(jdSelf7dOutQtyValue(jdInventory));
+    const self30dOutQty = numberValue(jdSelf30dOutQtyValue(jdInventory));
     const calculatedSelfDailySales = roundQty((self7dOutQty + self30dOutQty) / 37);
-    const selfDailySales = manual.self_daily_sales_manual ? numberValue(manual.self_daily_sales) : calculatedSelfDailySales;
+    const selfDailySales = calculatedSelfDailySales;
     const selfFuture14dInboundQty = numberValue(manual.self_future_14d_inbound_qty);
     const allChannelFuture14dMinDemandQty = roundQty(selfFuture14dInboundQty + nonSelfFuture14dDemandQty);
     const sellableDays = (nonSelfDailySales + selfDailySales) > 0 ? roundQty(wdtStockQty / (nonSelfDailySales + selfDailySales)) : 0;
@@ -811,7 +821,7 @@ function domesticBoardRows() {
       self7dOutQty,
       self30dOutQty,
       selfDailySales,
-      selfDailySalesManual: Boolean(manual.self_daily_sales_manual),
+      selfDailySalesManual: false,
       selfFuture14dInboundQty,
       allChannelFuture14dMinDemandQty,
       needProduction: wdtStockQty < allChannelFuture14dMinDemandQty ? '需要生产' : '',
@@ -1954,7 +1964,9 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
       return {
         raw: row,
         jdId: pick(row, mapping.jdId) || pickAny(row, ['ID', 'id', '京东ID', '京东id']),
-        jdStockQty: pick(row, mapping.jdStockQty) || pickAny(row, ['京东库存', '库存数量', '库存', '可用库存', '现货库存'])
+        jdStockQty: pick(row, mapping.jdStockQty) || pickAny(row, ['全国现货库存', '京东库存', '库存数量', '库存', '可用库存', '现货库存']),
+        self7dOutQty: pick(row, mapping.self7dOutQty) || pickAny(row, ['全国近7日出库商品件数', '近7日出库商品件数', '全国近7天出库商品件数', '自营近7天出库']),
+        self30dOutQty: pick(row, mapping.self30dOutQty) || pickAny(row, ['全国近30日出库商品件数', '近30日出库商品件数', '全国近30天出库商品件数', '自营近30天出库'])
       };
     }
     if (slotId === 'wangdianSpare2') {

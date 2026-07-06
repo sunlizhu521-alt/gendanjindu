@@ -634,6 +634,8 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard' }) {
   }, [options, filters, setFilters]);
   const filteredRows = useMemo(() => activeRows.filter((row) => matchesDashboardFilters(row)), [activeRows, filters]);
   const clearFilters = () => setFilters({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
+  const remainingLabel = filterKey === 'operationBoard' ? '备货剩余数量' : '未交付数量';
+  const remainingShortLabel = filterKey === 'operationBoard' ? '备货剩余' : '未交付';
   const summary = filteredRows.reduce((acc, row) => {
     acc.order += numberValue(row.remainingInboundQty);
     acc.shipped += numberValue(row.shippedQty);
@@ -657,7 +659,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard' }) {
 
   async function exportDashboardTable() {
     const XLSX = await import('xlsx');
-    const headers = ['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', '未交付数量', '已发货', '在产品', '完工产品', 'OA备货流程号'];
+    const headers = ['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号'];
     const aoa = [
       headers,
       ...filteredRows.map((row) => [
@@ -687,7 +689,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard' }) {
       <div className="section-heading-row dashboard-heading">
         <h2>{title}</h2>
         <span className="section-count dashboard-explain">
-          当前显示 {filteredRows.length} / {activeRows.length} 条；未交付数量=剩余入库数量，已发货=累计入库数量，在产品=供应商在生产中，完工产品=供应商已经生产完待入采购入库
+          当前显示 {filteredRows.length} / {activeRows.length} 条；{remainingLabel}=剩余入库数量，已发货=累计入库数量，在产品=供应商在生产中，完工产品=供应商已经生产完待入采购入库
         </span>
       </div>
       <div className="toolbar filters-row">
@@ -708,21 +710,21 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard' }) {
         <button type="button" className="compact-button" onClick={exportDashboardTable}>导出表格</button>
       </div>
       <section className="metric-grid">
-        <MetricCard label="未交付数量" value={summary.order.toLocaleString()} />
+        <MetricCard label={remainingLabel} value={summary.order.toLocaleString()} />
         <MetricCard label="已发货" value={summary.shipped.toLocaleString()} />
         <MetricCard label="在产品" value={summary.inProduction.toLocaleString()} />
         <MetricCard label="完工产品" value={summary.finished.toLocaleString()} />
       </section>
       {filterKey === 'operationBoard' ? (
         <section className="progress-chart-grid">
-          <ProgressStackedChart title="供应商未交付 / 在产品 / 完工产品" rows={filteredRows} groupBy={(row) => supplierName(row)} />
-          <ProgressStackedChart title="事业部未交付 / 在产品 / 完工产品" rows={filteredRows} groupBy={(row) => row.businessUnit} />
-          <ProgressStackedChart title="系列未交付 / 在产品 / 完工产品" rows={filteredRows} groupBy={(row) => row.productSeries} />
-          <ProgressStackedChart title="SKU未交付 / 在产品 / 完工产品" rows={filteredRows} groupBy={(row) => row.sku} />
+          <ProgressStackedChart title={`供应商${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => supplierName(row)} />
+          <ProgressStackedChart title={`事业部${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => row.businessUnit} />
+          <ProgressStackedChart title={`系列${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => row.productSeries} />
+          <ProgressStackedChart title={`SKU${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => row.sku} />
         </section>
       ) : (
         <section className="series-chart-grid">
-          <SeriesBarChart title="系列未交付数量" rows={seriesRows} valueKey="orderQty" />
+          <SeriesBarChart title={`系列${remainingLabel}`} rows={seriesRows} valueKey="orderQty" />
           <SeriesBarChart title="系列在产品数量" rows={seriesRows} valueKey="inProductionQty" />
           <SeriesBarChart title="系列完工产品数量" rows={seriesRows} valueKey="finishedQty" />
           <SeriesBarChart title="系列总数量" rows={seriesRows} valueKey="totalQty" />
@@ -732,7 +734,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard' }) {
         <DataTable
           className="compact-table"
           rows={filteredRows}
-          columns={['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', '未交付数量', '已发货', '在产品', '完工产品', 'OA备货流程号']}
+          columns={['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']}
           render={(row) => [
             row.businessUnit,
             supplierName(row),

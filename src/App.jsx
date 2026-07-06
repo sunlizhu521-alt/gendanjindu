@@ -1228,6 +1228,7 @@ function DomesticBoard({ token, setMessage }) {
     salesSeries: '',
     model: '',
     purchaseOwner: '',
+    jdSelf: '',
     needProduction: '',
     risk: ''
   });
@@ -1242,6 +1243,13 @@ function DomesticBoard({ token, setMessage }) {
 
   useEffect(() => { load().catch((err) => setMessage(`国内事业部看板加载失败：${err.message}`)); }, [token]);
 
+  const isJdSelfRow = (row) => (
+    numberValue(row.jdStockQty) > 0
+    || numberValue(row.self7dOutQty) > 0
+    || numberValue(row.self30dOutQty) > 0
+    || numberValue(row.selfDailySales) > 0
+  );
+
   const matchesDomesticFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
     const text = [
@@ -1254,6 +1262,7 @@ function DomesticBoard({ token, setMessage }) {
       row.purchaseOwner,
       row.merchantCode,
       row.systemSku,
+      isJdSelfRow(row) ? '京东自营' : '',
       row.needProduction,
       row.risk
     ].join(' ').toLowerCase();
@@ -1265,6 +1274,7 @@ function DomesticBoard({ token, setMessage }) {
       && (omit === 'salesSeries' || !filters.salesSeries || row.salesSeries === filters.salesSeries)
       && (omit === 'model' || !filters.model || row.model === filters.model)
       && (omit === 'purchaseOwner' || !filters.purchaseOwner || row.purchaseOwner === filters.purchaseOwner)
+      && (omit === 'jdSelf' || !filters.jdSelf || isJdSelfRow(row))
       && (omit === 'needProduction' || !filters.needProduction || row.needProduction === filters.needProduction)
       && (omit === 'risk' || !filters.risk || row.risk === filters.risk);
   };
@@ -1279,6 +1289,7 @@ function DomesticBoard({ token, setMessage }) {
       salesSeries: [...new Set(rowsFor('salesSeries').map((row) => normalize(row.salesSeries)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')),
       models: [...new Set(rowsFor('model').map((row) => normalize(row.model)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')),
       purchaseOwners: [...new Set(rowsFor('purchaseOwner').map((row) => normalize(row.purchaseOwner)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')),
+      jdSelfOptions: rowsFor('jdSelf').some((row) => isJdSelfRow(row)) ? ['京东自营'] : [],
       needProductions: [...new Set(rowsFor('needProduction').map((row) => normalize(row.needProduction)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')),
       risks: [...new Set(rowsFor('risk').map((row) => normalize(row.risk)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
     };
@@ -1292,6 +1303,7 @@ function DomesticBoard({ token, setMessage }) {
       salesSeries: options.salesSeries,
       model: options.models,
       purchaseOwner: options.purchaseOwners,
+      jdSelf: options.jdSelfOptions,
       needProduction: options.needProductions,
       risk: options.risks
     });
@@ -1460,7 +1472,7 @@ function DomesticBoard({ token, setMessage }) {
     }
   }
 
-  const clearFilters = () => setFilters({ keyword: '', stockupStatus: '', brand: '', productType: '', salesProductLine: '', salesSeries: '', model: '', purchaseOwner: '', needProduction: '', risk: '' });
+  const clearFilters = () => setFilters({ keyword: '', stockupStatus: '', brand: '', productType: '', salesProductLine: '', salesSeries: '', model: '', purchaseOwner: '', jdSelf: '', needProduction: '', risk: '' });
   const numberCell = (value) => numberValue(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
   const editInput = (row, key, type = 'number') => {
     const value = draftFor(row)[key];
@@ -1486,6 +1498,7 @@ function DomesticBoard({ token, setMessage }) {
           <SelectField label="销售系列" value={filters.salesSeries} options={options.salesSeries} onChange={(value) => setFilters({ ...filters, salesSeries: value })} />
           <SelectField label="型号" value={filters.model} options={options.models} onChange={(value) => setFilters({ ...filters, model: value })} />
           <SelectField label="采购下单人" value={filters.purchaseOwner} options={options.purchaseOwners} onChange={(value) => setFilters({ ...filters, purchaseOwner: value })} />
+          <SelectField label="京东自营" value={filters.jdSelf} options={options.jdSelfOptions} onChange={(value) => setFilters({ ...filters, jdSelf: value })} />
           <SelectField label="是否需要生产" value={filters.needProduction} options={options.needProductions} onChange={(value) => setFilters({ ...filters, needProduction: value })} />
           <SelectField label="风险判断" value={filters.risk} options={options.risks} onChange={(value) => setFilters({ ...filters, risk: value })} />
           <input

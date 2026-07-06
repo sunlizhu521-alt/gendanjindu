@@ -608,11 +608,28 @@ function dimensionDiagnostics(slotId, rows = []) {
     const merchantCodes = new Set(rows.map((row) => normalize(domesticMerchantCode(row))).filter(Boolean));
     return { totalRows: rows.length, keyRows: merchantCodes.size };
   }
+  if (slotId === 'wangdianSpare1') {
+    const jdIds = new Set(rows.map((row) => normalize(jdIdValue(row))).filter(Boolean));
+    return { totalRows: rows.length, keyRows: jdIds.size };
+  }
+  if (slotId === 'wangdianSpare2') {
+    const jdIds = new Set(rows.map((row) => normalize(jdIdValue(row))).filter(Boolean));
+    const materialCodes = new Set(rows.map((row) => normalize(jdMappedMaterialCode(row))).filter(Boolean));
+    return { totalRows: rows.length, keyRows: jdIds.size, materialRows: materialCodes.size };
+  }
   return { totalRows: rows.length };
 }
 
 function domesticMerchantCode(row) {
   return rowAliasValue(row, ['merchantCode', '商家编码', '商家编码 ', '商品编码']);
+}
+
+function jdIdValue(row) {
+  return rowAliasValue(row, ['jdId', 'ID', 'id', '京东ID', '京东id']);
+}
+
+function jdMappedMaterialCode(row) {
+  return rowAliasValue(row, ['materialCode', '品号', '物料编码', '商品编码', '货品编号', '存货编码']);
 }
 
 function productCategoryModel(row) {
@@ -706,10 +723,31 @@ function saveDomesticManualInput(merchantCode, payload, userName) {
 function domesticBoardRows() {
   const defaultRows = getDimensionRows('spare2');
   const wangdianRows = getDimensionRows('wangdianDataMain');
+  const jdInventoryRows = getDimensionRows('wangdianSpare1');
+  const jdMatchRows = getDimensionRows('wangdianSpare2');
+  const jdMaterialMap = new Map();
+  jdMatchRows.forEach((row) => {
+    const jdId = normalize(jdIdValue(row));
+    const materialCode = normalize(jdMappedMaterialCode(row));
+    if (jdId && materialCode && !jdMaterialMap.has(jdId)) jdMaterialMap.set(jdId, materialCode);
+  });
+  const resolveDomesticMaterialCode = (row) => {
+    const directMaterialCode = normalize(jdMappedMaterialCode(row));
+    if (directMaterialCode) return directMaterialCode;
+    const merchantCode = normalize(domesticMerchantCode(row));
+    return normalize(jdMaterialMap.get(merchantCode) || merchantCode);
+  };
   const wangdianMap = new Map();
   wangdianRows.forEach((row) => {
     const merchantCode = normalize(domesticMerchantCode(row));
     if (merchantCode && !wangdianMap.has(merchantCode)) wangdianMap.set(merchantCode, row);
+  });
+  const jdInventoryMap = new Map();
+  jdInventoryRows.forEach((row) => {
+    const jdId = normalize(jdIdValue(row));
+    const materialCode = resolveDomesticMaterialCode(row);
+    if (jdId && !jdInventoryMap.has(jdId)) jdInventoryMap.set(jdId, row);
+    if (materialCode && !jdInventoryMap.has(materialCode)) jdInventoryMap.set(materialCode, row);
   });
   const manualMap = new Map(all('SELECT * FROM domestic_board_inputs').map((row) => [normalize(row.merchant_code), row]));
   const domesticUndeliveredMap = new Map();
@@ -733,15 +771,20 @@ function domesticBoardRows() {
   });
   return defaultRows.map((row) => {
     const merchantCode = normalize(domesticMerchantCode(row));
+    const materialCode = resolveDomesticMaterialCode(row);
     const wdt = wangdianMap.get(merchantCode) || {};
+    const jdInventory = jdInventoryMap.get(merchantCode) || jdInventoryMap.get(materialCode) || {};
     const manual = manualMap.get(merchantCode) || {};
-    const domesticMeta = domesticMetaMap.get(merchantCode) || {};
-    const product = productCategoryMap.get(merchantCode) || {};
+    const domesticMeta = domesticMetaMap.get(materialCode) || {};
+    const product = productCategoryMap.get(materialCode) || {};
     const wdtStockQty = numberValue(wdt.wdtStockQty ?? rowAliasValue(wdt, ['旺店通在库量']));
     const nonSelf7dOutQty = numberValue(wdt.nonSelf7dOutQty ?? rowAliasValue(wdt, ['非自营近7天出库']));
     const nonSelf30dOutQty = numberValue(wdt.nonSelf30dOutQty ?? rowAliasValue(wdt, ['非自营近30天出库']));
     const nonSelfDailySales = roundQty((nonSelf7dOutQty + nonSelf30dOutQty) / 37);
     const nonSelfFuture14dDemandQty = roundQty(nonSelfDailySales * 14);
+    const jdStockQty = manual.merchant_code
+      ? numberValue(manual.jd_stock_qty)
+      : numberValue(jdInventory.jdStockQty || rowAliasValue(jdInventory, ['京东库存', '库存数量', '库存', '可用库存', '现货库存']));
     const self7dOutQty = numberValue(manual.self_7d_out_qty);
     const self30dOutQty = numberValue(manual.self_30d_out_qty);
     const calculatedSelfDailySales = roundQty((self7dOutQty + self30dOutQty) / 37);
@@ -764,7 +807,7 @@ function domesticBoardRows() {
       nonSelf30dOutQty,
       nonSelfDailySales,
       nonSelfFuture14dDemandQty,
-      jdStockQty: numberValue(manual.jd_stock_qty),
+      jdStockQty,
       self7dOutQty,
       self30dOutQty,
       selfDailySales,
@@ -775,7 +818,7 @@ function domesticBoardRows() {
       estimatedStockoutDate: sellableDays ? addDaysText(sellableDays) : '',
       sellableDays,
       risk: riskLabel(sellableDays, wdtStockQty),
-      domesticUndeliveredQty: numberValue(domesticUndeliveredMap.get(merchantCode)),
+      domesticUndeliveredQty: numberValue(domesticUndeliveredMap.get(materialCode)),
       nextSupplyDate: normalize(manual.next_supply_date),
       nextSupplyQty: numberValue(manual.next_supply_qty),
       remark: normalize(manual.remark),
@@ -1905,6 +1948,20 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         wdtStockQty: pick(row, mapping.wdtStockQty) || pickAny(row, ['旺店通在库量', '在库量', '库存']),
         nonSelf7dOutQty: pick(row, mapping.nonSelf7dOutQty) || pickAny(row, ['非自营近7天出库', '非自营7天出库', '近7天出库']),
         nonSelf30dOutQty: pick(row, mapping.nonSelf30dOutQty) || pickAny(row, ['非自营近30天出库', '非自营30天出库', '近30天出库'])
+      };
+    }
+    if (slotId === 'wangdianSpare1') {
+      return {
+        raw: row,
+        jdId: pick(row, mapping.jdId) || pickAny(row, ['ID', 'id', '京东ID', '京东id']),
+        jdStockQty: pick(row, mapping.jdStockQty) || pickAny(row, ['京东库存', '库存数量', '库存', '可用库存', '现货库存'])
+      };
+    }
+    if (slotId === 'wangdianSpare2') {
+      return {
+        raw: row,
+        jdId: pick(row, mapping.jdId) || pickAny(row, ['ID', 'id', '京东ID', '京东id']),
+        materialCode: pick(row, mapping.materialCode) || pickAny(row, ['品号', '物料编码', '商品编码', '货品编号', '存货编码'])
       };
     }
     return row;

@@ -71,8 +71,14 @@ const WANGDIAN_SLOTS = [
     ['nonSelf7dOutQty', '非自营近7天出库'],
     ['nonSelf30dOutQty', '非自营近30天出库']
   ] },
-  { ...DIMENSION_SLOTS[1], id: 'wangdianSpare1', title: '京东库存' },
-  { ...DIMENSION_SLOTS[2], id: 'wangdianSpare2', title: '京东ID与品号匹配' },
+  { id: 'wangdianSpare1', title: '京东库存', fields: [
+    ['jdId', 'ID'],
+    ['jdStockQty', '京东库存']
+  ] },
+  { id: 'wangdianSpare2', title: '京东ID与品号匹配', fields: [
+    ['jdId', 'ID'],
+    ['materialCode', '品号']
+  ] },
   { ...DIMENSION_SLOTS[3], id: 'wangdianSpare3', title: '备用3' }
 ];
 

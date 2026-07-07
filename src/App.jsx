@@ -695,7 +695,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
         </span>
       </div>
       {filterKey === 'operationBoard' && (
-        <div className="dashboard-applied-note">采购订单列表应用时间：{currentAppliedAt || '暂无'}</div>
+        <AppliedTimeNote value={currentAppliedAt} />
       )}
       <div className="toolbar filters-row">
         <MonthCalendarFilter label="下单月份" value={filters.month} options={options.months} multiple={false} onChange={(value) => setFilters({ ...filters, month: value })} />
@@ -758,6 +758,17 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       </section>
     </>
   );
+}
+
+function AppliedTimeNote({ label = '采购订单列表应用时间', value = '' }) {
+  return <div className="dashboard-applied-note">{label}：{value || '暂无'}</div>;
+}
+
+function SourceApplicationsNote({ sources = [] }) {
+  const text = sources.length
+    ? sources.map((source) => `${source.label}：${source.appliedAt || '暂无'}`).join('；')
+    : '暂无';
+  return <div className="dashboard-applied-note">文件应用时间：{text}</div>;
 }
 
 function PurchaseBoard({ rows }) {
@@ -1217,7 +1228,7 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
 
 function DomesticBoard({ token, setMessage }) {
   const [rows, setRows] = useState([]);
-  const [sources, setSources] = useState({});
+  const [sourceApplications, setSourceApplications] = useState([]);
   const [drafts, setDrafts] = useState({});
   const [saving, setSaving] = useState('');
   const [operationSelectedMerchantCodes, setOperationSelectedMerchantCodes] = useState([]);
@@ -1240,7 +1251,7 @@ function DomesticBoard({ token, setMessage }) {
   async function load() {
     const payload = await request('/api/domestic-board', { token });
     setRows(payload.rows || []);
-    setSources(payload.sources || {});
+    setSourceApplications(payload.sourceApplications || []);
     setDrafts({});
   }
 
@@ -1492,6 +1503,7 @@ function DomesticBoard({ token, setMessage }) {
         <h2>国内事业部看板</h2>
         <span className="section-count">当前显示 {filtered.length} / {rows.length} 条</span>
       </div>
+      <SourceApplicationsNote sources={sourceApplications} />
       <section className="panel domestic-filter-panel">
         <div className="toolbar filters-row">
           <SelectField label="是否正常备货" value={filters.stockupStatus} options={options.stockupStatuses} onChange={(value) => setFilters({ ...filters, stockupStatus: value })} />
@@ -1514,12 +1526,6 @@ function DomesticBoard({ token, setMessage }) {
           <button type="button" className="compact-button" disabled={saving === 'operationBulk'} onClick={() => submitSelectedRows(operationSelectedMerchantCodes, 'operation')}>{saving === 'operationBulk' ? '提交中...' : '运营批量提交'}</button>
           <button type="button" className="compact-button" disabled={saving === 'purchaseBulk'} onClick={() => submitSelectedRows(purchaseSelectedMerchantCodes, 'purchase')}>{saving === 'purchaseBulk' ? '提交中...' : '采购批量提交'}</button>
           <button type="button" className="compact-button" onClick={exportSelectedRows}>批量导出</button>
-        </div>
-        <div className="slot-info domestic-source-info">
-          <span>默认数据：{sources.defaultData?.file_name || '未上传'}</span>
-          <span>更新时间：{sources.defaultData?.updated_at || '-'}</span>
-          <span>国内数据：{sources.wangdianData?.file_name || '未上传'}</span>
-          <span>更新时间：{sources.wangdianData?.updated_at || '-'}</span>
         </div>
       </section>
       <DataTable
@@ -1763,7 +1769,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, selected = fals
   );
 }
 
-function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '生产跟进', onlyIssues = false }) {
+function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '生产跟进', onlyIssues = false, currentAppliedAt = '' }) {
   const { filters, setFilters, options, filtered } = useFilteredDemands(rows.filter((row) => row.active), onlyIssues ? 'progressIssues' : 'progressRefresh');
   const [selectedKeys, setSelectedKeys] = useState([]);
   const [drafts, setDrafts] = useState({});
@@ -1913,6 +1919,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
           <ProgressStackedChart title="系列未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => row.productSeries} />
           <ProgressStackedChart title="SKU未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => row.sku} />
         </section>
+        <AppliedTimeNote value={currentAppliedAt} />
         <FilterBar filters={filters} setFilters={setFilters} options={options} />
       </div>
       <DataTable
@@ -1946,7 +1953,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
   );
 }
 
-function DifferenceAllocationPage({ token, user, setMessage }) {
+function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = '' }) {
   const [compare, setCompare] = useState({ diffRows: [], allocations: [], actions: [], reasons: [], status: { total: 0, allocated: 0 } });
   const [rowInputs, setRowInputs] = useState({});
   const [selectedRowIds, setSelectedRowIds] = useState([]);
@@ -2115,6 +2122,7 @@ function DifferenceAllocationPage({ token, user, setMessage }) {
             {loading ? '加载中...' : `当前显示 ${filteredDiffRows.length} / ${totalPendingCount} 条，待分配 ${pendingCount} / ${totalPendingCount} 条`}
           </span>
         </div>
+        <AppliedTimeNote value={currentAppliedAt} />
         <div className="toolbar filters-row">
           <MonthCalendarFilter label="下单月份" value={filters.month} options={options.months} multiple={false} onChange={(value) => setFilters({ ...filters, month: value })} />
           <SelectField label="供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
@@ -2844,8 +2852,8 @@ function App() {
         {canView('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><Dashboard rows={demands} title="运营看板" filterKey="operationBoard" currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {canView('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
         {canView('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
-        {canView('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
-        {canView('differenceAllocation') && <PagePane page="differenceAllocation" activeTab={activeTab}><DifferenceAllocationPage token={token} user={user} setMessage={setMessage} /></PagePane>}
+        {canView('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
+        {canView('differenceAllocation') && <PagePane page="differenceAllocation" activeTab={activeTab}><DifferenceAllocationPage token={token} user={user} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {canView('wangdianData') && <PagePane page="wangdianData" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="国内数据" slots={WANGDIAN_SLOTS} /></PagePane>}
         {canView('dimensionLibrary') && <PagePane page="dimensionLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
         {canView('trace') && <PagePane page="trace" activeTab={activeTab}><TracePage token={token} setMessage={setMessage} /></PagePane>}

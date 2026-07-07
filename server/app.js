@@ -1497,14 +1497,23 @@ app.get('/api/bootstrap', requireAuth, (req, res) => {
 });
 
 app.get('/api/domestic-board', requireAuth, requirePage('domesticBoard'), (req, res) => {
-  const defaultRecord = get('SELECT file_name, updated_at FROM dimension_files WHERE slot_id = ? AND applied = 1', ['spare2']);
-  const wangdianRecord = get('SELECT file_name, updated_at FROM dimension_files WHERE slot_id = ? AND applied = 1', ['wangdianDataMain']);
+  const sourceSlots = [
+    ['spare2', '国内运营默认数据'],
+    ['wangdianDataMain', '国内数据'],
+    ['wangdianSpare1', '京东库存'],
+    ['wangdianSpare2', '京东ID与品号匹配'],
+    ['productCategory', '商品分类']
+  ];
+  const sourceApplications = sourceSlots.map(([slotId, label]) => {
+    const record = get('SELECT file_name, updated_at FROM dimension_files WHERE slot_id = ? AND applied = 1', [slotId]);
+    return { slotId, label, fileName: record?.file_name || '未上传', appliedAt: record?.updated_at || '暂无' };
+  });
   res.json({
     rows: domesticBoardRows(),
-    sources: {
-      defaultData: defaultRecord || null,
-      wangdianData: wangdianRecord || null
-    }
+    sourceApplications: [
+      ...sourceApplications,
+      { slotId: 'kingdeeOrders', label: '采购订单列表', fileName: '当前应用采购订单', appliedAt: currentAppliedAt() || '暂无' }
+    ]
   });
 });
 

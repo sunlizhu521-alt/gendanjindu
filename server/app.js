@@ -1684,6 +1684,8 @@ app.post('/api/imports/kingdee/new-snapshot', requireAuth, requirePage('kingdeeI
   res.json({
     batchId,
     sessionId: compare.sessionId,
+    importedAt: now,
+    appliedAt: now,
     rowCount: result.rows.length,
     totalRows: parsed.rows.length,
     validRows: result.validRows,

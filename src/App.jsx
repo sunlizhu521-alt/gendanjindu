@@ -1047,7 +1047,7 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
       setOperationProgress({ label: '正在刷新页面数据...', progress: 85 });
       if (mode === 'new') {
         setPreview({ ...payload, diffs: payload.diffRows || [] });
-        setMessage(`新采购订单已上传并应用：${payload.rowCount} 行，生成差异 ${payload.diffRows?.length || 0} 条`);
+        setMessage(`新采购订单已上传并应用：${payload.rowCount} 行，生成差异 ${payload.diffRows?.length || 0} 条，导入日期：${payload.importedAt || payload.appliedAt || '暂无'}`);
         await reloadDemands();
       } else {
         setMessage(`上传保存完成：${payload.rowCount} 行已保存到腾讯云服务器，差异 ${payload.diffs.length} 条`);

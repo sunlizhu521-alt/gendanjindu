@@ -286,20 +286,27 @@ function ProgressStackedChart({ title, rows, groupBy }) {
           const barPct = Math.max(Math.min(remainingQty / chartMax * 100, 100), 8);
           const inProductionPct = Math.max(Math.min(numberValue(row.inProductionQty) / rowTotal * 100, 100), 0);
           const finishedPct = Math.max(Math.min(numberValue(row.finishedQty) / rowTotal * 100, 100 - inProductionPct), 0);
+          const inProductionValue = numberValue(row.inProductionQty);
+          const finishedValue = numberValue(row.finishedQty);
+          const visibleSegments = [inProductionValue, finishedValue].filter((value) => value > 0).length;
           return (
             <div key={row.name} className="stack-row">
               <span title={row.name}>{row.name}</span>
               <div className="stack-track" title={`未交付 ${row.remainingQty}，在产品 ${row.inProductionQty}，完工产品 ${row.finishedQty}`}>
-                <div className="stack-total" style={{ width: `${barPct}%` }}>
-                  <div className="stack-fill in-production" data-has-value={numberValue(row.inProductionQty) > 0 ? 'true' : 'false'} style={{ width: `${inProductionPct}%` }}>
-                    {numberValue(row.inProductionQty) > 0 && <b>{numberValue(row.inProductionQty).toLocaleString()}</b>}
-                  </div>
-                  <div className="stack-fill finished" data-has-value={numberValue(row.finishedQty) > 0 ? 'true' : 'false'} style={{ width: `${finishedPct}%` }}>
-                    {numberValue(row.finishedQty) > 0 && <b>{numberValue(row.finishedQty).toLocaleString()}</b>}
-                  </div>
+                <div className="stack-total" data-segments={visibleSegments} style={{ width: `${barPct}%` }}>
+                  {inProductionValue > 0 && (
+                    <div className="stack-fill in-production" style={{ width: `${inProductionPct}%` }}>
+                      <b>{inProductionValue.toLocaleString()}</b>
+                    </div>
+                  )}
+                  {finishedValue > 0 && (
+                    <div className="stack-fill finished" style={{ width: `${finishedPct}%` }}>
+                      <b>{finishedValue.toLocaleString()}</b>
+                    </div>
+                  )}
                 </div>
               </div>
-              <strong>{numberValue(row.remainingQty).toLocaleString()}</strong>
+              <strong className="stack-summary">{remainingQty.toLocaleString()}</strong>
             </div>
           );
         })}

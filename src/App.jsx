@@ -580,7 +580,7 @@ function Login({ onLogin }) {
   );
 }
 
-function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard' }) {
+function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', currentAppliedAt = '' }) {
   const activeRows = useMemo(() => rows.filter((row) => row.active), [rows]);
   const [filters, setFilters] = useSessionFilters(filterKey, { month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
   const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
@@ -694,6 +694,9 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard' }) {
           当前显示 {filteredRows.length} / {activeRows.length} 条；{remainingLabel}=剩余入库数量，已发货=累计入库数量，在产品=供应商在生产中，完工产品=供应商已经生产完待入采购入库
         </span>
       </div>
+      {filterKey === 'operationBoard' && (
+        <div className="dashboard-applied-note">采购订单列表应用时间：{currentAppliedAt || '暂无'}</div>
+      )}
       <div className="toolbar filters-row">
         <MonthCalendarFilter label="下单月份" value={filters.month} options={options.months} multiple={false} onChange={(value) => setFilters({ ...filters, month: value })} />
         <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
@@ -2767,11 +2770,13 @@ function App() {
   const [pages, setPages] = useState(PAGE_LABELS);
   const [activeTab, setActiveTab] = useState('domesticBoard');
   const [demands, setDemands] = useState([]);
+  const [demandMeta, setDemandMeta] = useState({ currentAppliedAt: '' });
   const [message, setMessage] = useState('');
 
   async function reloadDemands() {
     const payload = await request('/api/demands', { token });
     setDemands(payload.rows || []);
+    setDemandMeta({ currentAppliedAt: payload.currentAppliedAt || '' });
   }
 
   async function bootstrap(currentToken = token) {
@@ -2783,6 +2788,7 @@ function App() {
     setPages(payload.pages || PAGE_LABELS);
     setActiveTab(PAGE_ORDER.find((page) => payload.user.role === '管理员' || payload.user.pageAccess?.includes(page)) || 'domesticBoard');
     setDemands(demandPayload.rows || []);
+    setDemandMeta({ currentAppliedAt: demandPayload.currentAppliedAt || '' });
   }
 
   useEffect(() => {
@@ -2835,7 +2841,7 @@ function App() {
       <section className="content" onClick={(event) => event.stopPropagation()}>
         {message && <p className="message">{message}</p>}
         {canView('domesticBoard') && <PagePane page="domesticBoard" activeTab={activeTab}><DomesticBoard token={token} setMessage={setMessage} /></PagePane>}
-        {canView('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><Dashboard rows={demands} title="运营看板" filterKey="operationBoard" /></PagePane>}
+        {canView('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><Dashboard rows={demands} title="运营看板" filterKey="operationBoard" currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {canView('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
         {canView('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
         {canView('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}

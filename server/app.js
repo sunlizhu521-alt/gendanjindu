@@ -1700,7 +1700,7 @@ app.post('/api/imports/kingdee/new-snapshot', requireAuth, requirePage('kingdeeI
 });
 
 app.get('/api/demands', requireAuth, (req, res) => {
-  res.json({ rows: demandRows(req.query.includeInactive === '1', req.user) });
+  res.json({ rows: demandRows(req.query.includeInactive === '1', req.user), currentAppliedAt: currentAppliedAt() });
 });
 
 app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'), (req, res) => {

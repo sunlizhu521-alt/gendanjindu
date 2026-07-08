@@ -31,7 +31,7 @@ const ALL_PAGES = [
 ];
 const PAGE_LABELS = {
   domesticBoard: '国内事业部看板',
-  operationBoard: '运营看板',
+  operationBoard: '运营看板-未交付',
   purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',
   progressRefresh: '生产跟进',

@@ -19,7 +19,7 @@ const PAGE_ORDER = [
 
 const PAGE_LABELS = {
   domesticBoard: '国内事业部看板',
-  operationBoard: '运营看板',
+  operationBoard: '运营看板-未交付',
   purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',
   progressRefresh: '生产跟进',
@@ -2856,7 +2856,7 @@ function App() {
       <section className="content" onClick={(event) => event.stopPropagation()}>
         {message && <p className="message">{message}</p>}
         {canView('domesticBoard') && <PagePane page="domesticBoard" activeTab={activeTab}><DomesticBoard token={token} setMessage={setMessage} /></PagePane>}
-        {canView('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><Dashboard rows={demands} title="运营看板" filterKey="operationBoard" currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
+        {canView('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><Dashboard rows={demands} title="运营看板-未交付" filterKey="operationBoard" currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {canView('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
         {canView('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
         {canView('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}

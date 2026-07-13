@@ -345,9 +345,125 @@ function DataTable({ columns, rows, render, renderRow, className = '' }) {
   );
 }
 
+function PersistentHorizontalScrollbar({ activeTab }) {
+  const scrollbarRef = useRef(null);
+  const sourceRef = useRef(null);
+  const sourceScrollHandlerRef = useRef(null);
+  const [layout, setLayout] = useState({ visible: false, left: 0, width: 0, contentWidth: 0 });
+
+  useEffect(() => {
+    let animationFrame = 0;
+    let resizeObserver;
+    let mutationObserver;
+
+    const detachSource = () => {
+      if (sourceRef.current && sourceScrollHandlerRef.current) {
+        sourceRef.current.removeEventListener('scroll', sourceScrollHandlerRef.current);
+      }
+      sourceRef.current = null;
+      sourceScrollHandlerRef.current = null;
+    };
+
+    const attachSource = (source) => {
+      if (sourceRef.current === source) return;
+      detachSource();
+      sourceRef.current = source;
+      if (!source) return;
+      sourceScrollHandlerRef.current = () => {
+        if (scrollbarRef.current && Math.abs(scrollbarRef.current.scrollLeft - source.scrollLeft) > 1) {
+          scrollbarRef.current.scrollLeft = source.scrollLeft;
+        }
+      };
+      source.addEventListener('scroll', sourceScrollHandlerRef.current, { passive: true });
+    };
+
+    const update = () => {
+      animationFrame = 0;
+      const pane = document.querySelector(`.page-pane[data-page="${activeTab}"]:not([hidden])`);
+      const candidates = pane
+        ? [...pane.querySelectorAll('.table-wrap, .board-table-wrap')].filter((element) => (
+          element.offsetParent !== null && element.scrollWidth > element.clientWidth + 1
+        ))
+        : [];
+      if (!candidates.length) {
+        attachSource(null);
+        setLayout((current) => current.visible ? { ...current, visible: false } : current);
+        return;
+      }
+
+      const viewportHeight = window.innerHeight;
+      const ranked = candidates.map((element) => {
+        const rect = element.getBoundingClientRect();
+        const intersection = Math.max(0, Math.min(rect.bottom, viewportHeight) - Math.max(rect.top, 0));
+        const distance = intersection > 0 ? 0 : Math.min(Math.abs(rect.top - viewportHeight), Math.abs(rect.bottom));
+        return { element, rect, intersection, distance };
+      }).sort((a, b) => b.intersection - a.intersection || a.distance - b.distance);
+      const { element: source, rect } = ranked[0];
+      attachSource(source);
+      setLayout({
+        visible: true,
+        left: Math.max(0, rect.left),
+        width: Math.max(0, Math.min(rect.width, window.innerWidth - Math.max(0, rect.left))),
+        contentWidth: source.scrollWidth
+      });
+      window.requestAnimationFrame(() => {
+        if (scrollbarRef.current && sourceRef.current === source) scrollbarRef.current.scrollLeft = source.scrollLeft;
+      });
+    };
+
+    const scheduleUpdate = () => {
+      if (animationFrame) return;
+      animationFrame = window.requestAnimationFrame(update);
+    };
+
+    const pane = document.querySelector(`.page-pane[data-page="${activeTab}"]`);
+    window.addEventListener('resize', scheduleUpdate, { passive: true });
+    window.addEventListener('scroll', scheduleUpdate, { passive: true, capture: true });
+    if (window.ResizeObserver) {
+      resizeObserver = new ResizeObserver(scheduleUpdate);
+      const content = document.querySelector('.content');
+      if (content) resizeObserver.observe(content);
+      if (pane) resizeObserver.observe(pane);
+    }
+    if (window.MutationObserver && pane) {
+      mutationObserver = new MutationObserver(scheduleUpdate);
+      mutationObserver.observe(pane, { childList: true, subtree: true, attributes: true });
+    }
+    scheduleUpdate();
+
+    return () => {
+      if (animationFrame) window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener('resize', scheduleUpdate);
+      window.removeEventListener('scroll', scheduleUpdate, true);
+      resizeObserver?.disconnect();
+      mutationObserver?.disconnect();
+      detachSource();
+    };
+  }, [activeTab]);
+
+  function syncToSource(event) {
+    if (sourceRef.current && Math.abs(sourceRef.current.scrollLeft - event.currentTarget.scrollLeft) > 1) {
+      sourceRef.current.scrollLeft = event.currentTarget.scrollLeft;
+    }
+  }
+
+  return (
+    <div
+      ref={scrollbarRef}
+      className="persistent-horizontal-scrollbar"
+      hidden={!layout.visible}
+      style={{ left: layout.left, width: layout.width }}
+      onScroll={syncToSource}
+      aria-label="表格横向滚动条"
+    >
+      <div style={{ width: layout.contentWidth }} />
+    </div>
+  );
+}
+
 function PagePane({ page, activeTab, children }) {
   return (
-    <div className="page-pane" hidden={activeTab !== page}>
+    <div className="page-pane" data-page={page} hidden={activeTab !== page}>
       {children}
     </div>
   );
@@ -2935,6 +3051,7 @@ function App() {
         {canView('dimensionLibrary') && <PagePane page="dimensionLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
         {canView('trace') && <PagePane page="trace" activeTab={activeTab}><TracePage token={token} setMessage={setMessage} /></PagePane>}
         {canView('permissions') && <PagePane page="permissions" activeTab={activeTab}><PermissionsPage token={token} pages={pages} setMessage={setMessage} /></PagePane>}
+        <PersistentHorizontalScrollbar activeTab={activeTab} />
       </section>
     </main>
   );

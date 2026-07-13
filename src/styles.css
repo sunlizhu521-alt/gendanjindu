@@ -174,8 +174,45 @@ textarea {
 
 .content {
   min-width: 0;
-  padding: 28px;
+  padding: 28px 28px 44px;
   overflow: auto;
+}
+
+.persistent-horizontal-scrollbar {
+  position: fixed;
+  bottom: 0;
+  z-index: 1000;
+  height: 18px;
+  overflow-x: scroll;
+  overflow-y: hidden;
+  border: 1px solid #cbd5e1;
+  border-bottom: 0;
+  background: #f8fafc;
+  box-shadow: 0 -2px 8px rgba(15, 23, 42, .12);
+  scrollbar-color: #94a3b8 #e2e8f0;
+  scrollbar-width: auto;
+}
+
+.persistent-horizontal-scrollbar[hidden] {
+  display: none;
+}
+
+.persistent-horizontal-scrollbar > div {
+  height: 1px;
+}
+
+.persistent-horizontal-scrollbar::-webkit-scrollbar {
+  height: 14px;
+}
+
+.persistent-horizontal-scrollbar::-webkit-scrollbar-track {
+  background: #e2e8f0;
+}
+
+.persistent-horizontal-scrollbar::-webkit-scrollbar-thumb {
+  border: 2px solid #e2e8f0;
+  border-radius: 999px;
+  background: #94a3b8;
 }
 
 h2 {
@@ -1658,7 +1695,7 @@ th {
   }
 
   .content {
-    padding: 14px;
+    padding: 14px 14px 34px;
   }
 
   .metric-grid,

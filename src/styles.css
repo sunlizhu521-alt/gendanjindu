@@ -803,6 +803,44 @@ h3 {
   background: #fff;
 }
 
+.table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 0 2px;
+}
+
+.pagination-pages {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pagination-page {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #fff;
+  color: #475569;
+  box-shadow: none;
+}
+
+.pagination-page:hover,
+.pagination-page.active {
+  border-color: #ff6b35;
+  background: #ff6b35;
+  color: #fff;
+}
+
+.pagination-ellipsis {
+  min-width: 22px;
+  color: #64748b;
+  text-align: center;
+}
+
 .page-pane[hidden] {
   display: none !important;
 }
@@ -1708,6 +1746,11 @@ th {
 
   .toolbar {
     align-items: stretch;
+  }
+
+  .table-pagination {
+    justify-content: center;
+    flex-wrap: wrap;
   }
 
   .filter-control,

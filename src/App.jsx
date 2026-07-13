@@ -1968,20 +1968,43 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
   const [drafts, setDrafts] = useState({});
   const [batchSaving, setBatchSaving] = useState(false);
   const [redistributing, setRedistributing] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
   const visibleFiltered = useMemo(() => filtered.filter((row) => numberValue(row.remainingInboundQty) > 0), [filtered]);
   const displayRows = onlyIssues
     ? visibleFiltered.filter((row) => numberValue(row.gap) !== 0 || !row.progressUpdatedAt)
     : visibleFiltered;
-  const editableKeys = displayRows.filter((row) => row.canEdit).map((row) => row.demandKey);
+  const totalPages = Math.max(1, Math.ceil(displayRows.length / pageSize));
+  const pageRows = useMemo(
+    () => displayRows.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [displayRows, currentPage]
+  );
+  const pageNumbers = useMemo(() => {
+    const visiblePages = totalPages <= 7
+      ? Array.from({ length: totalPages }, (_, index) => index + 1)
+      : [...new Set([1, totalPages, currentPage - 1, currentPage, currentPage + 1].filter((page) => page >= 1 && page <= totalPages))].sort((a, b) => a - b);
+    return visiblePages.flatMap((page, index) => (
+      index > 0 && page - visiblePages[index - 1] > 1 ? [`ellipsis-${page}`, page] : [page]
+    ));
+  }, [currentPage, totalPages]);
+  const editableKeys = pageRows.filter((row) => row.canEdit).map((row) => row.demandKey);
   const selectedEditableCount = selectedKeys.filter((key) => displayRows.some((row) => row.demandKey === key && row.canEdit)).length;
   const allVisibleEditableSelected = editableKeys.length > 0 && editableKeys.every((key) => selectedKeys.includes(key));
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   function toggleProgressRow(demandKey, checked) {
     setSelectedKeys(checked ? [...new Set([...selectedKeys, demandKey])] : selectedKeys.filter((key) => key !== demandKey));
   }
 
   function selectVisibleEditableRows() {
-    setSelectedKeys(editableKeys);
+    setSelectedKeys([...new Set([...selectedKeys, ...editableKeys])]);
   }
 
   function toggleAllVisibleEditableRows(checked) {
@@ -2098,9 +2121,9 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
         <AppliedTimeNote value={currentAppliedAt} />
         <div className="section-heading-row">
           <h2>{title}</h2>
-          <span className="section-count">{displayRows.length} 条</span>
+          <span className="section-count">共 {displayRows.length} 条，第 {currentPage} / {totalPages} 页</span>
           {!onlyIssues && <button type="button" className="compact-button" onClick={handleExport}>导出 Excel</button>}
-          <button type="button" className="compact-button" disabled={!displayRows.some((row) => row.canEdit)} onClick={selectVisibleEditableRows}>勾选当前可编辑</button>
+          <button type="button" className="compact-button" disabled={!pageRows.some((row) => row.canEdit)} onClick={selectVisibleEditableRows}>勾选当前页可编辑</button>
           <button type="button" className="compact-button" disabled={!selectedEditableCount || batchSaving} onClick={batchSubmitProgress}>{batchSaving ? '提交中...' : `批量提交${selectedEditableCount ? ` ${selectedEditableCount}` : ''}`}</button>
           {user?.name === '孙立柱' && (
             <button type="button" className="compact-button" disabled={!selectedEditableCount || redistributing} onClick={redistributeSelectedProgress}>{redistributing ? '分配中...' : '重新分配'}</button>
@@ -2117,7 +2140,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
       </div>
       <DataTable
         className="progress-table"
-        rows={displayRows}
+        rows={pageRows}
         columns={[(
           <label className="select-all-header" title="勾选当前显示的可编辑行">
             <input
@@ -2142,6 +2165,18 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
           />
         )}
       />
+      <nav className="table-pagination" aria-label="生产跟进分页">
+        <button type="button" className="ghost compact-button" disabled={currentPage === 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}>上一页</button>
+        <div className="pagination-pages">
+          {pageNumbers.map((page) => (
+            typeof page === 'string'
+              ? <span key={page} className="pagination-ellipsis">…</span>
+              : <button key={page} type="button" className={`pagination-page${page === currentPage ? ' active' : ''}`} onClick={() => setCurrentPage(page)}>{page}</button>
+          ))}
+        </div>
+        <button type="button" className="ghost compact-button" disabled={currentPage === totalPages} onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}>下一页</button>
+        <span className="section-count">每页 20 条</span>
+      </nav>
     </>
   );
 }

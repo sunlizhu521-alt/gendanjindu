@@ -191,15 +191,6 @@ function progressTotal(row) {
   return numberValue(row.inProductionQty) + numberValue(row.finishedQty);
 }
 
-function progressPayloadFromRow(row) {
-  return {
-    inProductionQty: numberValue(row.inProductionQty),
-    finishedQty: numberValue(row.finishedQty),
-    shippedQty: numberValue(row.shippedQty),
-    remark: row.remark || ''
-  };
-}
-
 function authHeaders(token) {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
@@ -1962,12 +1953,10 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, selected = fals
   );
 }
 
-function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '生产跟进', onlyIssues = false, currentAppliedAt = '' }) {
+function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产跟进', onlyIssues = false, currentAppliedAt = '' }) {
   const { filters, setFilters, options, filtered } = useFilteredDemands(rows.filter((row) => row.active), onlyIssues ? 'progressIssues' : 'progressRefresh');
   const [selectedKeys, setSelectedKeys] = useState([]);
   const [drafts, setDrafts] = useState({});
-  const [batchSaving, setBatchSaving] = useState(false);
-  const [redistributing, setRedistributing] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
   const visibleFiltered = useMemo(() => filtered.filter((row) => numberValue(row.remainingInboundQty) > 0), [filtered]);
@@ -1988,7 +1977,6 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
     ));
   }, [currentPage, totalPages]);
   const editableKeys = pageRows.filter((row) => row.canEdit).map((row) => row.demandKey);
-  const selectedEditableCount = selectedKeys.filter((key) => displayRows.some((row) => row.demandKey === key && row.canEdit)).length;
   const allVisibleEditableSelected = editableKeys.length > 0 && editableKeys.every((key) => selectedKeys.includes(key));
 
   useEffect(() => {
@@ -2003,75 +1991,12 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
     setSelectedKeys(checked ? [...new Set([...selectedKeys, demandKey])] : selectedKeys.filter((key) => key !== demandKey));
   }
 
-  function selectVisibleEditableRows() {
-    setSelectedKeys([...new Set([...selectedKeys, ...editableKeys])]);
-  }
-
   function toggleAllVisibleEditableRows(checked) {
     if (checked) {
       setSelectedKeys([...new Set([...selectedKeys, ...editableKeys])]);
       return;
     }
     setSelectedKeys(selectedKeys.filter((key) => !editableKeys.includes(key)));
-  }
-
-  async function batchSubmitProgress() {
-    const selectedRows = displayRows.filter((row) => selectedKeys.includes(row.demandKey) && row.canEdit);
-    if (!selectedRows.length) {
-      setMessage('请先勾选可提交的生产跟进行。');
-      return;
-    }
-    setBatchSaving(true);
-    try {
-      for (const row of selectedRows) {
-        const payload = drafts[row.demandKey] || progressPayloadFromRow(row);
-        await request(`/api/progress/${encodeURIComponent(row.demandKey)}`, {
-          token,
-          method: 'PATCH',
-          body: JSON.stringify(payload)
-        });
-      }
-      setSelectedKeys([]);
-      setMessage(`生产跟进已批量提交 ${selectedRows.length} 条。`);
-      await reloadDemands();
-    } catch (err) {
-      setMessage('批量提交失败：' + err.message);
-    } finally {
-      setBatchSaving(false);
-    }
-  }
-
-  async function redistributeSelectedProgress() {
-    const selectedRows = displayRows.filter((row) => selectedKeys.includes(row.demandKey) && row.canEdit);
-    if (!selectedRows.length) {
-      setMessage('请先勾选要重新分配的生产跟进行。');
-      return;
-    }
-    if (!window.confirm(`确认重新分配 ${selectedRows.length} 条？未交付数量将重新放到在产品，完工产品会清零。`)) return;
-    setRedistributing(true);
-    try {
-      for (const row of selectedRows) {
-        const payload = {
-          inProductionQty: numberValue(row.remainingInboundQty),
-          finishedQty: 0,
-          shippedQty: numberValue(row.shippedQty),
-          remark: drafts[row.demandKey]?.remark ?? row.remark ?? ''
-        };
-        await request(`/api/progress/${encodeURIComponent(row.demandKey)}`, {
-          token,
-          method: 'PATCH',
-          body: JSON.stringify(payload)
-        });
-      }
-      setSelectedKeys([]);
-      setDrafts({});
-      setMessage(`已重新分配 ${selectedRows.length} 条生产跟进。`);
-      await reloadDemands();
-    } catch (err) {
-      setMessage('重新分配失败：' + err.message);
-    } finally {
-      setRedistributing(false);
-    }
   }
 
   async function handleExport() {
@@ -2123,12 +2048,6 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
           <h2>{title}</h2>
           <span className="section-count">共 {displayRows.length} 条，第 {currentPage} / {totalPages} 页</span>
           {!onlyIssues && <button type="button" className="compact-button" onClick={handleExport}>导出 Excel</button>}
-          <button type="button" className="compact-button" disabled={!pageRows.some((row) => row.canEdit)} onClick={selectVisibleEditableRows}>勾选当前页可编辑</button>
-          <button type="button" className="compact-button" disabled={!selectedEditableCount || batchSaving} onClick={batchSubmitProgress}>{batchSaving ? '提交中...' : `批量提交${selectedEditableCount ? ` ${selectedEditableCount}` : ''}`}</button>
-          {user?.name === '孙立柱' && (
-            <button type="button" className="compact-button" disabled={!selectedEditableCount || redistributing} onClick={redistributeSelectedProgress}>{redistributing ? '分配中...' : '重新分配'}</button>
-          )}
-          <button type="button" className="ghost compact-button" disabled={!selectedKeys.length} onClick={() => setSelectedKeys([])}>取消勾选</button>
         </div>
         <FilterBar filters={filters} setFilters={setFilters} options={options} />
         <section className="progress-chart-grid">
@@ -3080,7 +2999,7 @@ function App() {
         {canView('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><Dashboard rows={demands} title="运营看板-未交付" filterKey="operationBoard" currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {canView('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
         {canView('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
-        {canView('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
+        {canView('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} reloadDemands={reloadDemands} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {canView('differenceAllocation') && <PagePane page="differenceAllocation" activeTab={activeTab}><DifferenceAllocationPage token={token} user={user} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {canView('wangdianData') && <PagePane page="wangdianData" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="国内数据" slots={WANGDIAN_SLOTS} /></PagePane>}
         {canView('dimensionLibrary') && <PagePane page="dimensionLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}

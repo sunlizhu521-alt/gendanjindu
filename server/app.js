@@ -1071,6 +1071,7 @@ function demandRows(includeInactive = false, user = null) {
     const orderRows = context.orderRowsByDemand.get(demandBatchKey(demand.source_batch_id, demand.demand_key)) || [];
     const orderCreator = uniqueCreators(orderRows);
     const orderNo = uniqueOrderNos(orderRows);
+    const orderDates = uniqueOrderDates(orderRows);
     const oaFlowNo = demand.oa_flow_no || orderedOaFlowNos(orderRows, rawOaFlowNo);
     const enriched = enrichDemandFields(demand.supplier, demand.material_code, orderCreator, context.lookups);
     const purchaseOwner = realPurchaseOwner(enriched.purchaseOwner, demand.purchase_owner) || UNASSIGNED_PURCHASE_OWNER;
@@ -1104,6 +1105,7 @@ function demandRows(includeInactive = false, user = null) {
       purchaseOwner,
       purchaseOrg: demand.purchase_org || '',
       orderNo,
+      orderDates,
       oaFlowNo,
       orderCreator,
       stockQty,
@@ -1199,6 +1201,28 @@ function compareRowsFromSummary(summary, sourceRows, user) {
   const currentRows = demandRows(false, user);
   const currentMap = new Map(currentRows.map((row) => [row.demandKey, row]));
   const nextMap = new Map(summary.map((row) => [row.demandKey, row]));
+  const lookups = dimensionLookups();
+  const inventoryMap = new Map(all('SELECT * FROM inventory').map((row) => [row.stock_key, row]));
+  const currentSourceMap = new Map(
+    all('SELECT demand_key, source_batch_id FROM order_demands WHERE active = 1')
+      .map((row) => [row.demand_key, row.source_batch_id])
+  );
+  const currentBatchIds = [...new Set([...currentSourceMap.values()].map(normalize).filter(Boolean))];
+  const oldOrderRowsByDemand = new Map();
+  if (currentBatchIds.length) {
+    const placeholders = currentBatchIds.map(() => '?').join(',');
+    all(
+      `SELECT batch_id, demand_key, creator, order_no, raw_json
+       FROM kingdee_orders
+       WHERE batch_id IN (${placeholders})`,
+      currentBatchIds
+    ).forEach((row, index) => {
+      if (normalize(currentSourceMap.get(row.demand_key)) !== normalize(row.batch_id)) return;
+      const list = oldOrderRowsByDemand.get(row.demand_key) || [];
+      list.push(orderRowDateSort(row, index));
+      oldOrderRowsByDemand.set(row.demand_key, list);
+    });
+  }
   const sourceRowsByDemand = new Map();
   sourceRows.forEach((row) => {
     const list = sourceRowsByDemand.get(row.demandKey) || [];
@@ -1224,8 +1248,10 @@ function compareRowsFromSummary(summary, sourceRows, user) {
     const projectedProgress = next
       ? progressAfterInbound(next.trackingRemainingQty, progressInput, next.trackingInboundQty, { preserveExistingProgress: Boolean(current) })
       : progressAfterInbound(0, progressInput, 0, { preserveExistingProgress: Boolean(current) });
-    const orderCreator = uniqueCreators(sourceRowsByDemand.get(key) || []) || oldCreatorsForDemand(key);
-    const enriched = next ? enrichDemandFields(next.supplier, next.materialCode, orderCreator) : {};
+    const nextOrderRows = sourceRowsByDemand.get(key) || [];
+    const oldOrderRows = oldOrderRowsByDemand.get(key) || [];
+    const orderCreator = uniqueCreators(nextOrderRows) || uniqueCreators(oldOrderRows) || current?.orderCreator || '';
+    const enriched = next ? enrichDemandFields(next.supplier, next.materialCode, orderCreator, lookups) : {};
     const base = current || {
       demandKey: key,
       month: next.month,
@@ -1247,11 +1273,9 @@ function compareRowsFromSummary(summary, sourceRows, user) {
       shippedQty: projectedProgress.shipped,
       progressTotal: 0
     };
-    const stock = current ? { stock_qty: current.stockQty } : inventoryForDemand({
-      business_unit: next.businessUnit,
-      supplier: next.supplier,
-      material_code: next.materialCode
-    });
+    const stock = current
+      ? { stock_qty: current.stockQty }
+      : inventoryMap.get(stockKey(next.businessUnit, next.supplier, next.materialCode)) || { stock_qty: 0 };
     const handlingType = oldQty === 0 && newQty > 0
       ? 'auto_new'
       : oldQty > 0 && newQty === 0 && Math.abs(oldQty - oldInboundQty) < 0.000001
@@ -1281,10 +1305,10 @@ function compareRowsFromSummary(summary, sourceRows, user) {
       deltaQty,
       diffQty: Math.abs(deltaQty),
       diffType: !current ? '新增' : !next ? '消失' : deltaQty > 0 ? '数量增加' : '数量减少',
-      oldOrderNos: oldOrderNosForDemand(key),
-      newOrderNos: uniqueOrderNos(sourceRowsByDemand.get(key) || []),
-      oldOrderDates: oldOrderDatesForDemand(key),
-      newOrderDates: uniqueOrderDates(sourceRowsByDemand.get(key) || []),
+      oldOrderNos: uniqueOrderNos(oldOrderRows) || current?.orderNo || '',
+      newOrderNos: uniqueOrderNos(nextOrderRows),
+      oldOrderDates: uniqueOrderDates(oldOrderRows) || current?.orderDates || '',
+      newOrderDates: uniqueOrderDates(nextOrderRows),
       inboundQty: newInboundQty,
       handlingType,
       automaticAction: handlingType === 'auto_new' ? '新增订单' : handlingType === 'auto_closed' ? '正常业务关闭' : '',
@@ -1299,58 +1323,82 @@ function compareRowsFromSummary(summary, sourceRows, user) {
   }).filter(Boolean).sort((a, b) => a.month === b.month ? a.demandKey.localeCompare(b.demandKey, 'zh-Hans-CN') : b.month.localeCompare(a.month));
 }
 
-function persistDifferenceCompare({ file, sheetName, mapping, parsed, result, summary, user }) {
+function persistDifferenceCompare({
+  file,
+  sheetName,
+  mapping,
+  parsed,
+  result,
+  summary,
+  user,
+  transactionManaged = false,
+  storeSnapshotPayload = true
+}) {
   const rows = compareRowsFromSummary(summary, result.rows, user);
   const sessionId = randomUUID();
   const now = nowText();
   const oldAppliedAt = currentAppliedAt();
-  transaction(() => {
+  rows.forEach((row) => {
+    row.id = randomUUID();
+    row.sessionId = sessionId;
+  });
+  const writeRecords = () => {
     run(
       `INSERT INTO difference_compare_sessions (id, file_name, sheet_name, mapping_json, summary_json, source_rows_json, total_rows, valid_rows, skipped_rows, status, old_applied_at, created_by, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
-      [sessionId, safeFilename(file), sheetName, JSON.stringify(mapping), JSON.stringify(summary), JSON.stringify(result.rows), parsed.rows.length, result.validRows, result.skippedRows, oldAppliedAt, user.name, now]
+      [
+        sessionId,
+        safeFilename(file),
+        sheetName,
+        JSON.stringify(mapping),
+        storeSnapshotPayload ? JSON.stringify(summary) : '[]',
+        storeSnapshotPayload ? JSON.stringify(result.rows) : '[]',
+        parsed.rows.length,
+        result.validRows,
+        result.skippedRows,
+        oldAppliedAt,
+        user.name,
+        now
+      ]
     );
-    rows.forEach((row) => {
-      const rowId = randomUUID();
-      run(
-        `INSERT INTO difference_compare_rows (
-           id, session_id, demand_key, month, business_unit, supplier, supplier_short_name, material_code,
-           purchase_org, order_creator, old_qty, new_qty, delta_qty, diff_type,
-           old_order_nos, new_order_nos, old_order_dates, new_order_dates,
-           old_inbound_qty, inbound_qty, handling_type, progress_total, stock_qty, new_snapshot_json, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          rowId, sessionId, row.demandKey, row.month, row.businessUnit, row.supplier, row.supplierShortName,
-          row.materialCode, row.purchaseOrg, row.orderCreator || '', row.oldQty, row.newQty, row.deltaQty,
-          row.diffType, row.oldOrderNos, row.newOrderNos, row.oldOrderDates, row.newOrderDates,
-          row.oldInboundQty, row.newInboundQty, row.handlingType, row.progressTotal, row.stockQty,
-          JSON.stringify(row.newSnapshot), now
-        ]
-      );
-      if (row.handlingType !== 'pending') {
-        run(
-          `INSERT INTO difference_allocations (
-             id, session_id, row_id, demand_key, action_type, allocated_qty, reason, remark,
-             old_order_nos, new_order_nos, old_qty, new_qty, delta_qty, progress_total, stock_qty,
-             automatic, created_by, created_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-          [
-            randomUUID(), sessionId, rowId, row.demandKey, row.automaticAction, Math.abs(row.deltaQty),
-            row.automaticReason, row.oldOrderNos, row.newOrderNos, row.oldQty, row.newQty,
-            row.deltaQty, row.progressTotal, row.stockQty, '系统自动', now
-          ]
-        );
-      }
-      row.id = rowId;
-      row.sessionId = sessionId;
-    });
-  });
+    runMany(
+      `INSERT INTO difference_compare_rows (
+         id, session_id, demand_key, month, business_unit, supplier, supplier_short_name, material_code,
+         purchase_org, order_creator, old_qty, new_qty, delta_qty, diff_type,
+         old_order_nos, new_order_nos, old_order_dates, new_order_dates,
+         old_inbound_qty, inbound_qty, handling_type, progress_total, stock_qty, new_snapshot_json, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      rows.map((row) => [
+        row.id, sessionId, row.demandKey, row.month, row.businessUnit, row.supplier, row.supplierShortName,
+        row.materialCode, row.purchaseOrg, row.orderCreator || '', row.oldQty, row.newQty, row.deltaQty,
+        row.diffType, row.oldOrderNos, row.newOrderNos, row.oldOrderDates, row.newOrderDates,
+        row.oldInboundQty, row.newInboundQty, row.handlingType, row.progressTotal, row.stockQty,
+        JSON.stringify(row.newSnapshot), now
+      ])
+    );
+    runMany(
+      `INSERT INTO difference_allocations (
+         id, session_id, row_id, demand_key, action_type, allocated_qty, reason, remark,
+         old_order_nos, new_order_nos, old_qty, new_qty, delta_qty, progress_total, stock_qty,
+         automatic, created_by, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      rows.filter((row) => row.handlingType !== 'pending').map((row) => [
+        randomUUID(), sessionId, row.id, row.demandKey, row.automaticAction, Math.abs(row.deltaQty),
+        row.automaticReason, row.oldOrderNos, row.newOrderNos, row.oldQty, row.newQty,
+        row.deltaQty, row.progressTotal, row.stockQty, '系统自动', now
+      ])
+    );
+  };
+  if (transactionManaged) writeRecords();
+  else transaction(writeRecords);
   return { sessionId, rows };
 }
 
 function allocationRows(sessionId = '') {
   const params = sessionId ? [sessionId] : [];
   const where = sessionId ? 'WHERE a.session_id = ?' : '';
+  const demandMap = new Map(all('SELECT * FROM order_demands').map((row) => [row.demand_key, row]));
+  const lookups = dimensionLookups();
   return all(
     `SELECT a.*, r.month, r.business_unit, r.supplier, r.supplier_short_name, r.material_code, r.purchase_org,
             r.order_creator, r.old_inbound_qty, r.inbound_qty, r.handling_type, r.old_order_dates, r.new_order_dates
@@ -1361,8 +1409,8 @@ function allocationRows(sessionId = '') {
     params
   ).map((row) => {
     const materialCode = row.material_code || normalize(row.demand_key).split('|')[4] || '';
-    const demand = get('SELECT * FROM order_demands WHERE demand_key = ?', [row.demand_key]);
-    const enriched = enrichDemandFields(row.supplier, materialCode);
+    const demand = demandMap.get(row.demand_key);
+    const enriched = enrichDemandFields(row.supplier, materialCode, row.order_creator || '', lookups);
     return {
       id: row.id,
       sessionId: row.session_id,
@@ -1439,14 +1487,15 @@ function backfillCompareRowsFromSnapshot(session) {
 }
 
 function compareRowsForSession(sessionId, user) {
+  const demands = demandRows(false, user);
+  const demandMap = new Map(demands.map((row) => [row.demandKey, row]));
+  const lookups = dimensionLookups();
   return all('SELECT * FROM difference_compare_rows WHERE session_id = ? ORDER BY month DESC, business_unit, supplier, material_code', [sessionId]).map((row) => {
-    const demand = get('SELECT * FROM order_demands WHERE demand_key = ?', [row.demand_key]);
-    const progress = progressForDemand(row.demand_key);
-    const stock = demand ? inventoryForDemand(demand) : { stock_qty: row.stock_qty };
-    const orderCreator = row.order_creator || oldCreatorsForDemand(row.demand_key);
-    const enriched = enrichDemandFields(row.supplier, row.material_code, orderCreator);
+    const demand = demandMap.get(row.demand_key);
+    const orderCreator = row.order_creator || demand?.orderCreator || '';
+    const enriched = enrichDemandFields(row.supplier, row.material_code, orderCreator, lookups);
     const permissionDemand = demand
-      ? { ...demand, order_creator: orderCreator, purchase_owner: enriched.purchaseOwner }
+      ? { ...demand, order_creator: orderCreator, purchase_owner: demand.purchaseOwner || enriched.purchaseOwner }
       : { purchase_owner: enriched.purchaseOwner, order_creator: orderCreator, supplier: row.supplier, material_code: row.material_code };
     if (!canEditDemand(user, permissionDemand)) return null;
     return {
@@ -1457,14 +1506,14 @@ function compareRowsForSession(sessionId, user) {
       month: row.month,
       businessUnit: row.business_unit,
       supplier: row.supplier,
-      supplierShortName: row.supplier_short_name || demand?.supplier_short_name || '',
+      supplierShortName: row.supplier_short_name || demand?.supplierShortName || '',
       materialCode: row.material_code,
-      oaFlowNo: demand?.oa_flow_no || normalize(row.demand_key).split('|')[5] || '',
+      oaFlowNo: demand?.oaFlowNo || normalize(row.demand_key).split('|')[5] || '',
       sku: demand?.sku || enriched.sku || '',
-      materialName: demand?.material_name || enriched.materialName || '',
-      productLine: demand?.product_line || enriched.productLine || '',
-      productSeries: demand?.product_series || enriched.productSeries || '',
-      purchaseOwner: enriched.purchaseOwner,
+      materialName: demand?.materialName || enriched.materialName || '',
+      productLine: demand?.productLine || enriched.productLine || '',
+      productSeries: demand?.productSeries || enriched.productSeries || '',
+      purchaseOwner: demand?.purchaseOwner || enriched.purchaseOwner,
       purchaseOrg: row.purchase_org,
       orderCreator,
       oldQty: numberValue(row.old_qty),
@@ -1477,14 +1526,14 @@ function compareRowsForSession(sessionId, user) {
       newOrderNos: row.new_order_nos || '',
       oldOrderDates: row.old_order_dates || '',
       newOrderDates: row.new_order_dates || '',
-      shippedQty: numberValue(progress.shipped_qty),
+      shippedQty: numberValue(demand?.shippedQty),
       inboundQty: numberValue(row.inbound_qty),
       oldInboundQty: numberValue(row.old_inbound_qty),
       handlingType: row.handling_type || 'pending',
-      inProductionQty: numberValue(progress.in_production_qty),
-      finishedQty: numberValue(progress.finished_qty),
-      progressTotal: numberValue(progress.in_production_qty) + numberValue(progress.finished_qty),
-      stockQty: numberValue(stock.stock_qty)
+      inProductionQty: numberValue(demand?.inProductionQty),
+      finishedQty: numberValue(demand?.finishedQty),
+      progressTotal: numberValue(demand?.inProductionQty) + numberValue(demand?.finishedQty),
+      stockQty: numberValue(demand?.stockQty ?? row.stock_qty)
     };
   }).filter(Boolean);
 }
@@ -1907,6 +1956,7 @@ app.post('/api/imports/kingdee/apply', requireAuth, requirePage('kingdeeImport')
 });
 
 app.post('/api/imports/kingdee/new-snapshot', requireAuth, requirePage('kingdeeImport'), upload.single('file'), (req, res) => {
+  const startedAt = Date.now();
   const mapping = parseJson(req.body.mapping, {});
   const sheetName = normalize(req.body.sheetName);
   const parsed = workbookRows(req.file, sheetName || null, { includePreviews: false });
@@ -1915,12 +1965,25 @@ app.post('/api/imports/kingdee/new-snapshot', requireAuth, requirePage('kingdeeI
   const stats = kingdeeImportStats(result, summary);
   const diffs = diffAgainstCurrent(summary);
   const now = nowText();
-  const compare = persistDifferenceCompare({ file: req.file, sheetName, mapping, parsed, result, summary, user: req.user });
+  let compare;
   let batchId = '';
   transaction(() => {
+    compare = persistDifferenceCompare({
+      file: req.file,
+      sheetName,
+      mapping,
+      parsed,
+      result,
+      summary,
+      user: req.user,
+      transactionManaged: true,
+      storeSnapshotPayload: false
+    });
     batchId = applyKingdeeSnapshot({ fileName: safeFilename(req.file), sourceRows: result.rows, summary, diffs, mapping, userName: req.user.name, now, skippedRows: result.skippedRows, skipped: result.skipped });
     run('UPDATE difference_compare_sessions SET status = ?, applied_batch_id = ?, applied_at = ?, new_applied_at = ? WHERE id = ?', ['snapshot_applied', batchId, now, now, compare.sessionId]);
   });
+  const durationMs = Date.now() - startedAt;
+  console.info(`[Kingdee snapshot] ${safeFilename(req.file)}: ${result.rows.length} rows, ${compare.rows.length} differences, ${durationMs}ms`);
   res.json({
     batchId,
     sessionId: compare.sessionId,
@@ -1934,7 +1997,8 @@ app.post('/api/imports/kingdee/new-snapshot', requireAuth, requirePage('kingdeeI
     allocations: allocationRows(compare.sessionId),
     actions: DIFF_ALLOCATION_ACTIONS,
     reasons: DIFF_ALLOCATION_REASONS,
-    status: allocationStatus(compare.sessionId)
+    status: allocationStatus(compare.sessionId),
+    durationMs
   });
 });
 

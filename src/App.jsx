@@ -1107,6 +1107,17 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
   async function doSave() {
     setSaving(true);
     setOperationProgress({ label: mode === 'new' ? '正在上传新采购订单...' : '正在上传保存采购订单...', progress: 20 });
+    const startedAt = Date.now();
+    const progressTimer = window.setInterval(() => {
+      const elapsedSeconds = Math.max(1, Math.floor((Date.now() - startedAt) / 1000));
+      setOperationProgress((current) => ({
+        ...current,
+        label: mode === 'new'
+          ? `服务器正在批量比对并写入，已处理 ${elapsedSeconds} 秒，请勿重复操作`
+          : `服务器正在写入采购订单，已处理 ${elapsedSeconds} 秒，请勿重复操作`,
+        progress: Math.min(90, 60 + Math.floor(elapsedSeconds / 3))
+      }));
+    }, 1000);
     try {
       const data = new FormData();
       data.append('file', file);
@@ -1119,7 +1130,8 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
       if (mode === 'new') {
         setPreview({ ...payload, diffs: payload.diffRows || [] });
         const automaticCount = (payload.diffRows || []).filter((row) => row.handlingType !== 'pending').length;
-        setMessage(`新采购订单已上传并应用：${payload.rowCount} 条明细，待分配 ${payload.status?.total || 0} 条，自动记录 ${automaticCount} 条，导入日期：${payload.importedAt || payload.appliedAt || '暂无'}`);
+        const durationText = payload.durationMs ? `，服务器处理 ${(payload.durationMs / 1000).toFixed(1)} 秒` : '';
+        setMessage(`新采购订单已上传并应用：${payload.rowCount} 条明细，待分配 ${payload.status?.total || 0} 条，自动记录 ${automaticCount} 条，导入日期：${payload.importedAt || payload.appliedAt || '暂无'}${durationText}`);
         await reloadDemands();
       } else {
         setMessage(`全量基线已保存：${payload.validRows || payload.rowCount} 条明细，合并 ${payload.mergedRows || 0} 个主键，未关闭 ${payload.trackingRows || 0} 条`);
@@ -1132,6 +1144,7 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
       setOperationProgress({ label: `上传保存失败：${err.message}`, progress: 100, statusType: 'error' });
       setMessage('上传保存失败：' + err.message);
     } finally {
+      window.clearInterval(progressTimer);
       setSaving(false);
     }
   }
@@ -1172,16 +1185,16 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
         )}
         {file && (
           <div className="card-actions">
-            <button type="button" className="compact-button" disabled={parsing} onClick={doParse}>
+            <button type="button" className="compact-button" disabled={parsing || saving || applying} onClick={doParse}>
               {parsing ? '解析中...' : '解析预览'}
             </button>
             {preview && preview.validRows > 0 && (
               <>
-                <button type="button" className="compact-button" disabled={saving} onClick={doSave}>
+                <button type="button" className="compact-button" disabled={parsing || saving || applying} onClick={doSave}>
                   {saving ? '保存中...' : mode === 'new' ? '上传新订单并应用' : '上传保存'}
                 </button>
                 {mode !== 'new' && (
-                  <button type="button" className="compact-button" disabled={applying} onClick={doApplyRefresh}>
+                  <button type="button" className="compact-button" disabled={parsing || saving || applying} onClick={doApplyRefresh}>
                     {applying ? '刷新中...' : '应用刷新'}
                   </button>
                 )}
@@ -1201,14 +1214,14 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
           </div>
         )}
         <label className="drop-zone">
-          <input type="file" accept=".xlsx,.xls,.csv" onChange={(event) => event.target.files?.[0] && inspect(event.target.files[0])} />
+          <input type="file" accept=".xlsx,.xls,.csv" disabled={parsing || saving || applying} onChange={(event) => event.target.files?.[0] && inspect(event.target.files[0])} />
           <strong>{file ? file.name : `${title} Excel`}</strong>
           <span>选择文件后配置字段映射，点击解析预览查看进度</span>
         </label>
         {sheetNames.length > 1 && (
           <div className="sheet-selector">
             <label>选择工作表
-              <select value={sheetName} onChange={(e) => selectSheet(e.target.value)}>
+              <select value={sheetName} disabled={parsing || saving || applying} onChange={(e) => selectSheet(e.target.value)}>
                 <option value="">全部工作表</option>
                 {sheetNames.map((name) => <option key={name} value={name}>{name}</option>)}
               </select>

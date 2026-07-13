@@ -1979,6 +1979,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
   return (
     <>
       <div className="progress-sticky-top">
+        <AppliedTimeNote value={currentAppliedAt} />
         <div className="section-heading-row">
           <h2>{title}</h2>
           <span className="section-count">{displayRows.length} 条</span>
@@ -1990,7 +1991,6 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
           )}
           <button type="button" className="ghost compact-button" disabled={!selectedKeys.length} onClick={() => setSelectedKeys([])}>取消勾选</button>
         </div>
-        <AppliedTimeNote value={currentAppliedAt} />
         <FilterBar filters={filters} setFilters={setFilters} options={options} />
         <section className="progress-chart-grid">
           <ProgressStackedChart title="供应商未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => supplierName(row)} />

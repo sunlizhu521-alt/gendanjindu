@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 const API = import.meta.env.DEV ? 'http://localhost:4003' : '';
 const TOKEN_KEY = 'gendanjinduToken';
-const BUSINESS_UNITS = ['海外事业一部', '海外事业二部', '国内事业部', '全球招商部', '其他部门'];
 
 const PAGE_ORDER = [
   'domesticBoard',
@@ -86,15 +85,23 @@ const WANGDIAN_SLOTS = [
 
 const KINGDEE_FIELDS = [
   ['createDate', '采购日期'],
+  ['deliveryDate', '交货日期'],
   ['businessUnit', '事业部'],
   ['supplier', '供应商'],
   ['purchaseOrg', '采购组织'],
   ['materialCode', '物料编码'],
+  ['materialName', '物料名称'],
   ['creator', '创建人（采购订单）'],
+  ['operatorName', '运营'],
   ['oaFlowNo', 'OA备货流程号'],
   ['quantity', '采购订单数量'],
-  ['inboundQty', '入库数量'],
-  ['orderNo', '采购订单号']
+  ['inboundQty', '累计入库数量'],
+  ['remainingInboundQty', '剩余入库数量'],
+  ['orderNo', '采购订单号'],
+  ['documentStatus', '单据状态'],
+  ['closeStatus', '关闭状态'],
+  ['isGift', '是否赠品'],
+  ['businessClose', '业务关闭']
 ];
 
 function normalize(value) {
@@ -588,7 +595,7 @@ function Login({ onLogin }) {
 }
 
 function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', currentAppliedAt = '' }) {
-  const activeRows = useMemo(() => rows.filter((row) => row.active), [rows]);
+  const activeRows = useMemo(() => rows.filter((row) => row.active && numberValue(row.remainingInboundQty) > 0), [rows]);
   const [filters, setFilters] = useSessionFilters(filterKey, { month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
   const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const matchesDashboardFilters = (row, omit = '') => {
@@ -822,7 +829,7 @@ function SourceApplicationsNote({ sources = [] }) {
 }
 
 function PurchaseBoard({ rows }) {
-  const activeRows = useMemo(() => rows.filter((row) => row.active), [rows]);
+  const activeRows = useMemo(() => rows.filter((row) => row.active && numberValue(row.remainingInboundQty) > 0), [rows]);
   const [filters, setFilters] = useSessionFilters('purchaseBoard', { months: [], businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
   const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const matchesFilters = (row, omit = '') => {
@@ -1087,7 +1094,7 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
         setMessage('解析失败：0行有效，请检查字段映射和Excel列是否匹配');
       } else {
         setOperationProgress({ label: `解析完成：${payload.validRows}/${payload.totalRows} 行有效`, progress: 100, statusType: 'success' });
-        setMessage(`解析完成：${payload.validRows}/${payload.totalRows} 行有效，差异 ${payload.diffs.length} 条`);
+        setMessage(`解析完成：${payload.validRows} 条明细，${payload.summaryRows || 0} 条合计，合并 ${payload.mergedRows || 0} 个主键，未关闭 ${payload.trackingRows || 0} 条`);
       }
     } catch (err) {
       setOperationProgress({ label: `解析失败：${err.message}`, progress: 100, statusType: 'error' });
@@ -1111,10 +1118,11 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
       setOperationProgress({ label: '正在刷新页面数据...', progress: 85 });
       if (mode === 'new') {
         setPreview({ ...payload, diffs: payload.diffRows || [] });
-        setMessage(`新采购订单已上传并应用：${payload.rowCount} 行，生成差异 ${payload.diffRows?.length || 0} 条，导入日期：${payload.importedAt || payload.appliedAt || '暂无'}`);
+        const automaticCount = (payload.diffRows || []).filter((row) => row.handlingType !== 'pending').length;
+        setMessage(`新采购订单已上传并应用：${payload.rowCount} 条明细，待分配 ${payload.status?.total || 0} 条，自动记录 ${automaticCount} 条，导入日期：${payload.importedAt || payload.appliedAt || '暂无'}`);
         await reloadDemands();
       } else {
-        setMessage(`上传保存完成：${payload.rowCount} 行已保存到腾讯云服务器，差异 ${payload.diffs.length} 条`);
+        setMessage(`全量基线已保存：${payload.validRows || payload.rowCount} 条明细，合并 ${payload.mergedRows || 0} 个主键，未关闭 ${payload.trackingRows || 0} 条`);
         await reloadDemands();
       }
       if (mode === 'current') await loadCurrentStatus();
@@ -1215,11 +1223,17 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
         <section className="panel">
           <h3>解析结果</h3>
           <p className="section-count">
-            总行数 {preview.totalRows}，有效 {preview.validRows} 行
+            Excel 数据行 {preview.totalRows}，有效明细 {preview.validRows} 行，合计行 {preview.summaryRows || 0}，合并主键 {preview.mergedRows || 0}，未关闭明细 {preview.trackingRows || 0} 行
             {preview.skippedRows > 0 && <span className="warn-text">，跳过 {preview.skippedRows} 行（必填字段为空）</span>}
             {preview.validRows === 0 && <span className="error-text">，无有效行！请检查字段映射</span>}
-            {preview.validRows > 0 && <span>，差异 {preview.diffs.length} 条</span>}
+            {mode === 'new' && preview.validRows > 0 && <span>，采购数量差异 {preview.diffs.length} 条</span>}
           </p>
+          {preview.validRows > 0 && (
+            <p className="section-count">
+              全量采购 {numberValue(preview.totalPurchaseQty).toLocaleString()}，全量累计入库 {numberValue(preview.totalInboundQty).toLocaleString()}；
+              未关闭采购 {numberValue(preview.trackingPurchaseQty).toLocaleString()}，未关闭累计入库 {numberValue(preview.trackingInboundQty).toLocaleString()}，未交付 {numberValue(preview.trackingRemainingQty).toLocaleString()}
+            </p>
+          )}
           {preview.skipped?.length > 0 && (
             <details className="skipped-details">
               <summary>查看跳过的行（前{preview.skipped.length}条）</summary>
@@ -1253,8 +1267,8 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
           <DataTable
             className="compact-table"
             rows={importHistory}
-            columns={['文件名', '有效行数', '跳过行数', '导入人', '导入时间', '应用时间']}
-            render={(row) => [row.fileName, row.rowCount, row.skippedRows || 0, row.importedBy, row.importedAt, row.appliedAt]}
+            columns={['文件名', '导入类型', '有效明细', '跳过行数', '导入人', '导入时间', '应用时间']}
+            render={(row) => [row.fileName, row.importMode === 'baseline' ? '基线导入' : '新快照导入', row.rowCount, row.skippedRows || 0, row.importedBy, row.importedAt, row.appliedAt]}
           />
           <div className="section-heading-row sub-heading-row">
             <h4>跳过行内容</h4>
@@ -2121,7 +2135,7 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
   const options = useMemo(() => ({
     months: unique(filterSourceRows.map((row) => row.month)),
     suppliers: unique(filterSourceRows.map((row) => supplierName(row))),
-    businessUnits: BUSINESS_UNITS,
+    businessUnits: unique(filterSourceRows.map((row) => row.businessUnit)),
     productLines: unique(filterSourceRows.map((row) => row.productLine)),
     series: unique(filterSourceRows.map((row) => row.productSeries)),
     skus: unique(filterSourceRows.map((row) => row.sku)),
@@ -2298,12 +2312,12 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
       </section>
 
       <section className="panel" style={{ marginTop: 16 }}>
-        <div className="section-heading-row"><h3>已分配记录</h3><span className="section-count">{filteredAllocations.length} / {allocations.length} 条</span></div>
+        <div className="section-heading-row"><h3>采购订单记录</h3><span className="section-count">自动处理与人工提交共 {filteredAllocations.length} / {allocations.length} 条</span></div>
         <DataTable
           className="compact-table"
           rows={filteredAllocations}
-          columns={['主键', 'OA备货流程号', '采购下单人', '物料编码', '原采购订单号', '原采购订单创建时间', '新采购订单号', '新采购订单创建时间', '原采购数量', '新采购数量', '入库数量', '差异', '原因', '操作', '备注', '提交人', '提交时间']}
-          render={(row) => [row.displayKey || row.demandKey, row.oaFlowNo || '', row.purchaseOwner || '', row.materialCode || '', row.oldOrderNos || '', row.oldOrderDates || '', row.newOrderNos || '', row.newOrderDates || '', row.oldQty, row.newQty, row.inboundQty || '', signedNumber(row.deltaQty), row.reason, row.actionType, row.remark, row.createdBy, row.createdAt]}
+          columns={['处理方式', '主键', 'OA备货流程号', '采购下单人', '物料编码', '原采购订单号', '原采购订单创建时间', '新采购订单号', '新采购订单创建时间', '原采购数量', '原累计入库', '新采购数量', '新累计入库', '差异', '原因', '操作', '备注', '提交人', '提交时间']}
+          render={(row) => [row.automatic ? '系统自动' : '人工提交', row.displayKey || row.demandKey, row.oaFlowNo || '', row.purchaseOwner || '', row.materialCode || '', row.oldOrderNos || '', row.oldOrderDates || '', row.newOrderNos || '', row.newOrderDates || '', row.oldQty, row.oldInboundQty || '', row.newQty, row.inboundQty || '', signedNumber(row.deltaQty), row.reason, row.actionType, row.remark, row.createdBy, row.createdAt]}
         />
       </section>
     </>

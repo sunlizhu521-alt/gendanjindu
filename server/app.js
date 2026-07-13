@@ -58,6 +58,8 @@ const DIFF_ORDER_COMPLETE_ACTION = '订单已完结';
 const DIFF_ALLOCATION_ACTIONS = [DIFF_NORMAL_ORDER, '减少', '取消', '增加', '其他', DIFF_ORDER_COMPLETE_ACTION];
 const DIFF_ALLOCATION_REASONS = [DIFF_NORMAL_ORDER, '业务调整', '型号迭代', '涨价', '降价', DIFF_ORDER_COMPLETE_REASON, '其他'];
 const UNASSIGNED_PURCHASE_OWNER = '未分配采购下单人';
+const UNASSIGNED_BUSINESS_UNIT = '之前未分配事业部';
+const TRACKING_CLOSE_STATUS = '未关闭';
 
 const app = express();
 const UPLOAD_LIMIT_BYTES = 100 * 1024 * 1024;
@@ -135,7 +137,7 @@ function dateSortValue(value) {
 }
 
 function demandKey(purchaseOrg, month, businessUnit, supplier, materialCode) {
-  return [purchaseOrg, month, businessUnit, supplier, materialCode].map(normalize).join('|');
+  return [purchaseOrg, month, normalize(businessUnit) || UNASSIGNED_BUSINESS_UNIT, supplier, materialCode].map(normalize).join('|');
 }
 
 function displayDemandKey(row) {
@@ -380,17 +382,34 @@ function orderedOaFlowNos(rows, valuePicker = (row) => row.oaFlowNo || row.oa_fl
 function mappedKingdeeRows(rows, mapping) {
   const valid = [];
   const skipped = [];
+  const summary = [];
   rows.forEach((row, index) => {
     const createDate = pickMapped(row, mapping, 'createDate', ['采购日期', '创建日期', '下单日期', '订单日期', '日期']);
     const month = monthFromDate(createDate);
-    const businessUnit = pickMapped(row, mapping, 'businessUnit', ['事业部', '业务部门', '部门']);
+    const rawBusinessUnit = pickMapped(row, mapping, 'businessUnit', ['事业部', '业务部门', '部门']);
+    const businessUnit = rawBusinessUnit || UNASSIGNED_BUSINESS_UNIT;
     const supplier = pickMapped(row, mapping, 'supplier', ['供应商', '供应商名称', '供应商全称']);
     const materialCode = pickMapped(row, mapping, 'materialCode', ['物料编码', '物料代码', '商品编码', '存货编码', '产品编码', '品号', '编码']);
     const purchaseOrg = pickMapped(row, mapping, 'purchaseOrg', ['采购组织', '采购单位', '采购部门']);
     const creator = pickMapped(row, mapping, 'creator', ['创建人', '制单人', '采购员', '申请人', '下单人', '采购下单人', '创建者']);
+    const operatorName = pickMapped(row, mapping, 'operatorName', ['运营', '运营人员', '运营负责人']);
     const oaFlowNo = pickMapped(row, mapping, 'oaFlowNo', ['OA备货流程号', 'OA流程号', '备货流程号', 'OA申请号', 'OA申请流程号', 'OA流程编号']);
     const quantity = numberValue(row?.[mapping.quantity] ?? pickAny(row, ['采购订单数量', '数量', '订单数量', '下单数量', '采购数量']));
     const inboundQty = numberValue(row?.[mapping.inboundQty] ?? pickAny(row, ['入库数量', '累计入库数量', '采购入库数量', '已入库数量', '已发货数量', '发货数量']));
+    const remainingInboundQty = numberValue(row?.[mapping.remainingInboundQty] ?? pickAny(row, ['剩余入库数量', '剩余数量', '未交付数量']));
+    const closeStatus = pickMapped(row, mapping, 'closeStatus', ['关闭状态']);
+    const documentStatus = pickMapped(row, mapping, 'documentStatus', ['单据状态']);
+    const materialName = pickMapped(row, mapping, 'materialName', ['物料名称', '商品名称', '产品名称']);
+    const deliveryDate = pickMapped(row, mapping, 'deliveryDate', ['交货日期', '预计交货日期']);
+    const isGift = pickMapped(row, mapping, 'isGift', ['是否赠品', '赠品']);
+    const businessClose = pickMapped(row, mapping, 'businessClose', ['业务关闭']);
+    const rowValues = Object.values(row).map(normalize).filter(Boolean);
+    const isSummaryRow = (!month && !supplier && !materialCode)
+      && rowValues.some((value) => value === '合计' || value === '总计');
+    if (isSummaryRow) {
+      summary.push({ row: index + 2, preview: JSON.stringify(row).slice(0, 200) });
+      return;
+    }
     const reasons = [];
     if (!month) reasons.push('日期无法解析');
     if (!supplier) reasons.push('供应商为空');
@@ -408,17 +427,35 @@ function mappedKingdeeRows(rows, mapping) {
       materialCode,
       purchaseOrg,
       creator,
+      operatorName,
       oaFlowNo,
+      materialName,
+      purchaseDate: createDate,
+      deliveryDate,
+      documentStatus,
+      closeStatus,
+      isGift,
+      businessClose,
+      isTracking: closeStatus === TRACKING_CLOSE_STATUS,
       dateSort: dateSortValue(createDate),
       sourceIndex: index,
-      orderNo: pickMapped(row, mapping, 'orderNo', ['采购订单号', '采购单号', '订单号', '采购订单编号']),
+      orderNo: pickMapped(row, mapping, 'orderNo', ['单据编号', '采购订单号', '采购单号', '订单号', '采购订单编号']),
       quantity,
       inboundQty,
+      remainingInboundQty,
       raw: row,
       demandKey: demandKey(purchaseOrg, month, businessUnit, supplier, materialCode)
     });
   });
-  return { totalRows: rows.length, validRows: valid.length, skippedRows: skipped.length, skipped, rows: valid };
+  return {
+    totalRows: rows.length,
+    validRows: valid.length,
+    summaryRows: summary.length,
+    summary,
+    skippedRows: skipped.length,
+    skipped,
+    rows: valid
+  };
 }
 
 function summarizeDemands(rows) {
@@ -431,18 +468,48 @@ function summarizeDemands(rows) {
       supplier: row.supplier,
       materialCode: row.materialCode,
       purchaseOrg: row.purchaseOrg || '',
-      oaFlowNo: row.oaFlowNo || '',
+      oaFlowNo: '',
+      materialName: row.materialName || '',
+      closeStatuses: '',
       currentOrderQty: 0,
-      inboundQty: 0,
-      rows: 0
+      currentInboundQty: 0,
+      trackingOrderQty: 0,
+      trackingInboundQty: 0,
+      trackingRemainingQty: 0,
+      rows: 0,
+      trackingRows: 0
     };
     current.currentOrderQty += row.quantity;
-    current.inboundQty += numberValue(row.inboundQty);
-    current.oaFlowNo = appendUniqueDelimited(current.oaFlowNo, row.oaFlowNo);
+    current.currentInboundQty += numberValue(row.inboundQty);
+    current.closeStatuses = appendUniqueDelimited(current.closeStatuses, row.closeStatus);
+    current.materialName ||= row.materialName || '';
+    if (row.isTracking) {
+      current.trackingOrderQty += row.quantity;
+      current.trackingInboundQty += numberValue(row.inboundQty);
+      current.trackingRemainingQty += numberValue(row.remainingInboundQty);
+      current.oaFlowNo = appendUniqueDelimited(current.oaFlowNo, row.oaFlowNo);
+      current.trackingRows += 1;
+    }
     current.rows += 1;
     map.set(row.demandKey, current);
   });
   return [...map.values()];
+}
+
+function kingdeeImportStats(result, summary) {
+  return {
+    totalRows: result.totalRows,
+    validRows: result.validRows,
+    summaryRows: result.summaryRows,
+    skippedRows: result.skippedRows,
+    mergedRows: summary.length,
+    trackingRows: result.rows.filter((row) => row.isTracking).length,
+    totalPurchaseQty: summary.reduce((sum, row) => sum + numberValue(row.currentOrderQty), 0),
+    totalInboundQty: summary.reduce((sum, row) => sum + numberValue(row.currentInboundQty), 0),
+    trackingPurchaseQty: summary.reduce((sum, row) => sum + numberValue(row.trackingOrderQty), 0),
+    trackingInboundQty: summary.reduce((sum, row) => sum + numberValue(row.trackingInboundQty), 0),
+    trackingRemainingQty: summary.reduce((sum, row) => sum + numberValue(row.trackingRemainingQty), 0)
+  };
 }
 
 function diffAgainstCurrent(summary) {
@@ -484,7 +551,8 @@ function orderDataCounts() {
     demands: numberValue(get('SELECT COUNT(*) AS count FROM order_demands')?.count),
     activeDemands: numberValue(get('SELECT COUNT(*) AS count FROM order_demands WHERE active = 1')?.count),
     kingdeeOrders: numberValue(get('SELECT COUNT(*) AS count FROM kingdee_orders')?.count),
-    importBatches: numberValue(get('SELECT COUNT(*) AS count FROM kingdee_import_batches')?.count)
+    importBatches: numberValue(get('SELECT COUNT(*) AS count FROM kingdee_import_batches')?.count),
+    orderEvents: numberValue(get('SELECT COUNT(*) AS count FROM kingdee_order_events')?.count)
   };
 }
 
@@ -771,7 +839,9 @@ function domesticBoardRows() {
     if (materialCode && !productCategoryMap.has(materialCode)) productCategoryMap.set(materialCode, product);
   });
   demandRows(false).forEach((demand) => {
-    if (normalize(demand.businessUnit) !== '国内事业部') return;
+    const businessUnit = normalize(demand.businessUnit);
+    if (!businessUnit.includes('国内事业部') && !businessUnit.includes('国内业务部')) return;
+    if (numberValue(demand.remainingInboundQty) <= 0) return;
     const materialCode = normalize(demand.materialCode);
     if (!materialCode) return;
     domesticUndeliveredMap.set(materialCode, numberValue(domesticUndeliveredMap.get(materialCode)) + numberValue(demand.remainingInboundQty));
@@ -907,26 +977,19 @@ function progressForDemand(demandKeyValue) {
   };
 }
 
-function progressAfterInbound(orderQty, progress, inboundQty, options = {}) {
+function progressAfterInbound(remainingQty, progress, inboundQty, options = {}) {
   const hasProgress = Boolean(progress?.demand_key);
-  const currentShipped = numberValue(progress?.shipped_qty);
   const nextShipped = Math.max(0, numberValue(inboundQty));
-  const remainingInboundQty = Math.max(numberValue(orderQty) - nextShipped, 0);
-  if (options.preserveExistingProgress && hasProgress) {
-    const finished = numberValue(progress?.finished_qty);
-    const inProduction = numberValue(progress?.in_production_qty);
-    return { inProduction, finished, shipped: nextShipped, gap: remainingInboundQty - finished - inProduction };
-  }
+  const remainingInboundQty = Math.max(numberValue(remainingQty), 0);
   let finished = numberValue(progress?.finished_qty);
   let inProduction = hasProgress ? numberValue(progress?.in_production_qty) : remainingInboundQty;
-  let deductQty = Math.max(nextShipped - currentShipped, 0);
-  const finishedDeduct = Math.min(finished, deductQty);
-  finished -= finishedDeduct;
-  deductQty -= finishedDeduct;
-  const inProductionDeduct = Math.min(inProduction, deductQty);
-  inProduction -= inProductionDeduct;
+  if (!options.preserveExistingProgress) {
+    inProduction = remainingInboundQty;
+    finished = 0;
+  }
   const progressTotal = finished + inProduction;
   if (progressTotal > remainingInboundQty) {
+    // Remaining demand reductions consume work in progress before finished goods.
     let excess = progressTotal - remainingInboundQty;
     const inProductionExcess = Math.min(inProduction, excess);
     inProduction -= inProductionExcess;
@@ -975,12 +1038,13 @@ function demandLoadContext(demands) {
   if (batchIds.length) {
     const placeholders = batchIds.map(() => '?').join(',');
     all(
-      `SELECT batch_id, demand_key, creator, oa_flow_no, raw_json
+      `SELECT batch_id, demand_key, creator, oa_flow_no, order_no, material_name, close_status, raw_json
        FROM kingdee_orders
        WHERE batch_id IN (${placeholders})`,
       batchIds
     ).forEach((row, index) => {
       if (!demandKeys.has(normalize(row.demand_key))) return;
+      if (normalize(row.close_status) && normalize(row.close_status) !== TRACKING_CLOSE_STATUS) return;
       const key = demandBatchKey(row.batch_id, row.demand_key);
       const list = orderRowsByDemand.get(key) || [];
       list.push(orderRowDateSort(row, index));
@@ -1011,11 +1075,11 @@ function demandRows(includeInactive = false, user = null) {
     const enriched = enrichDemandFields(demand.supplier, demand.material_code, orderCreator, context.lookups);
     const purchaseOwner = realPurchaseOwner(enriched.purchaseOwner, demand.purchase_owner) || UNASSIGNED_PURCHASE_OWNER;
     const purchaseGroup = enriched.purchaseGroup || '';
-    const shippedQty = numberValue(progress.shipped_qty);
-    const remainingInboundQty = Math.max(numberValue(demand.current_order_qty) - shippedQty, 0);
+    const shippedQty = numberValue(demand.tracking_inbound_qty);
+    const remainingInboundQty = Math.max(numberValue(demand.tracking_remaining_qty), 0);
     const progressTotal = numberValue(progress.in_production_qty) + numberValue(progress.finished_qty);
     const stockQty = numberValue(stock.stock_qty);
-    const demandAfterStock = Math.max(numberValue(demand.current_order_qty) - stockQty, 0);
+    const demandAfterStock = Math.max(remainingInboundQty - stockQty, 0);
     return {
       demandKey: demand.demand_key,
       displayKey: displayDemandKey(demand),
@@ -1025,6 +1089,10 @@ function demandRows(includeInactive = false, user = null) {
       supplierShortName: demand.supplier_short_name || enriched.supplierShortName || '',
       materialCode: demand.material_code,
       currentOrderQty: numberValue(demand.current_order_qty),
+      totalPurchaseQty: numberValue(demand.current_order_qty),
+      totalInboundQty: numberValue(demand.current_inbound_qty),
+      trackingOrderQty: numberValue(demand.tracking_order_qty),
+      trackingInboundQty: numberValue(demand.tracking_inbound_qty),
       remainingInboundQty,
       active: Boolean(demand.active),
       sku: demand.sku || enriched.sku || '',
@@ -1143,7 +1211,10 @@ function compareRowsFromSummary(summary, sourceRows, user) {
     const next = nextMap.get(key);
     const oldQty = numberValue(current?.currentOrderQty);
     const newQty = numberValue(next?.currentOrderQty);
-    const orderDeltaQty = newQty - oldQty;
+    const oldInboundQty = numberValue(current?.totalInboundQty);
+    const newInboundQty = numberValue(next?.currentInboundQty);
+    const deltaQty = newQty - oldQty;
+    if (deltaQty === 0) return null;
     const progressInput = current ? {
       demand_key: current.demandKey,
       in_production_qty: current.inProductionQty,
@@ -1151,10 +1222,8 @@ function compareRowsFromSummary(summary, sourceRows, user) {
       shipped_qty: current.shippedQty
     } : null;
     const projectedProgress = next
-      ? progressAfterInbound(newQty, progressInput, next.inboundQty)
-      : { inProduction: numberValue(current?.inProductionQty), finished: numberValue(current?.finishedQty), shipped: numberValue(current?.shippedQty), gap: orderDeltaQty };
-    const deltaQty = orderDeltaQty;
-    if (deltaQty === 0) return null;
+      ? progressAfterInbound(next.trackingRemainingQty, progressInput, next.trackingInboundQty, { preserveExistingProgress: Boolean(current) })
+      : progressAfterInbound(0, progressInput, 0, { preserveExistingProgress: Boolean(current) });
     const orderCreator = uniqueCreators(sourceRowsByDemand.get(key) || []) || oldCreatorsForDemand(key);
     const enriched = next ? enrichDemandFields(next.supplier, next.materialCode, orderCreator) : {};
     const base = current || {
@@ -1166,7 +1235,7 @@ function compareRowsFromSummary(summary, sourceRows, user) {
       materialCode: next.materialCode,
       sku: enriched.sku,
       logisticsCode: enriched.logisticsCode,
-      materialName: enriched.materialName,
+      materialName: next.materialName || enriched.materialName,
       productLine: enriched.productLine,
       productSeries: enriched.productSeries,
       purchaseGroup: enriched.purchaseGroup,
@@ -1183,7 +1252,11 @@ function compareRowsFromSummary(summary, sourceRows, user) {
       supplier: next.supplier,
       material_code: next.materialCode
     });
-    const progressTotalValue = current ? numberValue(current.progressTotal) : 0;
+    const handlingType = oldQty === 0 && newQty > 0
+      ? 'auto_new'
+      : oldQty > 0 && newQty === 0 && Math.abs(oldQty - oldInboundQty) < 0.000001
+        ? 'auto_closed'
+        : 'pending';
     return {
       demandKey: key,
       displayKey: displayDemandKey(base),
@@ -1203,6 +1276,8 @@ function compareRowsFromSummary(summary, sourceRows, user) {
       orderCreator,
       oldQty,
       newQty,
+      oldInboundQty,
+      newInboundQty,
       deltaQty,
       diffQty: Math.abs(deltaQty),
       diffType: !current ? '新增' : !next ? '消失' : deltaQty > 0 ? '数量增加' : '数量减少',
@@ -1210,7 +1285,10 @@ function compareRowsFromSummary(summary, sourceRows, user) {
       newOrderNos: uniqueOrderNos(sourceRowsByDemand.get(key) || []),
       oldOrderDates: oldOrderDatesForDemand(key),
       newOrderDates: uniqueOrderDates(sourceRowsByDemand.get(key) || []),
-      inboundQty: numberValue(next?.inboundQty),
+      inboundQty: newInboundQty,
+      handlingType,
+      automaticAction: handlingType === 'auto_new' ? '新增订单' : handlingType === 'auto_closed' ? '正常业务关闭' : '',
+      automaticReason: handlingType === 'auto_new' ? '新增订单' : handlingType === 'auto_closed' ? '正常业务关闭' : '',
       stockQty: numberValue(stock?.stock_qty),
       inProductionQty: numberValue(projectedProgress.inProduction),
       finishedQty: numberValue(projectedProgress.finished),
@@ -1235,10 +1313,34 @@ function persistDifferenceCompare({ file, sheetName, mapping, parsed, result, su
     rows.forEach((row) => {
       const rowId = randomUUID();
       run(
-        `INSERT INTO difference_compare_rows (id, session_id, demand_key, month, business_unit, supplier, supplier_short_name, material_code, purchase_org, order_creator, old_qty, new_qty, delta_qty, diff_type, old_order_nos, new_order_nos, old_order_dates, new_order_dates, inbound_qty, progress_total, stock_qty, new_snapshot_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [rowId, sessionId, row.demandKey, row.month, row.businessUnit, row.supplier, row.supplierShortName, row.materialCode, row.purchaseOrg, row.orderCreator || '', row.oldQty, row.newQty, row.deltaQty, row.diffType, row.oldOrderNos, row.newOrderNos, row.oldOrderDates, row.newOrderDates, row.inboundQty, row.progressTotal, row.stockQty, JSON.stringify(row.newSnapshot), now]
+        `INSERT INTO difference_compare_rows (
+           id, session_id, demand_key, month, business_unit, supplier, supplier_short_name, material_code,
+           purchase_org, order_creator, old_qty, new_qty, delta_qty, diff_type,
+           old_order_nos, new_order_nos, old_order_dates, new_order_dates,
+           old_inbound_qty, inbound_qty, handling_type, progress_total, stock_qty, new_snapshot_json, created_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          rowId, sessionId, row.demandKey, row.month, row.businessUnit, row.supplier, row.supplierShortName,
+          row.materialCode, row.purchaseOrg, row.orderCreator || '', row.oldQty, row.newQty, row.deltaQty,
+          row.diffType, row.oldOrderNos, row.newOrderNos, row.oldOrderDates, row.newOrderDates,
+          row.oldInboundQty, row.newInboundQty, row.handlingType, row.progressTotal, row.stockQty,
+          JSON.stringify(row.newSnapshot), now
+        ]
       );
+      if (row.handlingType !== 'pending') {
+        run(
+          `INSERT INTO difference_allocations (
+             id, session_id, row_id, demand_key, action_type, allocated_qty, reason, remark,
+             old_order_nos, new_order_nos, old_qty, new_qty, delta_qty, progress_total, stock_qty,
+             automatic, created_by, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+          [
+            randomUUID(), sessionId, rowId, row.demandKey, row.automaticAction, Math.abs(row.deltaQty),
+            row.automaticReason, row.oldOrderNos, row.newOrderNos, row.oldQty, row.newQty,
+            row.deltaQty, row.progressTotal, row.stockQty, '系统自动', now
+          ]
+        );
+      }
       row.id = rowId;
       row.sessionId = sessionId;
     });
@@ -1250,7 +1352,8 @@ function allocationRows(sessionId = '') {
   const params = sessionId ? [sessionId] : [];
   const where = sessionId ? 'WHERE a.session_id = ?' : '';
   return all(
-    `SELECT a.*, r.month, r.business_unit, r.supplier, r.supplier_short_name, r.material_code, r.purchase_org, r.order_creator, r.inbound_qty, r.old_order_dates, r.new_order_dates
+    `SELECT a.*, r.month, r.business_unit, r.supplier, r.supplier_short_name, r.material_code, r.purchase_org,
+            r.order_creator, r.old_inbound_qty, r.inbound_qty, r.handling_type, r.old_order_dates, r.new_order_dates
      FROM difference_allocations a
      LEFT JOIN difference_compare_rows r ON r.id = a.row_id
      ${where}
@@ -1289,9 +1392,12 @@ function allocationRows(sessionId = '') {
       oldQty: numberValue(row.old_qty),
       newQty: numberValue(row.new_qty),
       inboundQty: numberValue(row.inbound_qty),
+      oldInboundQty: numberValue(row.old_inbound_qty),
       deltaQty: numberValue(row.delta_qty),
       progressTotal: numberValue(row.progress_total),
       stockQty: numberValue(row.stock_qty),
+      handlingType: row.handling_type || 'pending',
+      automatic: Boolean(row.automatic),
       createdBy: row.created_by,
       createdAt: row.created_at
     };
@@ -1373,6 +1479,8 @@ function compareRowsForSession(sessionId, user) {
       newOrderDates: row.new_order_dates || '',
       shippedQty: numberValue(progress.shipped_qty),
       inboundQty: numberValue(row.inbound_qty),
+      oldInboundQty: numberValue(row.old_inbound_qty),
+      handlingType: row.handling_type || 'pending',
       inProductionQty: numberValue(progress.in_production_qty),
       finishedQty: numberValue(progress.finished_qty),
       progressTotal: numberValue(progress.in_production_qty) + numberValue(progress.finished_qty),
@@ -1405,40 +1513,145 @@ function latestComparePayload(user) {
 }
 
 function allocationStatus(sessionId) {
-  const total = numberValue(get('SELECT COUNT(*) AS count FROM difference_compare_rows WHERE session_id = ?', [sessionId])?.count);
-  const allocated = numberValue(get('SELECT COUNT(DISTINCT row_id) AS count FROM difference_allocations WHERE session_id = ?', [sessionId])?.count);
-  return { total, allocated, complete: total > 0 && allocated >= total };
+  const total = numberValue(get("SELECT COUNT(*) AS count FROM difference_compare_rows WHERE session_id = ? AND handling_type = 'pending'", [sessionId])?.count);
+  const allocated = numberValue(get(
+    `SELECT COUNT(DISTINCT a.row_id) AS count
+     FROM difference_allocations a
+     JOIN difference_compare_rows r ON r.id = a.row_id
+     WHERE a.session_id = ? AND r.handling_type = 'pending'`,
+    [sessionId]
+  )?.count);
+  return { total, allocated, complete: total === 0 || allocated >= total };
 }
 
-function applyKingdeeSnapshot({ fileName, sourceRows, summary, diffs, mapping, userName, now, skippedRows = 0, skipped = [] }) {
+function snapshotChangeEvents(summary, sourceRows) {
+  const currentRows = all('SELECT * FROM order_demands WHERE active = 1');
+  const currentMap = new Map(currentRows.map((row) => [row.demand_key, row]));
+  const nextMap = new Map(summary.map((row) => [row.demandKey, row]));
+  const batchIds = [...new Set(currentRows.map((row) => normalize(row.source_batch_id)).filter(Boolean))];
+  const oldCloseStatusMap = new Map();
+  const oldOrderStatusMap = new Map();
+  const addOrderStatus = (target, demandKeyValue, orderNo, closeStatus) => {
+    const orderKey = normalize(orderNo);
+    if (!orderKey) return;
+    const demandStatuses = target.get(demandKeyValue) || new Map();
+    demandStatuses.set(orderKey, appendUniqueDelimited(demandStatuses.get(orderKey), closeStatus));
+    target.set(demandKeyValue, demandStatuses);
+  };
+  if (batchIds.length) {
+    const placeholders = batchIds.map(() => '?').join(',');
+    all(`SELECT demand_key, order_no, close_status FROM kingdee_orders WHERE batch_id IN (${placeholders})`, batchIds).forEach((row) => {
+      oldCloseStatusMap.set(row.demand_key, appendUniqueDelimited(oldCloseStatusMap.get(row.demand_key), row.close_status));
+      addOrderStatus(oldOrderStatusMap, row.demand_key, row.order_no, row.close_status);
+    });
+  }
+  const newOrderStatusMap = new Map();
+  sourceRows.forEach((row) => addOrderStatus(newOrderStatusMap, row.demandKey, row.orderNo, row.closeStatus));
+  const events = [];
+  currentMap.forEach((current, key) => {
+    const next = nextMap.get(key);
+    if (!next) return;
+    const base = {
+      demandKey: key,
+      month: next.month || current.month,
+      businessUnit: next.businessUnit || current.business_unit,
+      supplier: next.supplier || current.supplier,
+      materialCode: next.materialCode || current.material_code,
+      purchaseOrg: next.purchaseOrg || current.purchase_org || ''
+    };
+    const oldInbound = numberValue(current.current_inbound_qty);
+    const newInbound = numberValue(next.currentInboundQty);
+    if (Math.abs(oldInbound - newInbound) > 0.000001) {
+      events.push({ ...base, eventType: '累计入库变化', oldValue: String(oldInbound), newValue: String(newInbound) });
+    }
+    const canonicalStatuses = (value) => splitDelimited(value).sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')).join('+');
+    const oldCloseStatuses = canonicalStatuses(oldCloseStatusMap.get(key));
+    const newCloseStatuses = canonicalStatuses(next.closeStatuses);
+    const oldOrders = oldOrderStatusMap.get(key) || new Map();
+    const newOrders = newOrderStatusMap.get(key) || new Map();
+    const changedOrderNos = [...oldOrders.keys()].filter((orderNo) => (
+      newOrders.has(orderNo) && canonicalStatuses(oldOrders.get(orderNo)) !== canonicalStatuses(newOrders.get(orderNo))
+    ));
+    if (oldCloseStatuses && newCloseStatuses && (oldCloseStatuses !== newCloseStatuses || changedOrderNos.length)) {
+      const oldValue = changedOrderNos.length
+        ? changedOrderNos.map((orderNo) => `${orderNo}:${canonicalStatuses(oldOrders.get(orderNo))}`).join('；')
+        : oldCloseStatuses;
+      const newValue = changedOrderNos.length
+        ? changedOrderNos.map((orderNo) => `${orderNo}:${canonicalStatuses(newOrders.get(orderNo))}`).join('；')
+        : newCloseStatuses;
+      events.push({ ...base, eventType: '关闭状态变化', oldValue, newValue });
+    }
+  });
+  return events;
+}
+
+function applyKingdeeSnapshot({
+  fileName,
+  sourceRows,
+  summary,
+  diffs,
+  mapping,
+  userName,
+  now,
+  importMode = 'snapshot',
+  skippedRows = 0,
+  skipped = []
+}) {
   const batchId = randomUUID();
+  const changeEvents = importMode === 'baseline' ? [] : snapshotChangeEvents(summary, sourceRows);
   run(
-    'INSERT INTO kingdee_import_batches (id, file_name, imported_by, imported_at, applied_at, row_count, skipped_rows, skipped_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [batchId, fileName, userName, now, now, sourceRows.length, numberValue(skippedRows), JSON.stringify(skipped.slice(0, 100))]
+    `INSERT INTO kingdee_import_batches
+      (id, file_name, import_mode, imported_by, imported_at, applied_at, row_count, skipped_rows, skipped_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [batchId, fileName, importMode, userName, now, now, sourceRows.length, numberValue(skippedRows), JSON.stringify(skipped.slice(0, 100))]
   );
   runMany(
-    'INSERT INTO kingdee_orders (id, batch_id, demand_key, month, business_unit, supplier, material_code, purchase_org, creator, oa_flow_no, order_no, quantity, inbound_qty, raw_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    sourceRows.map((row) => [randomUUID(), batchId, row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.purchaseOrg || '', row.creator || '', row.oaFlowNo || '', row.orderNo || '', row.quantity, numberValue(row.inboundQty), JSON.stringify(row.raw || row)])
+    `INSERT INTO kingdee_orders (
+       id, batch_id, demand_key, month, business_unit, supplier, material_code, purchase_org,
+       creator, oa_flow_no, order_no, quantity, inbound_qty, remaining_inbound_qty,
+       purchase_date, delivery_date, material_name, operator_name, document_status, close_status,
+       is_gift, business_close, raw_json
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    sourceRows.map((row) => [
+      randomUUID(), batchId, row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode,
+      row.purchaseOrg || '', row.creator || '', row.oaFlowNo || '', row.orderNo || '', row.quantity,
+      numberValue(row.inboundQty), numberValue(row.remainingInboundQty), row.purchaseDate || row.createDate || '',
+      row.deliveryDate || '', row.materialName || '', row.operatorName || '', row.documentStatus || '',
+      row.closeStatus || '', row.isGift || '', row.businessClose || '', JSON.stringify(row.raw || row)
+    ])
   );
   const progressMap = new Map(all('SELECT * FROM supplier_progress').map((row) => [row.demand_key, row]));
   const manualProgressKeys = new Set(all('SELECT DISTINCT demand_key FROM supplier_progress_snapshots').map((row) => row.demand_key));
   const demandParams = [];
   const progressParams = [];
   summary.forEach((row) => {
-    demandParams.push([row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode, row.currentOrderQty, row.purchaseOrg || '', row.oaFlowNo || '', batchId, now]);
+    demandParams.push([
+      row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode,
+      row.currentOrderQty, row.currentInboundQty, row.trackingOrderQty, row.trackingInboundQty,
+      row.trackingRemainingQty, row.materialName || '', row.purchaseOrg || '', row.oaFlowNo || '', batchId, now
+    ]);
     const progress = progressMap.get(row.demandKey);
-    const nextProgress = progressAfterInbound(row.currentOrderQty, progress, row.inboundQty, {
+    const nextProgress = progressAfterInbound(row.trackingRemainingQty, progress, row.trackingInboundQty, {
       preserveExistingProgress: Boolean(progress) && manualProgressKeys.has(row.demandKey)
     });
     progressParams.push([row.demandKey, nextProgress.inProduction, nextProgress.finished, nextProgress.shipped, progress?.remark || '', userName, now]);
   });
+  run('UPDATE order_demands SET active = 0');
   runMany(
-    `INSERT INTO order_demands (demand_key, month, business_unit, supplier, material_code, current_order_qty, active, purchase_org, oa_flow_no, source_batch_id, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+    `INSERT INTO order_demands (
+       demand_key, month, business_unit, supplier, material_code,
+       current_order_qty, current_inbound_qty, tracking_order_qty, tracking_inbound_qty, tracking_remaining_qty,
+       active, material_name, purchase_org, oa_flow_no, source_batch_id, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
      ON CONFLICT(demand_key) DO UPDATE SET
        current_order_qty = excluded.current_order_qty,
+       current_inbound_qty = excluded.current_inbound_qty,
+       tracking_order_qty = excluded.tracking_order_qty,
+       tracking_inbound_qty = excluded.tracking_inbound_qty,
+       tracking_remaining_qty = excluded.tracking_remaining_qty,
+       material_name = COALESCE(NULLIF(excluded.material_name, ''), order_demands.material_name),
        purchase_org = COALESCE(NULLIF(excluded.purchase_org, ''), order_demands.purchase_org),
-       oa_flow_no = COALESCE(NULLIF(excluded.oa_flow_no, ''), order_demands.oa_flow_no),
+       oa_flow_no = excluded.oa_flow_no,
        active = 1,
        source_batch_id = excluded.source_batch_id,
        updated_at = excluded.updated_at`,
@@ -1458,9 +1671,21 @@ function applyKingdeeSnapshot({ fileName, sourceRows, summary, diffs, mapping, u
        updated_at = excluded.updated_at`,
     progressParams
   );
+  if (importMode !== 'baseline') {
+    runMany(
+      'INSERT INTO demand_snapshot_diffs (id, batch_id, demand_key, diff_type, old_qty, new_qty, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      diffs.map((diff) => [randomUUID(), batchId, diff.demandKey, diff.diffType, diff.oldQty, diff.newQty, now])
+    );
+  }
   runMany(
-    'INSERT INTO demand_snapshot_diffs (id, batch_id, demand_key, diff_type, old_qty, new_qty, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    diffs.map((diff) => [randomUUID(), batchId, diff.demandKey, diff.diffType, diff.oldQty, diff.newQty, now])
+    `INSERT INTO kingdee_order_events (
+       id, batch_id, demand_key, month, business_unit, supplier, material_code, purchase_org,
+       event_type, old_value, new_value, created_by, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    changeEvents.map((event) => [
+      randomUUID(), batchId, event.demandKey, event.month, event.businessUnit, event.supplier,
+      event.materialCode, event.purchaseOrg, event.eventType, event.oldValue, event.newValue, userName, now
+    ])
   );
   run(
     `INSERT INTO import_mappings (kind, mapping_json, updated_by, updated_at)
@@ -1571,10 +1796,11 @@ app.get('/api/imports/kingdee/current-status', requireAuth, requirePage('kingdee
      ORDER BY COALESCE(NULLIF(b.applied_at, ''), b.imported_at) DESC
      LIMIT 1`
   );
-  const history = all('SELECT id, file_name, imported_by, imported_at, applied_at, row_count, skipped_rows, skipped_json FROM kingdee_import_batches ORDER BY imported_at DESC LIMIT 10')
+  const history = all('SELECT id, file_name, import_mode, imported_by, imported_at, applied_at, row_count, skipped_rows, skipped_json FROM kingdee_import_batches ORDER BY imported_at DESC LIMIT 10')
     .map((row) => ({
       batchId: row.id,
       fileName: row.file_name,
+      importMode: row.import_mode || 'snapshot',
       importedBy: row.imported_by,
       importedAt: row.imported_at,
       appliedAt: row.applied_at || row.imported_at,
@@ -1592,6 +1818,7 @@ app.get('/api/imports/kingdee/current-status', requireAuth, requirePage('kingdee
       importedAt: batch.imported_at,
       appliedAt: batch.applied_at || batch.imported_at,
       rowCount: numberValue(batch.row_count),
+      importMode: batch.import_mode || 'snapshot',
       activeRows
     },
     history
@@ -1614,9 +1841,11 @@ function clearKingdeeCache(req, res) {
     snapshotDiffs: numberValue(get('SELECT COUNT(*) AS count FROM demand_snapshot_diffs')?.count),
     compareSessions: numberValue(get('SELECT COUNT(*) AS count FROM difference_compare_sessions')?.count),
     compareRows: numberValue(get('SELECT COUNT(*) AS count FROM difference_compare_rows')?.count),
-    allocations: numberValue(get('SELECT COUNT(*) AS count FROM difference_allocations')?.count)
+    allocations: numberValue(get('SELECT COUNT(*) AS count FROM difference_allocations')?.count),
+    orderEvents: numberValue(get('SELECT COUNT(*) AS count FROM kingdee_order_events')?.count)
   };
   transaction(() => {
+    run('DELETE FROM kingdee_order_events');
     run('DELETE FROM difference_allocations');
     run('DELETE FROM difference_compare_rows');
     run('DELETE FROM difference_compare_sessions');
@@ -1649,12 +1878,12 @@ app.post('/api/imports/kingdee/preview', requireAuth, requirePage('kingdeeImport
   const parsed = workbookRows(req.file, sheetName || null, { includePreviews: false });
   const result = mappedKingdeeRows(parsed.rows, mapping);
   const summary = summarizeDemands(result.rows);
+  const stats = kingdeeImportStats(result, summary);
   res.json({
     fileName: safeFilename(req.file),
-    totalRows: parsed.rows.length,
-    validRows: result.validRows,
-    skippedRows: result.skippedRows,
+    ...stats,
     skipped: result.skipped.slice(0, 10),
+    summaryRowsDetail: result.summary.slice(0, 10),
     rowCount: result.rows.length,
     summary: summary.slice(0, 100),
     diffs: diffAgainstCurrent(summary)
@@ -1667,13 +1896,14 @@ app.post('/api/imports/kingdee/apply', requireAuth, requirePage('kingdeeImport')
   const parsed = workbookRows(req.file, sheetName || null, { includePreviews: false });
   const result = mappedKingdeeRows(parsed.rows, mapping);
   const summary = summarizeDemands(result.rows);
-  const diffs = diffAgainstCurrent(summary);
+  const stats = kingdeeImportStats(result, summary);
+  const diffs = [];
   const now = nowText();
   let batchId = '';
   transaction(() => {
-    batchId = applyKingdeeSnapshot({ fileName: safeFilename(req.file), sourceRows: result.rows, summary, diffs, mapping, userName: req.user.name, now, skippedRows: result.skippedRows, skipped: result.skipped });
+    batchId = applyKingdeeSnapshot({ fileName: safeFilename(req.file), sourceRows: result.rows, summary, diffs, mapping, userName: req.user.name, now, importMode: 'baseline', skippedRows: result.skippedRows, skipped: result.skipped });
   });
-  res.json({ batchId, rowCount: result.rows.length, diffs });
+  res.json({ batchId, rowCount: result.rows.length, diffs, ...stats });
 });
 
 app.post('/api/imports/kingdee/new-snapshot', requireAuth, requirePage('kingdeeImport'), upload.single('file'), (req, res) => {
@@ -1682,6 +1912,7 @@ app.post('/api/imports/kingdee/new-snapshot', requireAuth, requirePage('kingdeeI
   const parsed = workbookRows(req.file, sheetName || null, { includePreviews: false });
   const result = mappedKingdeeRows(parsed.rows, mapping);
   const summary = summarizeDemands(result.rows);
+  const stats = kingdeeImportStats(result, summary);
   const diffs = diffAgainstCurrent(summary);
   const now = nowText();
   const compare = persistDifferenceCompare({ file: req.file, sheetName, mapping, parsed, result, summary, user: req.user });
@@ -1697,8 +1928,7 @@ app.post('/api/imports/kingdee/new-snapshot', requireAuth, requirePage('kingdeeI
     appliedAt: now,
     rowCount: result.rows.length,
     totalRows: parsed.rows.length,
-    validRows: result.validRows,
-    skippedRows: result.skippedRows,
+    ...stats,
     skipped: result.skipped.slice(0, 10),
     diffRows: compareRowsForSession(compare.sessionId, req.user),
     allocations: allocationRows(compare.sessionId),
@@ -1723,10 +1953,10 @@ app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'
   const values = {
     inProduction: numberValue(req.body.inProductionQty),
     finished: numberValue(req.body.finishedQty),
-    shipped: numberValue(req.body.shippedQty),
+    shipped: numberValue(demand.tracking_inbound_qty),
     remark: normalize(req.body.remark)
   };
-  const remainingInboundQty = Math.max(numberValue(demand.current_order_qty) - values.shipped, 0);
+  const remainingInboundQty = Math.max(numberValue(demand.tracking_remaining_qty), 0);
   const total = values.inProduction + values.finished;
   if (Math.abs(total - remainingInboundQty) > 0.000001) {
     return res.status(400).json({ error: '在产品、完工产品合计必须等于未交付数量' });
@@ -1793,6 +2023,11 @@ app.post('/api/difference-allocations/compare', requireAuth, requirePage('differ
 });
 
 function saveDifferenceAllocation({ sessionId, row, user, actionType, reason, remark = '' }) {
+  if ((row.handling_type || 'pending') !== 'pending') {
+    const error = new Error('该采购订单变化已由系统自动记录，无需人工分配');
+    error.status = 400;
+    throw error;
+  }
   const existingDemand = get('SELECT * FROM order_demands WHERE demand_key = ?', [row.demand_key]);
   const orderCreator = row.order_creator || oldCreatorsForDemand(row.demand_key);
   const enriched = enrichDemandFields(row.supplier, row.material_code, orderCreator);
@@ -2047,7 +2282,7 @@ app.post('/api/inventory', requireAuth, requirePage('inventory'), (req, res) => 
 });
 
 app.get('/api/progress/export', requireAuth, (req, res) => {
-  const rows = demandRows(false, req.user);
+  const rows = demandRows(false, req.user).filter((row) => numberValue(row.remainingInboundQty) > 0);
   const headers = ['demandKey', '采购组', '采购下单人', '月份', '采购订单号', 'OA备货流程号', '采购组织', '事业部', '供应商', '产品线', '系列', '物料编码', '物料', '物流编码', 'SKU', '未交付数量', '在产品', '完工产品', '已发货数量', '备注'];
   const aoa = [headers];
   rows.forEach((row) => {
@@ -2082,9 +2317,8 @@ app.post('/api/progress/import', requireAuth, upload.single('file'), (req, res) 
       const remark = normalize(row['备注'] || row.remark || '');
       const inProduction = qty('在产品') || qty('生产中');
       const finished = qty('完工产品') || qty('已完工');
-      const existingProgress = progressForDemand(demandKeyValue);
-      const shipped = qty('已发货数量') || qty('入库数量') || numberValue(existingProgress.shipped_qty);
-      const expectedQty = Math.max(numberValue(demand.current_order_qty) - shipped, 0);
+      const shipped = numberValue(demand.tracking_inbound_qty);
+      const expectedQty = Math.max(numberValue(demand.tracking_remaining_qty), 0);
       if (Math.abs(inProduction + finished - expectedQty) > 0.000001) return;
       run(
         `INSERT INTO supplier_progress (demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty, remark, updated_by, updated_at)
@@ -2134,6 +2368,50 @@ app.post('/api/inventory/import', requireAuth, requirePage('inventory'), upload.
 });
 
 function traceChangeRecords() {
+  const importRecords = all('SELECT * FROM kingdee_import_batches ORDER BY imported_at DESC LIMIT 100').map((row) => ({
+    id: `import-${row.id}`,
+    sourceType: 'kingdeeImport',
+    operator: row.imported_by || '',
+    month: '',
+    businessUnit: '',
+    supplier: '',
+    supplierShortName: '',
+    productLine: '',
+    productSeries: '',
+    materialCode: '',
+    sku: '',
+    materialName: '',
+    purchaseOwner: '',
+    orderCreator: '',
+    reason: row.import_mode === 'baseline' ? '基线导入' : '新快照导入',
+    actionType: '采购订单导入',
+    remark: `${row.file_name}，有效明细 ${numberValue(row.row_count)} 行`,
+    createdAt: row.applied_at || row.imported_at || ''
+  }));
+  const orderEventRecords = all('SELECT * FROM kingdee_order_events ORDER BY created_at DESC LIMIT 500').map((row) => {
+    const demand = get('SELECT * FROM order_demands WHERE demand_key = ?', [row.demand_key]);
+    const enriched = enrichDemandFields(row.supplier, row.material_code);
+    return {
+      id: `order-event-${row.id}`,
+      sourceType: 'kingdeeOrderEvent',
+      operator: row.created_by || '',
+      month: row.month || '',
+      businessUnit: row.business_unit || '',
+      supplier: row.supplier || '',
+      supplierShortName: demand?.supplier_short_name || enriched.supplierShortName || '',
+      productLine: demand?.product_line || enriched.productLine || '',
+      productSeries: demand?.product_series || enriched.productSeries || '',
+      materialCode: row.material_code || '',
+      sku: demand?.sku || enriched.sku || '',
+      materialName: demand?.material_name || enriched.materialName || row.material_code || '',
+      purchaseOwner: enriched.purchaseOwner || UNASSIGNED_PURCHASE_OWNER,
+      orderCreator: oldCreatorsForDemand(row.demand_key),
+      reason: row.event_type || '',
+      actionType: '采购订单刷新',
+      remark: `${row.old_value || '空'} -> ${row.new_value || '空'}`,
+      createdAt: row.created_at || ''
+    };
+  });
   const allocationRecords = allocationRows().map((row) => ({
     id: `allocation-${row.id}`,
     sourceType: 'differenceAllocation',
@@ -2178,7 +2456,7 @@ function traceChangeRecords() {
       createdAt: row.created_at || row.change_date || ''
     };
   });
-  return [...allocationRecords, ...noteRecords]
+  return [...importRecords, ...orderEventRecords, ...allocationRecords, ...noteRecords]
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt), 'zh-Hans-CN'))
     .slice(0, 800);
 }
@@ -2190,6 +2468,7 @@ app.get('/api/trace', requireAuth, requirePage('trace'), (req, res) => {
     progress: all('SELECT * FROM supplier_progress_snapshots ORDER BY updated_at DESC LIMIT 300'),
     inventory: all('SELECT * FROM inventory_logs ORDER BY updated_at DESC LIMIT 300'),
     notes: all('SELECT * FROM demand_change_notes ORDER BY created_at DESC LIMIT 300'),
+    orderEvents: all('SELECT * FROM kingdee_order_events ORDER BY created_at DESC LIMIT 500'),
     changeRecords: traceChangeRecords()
   });
 });

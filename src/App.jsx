@@ -1990,14 +1990,14 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
           )}
           <button type="button" className="ghost compact-button" disabled={!selectedKeys.length} onClick={() => setSelectedKeys([])}>取消勾选</button>
         </div>
+        <AppliedTimeNote value={currentAppliedAt} />
+        <FilterBar filters={filters} setFilters={setFilters} options={options} />
         <section className="progress-chart-grid">
           <ProgressStackedChart title="供应商未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => supplierName(row)} />
           <ProgressStackedChart title="事业部未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => row.businessUnit} />
           <ProgressStackedChart title="系列未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => row.productSeries} />
           <ProgressStackedChart title="SKU未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => row.sku} />
         </section>
-        <AppliedTimeNote value={currentAppliedAt} />
-        <FilterBar filters={filters} setFilters={setFilters} options={options} />
       </div>
       <DataTable
         className="progress-table"

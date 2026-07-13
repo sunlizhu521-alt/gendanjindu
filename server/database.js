@@ -98,6 +98,7 @@ function migrate() {
     CREATE TABLE IF NOT EXISTS kingdee_import_batches (
       id TEXT PRIMARY KEY,
       file_name TEXT NOT NULL,
+      import_mode TEXT NOT NULL DEFAULT 'snapshot',
       imported_by TEXT NOT NULL,
       imported_at TEXT NOT NULL,
       applied_at TEXT NOT NULL DEFAULT '',
@@ -120,6 +121,15 @@ function migrate() {
       order_no TEXT,
       quantity REAL NOT NULL,
       inbound_qty REAL NOT NULL DEFAULT 0,
+      remaining_inbound_qty REAL NOT NULL DEFAULT 0,
+      purchase_date TEXT NOT NULL DEFAULT '',
+      delivery_date TEXT NOT NULL DEFAULT '',
+      material_name TEXT NOT NULL DEFAULT '',
+      operator_name TEXT NOT NULL DEFAULT '',
+      document_status TEXT NOT NULL DEFAULT '',
+      close_status TEXT NOT NULL DEFAULT '',
+      is_gift TEXT NOT NULL DEFAULT '',
+      business_close TEXT NOT NULL DEFAULT '',
       raw_json TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS order_demands (
@@ -129,6 +139,10 @@ function migrate() {
       supplier TEXT NOT NULL,
       material_code TEXT NOT NULL,
       current_order_qty REAL NOT NULL DEFAULT 0,
+      current_inbound_qty REAL NOT NULL DEFAULT 0,
+      tracking_order_qty REAL NOT NULL DEFAULT 0,
+      tracking_inbound_qty REAL NOT NULL DEFAULT 0,
+      tracking_remaining_qty REAL NOT NULL DEFAULT 0,
       active INTEGER NOT NULL DEFAULT 1,
       sku TEXT,
       logistics_code TEXT NOT NULL DEFAULT '',
@@ -211,7 +225,9 @@ function migrate() {
       new_order_nos TEXT NOT NULL DEFAULT '',
       old_order_dates TEXT NOT NULL DEFAULT '',
       new_order_dates TEXT NOT NULL DEFAULT '',
+      old_inbound_qty REAL NOT NULL DEFAULT 0,
       inbound_qty REAL NOT NULL DEFAULT 0,
+      handling_type TEXT NOT NULL DEFAULT 'pending',
       progress_total REAL NOT NULL DEFAULT 0,
       stock_qty REAL NOT NULL DEFAULT 0,
       new_snapshot_json TEXT NOT NULL DEFAULT '{}',
@@ -233,6 +249,22 @@ function migrate() {
       delta_qty REAL NOT NULL DEFAULT 0,
       progress_total REAL NOT NULL DEFAULT 0,
       stock_qty REAL NOT NULL DEFAULT 0,
+      automatic INTEGER NOT NULL DEFAULT 0,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS kingdee_order_events (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL,
+      demand_key TEXT NOT NULL,
+      month TEXT NOT NULL,
+      business_unit TEXT NOT NULL,
+      supplier TEXT NOT NULL,
+      material_code TEXT NOT NULL,
+      purchase_org TEXT NOT NULL DEFAULT '',
+      event_type TEXT NOT NULL,
+      old_value TEXT NOT NULL DEFAULT '',
+      new_value TEXT NOT NULL DEFAULT '',
       created_by TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
@@ -323,6 +355,25 @@ function migrate() {
   if (!demandColumns.includes('oa_flow_no')) {
     run("ALTER TABLE order_demands ADD COLUMN oa_flow_no TEXT NOT NULL DEFAULT ''");
   }
+  if (!demandColumns.includes('current_inbound_qty')) {
+    run("ALTER TABLE order_demands ADD COLUMN current_inbound_qty REAL NOT NULL DEFAULT 0");
+    run(`UPDATE order_demands
+         SET current_inbound_qty = COALESCE((SELECT shipped_qty FROM supplier_progress WHERE supplier_progress.demand_key = order_demands.demand_key), 0)`);
+  }
+  if (!demandColumns.includes('tracking_order_qty')) {
+    run("ALTER TABLE order_demands ADD COLUMN tracking_order_qty REAL NOT NULL DEFAULT 0");
+    run('UPDATE order_demands SET tracking_order_qty = current_order_qty');
+  }
+  if (!demandColumns.includes('tracking_inbound_qty')) {
+    run("ALTER TABLE order_demands ADD COLUMN tracking_inbound_qty REAL NOT NULL DEFAULT 0");
+    run(`UPDATE order_demands
+         SET tracking_inbound_qty = COALESCE((SELECT shipped_qty FROM supplier_progress WHERE supplier_progress.demand_key = order_demands.demand_key), 0)`);
+  }
+  if (!demandColumns.includes('tracking_remaining_qty')) {
+    run("ALTER TABLE order_demands ADD COLUMN tracking_remaining_qty REAL NOT NULL DEFAULT 0");
+    run(`UPDATE order_demands
+         SET tracking_remaining_qty = MAX(current_order_qty - COALESCE((SELECT shipped_qty FROM supplier_progress WHERE supplier_progress.demand_key = order_demands.demand_key), 0), 0)`);
+  }
 
   const kingdeeColumns = all('PRAGMA table_info(kingdee_orders)').map((row) => row.name);
   if (!kingdeeColumns.includes('purchase_org')) {
@@ -337,6 +388,19 @@ function migrate() {
   if (!kingdeeColumns.includes('inbound_qty')) {
     run("ALTER TABLE kingdee_orders ADD COLUMN inbound_qty REAL NOT NULL DEFAULT 0");
   }
+  [
+    ['remaining_inbound_qty', "REAL NOT NULL DEFAULT 0"],
+    ['purchase_date', "TEXT NOT NULL DEFAULT ''"],
+    ['delivery_date', "TEXT NOT NULL DEFAULT ''"],
+    ['material_name', "TEXT NOT NULL DEFAULT ''"],
+    ['operator_name', "TEXT NOT NULL DEFAULT ''"],
+    ['document_status', "TEXT NOT NULL DEFAULT ''"],
+    ['close_status', "TEXT NOT NULL DEFAULT ''"],
+    ['is_gift', "TEXT NOT NULL DEFAULT ''"],
+    ['business_close', "TEXT NOT NULL DEFAULT ''"]
+  ].forEach(([column, definition]) => {
+    if (!kingdeeColumns.includes(column)) run(`ALTER TABLE kingdee_orders ADD COLUMN ${column} ${definition}`);
+  });
 
   const kingdeeBatchColumns = all('PRAGMA table_info(kingdee_import_batches)').map((row) => row.name);
   if (!kingdeeBatchColumns.includes('applied_at')) {
@@ -348,6 +412,9 @@ function migrate() {
   }
   if (!kingdeeBatchColumns.includes('skipped_json')) {
     run("ALTER TABLE kingdee_import_batches ADD COLUMN skipped_json TEXT NOT NULL DEFAULT '[]'");
+  }
+  if (!kingdeeBatchColumns.includes('import_mode')) {
+    run("ALTER TABLE kingdee_import_batches ADD COLUMN import_mode TEXT NOT NULL DEFAULT 'snapshot'");
   }
 
   const progressColumns = all('PRAGMA table_info(supplier_progress)').map((row) => row.name);
@@ -395,6 +462,12 @@ function migrate() {
   if (!compareRowColumns.includes('inbound_qty')) {
     run("ALTER TABLE difference_compare_rows ADD COLUMN inbound_qty REAL NOT NULL DEFAULT 0");
   }
+  if (!compareRowColumns.includes('old_inbound_qty')) {
+    run("ALTER TABLE difference_compare_rows ADD COLUMN old_inbound_qty REAL NOT NULL DEFAULT 0");
+  }
+  if (!compareRowColumns.includes('handling_type')) {
+    run("ALTER TABLE difference_compare_rows ADD COLUMN handling_type TEXT NOT NULL DEFAULT 'pending'");
+  }
 
   const allocationColumns = all('PRAGMA table_info(difference_allocations)').map((row) => row.name);
   if (!allocationColumns.includes('remark')) {
@@ -405,6 +478,9 @@ function migrate() {
   }
   if (!allocationColumns.includes('new_order_nos')) {
     run("ALTER TABLE difference_allocations ADD COLUMN new_order_nos TEXT NOT NULL DEFAULT ''");
+  }
+  if (!allocationColumns.includes('automatic')) {
+    run("ALTER TABLE difference_allocations ADD COLUMN automatic INTEGER NOT NULL DEFAULT 0");
   }
 
   const noteColumns = all('PRAGMA table_info(demand_change_notes)').map((row) => row.name);
@@ -419,8 +495,18 @@ function normalizeKeyPart(value) {
   return String(value ?? '').trim();
 }
 
+function normalizedBusinessUnit(value) {
+  return normalizeKeyPart(value) || '之前未分配事业部';
+}
+
 function newDemandKey(purchaseOrg, month, businessUnit, supplier, materialCode) {
-  return [purchaseOrg, month, businessUnit, supplier, materialCode].map(normalizeKeyPart).join('|');
+  return [
+    normalizeKeyPart(purchaseOrg),
+    normalizeKeyPart(month),
+    normalizedBusinessUnit(businessUnit),
+    normalizeKeyPart(supplier),
+    normalizeKeyPart(materialCode)
+  ].join('|');
 }
 
 function hasLegacyDemandKey(value) {
@@ -536,7 +622,7 @@ function rewriteDemandKeyInJson(value, keyMap) {
 
 function jsonRowDemandKey(row) {
   const month = normalizeKeyPart(row.month);
-  const businessUnit = normalizeKeyPart(row.businessUnit || row.business_unit);
+  const businessUnit = normalizedBusinessUnit(row.businessUnit || row.business_unit);
   const supplier = normalizeKeyPart(row.supplier);
   const materialCode = normalizeKeyPart(row.materialCode || row.material_code);
   if (!month || !supplier || !materialCode) return '';
@@ -576,14 +662,28 @@ function migrateDemandKeysToCurrentShape() {
     const base = rows.find((row) => Number(row.active)) || rows[0];
     const active = rows.some((row) => Number(row.active)) ? 1 : 0;
     const qtyRows = active ? rows.filter((row) => Number(row.active)) : rows;
-    const currentOrderQty = qtyRows.reduce((sum, row) => sum + Number(row.current_order_qty || 0), 0);
+    const sumField = (field, fallbackField = '') => qtyRows.reduce(
+      (sum, row) => sum + Number(row[field] ?? (fallbackField ? row[fallbackField] : 0) ?? 0),
+      0
+    );
+    const currentOrderQty = sumField('current_order_qty');
+    const currentInboundQty = sumField('current_inbound_qty');
+    const trackingOrderQty = sumField('tracking_order_qty', 'current_order_qty');
+    const trackingInboundQty = sumField('tracking_inbound_qty');
+    const trackingRemainingQty = sumField('tracking_remaining_qty');
+    const businessUnit = normalizedBusinessUnit(base.business_unit);
     const pick = (field) => normalizeKeyPart(base[field]) || normalizeKeyPart(rows.find((row) => normalizeKeyPart(row[field]))?.[field]);
     rows.forEach((row) => run('DELETE FROM order_demands WHERE demand_key = ?', [row.demand_key]));
     run(
-      `INSERT INTO order_demands (demand_key, month, business_unit, supplier, material_code, current_order_qty, active, sku, logistics_code, material_name, product_line, product_series, purchase_group, purchase_owner, purchase_org, oa_flow_no, source_batch_id, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO order_demands (
+         demand_key, month, business_unit, supplier, material_code,
+         current_order_qty, current_inbound_qty, tracking_order_qty, tracking_inbound_qty, tracking_remaining_qty,
+         active, sku, logistics_code, material_name, product_line, product_series,
+         purchase_group, purchase_owner, purchase_org, oa_flow_no, source_batch_id, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        targetKey, base.month, base.business_unit, base.supplier, base.material_code, currentOrderQty, active,
+        targetKey, base.month, businessUnit, base.supplier, base.material_code,
+        currentOrderQty, currentInboundQty, trackingOrderQty, trackingInboundQty, trackingRemainingQty, active,
         pick('sku'), pick('logistics_code'), pick('material_name'), pick('product_line'), pick('product_series'),
         pick('purchase_group'), pick('purchase_owner'), base.purchase_org || '', oaFlowNo, pick('source_batch_id'), pick('updated_at')
       ]
@@ -602,14 +702,16 @@ function migrateDemandKeysToCurrentShape() {
     run('UPDATE demand_snapshot_diffs SET demand_key = ? WHERE demand_key = ?', [nextKey, oldKey]);
     run('UPDATE difference_compare_rows SET demand_key = ? WHERE demand_key = ?', [nextKey, oldKey]);
     run('UPDATE difference_allocations SET demand_key = ? WHERE demand_key = ?', [nextKey, oldKey]);
+    run('UPDATE kingdee_order_events SET demand_key = ? WHERE demand_key = ?', [nextKey, oldKey]);
     run('UPDATE demand_change_notes SET demand_key = ? WHERE demand_key = ?', [nextKey, oldKey]);
     run('UPDATE kingdee_orders SET demand_key = ? WHERE demand_key = ?', [nextKey, oldKey]);
   });
 
   all('SELECT id, demand_key, month, business_unit, supplier, material_code, purchase_org, oa_flow_no, raw_json FROM kingdee_orders').forEach((row) => {
-    if (hasLegacyDemandKey(row.demand_key)) {
-      const nextKey = newDemandKey(row.purchase_org, row.month, row.business_unit, row.supplier, row.material_code);
-      run('UPDATE kingdee_orders SET demand_key = ? WHERE id = ?', [nextKey, row.id]);
+    const businessUnit = normalizedBusinessUnit(row.business_unit);
+    const nextKey = newDemandKey(row.purchase_org, row.month, businessUnit, row.supplier, row.material_code);
+    if (row.demand_key !== nextKey || row.business_unit !== businessUnit) {
+      run('UPDATE kingdee_orders SET demand_key = ?, business_unit = ? WHERE id = ?', [nextKey, businessUnit, row.id]);
     }
   });
 
@@ -618,9 +720,13 @@ function migrateDemandKeysToCurrentShape() {
       'SELECT purchase_org, oa_flow_no FROM order_demands WHERE month = ? AND business_unit = ? AND supplier = ? AND material_code = ? ORDER BY active DESC, updated_at DESC LIMIT 1',
       [row.month, row.business_unit, row.supplier, row.material_code]
     )[0];
-    const nextKey = newDemandKey(demand?.purchase_org || '', row.month, row.business_unit, row.supplier, row.material_code);
-    run('UPDATE demand_change_notes SET demand_key = ? WHERE id = ?', [nextKey, row.id]);
+    const businessUnit = normalizedBusinessUnit(row.business_unit);
+    const nextKey = newDemandKey(demand?.purchase_org || '', row.month, businessUnit, row.supplier, row.material_code);
+    run('UPDATE demand_change_notes SET demand_key = ?, business_unit = ? WHERE id = ?', [nextKey, businessUnit, row.id]);
   });
+
+  run("UPDATE difference_compare_rows SET business_unit = '之前未分配事业部' WHERE TRIM(COALESCE(business_unit, '')) = ''");
+  run("UPDATE kingdee_order_events SET business_unit = '之前未分配事业部' WHERE TRIM(COALESCE(business_unit, '')) = ''");
 
   all('SELECT id, summary_json, source_rows_json FROM difference_compare_sessions').forEach((row) => {
     const summaryJson = rewriteDemandKeyInJson(row.summary_json, keyMap);

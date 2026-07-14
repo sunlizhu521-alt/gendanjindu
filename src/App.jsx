@@ -95,7 +95,18 @@ const DIMENSION_SLOTS = [
     ['sku', 'SKU'],
     ['remark', '备注']
   ] },
-  { id: 'dimensionSpare', title: '备用', fields: [] }
+  { id: 'dimensionSpare', title: '领星SKU和物料编码对照', fields: [
+    ['lingxingSku', '领星SKU'],
+    ['materialCode', '物料编码'],
+    ['remark', '备注']
+  ] },
+  { id: 'lingxingWarehouseMap', title: '领星&金蝶仓库对照', fields: [
+    ['lingxingWarehouseName', '领星仓库名称'],
+    ['kingdeeWarehouseCode', '金蝶仓库编码'],
+    ['kingdeeWarehouseName', '金蝶仓库名称'],
+    ['remark', '备注']
+  ] },
+  { id: 'dimensionSpare2', title: '备用', fields: [] }
 ];
 
 const WANGDIAN_SLOTS = [
@@ -146,11 +157,7 @@ const LINGXING_INVENTORY_SLOTS = [
     ['availableQty', '可用库存'],
     ['totalQty', '总库存']
   ] },
-  { id: 'lingxingWarehouseMap', title: '领星&金蝶仓库对照表', fields: [
-    ['lingxingWarehouseName', '领星仓库名称'],
-    ['kingdeeWarehouseCode', '金蝶仓库编码'],
-    ['kingdeeWarehouseName', '金蝶仓库名称']
-  ] }
+  { id: 'lingxingSpare', title: '备用', fields: [] }
 ];
 
 const KINGDEE_FIELDS = [

@@ -27,30 +27,63 @@ jobs:
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "mkdir -p /home/ubuntu/zhuge-ai-lab/gendanjindu /tmp/gendanjindu-deploy"
           scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no /tmp/gendanjindu.tar.gz ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/gendanjindu-deploy/gendanjindu.tar.gz
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
-            set -e
+            set -Eeuo pipefail
             APP_DIR=/home/ubuntu/zhuge-ai-lab/gendanjindu
+            DEPLOY_ARCHIVE=/tmp/gendanjindu-deploy/gendanjindu.tar.gz
             mkdir -p "$APP_DIR"
             cd "$APP_DIR"
             PROJECT_NAME=$(basename "$APP_DIR")
-            mkdir -p "$HOME/backups/$PROJECT_NAME"
-            if [ -d data ]; then
-              BACKUP_FILE="$HOME/backups/$PROJECT_NAME/data-$(date +%Y%m%d-%H%M%S).tar.gz"
-              set +e
-              tar --warning=no-file-changed --ignore-failed-read -czf "$BACKUP_FILE" data
-              TAR_STATUS=$?
-              set -e
-              if [ "$TAR_STATUS" -gt 1 ]; then
-                exit "$TAR_STATUS"
+            BACKUP_ROOT="$HOME/backups/$PROJECT_NAME"
+            TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+            DB_FILE="$APP_DIR/data/gendanjindu.sqlite"
+            BASELINE_FILE="$BACKUP_ROOT/baseline-$TIMESTAMP.json"
+            BACKUP_DB="$BACKUP_ROOT/gendanjindu-$TIMESTAMP.sqlite"
+            BACKUP_AUDIT="$BACKUP_ROOT/backup-audit-$TIMESTAMP.json"
+            BACKUP_TAR="$BACKUP_ROOT/data-$TIMESTAMP.tar.gz"
+            POST_AUDIT="$BACKUP_ROOT/post-audit-$TIMESTAMP.json"
+            SERVICE_STOPPED=0
+
+            restart_on_error() {
+              if [ "$SERVICE_STOPPED" = "1" ]; then
+                pm2 restart gendanjindu --update-env >/dev/null 2>&1 || true
               fi
-              ls -lh "$BACKUP_FILE"
+            }
+            trap restart_on_error EXIT
+
+            mkdir -p "$BACKUP_ROOT" "$APP_DIR/server"
+            tar -xzf "$DEPLOY_ARCHIVE" -C "$APP_DIR" ./server/data-audit.js
+            if [ ! -s "$DB_FILE" ]; then
+              echo "Database safety gate failed: $DB_FILE is missing or empty."
+              exit 1
             fi
+
+            pm2 stop gendanjindu
+            SERVICE_STOPPED=1
+            node server/data-audit.js "$DB_FILE" > "$BASELINE_FILE"
+            cp --preserve=timestamps "$DB_FILE" "$BACKUP_DB"
+            cmp --silent "$DB_FILE" "$BACKUP_DB"
+            node server/data-audit.js "$BACKUP_DB" > "$BACKUP_AUDIT"
+            DB_SHA=$(sha256sum "$DB_FILE" | awk '{print $1}')
+            BACKUP_SHA=$(sha256sum "$BACKUP_DB" | awk '{print $1}')
+            if [ "$DB_SHA" != "$BACKUP_SHA" ]; then
+              echo "Database backup checksum mismatch."
+              exit 1
+            fi
+            tar -czf "$BACKUP_TAR" data
+            test -s "$BACKUP_TAR"
+            tar -tzf "$BACKUP_TAR" >/dev/null
+            echo "Database backup verified: $BACKUP_DB"
+            echo "Full data backup verified: $BACKUP_TAR"
+            echo "Rollback database: $BACKUP_DB"
+            ls -lh "$BASELINE_FILE" "$BACKUP_DB" "$BACKUP_AUDIT" "$BACKUP_TAR"
+
             # Extract over the existing app directory. Do not blanket-delete server files:
             # Tencent runtime data, uploaded files, .env files, and local diagnostics must survive deploys.
-            tar -xzf /tmp/gendanjindu-deploy/gendanjindu.tar.gz -C "$APP_DIR"
+            tar -xzf "$DEPLOY_ARCHIVE" -C "$APP_DIR"
             npm ci --omit=dev
             npm run build
             pm2 restart gendanjindu --update-env
-            pm2 save
+            SERVICE_STOPPED=0
             for i in $(seq 1 30); do
               if curl -fsS http://127.0.0.1:4003/gendanjindu/ >/dev/null; then
                 break
@@ -63,5 +96,28 @@ jobs:
               pm2 logs gendanjindu --lines 80 --nostream
               exit 1
             fi
-            rm -f /tmp/gendanjindu-deploy/gendanjindu.tar.gz
+
+            pm2 stop gendanjindu
+            SERVICE_STOPPED=1
+            node server/data-audit.js "$DB_FILE" > "$POST_AUDIT"
+            if ! node server/compare-data-audits.js "$BASELINE_FILE" "$POST_AUDIT"; then
+              INCIDENT_DB="$BACKUP_ROOT/incident-$TIMESTAMP.sqlite"
+              cp "$DB_FILE" "$INCIDENT_DB"
+              echo "Post-deploy validation failed. Incident preserved at $INCIDENT_DB; rollback is available at $BACKUP_DB."
+              exit 1
+            fi
+
+            pm2 restart gendanjindu --update-env
+            SERVICE_STOPPED=0
+            for i in $(seq 1 30); do
+              if curl -fsS http://127.0.0.1:4003/gendanjindu/ >/dev/null; then
+                break
+              fi
+              sleep 2
+            done
+            curl -fsS http://127.0.0.1:4003/gendanjindu/ >/dev/null
+            pm2 save
+            ls -lh "$POST_AUDIT"
+            trap - EXIT
+            rm -f "$DEPLOY_ARCHIVE"
           EOF

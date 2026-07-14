@@ -51,7 +51,8 @@ const DIMENSION_SLOTS = {
   spare1: '仓库名称',
   spare2: '国内运营默认数据',
   warehouseMaterialMap: '仓库与物料对照表',
-  dimensionSpare: '备用',
+  dimensionSpare: '领星SKU和物料编码对照',
+  dimensionSpare2: '备用',
   wangdianDataMain: '国内数据',
   wangdianSpare1: '京东库存',
   wangdianSpare2: '京东ID与品号匹配',
@@ -59,7 +60,8 @@ const DIMENSION_SLOTS = {
   lingxingFbaInventory: 'FBA库存',
   lingxingFbmInventory: 'FBM库存',
   lingxingWfsInventory: 'WFS库存',
-  lingxingWarehouseMap: '领星&金蝶仓库对照表'
+  lingxingWarehouseMap: '领星&金蝶仓库对照',
+  lingxingSpare: '备用'
 };
 const DIFF_NORMAL_ORDER = '正常订单';
 const DIFF_ORDER_COMPLETE_REASON = '订单已完结';
@@ -2123,7 +2125,7 @@ app.get('/api/cross-border-inventory', requireAuth, requirePage('crossBorderInve
     ['lingxingFbaInventory', 'FBA库存'],
     ['lingxingFbmInventory', 'FBM库存'],
     ['lingxingWfsInventory', 'WFS库存'],
-    ['lingxingWarehouseMap', '领星&金蝶仓库对照表']
+    ['lingxingWarehouseMap', '领星&金蝶仓库对照']
   ];
   const sourceApplications = sourceSlots.map(([slotId, label]) => {
     const record = get('SELECT file_name, updated_at FROM dimension_files WHERE slot_id = ? AND applied = 1', [slotId]);
@@ -2664,6 +2666,14 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         remark: pick(row, mapping.remark) || pickAny(row, ['备注', '说明'])
       };
     }
+    if (slotId === 'dimensionSpare') {
+      return {
+        raw: row,
+        lingxingSku: pick(row, mapping.lingxingSku) || pickAny(row, ['领星SKU', 'SKU', 'MSKU', 'Seller SKU']),
+        materialCode: pick(row, mapping.materialCode) || pickAny(row, ['物料编码', '品号', '商品编码', '存货编码']),
+        remark: pick(row, mapping.remark) || pickAny(row, ['备注', '说明'])
+      };
+    }
     if (slotId === 'spare2') {
       return {
         raw: row,
@@ -2704,7 +2714,8 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         raw: row,
         lingxingWarehouseName: pick(row, mapping.lingxingWarehouseName) || pickAny(row, ['领星仓库名称', '领星仓库', '仓库名称', '仓库']),
         kingdeeWarehouseCode: pick(row, mapping.kingdeeWarehouseCode) || pickAny(row, ['金蝶仓库编码', '仓库编码', '仓库代码']),
-        kingdeeWarehouseName: pick(row, mapping.kingdeeWarehouseName) || pickAny(row, ['金蝶仓库名称', '金蝶仓库'])
+        kingdeeWarehouseName: pick(row, mapping.kingdeeWarehouseName) || pickAny(row, ['金蝶仓库名称', '金蝶仓库']),
+        remark: pick(row, mapping.remark) || pickAny(row, ['备注', '说明'])
       };
     }
     if (['lingxingFbaInventory', 'lingxingFbmInventory', 'lingxingWfsInventory'].includes(slotId)) {

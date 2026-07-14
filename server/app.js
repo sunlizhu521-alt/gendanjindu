@@ -1314,7 +1314,10 @@ function compareRowsFromSummary(summary, sourceRows, user) {
     const oldInboundQty = numberValue(oldLine?.inboundQty);
     const newInboundQty = numberValue(newLine?.inboundQty);
     const deltaQty = newQty - oldQty;
-    if (Math.abs(deltaQty) < 0.000001) return null;
+    const inboundDeltaQty = newInboundQty - oldInboundQty;
+    const purchaseQtyChanged = Math.abs(deltaQty) >= 0.000001;
+    const inboundQtyChanged = Math.abs(inboundDeltaQty) >= 0.000001;
+    if (!purchaseQtyChanged && !inboundQtyChanged) return null;
 
     const current = currentMap.get(oldLine?.demandKey || newLine?.demandKey);
     const next = nextMap.get(newLine?.demandKey || oldLine?.demandKey);
@@ -1339,11 +1342,13 @@ function compareRowsFromSummary(summary, sourceRows, user) {
     const stock = current
       ? { stock_qty: current.stockQty }
       : inventoryMap.get(stockKey(businessUnit, supplier, materialCode)) || { stock_qty: 0 };
-    const handlingType = oldQty === 0 && newQty > 0
-      ? 'auto_new'
-      : oldQty > 0 && newQty === 0 && Math.abs(oldQty - oldInboundQty) < 0.000001
-        ? 'auto_closed'
-        : 'pending';
+    const handlingType = !purchaseQtyChanged
+      ? 'auto_inbound'
+      : oldQty === 0 && newQty > 0
+        ? 'auto_new'
+        : oldQty > 0 && newQty === 0 && Math.abs(oldQty - oldInboundQty) < 0.000001
+          ? 'auto_closed'
+          : 'pending';
     const displayBase = { purchaseOrg, month, businessUnit, supplier };
     return {
       demandKey: demandKeyValue,
@@ -1367,18 +1372,18 @@ function compareRowsFromSummary(summary, sourceRows, user) {
       newQty,
       oldInboundQty,
       newInboundQty,
-      inboundDeltaQty: newInboundQty - oldInboundQty,
+      inboundDeltaQty,
       deltaQty,
       diffQty: Math.abs(deltaQty),
-      diffType: !oldLine ? '新增' : !newLine ? '消失' : deltaQty > 0 ? '数量增加' : '数量减少',
+      diffType: !purchaseQtyChanged ? '累计入库变化' : !oldLine ? '新增' : !newLine ? '消失' : deltaQty > 0 ? '数量增加' : '数量减少',
       oldOrderNos: oldLine?.orderNo || '',
       newOrderNos: newLine?.orderNo || '',
       oldOrderDates: oldLine?.orderDate || '',
       newOrderDates: newLine?.orderDate || '',
       inboundQty: newInboundQty,
       handlingType,
-      automaticAction: handlingType === 'auto_new' ? '新增订单' : handlingType === 'auto_closed' ? '正常业务关闭' : '',
-      automaticReason: handlingType === 'auto_new' ? '新增订单' : handlingType === 'auto_closed' ? '正常业务关闭' : '',
+      automaticAction: handlingType === 'auto_new' ? '新增订单' : handlingType === 'auto_closed' ? '正常业务关闭' : handlingType === 'auto_inbound' ? '累计入库变化' : '',
+      automaticReason: handlingType === 'auto_new' ? '新增订单' : handlingType === 'auto_closed' ? '正常业务关闭' : handlingType === 'auto_inbound' ? '累计入库变化' : '',
       stockQty: numberValue(stock?.stock_qty),
       inProductionQty: numberValue(projectedProgress.inProduction),
       finishedQty: numberValue(projectedProgress.finished),

@@ -2555,7 +2555,7 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
       <section className="panel" style={{ marginTop: 16 }}>
         <div className="section-heading-row"><h3>采购订单记录</h3><span className="section-count">自动处理与人工提交共 {filteredAllocations.length} / {allocations.length} 条</span></div>
         <DataTable
-          className="compact-table"
+          className="compact-table diff-record-table"
           rows={recordPageRows}
           columns={['处理方式', '主键', 'OA备货流程号', '采购下单人', '物料编码', '原采购订单号', '原采购订单创建时间', '新采购订单号', '新采购订单创建时间', '原采购数量', '原累计入库', '新采购数量', '新累计入库', '采购差异', '入库差异', '原因', '操作', '备注', '提交时间']}
           render={(row) => [row.automatic ? '系统自动' : '人工提交', row.displayKey || row.demandKey, row.oaFlowNo || '', row.orderCreator || '', row.materialCode || '', row.oldOrderNos || '', row.oldOrderDates || '', row.newOrderNos || '', row.newOrderDates || '', row.oldQty, row.oldInboundQty || '', row.newQty, row.inboundQty || '', signedNumber(row.deltaQty), signedNumber(row.inboundDeltaQty), row.reason, row.actionType, row.remark, row.createdAt]}
@@ -2583,7 +2583,7 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
           </div>
         </div>
         <DataTable
-          className="compact-table"
+          className="compact-table diff-unassigned-table"
           rows={unassignedOrders.rows || []}
           columns={['采购组织', '供应商', '创建人', '采购日期', '采购订单号', '物料编码', '物料名称', '原采购数量', '新采购数量']}
           render={(row) => [row.purchaseOrg, row.supplier, row.creator, row.purchaseDate, row.orderNo, row.materialCode, row.materialName, row.oldPurchaseQty, row.newPurchaseQty]}

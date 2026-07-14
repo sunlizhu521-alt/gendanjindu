@@ -1529,6 +1529,27 @@ th {
   resize: horizontal;
 }
 
+.diff-allocation-table table,
+.diff-record-table table,
+.diff-unassigned-table table {
+  width: max-content;
+  min-width: 100%;
+  table-layout: auto;
+}
+
+.diff-allocation-table th,
+.diff-allocation-table td,
+.diff-record-table th,
+.diff-record-table td,
+.diff-unassigned-table th,
+.diff-unassigned-table td {
+  width: auto !important;
+  max-width: none !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: nowrap;
+}
+
 .empty,
 .empty-text {
   padding: 20px;

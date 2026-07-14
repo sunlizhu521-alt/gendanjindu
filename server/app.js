@@ -1075,7 +1075,7 @@ function demandLoadContext(demands) {
   if (batchIds.length) {
     const placeholders = batchIds.map(() => '?').join(',');
     all(
-      `SELECT batch_id, demand_key, creator, oa_flow_no, order_no, material_name, close_status, raw_json
+      `SELECT batch_id, demand_key, creator, oa_flow_no, order_no, material_name, document_status, close_status, raw_json
        FROM kingdee_orders
        WHERE batch_id IN (${placeholders})`,
       batchIds
@@ -1108,6 +1108,7 @@ function demandRows(includeInactive = false, user = null) {
     const orderRows = context.orderRowsByDemand.get(demandBatchKey(demand.source_batch_id, demand.demand_key)) || [];
     const orderCreator = uniqueCreators(orderRows);
     const orderNo = uniqueOrderNos(orderRows);
+    const documentStatus = uniqueDocumentStatuses(orderRows);
     const orderDates = uniqueOrderDates(orderRows);
     const oaFlowNo = demand.oa_flow_no || orderedOaFlowNos(orderRows, rawOaFlowNo);
     const enriched = enrichDemandFields(demand.supplier, demand.material_code, orderCreator, context.lookups);
@@ -1142,6 +1143,7 @@ function demandRows(includeInactive = false, user = null) {
       purchaseOwner,
       purchaseOrg: demand.purchase_org || '',
       orderNo,
+      documentStatus,
       orderDates,
       oaFlowNo,
       orderCreator,
@@ -1163,6 +1165,10 @@ function demandRows(includeInactive = false, user = null) {
 
 function uniqueOrderNos(rows) {
   return uniqueDelimitedValues(rows.map((row) => row.orderNo || row.order_no));
+}
+
+function uniqueDocumentStatuses(rows) {
+  return uniqueDelimitedValues([...rows].sort(compareOaRows).map((row) => row.documentStatus || row.document_status));
 }
 
 function rawOrderDate(row) {

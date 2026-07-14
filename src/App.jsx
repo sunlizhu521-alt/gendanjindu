@@ -2016,6 +2016,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, selected = fals
     row.purchaseOwner,
     row.month,
     row.orderNo,
+    row.documentStatus,
     row.purchaseOrg,
     supplierName(row),
     row.businessUnit,
@@ -2093,7 +2094,7 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
   async function handleExport() {
     try {
       const XLSX = await import('xlsx');
-      const headers = ['采购组', '采购下单人', '月份', '采购订单号', '采购组织', '供应商', '事业部', '产品线', '系列', '物料编码', 'SKU', '物料', '未交付数量', '在产品', '完工产品', '已发货数量', 'OA备货流程号', '批注'];
+      const headers = ['采购组', '采购下单人', '月份', '采购订单号', '单据状态', '采购组织', '供应商', '事业部', '产品线', '系列', '物料编码', 'SKU', '物料', '未交付数量', '在产品', '完工产品', '已发货数量', 'OA备货流程号', '批注'];
       const aoa = [
         headers,
         ...displayRows.map((row) => {
@@ -2103,6 +2104,7 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
             row.purchaseOwner,
             row.month,
             row.orderNo,
+            row.documentStatus,
             row.purchaseOrg,
             supplierName(row),
             row.businessUnit,
@@ -2172,7 +2174,7 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
             />
             <span>全选</span>
           </label>
-        ), '采购组', '采购下单人', '月份', '采购订单号', '采购组织', '供应商', '事业部', '产品线', '系列', '物料编码', 'SKU', '物料', '未交付数量', '在产品', '完工产品', '已发货数量', 'OA备货流程号', '批注', '操作']}
+        ), '采购组', '采购下单人', '月份', '采购订单号', '单据状态', '采购组织', '供应商', '事业部', '产品线', '系列', '物料编码', 'SKU', '物料', '未交付数量', '在产品', '完工产品', '已发货数量', 'OA备货流程号', '批注', '操作']}
         renderRow={(row) => (
           <ProgressEditor
             key={row.demandKey}

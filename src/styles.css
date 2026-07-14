@@ -1052,6 +1052,10 @@ th {
   scrollbar-width: thin;
 }
 
+.operation-chart-grid .stack-list {
+  height: 428px;
+}
+
 .stack-list::-webkit-scrollbar {
   width: 8px;
 }

@@ -934,7 +934,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
         <MetricCard label="完工产品" value={summary.finished.toLocaleString()} />
       </section>
       {filterKey === 'operationBoard' ? (
-        <section className="progress-chart-grid">
+        <section className="progress-chart-grid operation-chart-grid">
           <ProgressStackedChart title={`供应商${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => supplierName(row)} />
           <ProgressStackedChart title={`事业部${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => row.businessUnit} />
           <ProgressStackedChart title={`系列${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => row.productSeries} />

@@ -51,10 +51,12 @@ const DIMENSION_SLOTS = {
   productCategory: '商品分类',
   purchaseAssignment: '采购分工',
   spare1: '仓库名称',
-  spare2: '国内运营默认数据',
   warehouseMaterialMap: '仓库与物料对照表',
   dimensionSpare: '领星SKU和物料编码对照',
+  lingxingWarehouseMap: '领星&金蝶仓库对照',
   dimensionSpare2: '备用',
+  spare2: '备用2',
+  dimensionSpare3: '备用3',
   wangdianDataMain: '国内数据',
   wangdianSpare1: '京东库存',
   wangdianSpare2: '京东ID与品号匹配',
@@ -62,7 +64,6 @@ const DIMENSION_SLOTS = {
   lingxingFbaInventory: 'FBA库存',
   lingxingFbmInventory: 'FBM库存',
   lingxingWfsInventory: 'WFS库存',
-  lingxingWarehouseMap: '领星&金蝶仓库对照',
   lingxingSpare: '备用'
 };
 const DIFF_NORMAL_ORDER = '正常订单';
@@ -2479,7 +2480,7 @@ app.get('/api/dimension-missing/cross-border', requireAuth, requirePage('dimensi
 
 app.get('/api/domestic-board', requireAuth, requirePage('domesticBoard'), (req, res) => {
   const sourceSlots = [
-    ['spare2', '国内运营默认数据'],
+    ['spare2', '备用2'],
     ['wangdianDataMain', '国内数据'],
     ['wangdianSpare1', '京东库存'],
     ['wangdianSpare2', '京东ID与品号匹配'],

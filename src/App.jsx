@@ -85,13 +85,6 @@ const DIMENSION_SLOTS = [
     ['level1WarehouseCategory', '一级仓库分类'],
     ['level2WarehouseCategory', '二级仓库分类']
   ] },
-  { id: 'spare2', title: '国内运营默认数据', fields: [
-    ['stockupStatus', '是否正常备货'],
-    ['brand', '品牌'],
-    ['productType', '产品类型'],
-    ['merchantCode', '商家编码'],
-    ['systemSku', '系统SKU-必填']
-  ] },
   { id: 'warehouseMaterialMap', title: '仓库与物料对照表', fields: [
     ['warehouseCode', '仓库编码'],
     ['warehouseName', '仓库名称'],
@@ -111,7 +104,15 @@ const DIMENSION_SLOTS = [
     ['kingdeeWarehouseName', '金蝶仓库名称'],
     ['remark', '备注']
   ] },
-  { id: 'dimensionSpare2', title: '备用', fields: [] }
+  { id: 'dimensionSpare2', title: '备用', fields: [] },
+  { id: 'spare2', title: '备用2', fields: [
+    ['stockupStatus', '是否正常备货'],
+    ['brand', '品牌'],
+    ['productType', '产品类型'],
+    ['merchantCode', '商家编码'],
+    ['systemSku', '系统SKU-必填']
+  ] },
+  { id: 'dimensionSpare3', title: '备用3', fields: [] }
 ];
 
 const WANGDIAN_SLOTS = [

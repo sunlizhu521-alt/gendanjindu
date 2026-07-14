@@ -9,6 +9,7 @@ const PAGE_ORDER = [
   'differenceAllocation',
   'operationBoard',
   'domesticBoard',
+  'wangdianData',
   'trace',
   'kingdeeImport',
   'dimensionLibrary',

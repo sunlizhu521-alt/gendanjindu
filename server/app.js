@@ -22,6 +22,7 @@ const ALL_PAGES = [
   'differenceAllocation',
   'operationBoard',
   'domesticBoard',
+  'wangdianData',
   'trace',
   'kingdeeImport',
   'dimensionLibrary',

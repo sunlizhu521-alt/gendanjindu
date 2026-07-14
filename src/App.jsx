@@ -12,6 +12,7 @@ const PAGE_ORDER = [
   'wangdianData',
   'lingxingInventory',
   'crossBorderInventory',
+  'dimensionMissing',
   'trace',
   'kingdeeImport',
   'dimensionLibrary',
@@ -29,6 +30,7 @@ const PAGE_LABELS = {
   wangdianData: '国内数据',
   lingxingInventory: '领星库存',
   crossBorderInventory: '跨境库存看板',
+  dimensionMissing: '维度表缺失',
   dimensionLibrary: '维度表库',
   trace: '变更追溯',
   permissions: '权限管理'
@@ -79,7 +81,9 @@ const DIMENSION_SLOTS = [
   ] },
   { id: 'spare1', title: '仓库名称', fields: [
     ['warehouseCode', '仓库编码'],
-    ['warehouseName', '仓库名称']
+    ['warehouseName', '仓库名称'],
+    ['level1WarehouseCategory', '一级仓库分类'],
+    ['level2WarehouseCategory', '二级仓库分类']
   ] },
   { id: 'spare2', title: '国内运营默认数据', fields: [
     ['stockupStatus', '是否正常备货'],
@@ -93,6 +97,7 @@ const DIMENSION_SLOTS = [
     ['warehouseName', '仓库名称'],
     ['materialCode', '物料编码'],
     ['sku', 'SKU'],
+    ['businessUnit', '事业部'],
     ['remark', '备注']
   ] },
   { id: 'dimensionSpare', title: '领星SKU和物料编码对照', fields: [
@@ -137,16 +142,15 @@ const LINGXING_INVENTORY_SLOTS = [
     ['fnsku', 'FNSKU'],
     ['asin', 'ASIN'],
     ['warehouseName', '仓库名称'],
-    ['availableQty', '可用库存'],
-    ['totalQty', '总库存']
+    ['inventoryAttribute', '库存属性'],
+    ['endingInventoryQty', '期末库存(含移仓)']
   ] },
   { id: 'lingxingFbmInventory', title: 'FBM库存', fields: [
     ['storeName', '店铺'],
     ['marketplace', '站点'],
-    ['sku', 'SKU'],
+    ['identifier', '识别码'],
     ['warehouseName', '仓库名称'],
-    ['availableQty', '可用库存'],
-    ['totalQty', '总库存']
+    ['actualTotalQty', '实际总量']
   ] },
   { id: 'lingxingWfsInventory', title: 'WFS库存', fields: [
     ['storeName', '店铺'],
@@ -154,8 +158,7 @@ const LINGXING_INVENTORY_SLOTS = [
     ['sku', 'SKU'],
     ['itemId', 'Item ID'],
     ['warehouseName', '仓库名称'],
-    ['availableQty', '可用库存'],
-    ['totalQty', '总库存']
+    ['totalInventoryQty', '总库存(数量)']
   ] },
   { id: 'lingxingSpare', title: '备用', fields: [] }
 ];
@@ -410,12 +413,12 @@ function ProgressStackedChart({ title, rows, groupBy }) {
   );
 }
 
-function InventoryRankingChart({ title, rows, groupBy }) {
+function InventoryRankingChart({ title, rows, groupBy, valueKey = 'availableQty', valueLabel = '库存数量' }) {
   const chartRows = useMemo(() => {
     const map = new Map();
     rows.forEach((row) => {
       const name = normalize(groupBy(row)) || '未分类';
-      map.set(name, numberValue(map.get(name)) + numberValue(row.availableQty));
+      map.set(name, numberValue(map.get(name)) + numberValue(row[valueKey]));
     });
     return [...map.entries()]
       .map(([name, value]) => ({ name, value }))
@@ -429,7 +432,7 @@ function InventoryRankingChart({ title, rows, groupBy }) {
     <article className="panel progress-stack-chart">
       <div className="chart-title-row">
         <h3>{title}</h3>
-        <span className="chart-legend"><i className="in-production" />可用库存</span>
+        <span className="chart-legend"><i className="in-production" />{valueLabel}</span>
       </div>
       <div className="stack-list">
         {chartRows.length === 0 ? (
@@ -1127,52 +1130,42 @@ function SourceApplicationsNote({ sources = [] }) {
   return <div className="dashboard-applied-note">文件应用时间：{text}</div>;
 }
 
-function CrossBorderInventoryBoard({ token, setMessage }) {
+const CROSS_BORDER_FILTER_DEFAULTS = {
+  inventoryType: '', storeName: '', marketplace: '', warehouseName: '', kingdeeWarehouse: '',
+  businessUnit: '', level1WarehouseCategory: '', level2WarehouseCategory: '', productLine: '',
+  productSeries: '', materialCode: '', sku: '', stockStatus: '有库存', mappingStatus: '', keyword: ''
+};
+
+function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOpenMissing }) {
   const [rows, setRows] = useState([]);
   const [sourceApplications, setSourceApplications] = useState([]);
+  const [qualitySummary, setQualitySummary] = useState({});
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
-  const [filters, setFilters] = useSessionFilters('crossBorderInventory', {
-    inventoryType: '',
-    storeName: '',
-    marketplace: '',
-    warehouseName: '',
-    kingdeeWarehouse: '',
-    sku: '',
-    keyword: ''
-  });
+  const [filters, setFilters] = useSessionFilters('crossBorderInventory', CROSS_BORDER_FILTER_DEFAULTS);
 
   useEffect(() => {
     request('/api/cross-border-inventory', { token })
       .then((payload) => {
         setRows(payload.rows || []);
         setSourceApplications(payload.sourceApplications || []);
+        setQualitySummary(payload.qualitySummary || {});
       })
       .catch((err) => setMessage(`跨境库存看板加载失败：${err.message}`));
-  }, [token]);
+  }, [token, refreshVersion]);
 
   const matchesFilters = (row, omit = '') => {
-    const keyword = filters.keyword.toLowerCase();
-    const kingdeeWarehouse = normalize(row.kingdeeWarehouseName) || normalize(row.kingdeeWarehouseCode);
-    const text = [
-      row.inventoryType,
-      row.storeName,
-      row.marketplace,
-      row.sku,
-      row.fnsku,
-      row.asin,
-      row.itemId,
-      row.warehouseName,
-      row.kingdeeWarehouseCode,
-      row.kingdeeWarehouseName
-    ].join(' ').toLowerCase();
-    return (!keyword || text.includes(keyword))
-      && (omit === 'inventoryType' || !filters.inventoryType || row.inventoryType === filters.inventoryType)
-      && (omit === 'storeName' || !filters.storeName || row.storeName === filters.storeName)
-      && (omit === 'marketplace' || !filters.marketplace || row.marketplace === filters.marketplace)
-      && (omit === 'warehouseName' || !filters.warehouseName || row.warehouseName === filters.warehouseName)
-      && (omit === 'kingdeeWarehouse' || !filters.kingdeeWarehouse || kingdeeWarehouse === filters.kingdeeWarehouse)
-      && (omit === 'sku' || !filters.sku || row.sku === filters.sku);
+    const keyword = normalize(filters.keyword).toLowerCase();
+    const text = [row.inventoryType, row.storeName, row.marketplace, row.sourceSku, row.identifier, row.sku,
+      row.materialCode, row.materialName, row.fnsku, row.asin, row.itemId, row.warehouseName,
+      row.kingdeeWarehouseCode, row.kingdeeWarehouseName, row.businessUnit, row.productLine,
+      row.productSeries, row.model].join(' ').toLowerCase();
+    const fields = ['inventoryType', 'storeName', 'marketplace', 'warehouseName', 'businessUnit',
+      'level1WarehouseCategory', 'level2WarehouseCategory', 'productLine', 'productSeries',
+      'materialCode', 'sku', 'stockStatus', 'mappingStatus'];
+    if (keyword && !text.includes(keyword)) return false;
+    if (omit !== 'kingdeeWarehouse' && filters.kingdeeWarehouse && row.kingdeeWarehouseName !== filters.kingdeeWarehouse) return false;
+    return fields.every((field) => field === omit || !filters[field] || row[field] === filters[field]);
   };
   const unique = (values) => [...new Set(values.map(normalize).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const options = useMemo(() => {
@@ -1182,66 +1175,59 @@ function CrossBorderInventoryBoard({ token, setMessage }) {
       storeNames: unique(rowsFor('storeName').map((row) => row.storeName)),
       marketplaces: unique(rowsFor('marketplace').map((row) => row.marketplace)),
       warehouseNames: unique(rowsFor('warehouseName').map((row) => row.warehouseName)),
-      kingdeeWarehouses: unique(rowsFor('kingdeeWarehouse').map((row) => row.kingdeeWarehouseName || row.kingdeeWarehouseCode)),
-      skus: unique(rowsFor('sku').map((row) => row.sku))
+      kingdeeWarehouses: unique(rowsFor('kingdeeWarehouse').map((row) => row.kingdeeWarehouseName)),
+      businessUnits: unique(rowsFor('businessUnit').map((row) => row.businessUnit)),
+      level1Categories: unique(rowsFor('level1WarehouseCategory').map((row) => row.level1WarehouseCategory)),
+      level2Categories: unique(rowsFor('level2WarehouseCategory').map((row) => row.level2WarehouseCategory)),
+      productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
+      productSeries: unique(rowsFor('productSeries').map((row) => row.productSeries)),
+      materialCodes: unique(rowsFor('materialCode').map((row) => row.materialCode)),
+      skus: unique(rowsFor('sku').map((row) => row.sku)),
+      stockStatuses: unique(rowsFor('stockStatus').map((row) => row.stockStatus)),
+      mappingStatuses: unique(rowsFor('mappingStatus').map((row) => row.mappingStatus))
     };
   }, [rows, filters]);
   useEffect(() => {
     const next = clearInvalidFilterValues(filters, {
-      inventoryType: options.inventoryTypes,
-      storeName: options.storeNames,
-      marketplace: options.marketplaces,
-      warehouseName: options.warehouseNames,
-      kingdeeWarehouse: options.kingdeeWarehouses,
-      sku: options.skus
+      inventoryType: options.inventoryTypes, storeName: options.storeNames, marketplace: options.marketplaces,
+      warehouseName: options.warehouseNames, kingdeeWarehouse: options.kingdeeWarehouses,
+      businessUnit: options.businessUnits, level1WarehouseCategory: options.level1Categories,
+      level2WarehouseCategory: options.level2Categories, productLine: options.productLines,
+      productSeries: options.productSeries, materialCode: options.materialCodes, sku: options.skus,
+      stockStatus: options.stockStatuses, mappingStatus: options.mappingStatuses
     });
     if (next) setFilters(next);
   }, [options, filters, setFilters]);
 
   const filteredRows = useMemo(() => rows.filter((row) => matchesFilters(row)), [rows, filters]);
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
-  const pageRows = useMemo(
-    () => filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize),
-    [filteredRows, currentPage]
-  );
-  const summary = useMemo(() => ({
-    totalQty: filteredRows.reduce((sum, row) => sum + numberValue(row.totalQty), 0),
-    availableQty: filteredRows.reduce((sum, row) => sum + numberValue(row.availableQty), 0),
-    skuCount: new Set(filteredRows.map((row) => normalize(row.sku)).filter(Boolean)).size,
-    warehouseCount: new Set(filteredRows.map((row) => normalize(row.kingdeeWarehouseName || row.warehouseName)).filter(Boolean)).size
-  }), [filteredRows]);
-
+  const pageRows = filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const summary = useMemo(() => {
+    const completeRows = filteredRows.filter((row) => row.mappingStatus === '完整');
+    return {
+      inventoryQty: filteredRows.reduce((sum, row) => sum + numberValue(row.inventoryQty), 0),
+      materialCount: new Set(filteredRows.map((row) => normalize(row.materialCode)).filter((value) => value && value !== '未映射')).size,
+      completeInventoryQty: completeRows.reduce((sum, row) => sum + numberValue(row.inventoryQty), 0),
+      issueInventoryQty: filteredRows.filter((row) => row.mappingStatus !== '完整').reduce((sum, row) => sum + numberValue(row.inventoryQty), 0)
+    };
+  }, [filteredRows]);
   useEffect(() => { setCurrentPage(1); }, [filters]);
-  useEffect(() => {
-    if (currentPage > totalPages) setCurrentPage(totalPages);
-  }, [currentPage, totalPages]);
-
-  const clearFilters = () => setFilters({ inventoryType: '', storeName: '', marketplace: '', warehouseName: '', kingdeeWarehouse: '', sku: '', keyword: '' });
+  useEffect(() => { if (currentPage > totalPages) setCurrentPage(totalPages); }, [currentPage, totalPages]);
 
   async function exportTable() {
     try {
       const XLSX = await import('xlsx');
-      const headers = ['库存类型', '店铺', '站点', 'SKU', 'FNSKU', 'ASIN', 'Item ID', '领星仓库', '金蝶仓库编码', '金蝶仓库名称', '可用库存', '总库存'];
-      const aoa = [headers, ...filteredRows.map((row) => [
-        row.inventoryType,
-        row.storeName,
-        row.marketplace,
-        row.sku,
-        row.fnsku,
-        row.asin,
-        row.itemId,
-        row.warehouseName,
-        row.kingdeeWarehouseCode,
-        row.kingdeeWarehouseName,
-        numberValue(row.availableQty),
-        numberValue(row.totalQty)
-      ])];
+      const headers = ['库存类型', '店铺', '站点', '领星SKU/识别码', '物料编码', 'SKU', '物流编码', '物料名称', '领星仓库', '金蝶仓库', '事业部', '一级仓库分类', '二级仓库分类', '销售产品线', '销售系列', '型号', '库存数量', '库存状态', '映射状态', '源文件状态', '应用时间'];
+      const aoa = [headers, ...filteredRows.map((row) => [row.inventoryType, row.storeName, row.marketplace, row.sourceSku || row.identifier,
+        row.materialCode, row.sku, row.logisticsCode, row.materialName, row.warehouseName, row.kingdeeWarehouseName,
+        row.businessUnit, row.level1WarehouseCategory, row.level2WarehouseCategory, row.productLine, row.productSeries,
+        row.model, row.inventoryQty, row.stockStatus, row.mappingStatus, row.sourceStatus, row.sourceAppliedAt])];
       const workbook = XLSX.utils.book_new();
       const worksheet = XLSX.utils.aoa_to_sheet(aoa);
       worksheet['!cols'] = headers.map((header) => ({ wch: Math.max(12, header.length + 4) }));
       XLSX.utils.book_append_sheet(workbook, worksheet, '跨境库存看板');
       XLSX.writeFile(workbook, `跨境库存看板_${todayText()}.xlsx`);
-      setMessage(`已导出 ${filteredRows.length} 行跨境库存数据。`);
+      setMessage(`已导出当前筛选的 ${filteredRows.length} 行跨境库存数据。`);
     } catch (err) {
       setMessage(`导出失败：${err.message}`);
     }
@@ -1260,31 +1246,155 @@ function CrossBorderInventoryBoard({ token, setMessage }) {
         <SelectField label="站点" value={filters.marketplace} options={options.marketplaces} onChange={(value) => setFilters({ ...filters, marketplace: value })} />
         <SelectField label="领星仓库" value={filters.warehouseName} options={options.warehouseNames} onChange={(value) => setFilters({ ...filters, warehouseName: value })} />
         <SelectField label="金蝶仓库" value={filters.kingdeeWarehouse} options={options.kingdeeWarehouses} onChange={(value) => setFilters({ ...filters, kingdeeWarehouse: value })} />
+        <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
+        <SelectField label="一级仓库分类" value={filters.level1WarehouseCategory} options={options.level1Categories} onChange={(value) => setFilters({ ...filters, level1WarehouseCategory: value })} />
+        <SelectField label="二级仓库分类" value={filters.level2WarehouseCategory} options={options.level2Categories} onChange={(value) => setFilters({ ...filters, level2WarehouseCategory: value })} />
+        <SelectField label="销售产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
+        <SelectField label="销售系列" value={filters.productSeries} options={options.productSeries} onChange={(value) => setFilters({ ...filters, productSeries: value })} />
+        <SelectField label="物料编码" value={filters.materialCode} options={options.materialCodes} onChange={(value) => setFilters({ ...filters, materialCode: value })} />
         <SelectField label="SKU" value={filters.sku} options={options.skus} onChange={(value) => setFilters({ ...filters, sku: value })} />
-        <input className="search-input" placeholder="搜索店铺、站点、SKU、FNSKU、ASIN、Item ID、仓库" value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} />
-        <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
+        <SelectField label="库存状态" value={filters.stockStatus} options={options.stockStatuses} onChange={(value) => setFilters({ ...filters, stockStatus: value })} />
+        <SelectField label="映射状态" value={filters.mappingStatus} options={options.mappingStatuses} onChange={(value) => setFilters({ ...filters, mappingStatus: value })} />
+        <input className="search-input" placeholder="搜索店铺、SKU、物料、仓库、产品维度" value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} />
+        <button type="button" className="ghost compact-button" onClick={() => setFilters(CROSS_BORDER_FILTER_DEFAULTS)}>清空筛选</button>
         <button type="button" className="compact-button" onClick={exportTable}>导出表格</button>
+        <button type="button" className="ghost compact-button" onClick={onOpenMissing}>查看维度问题</button>
       </div>
       <section className="metric-grid">
-        <MetricCard label="总库存" value={summary.totalQty.toLocaleString()} />
-        <MetricCard label="可用库存" value={summary.availableQty.toLocaleString()} />
-        <MetricCard label="SKU数量" value={summary.skuCount.toLocaleString()} />
-        <MetricCard label="仓库数量" value={summary.warehouseCount.toLocaleString()} />
+        <MetricCard label="库存数量合计" value={summary.inventoryQty.toLocaleString()} />
+        <MetricCard label="物料数" value={summary.materialCount.toLocaleString()} />
+        <MetricCard label="映射完整库存" value={summary.completeInventoryQty.toLocaleString()} />
+        <MetricCard label="未映射/冲突库存" value={summary.issueInventoryQty.toLocaleString()} />
       </section>
+      {(qualitySummary.missingTaskCount > 0 || qualitySummary.conflictCount > 0 || qualitySummary.sourceAnomalyCount > 0 || qualitySummary.filteredFbaRows > 0) && (
+        <div className="quality-banner">数据质量：维度缺失 {qualitySummary.missingTaskCount || 0} 项，映射冲突 {qualitySummary.conflictCount || 0} 项，源文件异常 {qualitySummary.sourceAnomalyCount || 0} 项；FBA规则过滤 {qualitySummary.filteredFbaRows || 0} 行。</div>
+      )}
       <section className="progress-chart-grid operation-chart-grid">
-        <InventoryRankingChart title="库存类型可用库存" rows={filteredRows} groupBy={(row) => row.inventoryType} />
-        <InventoryRankingChart title="店铺可用库存" rows={filteredRows} groupBy={(row) => row.storeName} />
-        <InventoryRankingChart title="站点可用库存" rows={filteredRows} groupBy={(row) => row.marketplace} />
-        <InventoryRankingChart title="SKU可用库存" rows={filteredRows} groupBy={(row) => row.sku} />
+        <InventoryRankingChart title="事业部库存" rows={filteredRows} groupBy={(row) => row.businessUnit} valueKey="inventoryQty" />
+        <InventoryRankingChart title="一级仓库分类库存" rows={filteredRows} groupBy={(row) => row.level1WarehouseCategory} valueKey="inventoryQty" />
+        <InventoryRankingChart title="销售产品线库存" rows={filteredRows} groupBy={(row) => row.productLine} valueKey="inventoryQty" />
+        <InventoryRankingChart title="销售系列库存" rows={filteredRows} groupBy={(row) => row.productSeries} valueKey="inventoryQty" />
       </section>
       <section className="panel">
         <DataTable
           className="compact-table cross-border-table"
           rows={pageRows}
-          columns={['库存类型', '店铺', '站点', 'SKU', 'FNSKU', 'ASIN', 'Item ID', '领星仓库', '金蝶仓库编码', '金蝶仓库名称', '可用库存', '总库存']}
-          render={(row) => [row.inventoryType, row.storeName, row.marketplace, row.sku, row.fnsku, row.asin, row.itemId, row.warehouseName, row.kingdeeWarehouseCode, row.kingdeeWarehouseName, row.availableQty, row.totalQty]}
+          columns={['库存类型', '店铺', '站点', '领星SKU/识别码', '物料编码', 'SKU', '物流编码', '物料名称', '领星仓库', '金蝶仓库', '事业部', '一级仓库分类', '二级仓库分类', '销售产品线', '销售系列', '型号', '库存数量', '库存状态', '映射状态', '源文件状态']}
+          render={(row) => [row.inventoryType, row.storeName, row.marketplace, row.sourceSku || row.identifier, row.materialCode,
+            row.sku, row.logisticsCode, row.materialName, row.warehouseName, row.kingdeeWarehouseName, row.businessUnit,
+            row.level1WarehouseCategory, row.level2WarehouseCategory, row.productLine, row.productSeries, row.model,
+            row.inventoryQty, row.stockStatus, row.mappingStatus, row.sourceStatus]}
         />
         <TablePagination label="跨境库存看板分页" currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} pageSize={pageSize} />
+      </section>
+    </>
+  );
+}
+
+function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onMaintain }) {
+  const [payload, setPayload] = useState({ missingTasks: [], conflicts: [], sourceAnomalies: [], qualitySummary: {} });
+  const [filters, setFilters] = useSessionFilters('dimensionMissing', { targetTitle: '', inventoryType: '', keyword: '' });
+
+  useEffect(() => {
+    request('/api/dimension-missing/cross-border', { token })
+      .then((data) => setPayload(data || {}))
+      .catch((err) => setMessage(`维度表缺失加载失败：${err.message}`));
+  }, [token, refreshVersion]);
+
+  const allTasks = [...(payload.missingTasks || []), ...(payload.conflicts || [])];
+  const targetOptions = [...new Set(allTasks.map((row) => row.targetTitle).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+  const inventoryTypeOptions = [...new Set([
+    ...allTasks.flatMap((row) => normalize(row.inventoryTypes).split('、')),
+    ...(payload.sourceAnomalies || []).map((row) => row.inventoryType)
+  ].filter(Boolean))].sort();
+  const matchTask = (row) => {
+    const keyword = normalize(filters.keyword).toLowerCase();
+    const text = [row.targetTitle, row.issueCode, row.missingKey, row.inventoryTypes, row.stores, row.marketplaces].join(' ').toLowerCase();
+    return (!filters.targetTitle || row.targetTitle === filters.targetTitle)
+      && (!filters.inventoryType || normalize(row.inventoryTypes).split('、').includes(filters.inventoryType))
+      && (!keyword || text.includes(keyword));
+  };
+  const missingTasks = (payload.missingTasks || []).filter(matchTask);
+  const conflicts = (payload.conflicts || []).filter(matchTask);
+  const sourceAnomalies = (payload.sourceAnomalies || []).filter((row) => {
+    const keyword = normalize(filters.keyword).toLowerCase();
+    const text = [row.sourceTitle, row.issueType, row.detail, row.sourceKey, row.storeName, row.marketplace, row.warehouseName].join(' ').toLowerCase();
+    return !filters.targetTitle && (!filters.inventoryType || row.inventoryType === filters.inventoryType) && (!keyword || text.includes(keyword));
+  });
+  const canMaintainPage = (page) => user?.role === '管理员' || user?.pageAccess?.includes(page);
+
+  async function exportMissing() {
+    try {
+      const XLSX = await import('xlsx');
+      const workbook = XLSX.utils.book_new();
+      const grouped = new Map();
+      missingTasks.forEach((row) => {
+        if (!grouped.has(row.targetTitle)) grouped.set(row.targetTitle, []);
+        grouped.get(row.targetTitle).push(row);
+      });
+      grouped.forEach((rows, title) => {
+        const data = rows.map((row) => ({ 目标维表: row.targetTitle, 缺失类型: row.issueCode, 缺失键: row.missingKey,
+          待填字段: row.requiredFields?.join('、'), 影响明细数: row.affectedRows, 影响库存: row.inventoryQty,
+          来源平台: row.inventoryTypes, 店铺: row.stores, 站点: row.marketplaces, 更新时间: row.updatedAt }));
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(data), title.slice(0, 28));
+      });
+      if (conflicts.length) XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(conflicts.map((row) => ({
+        目标维表: row.targetTitle, 冲突类型: row.issueCode, 冲突键: row.missingKey, 候选值: JSON.stringify(row.candidates),
+        影响明细数: row.affectedRows, 影响库存: row.inventoryQty, 来源平台: row.inventoryTypes
+      }))), '映射冲突');
+      if (sourceAnomalies.length) XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(sourceAnomalies.map((row) => ({
+        来源文件: row.sourceTitle, 库存类型: row.inventoryType, 异常类型: row.issueType, 说明: row.detail,
+        来源键: row.sourceKey, 店铺: row.storeName, 站点: row.marketplace, 仓库: row.warehouseName, 库存数量: row.inventoryQty, 更新时间: row.updatedAt
+      }))), '源文件异常');
+      if (!workbook.SheetNames.length) XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([['当前筛选无待维护数据']]), '摘要');
+      XLSX.writeFile(workbook, `维度表缺失_${todayText()}.xlsx`);
+      setMessage('维度表缺失明细已按目标维表导出。');
+    } catch (err) {
+      setMessage(`导出失败：${err.message}`);
+    }
+  }
+
+  const maintainButton = (row, page = row.maintainPage, slotId = row.targetSlotId) => (
+    <button type="button" className="compact-button" disabled={!canMaintainPage(page)} title={canMaintainPage(page) ? `去维护${row.targetTitle || row.sourceTitle}` : '当前账号没有对应文件库权限'} onClick={() => onMaintain(page, slotId)}>
+      去维护
+    </button>
+  );
+  const quality = payload.qualitySummary || {};
+  return (
+    <>
+      <div className="section-heading-row dashboard-heading">
+        <h2>维度表缺失</h2>
+        <span className="section-count">缺失 {payload.missingTasks?.length || 0} 项，冲突 {payload.conflicts?.length || 0} 项，源异常 {payload.sourceAnomalies?.length || 0} 项</span>
+      </div>
+      <SourceApplicationsNote sources={payload.sourceApplications || []} />
+      <div className="toolbar filters-row">
+        <SelectField label="目标维表" value={filters.targetTitle} options={targetOptions} onChange={(value) => setFilters({ ...filters, targetTitle: value })} />
+        <SelectField label="库存类型" value={filters.inventoryType} options={inventoryTypeOptions} onChange={(value) => setFilters({ ...filters, inventoryType: value })} />
+        <input className="search-input" placeholder="搜索缺失键、问题、店铺、站点" value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} />
+        <button type="button" className="ghost compact-button" onClick={() => setFilters({ targetTitle: '', inventoryType: '', keyword: '' })}>清空筛选</button>
+        <button type="button" className="compact-button" onClick={exportMissing}>导出待维护 Excel</button>
+      </div>
+      <section className="metric-grid">
+        <MetricCard label="库存总量" value={numberValue(quality.inventoryQty).toLocaleString()} />
+        <MetricCard label="映射完整库存" value={numberValue(quality.completeInventoryQty).toLocaleString()} />
+        <MetricCard label="未映射/冲突库存" value={numberValue(quality.issueInventoryQty).toLocaleString()} />
+        <MetricCard label="FBA规则过滤行" value={numberValue(quality.filteredFbaRows).toLocaleString()} />
+      </section>
+      <section className="panel diagnostic-section">
+        <div className="section-heading-row"><h3>维度缺失</h3><span className="section-count">{missingTasks.length} 项</span></div>
+        <DataTable className="compact-table diagnostic-table" rows={missingTasks} columns={['需要维护的维表', '缺失类型', '缺失键', '待填字段', '影响明细', '影响库存', '来源平台', '店铺', '站点', '更新时间', '操作']}
+          render={(row) => [row.targetTitle, row.issueCode, row.missingKey, row.requiredFields?.join('、'), row.affectedRows, row.inventoryQty, row.inventoryTypes, row.stores, row.marketplaces, row.updatedAt, maintainButton(row)]} />
+      </section>
+      <section className="panel diagnostic-section">
+        <div className="section-heading-row"><h3>映射冲突</h3><span className="section-count">{conflicts.length} 项</span></div>
+        <DataTable className="compact-table diagnostic-table" rows={conflicts} columns={['需要维护的维表', '冲突类型', '冲突键', '候选结果', '影响明细', '影响库存', '来源平台', '操作']}
+          render={(row) => [row.targetTitle, row.issueCode, row.missingKey, <span className="diagnostic-candidates" title={JSON.stringify(row.candidates)}>{JSON.stringify(row.candidates)}</span>, row.affectedRows, row.inventoryQty, row.inventoryTypes, maintainButton(row)]} />
+      </section>
+      <section className="panel diagnostic-section">
+        <div className="section-heading-row"><h3>源文件异常</h3><span className="section-count">{sourceAnomalies.length} 项</span></div>
+        <DataTable className="compact-table diagnostic-table" rows={sourceAnomalies} columns={['来源文件', '库存类型', '异常类型', '说明', '来源键', '店铺', '站点', '仓库', '库存数量', '更新时间', '操作']}
+          render={(row) => [row.sourceTitle, row.inventoryType, row.issueType, row.detail, row.sourceKey, row.storeName, row.marketplace, row.warehouseName, row.inventoryQty, row.updatedAt,
+            maintainButton({ ...row, targetTitle: row.sourceTitle }, 'lingxingInventory', row.slotId)]} />
       </section>
     </>
   );
@@ -2947,7 +3057,7 @@ function InventoryPage({ token, reloadDemands, setMessage }) {
   );
 }
 
-function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表库', slots = DIMENSION_SLOTS, gridColumns = 2 }) {
+function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表库', slots = DIMENSION_SLOTS, gridColumns = 2, onDataApplied = () => {}, highlightSlotId = '' }) {
   const [records, setRecords] = useState([]);
   const [local, setLocal] = useState({});
 
@@ -2961,6 +3071,10 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
   }
 
   useEffect(() => { load().catch(() => {}); }, []);
+  useEffect(() => {
+    if (!highlightSlotId) return;
+    window.setTimeout(() => document.getElementById(`dimension-slot-${highlightSlotId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);
+  }, [highlightSlotId]);
 
   async function inspect(slot, file) {
     setSlotState(slot.id, {
@@ -3071,6 +3185,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
       setMessage(`${slot.title} 已上传 ${payload.rowCount} 行，并已自动应用刷新。`);
       await load();
       await reloadDemands();
+      onDataApplied(slot.id);
       setSlotState(slot.id, {
         progress: 100,
         statusText: `已应用刷新：${payload.rowCount} 行`,
@@ -3100,6 +3215,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
       setMessage(`${slot.title} 已应用。`);
       await load();
       await reloadDemands();
+      onDataApplied(slot.id);
       setSlotState(slot.id, {
         progress: 100,
         statusText: '应用刷新完成',
@@ -3127,6 +3243,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
     try {
       await request(`/api/dimensions/${slot.id}`, { token, method: 'DELETE' });
       await load();
+      onDataApplied(slot.id);
       setSlotState(slot.id, {
         file: null,
         columns: [],
@@ -3173,7 +3290,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
           const sheetNames = state.sheetNames?.length ? state.sheetNames : (record?.sheetNames || []);
           const currentSheet = state.sheetName || record?.sheetName || '';
           return (
-            <article key={slot.id} className="library-slot">
+            <article id={`dimension-slot-${slot.id}`} key={slot.id} className={`library-slot ${highlightSlotId === slot.id ? 'highlighted' : ''}`}>
               <div className="slot-head">
                 <div><span className="slot-kicker">槽位 {index + 1}</span><h3>{slot.title}</h3></div>
                 <span className={`slot-state ${record?.applied ? 'applied' : record ? 'pending' : ''}`}>{record?.applied ? '已应用' : record ? '待应用' : '缺失'}</span>
@@ -3429,6 +3546,8 @@ function App() {
   const [demandsLoaded, setDemandsLoaded] = useState(false);
   const [demandsLoading, setDemandsLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [crossBorderVersion, setCrossBorderVersion] = useState(0);
+  const [highlightSlotId, setHighlightSlotId] = useState('');
 
   async function reloadDemands(currentToken = token) {
     setDemandsLoading(true);
@@ -3506,6 +3625,15 @@ function App() {
   const visiblePages = visiblePagesForUser(user);
   const canView = (page) => visiblePages.includes(page);
   const shouldMount = (page) => canView(page) && visitedPages.has(page);
+  const refreshCrossBorderData = () => setCrossBorderVersion((version) => version + 1);
+  const maintainDimensionSlot = (page, slotId) => {
+    if (!canView(page)) {
+      setMessage('当前账号没有对应文件库权限，请联系管理员授权。');
+      return;
+    }
+    setHighlightSlotId(slotId || '');
+    setActiveTab(page);
+  };
 
   return (
     <main className="app-shell" onClick={() => setMessage('')}>
@@ -3535,9 +3663,10 @@ function App() {
         {shouldMount('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} reloadDemands={reloadDemands} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('differenceAllocation') && <PagePane page="differenceAllocation" activeTab={activeTab}><DifferenceAllocationPage token={token} user={user} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('wangdianData') && <PagePane page="wangdianData" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="国内数据" slots={WANGDIAN_SLOTS} gridColumns={3} /></PagePane>}
-        {shouldMount('lingxingInventory') && <PagePane page="lingxingInventory" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="领星库存" slots={LINGXING_INVENTORY_SLOTS} /></PagePane>}
-        {shouldMount('crossBorderInventory') && <PagePane page="crossBorderInventory" activeTab={activeTab}><CrossBorderInventoryBoard token={token} setMessage={setMessage} /></PagePane>}
-        {shouldMount('dimensionLibrary') && <PagePane page="dimensionLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} gridColumns={3} /></PagePane>}
+        {shouldMount('lingxingInventory') && <PagePane page="lingxingInventory" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="领星库存" slots={LINGXING_INVENTORY_SLOTS} onDataApplied={refreshCrossBorderData} highlightSlotId={highlightSlotId} /></PagePane>}
+        {shouldMount('crossBorderInventory') && <PagePane page="crossBorderInventory" activeTab={activeTab}><CrossBorderInventoryBoard token={token} setMessage={setMessage} refreshVersion={crossBorderVersion} onOpenMissing={() => canView('dimensionMissing') ? setActiveTab('dimensionMissing') : setMessage('当前账号没有维度表缺失页面权限。')} /></PagePane>}
+        {shouldMount('dimensionMissing') && <PagePane page="dimensionMissing" activeTab={activeTab}><DimensionMissingPage token={token} user={user} setMessage={setMessage} refreshVersion={crossBorderVersion} onMaintain={maintainDimensionSlot} /></PagePane>}
+        {shouldMount('dimensionLibrary') && <PagePane page="dimensionLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} gridColumns={3} onDataApplied={refreshCrossBorderData} highlightSlotId={highlightSlotId} /></PagePane>}
         {shouldMount('trace') && <PagePane page="trace" activeTab={activeTab}><TracePage token={token} setMessage={setMessage} /></PagePane>}
         {shouldMount('permissions') && <PagePane page="permissions" activeTab={activeTab}><PermissionsPage token={token} pages={pages} setMessage={setMessage} /></PagePane>}
         <PersistentHorizontalScrollbar activeTab={activeTab} />

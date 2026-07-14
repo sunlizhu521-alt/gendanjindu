@@ -25,6 +25,7 @@ const ALL_PAGES = [
   'wangdianData',
   'lingxingInventory',
   'crossBorderInventory',
+  'dimensionMissing',
   'trace',
   'kingdeeImport',
   'dimensionLibrary',
@@ -41,6 +42,7 @@ const PAGE_LABELS = {
   wangdianData: '国内数据',
   lingxingInventory: '领星库存',
   crossBorderInventory: '跨境库存看板',
+  dimensionMissing: '维度表缺失',
   dimensionLibrary: '维度表库',
   trace: '变更追溯',
   permissions: '权限管理'
@@ -958,54 +960,366 @@ function domesticBoardRows() {
   }).filter((row) => row.merchantCode);
 }
 
-function crossBorderInventoryRows() {
-  const warehouseMap = new Map();
-  getDimensionRows('lingxingWarehouseMap').forEach((row) => {
-    const lingxingWarehouseName = rowAliasValue(row, ['lingxingWarehouseName', '领星仓库名称', '领星仓库', '仓库名称', '仓库']);
-    if (!lingxingWarehouseName) return;
-    warehouseMap.set(normalizeMatchPart(lingxingWarehouseName), {
-      kingdeeWarehouseCode: rowAliasValue(row, ['kingdeeWarehouseCode', '金蝶仓库编码', '仓库编码', '仓库代码']),
-      kingdeeWarehouseName: rowAliasValue(row, ['kingdeeWarehouseName', '金蝶仓库名称', '金蝶仓库'])
-    });
-  });
+const CROSS_BORDER_TARGETS = {
+  dimensionSpare: { title: '领星SKU和物料编码对照', page: 'dimensionLibrary', fields: ['领星SKU', '物料编码'] },
+  lingxingWarehouseMap: { title: '领星&金蝶仓库对照', page: 'dimensionLibrary', fields: ['领星仓库名称', '金蝶仓库名称'] },
+  productCategory: { title: '商品分类', page: 'dimensionLibrary', fields: ['物料编码', 'SKU', '物料名称', '销售产品线', '销售系列', '型号'] },
+  warehouseMaterialMap: { title: '仓库与物料对照表', page: 'dimensionLibrary', fields: ['金蝶仓库名称', '物料编码', '事业部'] },
+  spare1: { title: '仓库名称', page: 'dimensionLibrary', fields: ['金蝶仓库名称', '一级仓库分类', '二级仓库分类'] }
+};
 
-  const sources = [
-    ['lingxingFbaInventory', 'FBA'],
-    ['lingxingFbmInventory', 'FBM'],
-    ['lingxingWfsInventory', 'WFS']
+function strictNumberValue(value) {
+  const text = normalize(value).replace(/,/g, '');
+  if (!text) return { valid: false, value: 0 };
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? { valid: true, value: parsed } : { valid: false, value: 0 };
+}
+
+function exactDimensionLookup(rows, keyOf, valueOf) {
+  const buckets = new Map();
+  rows.forEach((row) => {
+    const key = normalizeMatchPart(keyOf(row));
+    if (!key) return;
+    const value = valueOf(row);
+    const signature = JSON.stringify(value);
+    if (!buckets.has(key)) buckets.set(key, new Map());
+    buckets.get(key).set(signature, value);
+  });
+  return {
+    resolve(rawKey) {
+      const key = normalizeMatchPart(rawKey);
+      const bucket = key ? buckets.get(key) : null;
+      if (!bucket?.size) return { status: 'missing', key };
+      const values = [...bucket.values()];
+      if (values.length > 1) return { status: 'conflict', key, values };
+      return { status: 'ok', key, value: values[0] };
+    }
+  };
+}
+
+function crossBorderSourceApplications() {
+  return [
+    ['lingxingFbaInventory', 'FBA库存'],
+    ['lingxingFbmInventory', 'FBM库存'],
+    ['lingxingWfsInventory', 'WFS库存'],
+    ['dimensionSpare', '领星SKU和物料编码对照'],
+    ['lingxingWarehouseMap', '领星&金蝶仓库对照'],
+    ['warehouseMaterialMap', '仓库与物料对照表'],
+    ['spare1', '仓库名称'],
+    ['productCategory', '商品分类']
+  ].map(([slotId, label]) => {
+    const record = get('SELECT file_name, updated_at, applied FROM dimension_files WHERE slot_id = ?', [slotId]);
+    return {
+      slotId,
+      label,
+      fileName: record?.file_name || '未上传',
+      appliedAt: record?.applied ? (record.updated_at || '暂无') : '未应用'
+    };
+  });
+}
+
+function buildCrossBorderInventoryModel() {
+  const sourceApplications = crossBorderSourceApplications();
+  const applicationMap = new Map(sourceApplications.map((item) => [item.slotId, item]));
+  const missingMap = new Map();
+  const conflictMap = new Map();
+  const sourceAnomalies = [];
+  let filteredFbaRows = 0;
+
+  const skuLookup = exactDimensionLookup(
+    getDimensionRows('dimensionSpare'),
+    (row) => rowAliasValue(row, ['lingxingSku', '领星SKU', 'SKU', 'MSKU', 'Seller SKU']),
+    (row) => ({ materialCode: rowAliasValue(row, ['materialCode', '物料编码', '品号']) })
+  );
+  const warehouseLookup = exactDimensionLookup(
+    getDimensionRows('lingxingWarehouseMap'),
+    (row) => rowAliasValue(row, ['lingxingWarehouseName', '领星仓库名称', '领星仓库']),
+    (row) => ({
+      kingdeeWarehouseCode: rowAliasValue(row, ['kingdeeWarehouseCode', '金蝶仓库编码']),
+      kingdeeWarehouseName: rowAliasValue(row, ['kingdeeWarehouseName', '金蝶仓库名称'])
+    })
+  );
+  const productLookup = exactDimensionLookup(
+    getDimensionRows('productCategory'),
+    (row) => rowAliasValue(row, ['materialCode', '物料编码', '品号']),
+    (row) => ({
+      sku: rowAliasValue(row, ['sku', 'SKU']),
+      logisticsCode: rowAliasValue(row, ['logisticsCode', '物流编码']),
+      materialName: rowAliasValue(row, ['materialName', '物料名称', '产品名称']),
+      productLine: rowAliasValue(row, ['productLine', '销售产品线', '产品线']),
+      productSeries: rowAliasValue(row, ['productSeries', '销售系列', '系列']),
+      model: rowAliasValue(row, ['model', '型号'])
+    })
+  );
+  const warehouseMaterialLookup = exactDimensionLookup(
+    getDimensionRows('warehouseMaterialMap'),
+    (row) => [
+      rowAliasValue(row, ['warehouseName', 'kingdeeWarehouseName', '金蝶仓库名称', '仓库名称']),
+      rowAliasValue(row, ['materialCode', '物料编码', '品号'])
+    ].map(normalizeMatchPart).join('|'),
+    (row) => ({ businessUnit: rowAliasValue(row, ['businessUnit', '事业部']) })
+  );
+  const warehouseCategoryLookup = exactDimensionLookup(
+    getDimensionRows('spare1'),
+    (row) => rowAliasValue(row, ['warehouseName', 'kingdeeWarehouseName', '金蝶仓库名称', '仓库名称']),
+    (row) => ({
+      warehouseCode: rowAliasValue(row, ['warehouseCode', 'kingdeeWarehouseCode', '金蝶仓库编码', '仓库编码']),
+      level1WarehouseCategory: rowAliasValue(row, ['level1WarehouseCategory', '一级仓库分类']),
+      level2WarehouseCategory: rowAliasValue(row, ['level2WarehouseCategory', '二级仓库分类'])
+    })
+  );
+
+  function appendAggregate(targetMap, targetSlotId, issueCode, missingKey, row, candidates = []) {
+    if (row.inventoryQty === 0) return;
+    const target = CROSS_BORDER_TARGETS[targetSlotId];
+    const key = `${targetSlotId}|${issueCode}|${missingKey}`;
+    if (!targetMap.has(key)) {
+      targetMap.set(key, {
+        id: key,
+        targetSlotId,
+        targetTitle: target.title,
+        maintainPage: target.page,
+        requiredFields: target.fields,
+        issueCode,
+        missingKey,
+        affectedRows: 0,
+        inventoryQty: 0,
+        inventoryTypes: new Set(),
+        stores: new Set(),
+        marketplaces: new Set(),
+        candidates,
+        updatedAt: applicationMap.get(targetSlotId)?.appliedAt || '暂无'
+      });
+    }
+    const task = targetMap.get(key);
+    task.affectedRows += 1;
+    task.inventoryQty += row.inventoryQty;
+    if (row.inventoryType) task.inventoryTypes.add(row.inventoryType);
+    if (row.storeName) task.stores.add(row.storeName);
+    if (row.marketplace) task.marketplaces.add(row.marketplace);
+  }
+
+  function addMappingIssue(row, status, targetSlotId, issueCode, missingKey, candidates = []) {
+    row.problemCodes.push(issueCode);
+    if (status === 'conflict') {
+      row.hasConflict = true;
+      appendAggregate(conflictMap, targetSlotId, issueCode, missingKey, row, candidates);
+    } else {
+      row.hasMissing = true;
+      appendAggregate(missingMap, targetSlotId, issueCode, missingKey, row);
+    }
+  }
+
+  const sourceDefinitions = [
+    { slotId: 'lingxingFbaInventory', inventoryType: 'FBA' },
+    { slotId: 'lingxingFbmInventory', inventoryType: 'FBM' },
+    { slotId: 'lingxingWfsInventory', inventoryType: 'WFS' }
   ];
-  const rows = [];
-  sources.forEach(([slotId, inventoryType]) => {
-    getDimensionRows(slotId).forEach((row, index) => {
-      const warehouseName = rowAliasValue(row, ['warehouseName', '仓库名称', '仓库名', '仓库']);
-      const warehouse = warehouseMap.get(normalizeMatchPart(warehouseName)) || {};
-      const availableQty = numberValue(rowAliasValue(row, ['availableQty', '可用库存', '可售库存', '可用数量', '可售数量', '可售']));
-      const totalValue = rowAliasValue(row, ['totalQty', '总库存', '库存数量', '库存总量', '库存']);
-      const sku = rowAliasValue(row, ['sku', 'SKU', 'MSKU', 'Seller SKU', '卖家SKU', '商品SKU']);
-      const storeName = rowAliasValue(row, ['storeName', '店铺', '店铺名称', '账号', '账号名称']);
-      const marketplace = rowAliasValue(row, ['marketplace', '站点', '国家', '国家/地区', '销售平台']);
-      const fnsku = rowAliasValue(row, ['fnsku', 'FNSKU']);
-      const asin = rowAliasValue(row, ['asin', 'ASIN']);
-      const itemId = rowAliasValue(row, ['itemId', 'Item ID', 'ItemID', '商品ID', '产品ID']);
-      if (![sku, storeName, marketplace, warehouseName, fnsku, asin, itemId].some(Boolean) && availableQty === 0 && numberValue(totalValue) === 0) return;
-      rows.push({
-        id: [slotId, storeName, marketplace, sku, fnsku, asin, itemId, warehouseName, index].map(normalize).join('|'),
+  const sourceRows = [];
+  sourceDefinitions.forEach(({ slotId, inventoryType }) => {
+    const rows = getDimensionRows(slotId);
+    const application = applicationMap.get(slotId);
+    if (!rows.length) {
+      sourceAnomalies.push({
+        id: `${slotId}|missing-file`, slotId, sourceTitle: application?.label || inventoryType,
+        inventoryType, issueType: '源文件缺失', detail: '未上传已应用的库存文件', sourceKey: '',
+        storeName: '', marketplace: '', warehouseName: '', inventoryQty: '', updatedAt: application?.appliedAt || '暂无'
+      });
+      return;
+    }
+    rows.forEach((rawRow, index) => {
+      const storeName = rowAliasValue(rawRow, ['storeName', '店铺', '店铺名称', '账号', '账号名称']);
+      const marketplace = rowAliasValue(rawRow, ['marketplace', '站点', '国家', '国家/地区', '销售平台']);
+      const warehouseName = rowAliasValue(rawRow, ['warehouseName', '领星仓库名称', '仓库名称', '仓库名', '仓库']);
+      const sourceSku = rowAliasValue(rawRow, ['sku', 'SKU', 'MSKU', 'Seller SKU', '卖家SKU', '商品SKU']);
+      const identifier = rowAliasValue(rawRow, ['identifier', '识别码']);
+      const fnsku = rowAliasValue(rawRow, ['fnsku', 'FNSKU']);
+      const asin = rowAliasValue(rawRow, ['asin', 'ASIN']);
+      const itemId = rowAliasValue(rawRow, ['itemId', 'Item ID', 'ItemID', '商品ID', '产品ID']);
+      let quantityRaw = '';
+      let sourceProductKey = sourceSku;
+      if (inventoryType === 'FBA') {
+        const inventoryAttribute = rowAliasValue(rawRow, ['inventoryAttribute', '库存属性']);
+        if (!inventoryAttribute) {
+          sourceAnomalies.push({ id: `${slotId}|${index}|attribute`, slotId, sourceTitle: application?.label, inventoryType, issueType: '必填字段缺失', detail: '缺少“库存属性”字段或字段映射', sourceKey: sourceSku, storeName, marketplace, warehouseName, inventoryQty: '', updatedAt: application?.appliedAt || '暂无' });
+          return;
+        }
+        if (normalizeMatchPart(inventoryAttribute) !== '全部') {
+          filteredFbaRows += 1;
+          return;
+        }
+        quantityRaw = rowAliasValue(rawRow, ['endingInventoryQty', '期末库存(含移仓)', '期末库存（含移仓）']);
+      } else if (inventoryType === 'FBM') {
+        sourceProductKey = identifier;
+        quantityRaw = rowAliasValue(rawRow, ['actualTotalQty', '实际总量']);
+      } else {
+        quantityRaw = rowAliasValue(rawRow, ['totalInventoryQty', '总库存(数量)', '总库存（数量）']);
+      }
+      const quantity = strictNumberValue(quantityRaw);
+      const missingFields = [];
+      if (!sourceProductKey) missingFields.push(inventoryType === 'FBM' ? '识别码' : 'SKU');
+      if (!warehouseName) missingFields.push('仓库名称');
+      if (!quantity.valid) missingFields.push(inventoryType === 'FBA' ? '期末库存(含移仓)' : inventoryType === 'FBM' ? '实际总量' : '总库存(数量)');
+      if (missingFields.length) {
+        sourceAnomalies.push({
+          id: `${slotId}|${index}|required`, slotId, sourceTitle: application?.label, inventoryType,
+          issueType: quantity.valid ? '必填字段缺失' : '数量无法解析', detail: `缺少或无法解析：${missingFields.join('、')}`,
+          sourceKey: sourceProductKey, storeName, marketplace, warehouseName, inventoryQty: quantity.valid ? quantity.value : '', updatedAt: application?.appliedAt || '暂无'
+        });
+        return;
+      }
+      sourceRows.push({
+        id: `${slotId}|${index}`,
+        slotId,
+        sourceRow: index + 2,
         inventoryType,
         storeName,
         marketplace,
-        sku,
+        sourceSku,
+        identifier,
         fnsku,
         asin,
         itemId,
         warehouseName,
-        kingdeeWarehouseCode: normalize(warehouse.kingdeeWarehouseCode),
-        kingdeeWarehouseName: normalize(warehouse.kingdeeWarehouseName),
-        availableQty,
-        totalQty: totalValue ? numberValue(totalValue) : availableQty
+        inventoryQty: quantity.value,
+        sourceAppliedAt: application?.appliedAt || '暂无',
+        problemCodes: [],
+        sourceProblemCodes: [],
+        hasMissing: false,
+        hasConflict: false
       });
     });
   });
-  return rows;
+
+  const duplicateMap = new Map();
+  sourceRows.forEach((row) => {
+    const productKey = row.inventoryType === 'FBM' ? row.identifier : row.sourceSku;
+    const key = [row.inventoryType, row.storeName, row.marketplace, productKey, row.fnsku, row.asin, row.itemId, row.warehouseName].map(normalizeMatchPart).join('|');
+    if (!duplicateMap.has(key)) duplicateMap.set(key, []);
+    duplicateMap.get(key).push(row);
+  });
+  duplicateMap.forEach((duplicates, sourceKey) => {
+    if (duplicates.length < 2) return;
+    duplicates.forEach((row) => row.sourceProblemCodes.push('重复来源业务键'));
+    const first = duplicates[0];
+    sourceAnomalies.push({
+      id: `${first.slotId}|duplicate|${sourceKey}`, slotId: first.slotId,
+      sourceTitle: applicationMap.get(first.slotId)?.label, inventoryType: first.inventoryType,
+      issueType: '重复来源业务键', detail: `同一来源业务键出现 ${duplicates.length} 行，明细保留且未自动合并`,
+      sourceKey, storeName: first.storeName, marketplace: first.marketplace, warehouseName: first.warehouseName,
+      inventoryQty: duplicates.reduce((sum, row) => sum + row.inventoryQty, 0), updatedAt: first.sourceAppliedAt
+    });
+  });
+
+  const rows = sourceRows.map((row) => {
+    if (row.inventoryQty < 0) {
+      row.sourceProblemCodes.push('负库存');
+      sourceAnomalies.push({
+        id: `${row.id}|negative`, slotId: row.slotId, sourceTitle: applicationMap.get(row.slotId)?.label,
+        inventoryType: row.inventoryType, issueType: '负库存', detail: '库存数量小于0，已计入总量并标记异常',
+        sourceKey: row.inventoryType === 'FBM' ? row.identifier : row.sourceSku,
+        storeName: row.storeName, marketplace: row.marketplace, warehouseName: row.warehouseName,
+        inventoryQty: row.inventoryQty, updatedAt: row.sourceAppliedAt
+      });
+    }
+
+    let materialCode = row.inventoryType === 'FBM' ? row.identifier : '';
+    if (row.inventoryType !== 'FBM') {
+      const skuResult = skuLookup.resolve(row.sourceSku);
+      if (skuResult.status === 'ok' && normalize(skuResult.value.materialCode)) {
+        materialCode = normalize(skuResult.value.materialCode);
+      } else {
+        addMappingIssue(row, skuResult.status === 'conflict' ? 'conflict' : 'missing', 'dimensionSpare', '领星SKU未映射物料编码', row.sourceSku, skuResult.values || []);
+      }
+    }
+
+    let warehouse = {};
+    const warehouseResult = warehouseLookup.resolve(row.warehouseName);
+    if (warehouseResult.status === 'ok' && normalize(warehouseResult.value.kingdeeWarehouseName)) {
+      warehouse = warehouseResult.value;
+    } else {
+      addMappingIssue(row, warehouseResult.status === 'conflict' ? 'conflict' : 'missing', 'lingxingWarehouseMap', '领星仓库未映射金蝶仓库', row.warehouseName, warehouseResult.values || []);
+    }
+
+    let product = {};
+    if (materialCode) {
+      const productResult = productLookup.resolve(materialCode);
+      if (productResult.status === 'ok') product = productResult.value;
+      else addMappingIssue(row, productResult.status, 'productCategory', '物料编码缺少商品分类', materialCode, productResult.values || []);
+    }
+
+    let warehouseMaterial = {};
+    const kingdeeWarehouseName = normalize(warehouse.kingdeeWarehouseName);
+    if (kingdeeWarehouseName && materialCode) {
+      const combinedKey = [kingdeeWarehouseName, materialCode].map(normalizeMatchPart).join('|');
+      const result = warehouseMaterialLookup.resolve(combinedKey);
+      if (result.status === 'ok' && normalize(result.value.businessUnit)) warehouseMaterial = result.value;
+      else addMappingIssue(row, result.status === 'conflict' ? 'conflict' : 'missing', 'warehouseMaterialMap', '仓库与物料缺少事业部', `${kingdeeWarehouseName}+${materialCode}`, result.values || []);
+    }
+
+    let warehouseCategory = {};
+    if (kingdeeWarehouseName) {
+      const result = warehouseCategoryLookup.resolve(kingdeeWarehouseName);
+      if (result.status === 'ok' && normalize(result.value.level1WarehouseCategory) && normalize(result.value.level2WarehouseCategory)) {
+        warehouseCategory = result.value;
+      } else {
+        addMappingIssue(row, result.status === 'conflict' ? 'conflict' : 'missing', 'spare1', '金蝶仓库缺少仓库分类', kingdeeWarehouseName, result.values || []);
+        if (result.status === 'ok') warehouseCategory = result.value;
+      }
+    }
+
+    return {
+      ...row,
+      materialCode: materialCode || '未映射',
+      sku: normalize(product.sku) || '未映射',
+      logisticsCode: normalize(product.logisticsCode) || '未映射',
+      materialName: normalize(product.materialName) || '未映射',
+      productLine: normalize(product.productLine) || '未映射',
+      productSeries: normalize(product.productSeries) || '未映射',
+      model: normalize(product.model) || '未映射',
+      kingdeeWarehouseCode: normalize(warehouse.kingdeeWarehouseCode) || '未映射',
+      kingdeeWarehouseName: kingdeeWarehouseName || '未映射',
+      businessUnit: normalize(warehouseMaterial.businessUnit) || '未映射',
+      level1WarehouseCategory: normalize(warehouseCategory.level1WarehouseCategory) || '未映射',
+      level2WarehouseCategory: normalize(warehouseCategory.level2WarehouseCategory) || '未映射',
+      stockStatus: row.inventoryQty > 0 ? '有库存' : row.inventoryQty < 0 ? '负库存' : '零库存',
+      mappingStatus: row.hasConflict ? '映射冲突' : row.hasMissing ? '维度缺失' : '完整',
+      sourceStatus: row.sourceProblemCodes.length ? '源文件异常' : '正常',
+      availableQty: row.inventoryQty,
+      totalQty: row.inventoryQty
+    };
+  });
+
+  const finalizeAggregates = (map) => [...map.values()].map((task) => ({
+    ...task,
+    inventoryTypes: [...task.inventoryTypes].sort().join('、'),
+    stores: [...task.stores].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')).join('、'),
+    marketplaces: [...task.marketplaces].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')).join('、')
+  })).sort((a, b) => Math.abs(b.inventoryQty) - Math.abs(a.inventoryQty));
+  const missingTasks = finalizeAggregates(missingMap);
+  const conflicts = finalizeAggregates(conflictMap);
+  const inventoryQty = rows.reduce((sum, row) => sum + row.inventoryQty, 0);
+  const completeRows = rows.filter((row) => row.mappingStatus === '完整');
+  const completeInventoryQty = completeRows.reduce((sum, row) => sum + row.inventoryQty, 0);
+  return {
+    rows,
+    missingTasks,
+    conflicts,
+    sourceAnomalies,
+    sourceApplications,
+    qualitySummary: {
+      rowCount: rows.length,
+      inventoryQty,
+      completeRows: completeRows.length,
+      completeInventoryQty,
+      issueRows: rows.length - completeRows.length,
+      issueInventoryQty: inventoryQty - completeInventoryQty,
+      missingTaskCount: missingTasks.length,
+      conflictCount: conflicts.length,
+      sourceAnomalyCount: sourceAnomalies.length,
+      filteredFbaRows
+    }
+  };
 }
 
 function enrichDemandFields(supplier, materialCode, orderCreator = '', lookups = dimensionLookups()) {
@@ -2121,17 +2435,19 @@ app.get('/api/bootstrap', requireAuth, (req, res) => {
 });
 
 app.get('/api/cross-border-inventory', requireAuth, requirePage('crossBorderInventory'), (req, res) => {
-  const sourceSlots = [
-    ['lingxingFbaInventory', 'FBA库存'],
-    ['lingxingFbmInventory', 'FBM库存'],
-    ['lingxingWfsInventory', 'WFS库存'],
-    ['lingxingWarehouseMap', '领星&金蝶仓库对照']
-  ];
-  const sourceApplications = sourceSlots.map(([slotId, label]) => {
-    const record = get('SELECT file_name, updated_at FROM dimension_files WHERE slot_id = ? AND applied = 1', [slotId]);
-    return { slotId, label, fileName: record?.file_name || '未上传', appliedAt: record?.updated_at || '暂无' };
+  const model = buildCrossBorderInventoryModel();
+  res.json({ rows: model.rows, sourceApplications: model.sourceApplications, qualitySummary: model.qualitySummary });
+});
+
+app.get('/api/dimension-missing/cross-border', requireAuth, requirePage('dimensionMissing'), (req, res) => {
+  const model = buildCrossBorderInventoryModel();
+  res.json({
+    missingTasks: model.missingTasks,
+    conflicts: model.conflicts,
+    sourceAnomalies: model.sourceAnomalies,
+    sourceApplications: model.sourceApplications,
+    qualitySummary: model.qualitySummary
   });
-  res.json({ rows: crossBorderInventoryRows(), sourceApplications });
 });
 
 app.get('/api/domestic-board', requireAuth, requirePage('domesticBoard'), (req, res) => {
@@ -2653,7 +2969,9 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
       return {
         raw: row,
         warehouseCode: pick(row, mapping.warehouseCode),
-        warehouseName: pick(row, mapping.warehouseName)
+        warehouseName: pick(row, mapping.warehouseName),
+        level1WarehouseCategory: pick(row, mapping.level1WarehouseCategory) || pickAny(row, ['一级仓库分类']),
+        level2WarehouseCategory: pick(row, mapping.level2WarehouseCategory) || pickAny(row, ['二级仓库分类'])
       };
     }
     if (slotId === 'warehouseMaterialMap') {
@@ -2663,6 +2981,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         warehouseName: pick(row, mapping.warehouseName) || pickAny(row, ['仓库名称', '仓库名', '仓库']),
         materialCode: pick(row, mapping.materialCode) || pickAny(row, ['物料编码', '品号', '商品编码', '存货编码']),
         sku: pick(row, mapping.sku) || pickAny(row, ['SKU', '系统SKU', '商品SKU']),
+        businessUnit: pick(row, mapping.businessUnit) || pickAny(row, ['事业部']),
         remark: pick(row, mapping.remark) || pickAny(row, ['备注', '说明'])
       };
     }
@@ -2728,6 +3047,11 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         asin: pick(row, mapping.asin) || pickAny(row, ['ASIN']),
         itemId: pick(row, mapping.itemId) || pickAny(row, ['Item ID', 'ItemID', '商品ID', '产品ID']),
         warehouseName: pick(row, mapping.warehouseName) || pickAny(row, ['仓库名称', '仓库名', '仓库']),
+        inventoryAttribute: pick(row, mapping.inventoryAttribute) || pickAny(row, ['库存属性']),
+        endingInventoryQty: pick(row, mapping.endingInventoryQty) || pickAny(row, ['期末库存(含移仓)', '期末库存（含移仓）']),
+        identifier: pick(row, mapping.identifier) || pickAny(row, ['识别码']),
+        actualTotalQty: pick(row, mapping.actualTotalQty) || pickAny(row, ['实际总量']),
+        totalInventoryQty: pick(row, mapping.totalInventoryQty) || pickAny(row, ['总库存(数量)', '总库存（数量）']),
         availableQty: pick(row, mapping.availableQty) || pickAny(row, ['可用库存', '可售库存', '可用数量', '可售数量', '可售']),
         totalQty: pick(row, mapping.totalQty) || pickAny(row, ['总库存', '库存数量', '库存总量', '库存'])
       };

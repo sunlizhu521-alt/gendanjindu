@@ -142,6 +142,28 @@ function signedNumber(value) {
   return n.toLocaleString();
 }
 
+function differenceEntryExplanation(row) {
+  const oldQty = numberValue(row.oldQty);
+  const newQty = numberValue(row.newQty);
+  const oldInboundQty = numberValue(row.oldInboundQty);
+  const deltaQty = newQty - oldQty;
+
+  if (oldQty > 0 && newQty === 0 && oldQty !== oldInboundQty) {
+    const outstandingQty = oldQty - oldInboundQty;
+    if (outstandingQty > 0) {
+      return `该采购订单和物料在新文件中已不存在；原采购数量 ${oldQty.toLocaleString()}，累计入库 ${oldInboundQty.toLocaleString()}，仍有 ${outstandingQty.toLocaleString()} 未入库，不能按正常业务关闭处理，需要确认取消、减少或其他原因。`;
+    }
+    return `该采购订单和物料在新文件中已不存在；原采购数量 ${oldQty.toLocaleString()}，累计入库 ${oldInboundQty.toLocaleString()}，两者不一致，不能按正常业务关闭处理，需要确认原因和处理方式。`;
+  }
+
+  if (oldQty > 0 && newQty > 0 && deltaQty !== 0) {
+    const direction = deltaQty > 0 ? '增加' : '减少';
+    return `同一采购订单和物料在新旧文件中都存在，采购数量由 ${oldQty.toLocaleString()} 调整为 ${newQty.toLocaleString()}，${direction} ${Math.abs(deltaQty).toLocaleString()}，需要确认${direction}原因和处理方式。`;
+  }
+
+  return '采购数量存在需要人工确认的变化，请核对原、新采购数据并填写原因和处理方式。';
+}
+
 function supplierName(row) {
   return normalize(row.supplierShortName) || normalize(row.supplier);
 }
@@ -2456,6 +2478,11 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
           <h3>待分配差异</h3>
           <span className="section-count">{compare.fileName ? `来源：${compare.fileName}，原采购订单应用时间：${compare.oldAppliedAt || '暂无'}，新采购订单应用时间：${compare.newAppliedAt || '暂无'}` : '请先在采购订单页上传新采购订单'}</span>
         </div>
+        <div className="diff-entry-rule" role="note">
+          <strong>为什么会进入待分配：</strong>
+          <span>仅有两类记录进入：同一采购订单号 + 物料编码在新旧文件中都存在，但采购数量发生变化；或者原订单在新文件中消失，但原采购数量尚未全部入库。</span>
+          <span>新增订单、已全部入库后正常关闭、仅累计入库数量变化，由系统自动记录，不进入待分配。</span>
+        </div>
         <div className="card-actions">
           <button type="button" className="compact-button" disabled={!selectedPendingCount || !compare.sessionId} onClick={submitSelectedNormal}>批量提交</button>
           <span className="section-count">已勾选 {selectedPendingCount} 条</span>
@@ -2473,7 +2500,7 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
               />
               <span>选择</span>
             </label>,
-            '采购下单人', '供应商', '物流编码', '物料名称', '事业部', '采购组织', '采购订单创建人', '原采购订单号', '原采购订单创建时间', '新采购订单号', '新采购订单创建时间', '原采购数量', '新采购数量', '采购差异', '原累计入库', '新累计入库', '入库差异', '原因', '操作', '备注', '提交人', '提交时间', '提交'
+            '采购下单人', '供应商', '物流编码', '物料名称', '事业部', '采购组织', '采购订单创建人', '原采购订单号', '原采购订单创建时间', '新采购订单号', '新采购订单创建时间', '原采购数量', '新采购数量', '采购差异', '原累计入库', '新累计入库', '入库差异', '进入差异说明', '原因', '操作', '备注', '提交人', '提交时间', '提交'
           ]}
           renderRow={(row) => {
             const input = rowInputs[row.id] || {};
@@ -2508,6 +2535,7 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
                 <td>{row.oldInboundQty}</td>
                 <td>{row.inboundQty}</td>
                 <td>{signedNumber(row.inboundDeltaQty)}</td>
+                <td className="diff-entry-explanation">{differenceEntryExplanation(row)}</td>
                 <td>
                   {allocated ? allocation?.reason : (
                     <select value={input.reason || ''} onChange={(event) => setRowValue(row.id, 'reason', event.target.value)}>

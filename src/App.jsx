@@ -509,12 +509,14 @@ function PagePane({ page, activeTab, children }) {
 }
 
 function SelectField({ label, value, options, onChange }) {
+  const availableOptions = (options || []).filter(Boolean);
+  if (availableOptions.length === 0) return null;
   return (
     <label className="filter-control">
       <span>{label}</span>
       <select value={value} onChange={(event) => onChange(event.target.value)}>
         <option value="">全部</option>
-        {options.map((option) => <option key={option} value={option}>{option}</option>)}
+        {availableOptions.map((option) => <option key={option} value={option}>{option}</option>)}
       </select>
     </label>
   );
@@ -523,10 +525,11 @@ function SelectField({ label, value, options, onChange }) {
 function MonthCalendarFilter({ label, value = [], options = [], onChange, multiple = true }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
+  const availableOptions = useMemo(() => [...new Set(options.filter(Boolean))], [options]);
   const selected = multiple ? (Array.isArray(value) ? value : []) : (value ? [value] : []);
-  const yearSource = selected[0] || options[0] || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+  const yearSource = selected[0] || availableOptions[0] || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
   const [calendarYear, setCalendarYear] = useState(Number(yearSource.slice(0, 4)) || new Date().getFullYear());
-  const optionSet = useMemo(() => new Set(options), [options]);
+  const optionSet = useMemo(() => new Set(availableOptions), [availableOptions]);
   const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
 
   useEffect(() => {
@@ -560,6 +563,11 @@ function MonthCalendarFilter({ label, value = [], options = [], onChange, multip
       ? selected.map((month) => `${Number(month.slice(0, 4))}年${Number(month.slice(5, 7))}月`).join('、')
       : `已选${selected.length}项`;
   const monthKeys = monthNames.map((_, index) => `${calendarYear}-${String(index + 1).padStart(2, '0')}`);
+  const visibleMonths = monthKeys
+    .map((month, index) => ({ month, label: monthNames[index] }))
+    .filter(({ month }) => optionSet.has(month));
+
+  if (availableOptions.length === 0) return null;
 
   return (
     <div className="filter-control month-calendar-filter" ref={rootRef}>
@@ -573,18 +581,17 @@ function MonthCalendarFilter({ label, value = [], options = [], onChange, multip
             <button type="button" onClick={() => setCalendarYear(calendarYear + 1)}>›</button>
           </div>
           <div className="month-calendar-grid">
-            {monthKeys.map((month, index) => {
+            {visibleMonths.map(({ month, label: monthLabel }) => {
               const isSelected = selected.includes(month);
-              const hasData = optionSet.has(month);
               return (
                 <button
                   type="button"
                   key={month}
-                  className={`month-calendar-cell ${isSelected ? 'selected' : ''} ${hasData ? 'has-data' : ''}`}
+                  className={`month-calendar-cell ${isSelected ? 'selected' : ''} has-data`}
                   onClick={() => toggleMonth(month)}
                 >
-                  <strong>{monthNames[index]}</strong>
-                  <span>{hasData ? '有数据' : '无数据'}</span>
+                  <strong>{monthLabel}</strong>
+                  <span>有数据</span>
                 </button>
               );
             })}

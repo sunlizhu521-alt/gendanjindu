@@ -261,7 +261,8 @@ function safeFilename(file) {
 const HEADER_HINTS = [
   '物料编码', '物流编码', 'SKU', '物料名称', '产品名称', '供应商', '供应商简称',
   '产品明细供应商', '产品线明细供应商', '采购下单人', '创建人', '采购组', '采购组织', '产品线', '系列',
-  '事业部', '采购日期', '创建日期', '采购数量', '下单数量', '入库数量', '采购订单号', 'OA备货流程号'
+  '事业部', '采购日期', '创建日期', '采购数量', '下单数量', '入库数量', '采购订单号', 'OA备货流程号',
+  '仓库编码', '仓库代码', '仓库名称', '一级仓库分类', '二级仓库分类', '一级分类', '二级分类'
 ];
 
 function compactHeader(value) {
@@ -359,6 +360,32 @@ function pickAny(row, columns = []) {
     if (value) return value;
   }
   return '';
+}
+
+function normalizedDimensionHeader(value) {
+  return normalize(value)
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[(（]?(必填|选填|required)[)）]?/gi, '')
+    .replace(/[\s_\-—:：/\\]+/g, '');
+}
+
+function pickDimensionAlias(row, aliases = []) {
+  const direct = pickAny(row, aliases);
+  if (direct) return direct;
+  const normalizedAliases = aliases.map(normalizedDimensionHeader).filter(Boolean);
+  const ranked = Object.entries(row || {}).map(([column, value]) => {
+    const candidate = normalizedDimensionHeader(column);
+    const score = normalizedAliases.reduce((best, alias) => {
+      if (candidate === alias) return Math.max(best, 1000 + alias.length);
+      if (alias.length >= 2 && (candidate.startsWith(alias) || candidate.endsWith(alias))) return Math.max(best, 500 + alias.length);
+      if (alias.length >= 2 && candidate.includes(alias)) return Math.max(best, 200 + alias.length);
+      return best;
+    }, 0);
+    return { value: normalize(value), score };
+  }).filter((item) => item.value && item.score > 0).sort((left, right) => right.score - left.score);
+  if (!ranked.length || (ranked[1] && ranked[0].score === ranked[1].score)) return '';
+  return ranked[0].value;
 }
 
 function pickMapped(row, mapping, key, aliases = []) {
@@ -2968,10 +2995,10 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     if (slotId === 'spare1') {
       return {
         raw: row,
-        warehouseCode: pick(row, mapping.warehouseCode),
-        warehouseName: pick(row, mapping.warehouseName),
-        level1WarehouseCategory: pick(row, mapping.level1WarehouseCategory) || pickAny(row, ['一级仓库分类']),
-        level2WarehouseCategory: pick(row, mapping.level2WarehouseCategory) || pickAny(row, ['二级仓库分类'])
+        warehouseCode: pick(row, mapping.warehouseCode) || pickDimensionAlias(row, ['仓库编码', '仓库代码', '仓库编号', '金蝶仓库编码', '仓库ID']),
+        warehouseName: pick(row, mapping.warehouseName) || pickDimensionAlias(row, ['仓库名称', '仓库名', '金蝶仓库名称']),
+        level1WarehouseCategory: pick(row, mapping.level1WarehouseCategory) || pickDimensionAlias(row, ['一级仓库分类', '仓库一级分类', '一级分类', '仓库大类', '一级仓库类型']),
+        level2WarehouseCategory: pick(row, mapping.level2WarehouseCategory) || pickDimensionAlias(row, ['二级仓库分类', '仓库二级分类', '二级分类', '仓库小类', '二级仓库类型'])
       };
     }
     if (slotId === 'warehouseMaterialMap') {

@@ -746,11 +746,44 @@ function FieldMapping({ fields, columns, mapping, onChange }) {
   );
 }
 
+const FIELD_MAPPING_ALIASES = {
+  warehouseCode: ['仓库编码', '仓库代码', '仓库编号', '金蝶仓库编码', '仓库ID'],
+  warehouseName: ['仓库名称', '仓库名', '金蝶仓库名称'],
+  level1WarehouseCategory: ['一级仓库分类', '仓库一级分类', '一级分类', '仓库大类', '一级仓库类型'],
+  level2WarehouseCategory: ['二级仓库分类', '仓库二级分类', '二级分类', '仓库小类', '二级仓库类型']
+};
+
+function normalizedMappingName(value) {
+  return normalize(value)
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[(（]?(必填|选填|required)[)）]?/gi, '')
+    .replace(/[\s_\-—:：/\\]+/g, '');
+}
+
+function inferredMappingColumn(key, label, columns) {
+  const aliases = [label, key, ...(FIELD_MAPPING_ALIASES[key] || [])]
+    .map(normalizedMappingName)
+    .filter(Boolean);
+  const ranked = columns.map((column) => {
+    const candidate = normalizedMappingName(column);
+    const score = aliases.reduce((best, alias) => {
+      if (candidate === alias) return Math.max(best, 1000 + alias.length);
+      if (alias.length >= 2 && (candidate.startsWith(alias) || candidate.endsWith(alias))) return Math.max(best, 500 + alias.length);
+      if (alias.length >= 2 && candidate.includes(alias)) return Math.max(best, 200 + alias.length);
+      return best;
+    }, 0);
+    return { column, score };
+  }).filter((item) => item.score > 0).sort((left, right) => right.score - left.score);
+  if (!ranked.length || (ranked[1] && ranked[0].score === ranked[1].score)) return '';
+  return ranked[0].column;
+}
+
 function validMappingForColumns(mapping = {}, columns = [], fields = []) {
   const validColumns = new Set(columns);
-  return fields.reduce((next, [key]) => {
+  return fields.reduce((next, [key, label]) => {
     const value = mapping[key] || '';
-    next[key] = value && validColumns.has(value) ? value : '';
+    next[key] = value && validColumns.has(value) ? value : inferredMappingColumn(key, label, columns);
     return next;
   }, {});
 }

@@ -185,8 +185,6 @@ function actionsForDelta(deltaQty) {
 }
 
 const DIFF_NORMAL_ORDER = '正常订单';
-const DIFF_CHANGE_ORDER = '订单变更';
-const DIFF_ORDER_TYPES = [DIFF_NORMAL_ORDER, '订单已完结', DIFF_CHANGE_ORDER];
 const DIFF_ORDER_COMPLETE_REASON = '订单已完结';
 const DIFF_ORDER_COMPLETE_ACTION = '订单已完结';
 
@@ -2201,6 +2199,9 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
   const [loading, setLoading] = useState(false);
   const [pendingPage, setPendingPage] = useState(1);
   const [recordPage, setRecordPage] = useState(1);
+  const [unassignedOrders, setUnassignedOrders] = useState({ rows: [], total: 0, page: 1, totalPages: 1 });
+  const [unassignedLoading, setUnassignedLoading] = useState(false);
+  const [unassignedPage, setUnassignedPage] = useState(1);
   const pageSize = 20;
 
   async function loadLatest() {
@@ -2215,26 +2216,26 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
 
   useEffect(() => { loadLatest().catch(() => {}); }, [token]);
 
+  useEffect(() => {
+    setUnassignedLoading(true);
+    request(`/api/difference-allocations/unassigned-purchase-orders?page=${unassignedPage}&pageSize=${pageSize}`, { token })
+      .then((payload) => {
+        setUnassignedOrders(payload);
+        if (payload.page && payload.page !== unassignedPage) setUnassignedPage(payload.page);
+      })
+      .catch((error) => setMessage(`未分配采购下单人明细加载失败：${error.message}`))
+      .finally(() => setUnassignedLoading(false));
+  }, [token, unassignedPage]);
+
   function setRowValue(rowId, key, value) {
     const current = rowInputs[rowId] || {};
     const next = { ...current, [key]: value };
-    if (key === 'orderType') {
-      if (value === DIFF_CHANGE_ORDER) {
-        next.reason = '';
-        next.actionType = '';
-      } else {
-        next.reason = value;
-        next.actionType = value;
-      }
-    } else if (key === 'reason') {
+    if (key === 'reason') {
       if (value === DIFF_NORMAL_ORDER) {
-        next.orderType = DIFF_NORMAL_ORDER;
         next.actionType = DIFF_NORMAL_ORDER;
       } else if (value === DIFF_ORDER_COMPLETE_REASON) {
-        next.orderType = DIFF_ORDER_COMPLETE_REASON;
         next.actionType = DIFF_ORDER_COMPLETE_ACTION;
       } else if (current.actionType === DIFF_ORDER_COMPLETE_ACTION || current.actionType === DIFF_NORMAL_ORDER) {
-        next.orderType = '';
         next.actionType = '';
       }
     }
@@ -2243,12 +2244,8 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
 
   async function submitRow(row) {
     const input = rowInputs[row.id] || {};
-    if (!input.orderType) {
-      setMessage('请选择订单类型。');
-      return;
-    }
-    if (input.orderType === DIFF_CHANGE_ORDER && (!input.reason || !input.actionType)) {
-      setMessage('订单变更需要手动选择原因和操作。');
+    if (!input.reason || !input.actionType) {
+      setMessage('请选择原因和操作。');
       return;
     }
     try {
@@ -2256,9 +2253,9 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
         token,
         method: 'POST',
         body: JSON.stringify({
-          actionType: input.actionType || input.orderType || '',
+          actionType: input.actionType,
           allocatedQty: row.diffQty,
-          reason: input.reason || input.orderType || '',
+          reason: input.reason,
           remark: input.remark || ''
         })
       });
@@ -2438,15 +2435,14 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
               />
               <span>选择</span>
             </label>,
-            '采购下单人', '供应商', '事业部', '采购组织', '采购订单创建人', '原采购订单号', '原采购订单创建时间', '新采购订单号', '新采购订单创建时间', '原采购数量', '新采购数量', '差异', '订单类型', '原因', '操作', '备注', '提交人', '提交时间', '提交'
+            '采购下单人', '供应商', '事业部', '采购组织', '采购订单创建人', '原采购订单号', '原采购订单创建时间', '新采购订单号', '新采购订单创建时间', '原采购数量', '新采购数量', '差异', '原因', '操作', '备注', '提交人', '提交时间', '提交'
           ]}
           renderRow={(row) => {
             const input = rowInputs[row.id] || {};
             const allocated = allocatedRowIds.has(row.id);
             const allocation = allocations.find((item) => item.rowId === row.id);
-            const selectedOrderType = input.orderType || (input.reason === DIFF_NORMAL_ORDER || input.reason === DIFF_ORDER_COMPLETE_REASON ? input.reason : '');
-            const changeReasonOptions = (compare.reasons || []).filter((reason) => reason !== DIFF_NORMAL_ORDER && reason !== DIFF_ORDER_COMPLETE_REASON);
-            const changeActionOptions = row.availableActions || actionsForDelta(row.deltaQty);
+            const reasonOptions = compare.reasons || [];
+            const actionOptions = actionsForDiffReason(row.deltaQty, input.reason);
             return (
               <tr key={row.id}>
                 <td>
@@ -2471,40 +2467,18 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
                 <td>{signedNumber(row.deltaQty)}</td>
                 <td>
                   {allocated ? allocation?.reason : (
-                    <div className="order-type-options">
-                      {DIFF_ORDER_TYPES.map((type) => (
-                        <label key={type}>
-                          <input
-                            type="radio"
-                            name={`orderType-${row.id}`}
-                            value={type}
-                            checked={selectedOrderType === type}
-                            onChange={(event) => setRowValue(row.id, 'orderType', event.target.value)}
-                          />
-                          <span>{type}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </td>
-                <td>
-                  {allocated ? allocation?.reason : selectedOrderType === DIFF_CHANGE_ORDER ? (
                     <select value={input.reason || ''} onChange={(event) => setRowValue(row.id, 'reason', event.target.value)}>
                       <option value="">选择原因</option>
-                      {changeReasonOptions.map((reason) => <option key={reason} value={reason}>{reason}</option>)}
+                      {reasonOptions.map((reason) => <option key={reason} value={reason}>{reason}</option>)}
                     </select>
-                  ) : (
-                    <span>{input.reason || '-'}</span>
                   )}
                 </td>
                 <td>
-                  {allocated ? allocation?.actionType : selectedOrderType === DIFF_CHANGE_ORDER ? (
+                  {allocated ? allocation?.actionType : (
                     <select value={input.actionType || ''} onChange={(event) => setRowValue(row.id, 'actionType', event.target.value)}>
                       <option value="">选择操作</option>
-                      {changeActionOptions.map((action) => <option key={action} value={action}>{action}</option>)}
+                      {actionOptions.map((action) => <option key={action} value={action}>{action}</option>)}
                     </select>
-                  ) : (
-                    <span>{input.actionType || '-'}</span>
                   )}
                 </td>
                 <td>
@@ -2555,6 +2529,26 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
           <button type="button" className="ghost compact-button" disabled={recordPage === recordTotalPages} onClick={() => setRecordPage((page) => Math.min(recordTotalPages, page + 1))}>下一页</button>
           <span className="section-count">第 {recordPage} / {recordTotalPages} 页，每页 20 条</span>
         </nav>
+      </section>
+
+      <section className="panel" style={{ marginTop: 16 }}>
+        <div className="section-heading-row">
+          <h3>未分配采购下单人明细</h3>
+          <span className="section-count">{unassignedLoading ? '加载中...' : `共 ${unassignedOrders.total || 0} 条`}</span>
+        </div>
+        <DataTable
+          className="compact-table"
+          rows={unassignedOrders.rows || []}
+          columns={['供应商', '采购订单号', '物料编码', '物料名称', '采购数量']}
+          render={(row) => [row.supplier, row.orderNo, row.materialCode, row.materialName, row.quantity]}
+        />
+        <TablePagination
+          label="未分配采购下单人明细分页"
+          currentPage={unassignedOrders.page || unassignedPage}
+          totalPages={unassignedOrders.totalPages || 1}
+          onPageChange={setUnassignedPage}
+          pageSize={pageSize}
+        />
       </section>
     </>
   );

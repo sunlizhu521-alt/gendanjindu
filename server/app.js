@@ -1587,6 +1587,38 @@ function compareRowsForSession(sessionId, user) {
   }).filter(Boolean);
 }
 
+function unassignedPurchaseOrderRows() {
+  const lookups = dimensionLookups();
+  const grouped = new Map();
+  all(
+    `SELECT k.supplier, k.order_no, k.material_code, k.material_name, k.quantity, k.creator
+     FROM kingdee_orders k
+     JOIN order_demands d
+       ON d.demand_key = k.demand_key
+      AND d.source_batch_id = k.batch_id
+     WHERE d.active = 1
+     ORDER BY k.supplier, k.order_no, k.material_code`
+  ).forEach((row) => {
+    const enriched = enrichDemandFields(row.supplier, row.material_code, row.creator, lookups);
+    if (realPurchaseOwner(enriched.purchaseOwner)) return;
+    const key = [row.supplier, row.order_no, row.material_code, row.material_name].map(normalize).join('|');
+    const current = grouped.get(key) || {
+      supplier: normalize(row.supplier),
+      orderNo: normalize(row.order_no),
+      materialCode: normalize(row.material_code),
+      materialName: normalize(row.material_name) || enriched.materialName || '',
+      quantity: 0
+    };
+    current.quantity += numberValue(row.quantity);
+    grouped.set(key, current);
+  });
+  return [...grouped.values()].sort((left, right) => (
+    left.supplier.localeCompare(right.supplier, 'zh-Hans-CN')
+    || left.orderNo.localeCompare(right.orderNo, 'zh-Hans-CN')
+    || left.materialCode.localeCompare(right.materialCode, 'zh-Hans-CN')
+  ));
+}
+
 function latestComparePayload(user) {
   const session = get('SELECT * FROM difference_compare_sessions ORDER BY created_at DESC LIMIT 1');
   if (!session) {
@@ -2109,6 +2141,21 @@ app.get('/api/difference-allocations', requireAuth, requirePage('differenceAlloc
 
 app.get('/api/difference-allocations/latest', requireAuth, requirePage('differenceAllocation'), (req, res) => {
   res.json(latestComparePayload(req.user));
+});
+
+app.get('/api/difference-allocations/unassigned-purchase-orders', requireAuth, requirePage('differenceAllocation'), (req, res) => {
+  const pageSize = Math.min(100, Math.max(1, Math.floor(numberValue(req.query.pageSize) || 20)));
+  const requestedPage = Math.max(1, Math.floor(numberValue(req.query.page) || 1));
+  const allRows = unassignedPurchaseOrderRows();
+  const totalPages = Math.max(1, Math.ceil(allRows.length / pageSize));
+  const page = Math.min(requestedPage, totalPages);
+  res.json({
+    rows: allRows.slice((page - 1) * pageSize, page * pageSize),
+    total: allRows.length,
+    page,
+    pageSize,
+    totalPages
+  });
 });
 
 app.post('/api/difference-allocations/compare', requireAuth, requirePage('differenceAllocation'), upload.single('file'), (req, res) => {

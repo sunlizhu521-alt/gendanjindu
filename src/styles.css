@@ -1843,27 +1843,3 @@ th {
 .error-text { color: #dc2626; font-weight: 600; }
 .skipped-details { margin-top: 8px; }
 .skipped-details summary { cursor: pointer; color: #6b7280; font-size: 13px; }
-.order-type-options { display: flex; justify-content: center; gap: 5px; white-space: nowrap; }
-.order-type-options label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 24px;
-  padding: 3px 7px;
-  border: 1px solid #cbd5e1;
-  border-radius: 5px;
-  background: #fff;
-  color: #334155;
-  cursor: pointer;
-}
-.order-type-options label:has(input:checked) {
-  border-color: #2563eb;
-  background: #eff6ff;
-  color: #1d4ed8;
-  font-weight: 700;
-}
-.order-type-options label:hover {
-  border-color: #60a5fa;
-  background: #f8fbff;
-}
-.order-type-options input[type="radio"] { width: 13px; min-width: 0; height: 13px; padding: 0; }

@@ -2947,7 +2947,7 @@ function InventoryPage({ token, reloadDemands, setMessage }) {
   );
 }
 
-function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表库', slots = DIMENSION_SLOTS }) {
+function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表库', slots = DIMENSION_SLOTS, gridColumns = 2 }) {
   const [records, setRecords] = useState([]);
   const [local, setLocal] = useState({});
 
@@ -3164,7 +3164,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
   return (
     <>
       <div className="section-heading-row"><h2>{title}</h2><span className="section-count">{slots.length} 个槽位，字段映射后应用</span></div>
-      <section className="library-grid">
+      <section className={`library-grid ${gridColumns === 3 ? 'library-grid-three' : ''}`}>
         {slots.map((slot, index) => {
           const record = records.find((item) => item.slot_id === slot.id);
           const state = local[slot.id] || {};
@@ -3534,10 +3534,10 @@ function App() {
         {shouldMount('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
         {shouldMount('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} reloadDemands={reloadDemands} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('differenceAllocation') && <PagePane page="differenceAllocation" activeTab={activeTab}><DifferenceAllocationPage token={token} user={user} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
-        {shouldMount('wangdianData') && <PagePane page="wangdianData" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="国内数据" slots={WANGDIAN_SLOTS} /></PagePane>}
+        {shouldMount('wangdianData') && <PagePane page="wangdianData" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="国内数据" slots={WANGDIAN_SLOTS} gridColumns={3} /></PagePane>}
         {shouldMount('lingxingInventory') && <PagePane page="lingxingInventory" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="领星库存" slots={LINGXING_INVENTORY_SLOTS} /></PagePane>}
         {shouldMount('crossBorderInventory') && <PagePane page="crossBorderInventory" activeTab={activeTab}><CrossBorderInventoryBoard token={token} setMessage={setMessage} /></PagePane>}
-        {shouldMount('dimensionLibrary') && <PagePane page="dimensionLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
+        {shouldMount('dimensionLibrary') && <PagePane page="dimensionLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} gridColumns={3} /></PagePane>}
         {shouldMount('trace') && <PagePane page="trace" activeTab={activeTab}><TracePage token={token} setMessage={setMessage} /></PagePane>}
         {shouldMount('permissions') && <PagePane page="permissions" activeTab={activeTab}><PermissionsPage token={token} pages={pages} setMessage={setMessage} /></PagePane>}
         <PersistentHorizontalScrollbar activeTab={activeTab} />

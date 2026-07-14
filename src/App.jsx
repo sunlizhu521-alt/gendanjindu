@@ -85,7 +85,15 @@ const DIMENSION_SLOTS = [
     ['productType', '产品类型'],
     ['merchantCode', '商家编码'],
     ['systemSku', '系统SKU-必填']
-  ] }
+  ] },
+  { id: 'warehouseMaterialMap', title: '仓库与物料对照表', fields: [
+    ['warehouseCode', '仓库编码'],
+    ['warehouseName', '仓库名称'],
+    ['materialCode', '物料编码'],
+    ['sku', 'SKU'],
+    ['remark', '备注']
+  ] },
+  { id: 'dimensionSpare', title: '备用', fields: [] }
 ];
 
 const WANGDIAN_SLOTS = [
@@ -2938,7 +2946,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
 
   return (
     <>
-      <div className="section-heading-row"><h2>{title}</h2><span className="section-count">4 个槽位，字段映射后应用</span></div>
+      <div className="section-heading-row"><h2>{title}</h2><span className="section-count">{slots.length} 个槽位，字段映射后应用</span></div>
       <section className="library-grid">
         {slots.map((slot, index) => {
           const record = records.find((item) => item.slot_id === slot.id);

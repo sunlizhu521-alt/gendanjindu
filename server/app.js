@@ -48,6 +48,8 @@ const DIMENSION_SLOTS = {
   purchaseAssignment: '采购分工',
   spare1: '仓库名称',
   spare2: '国内运营默认数据',
+  warehouseMaterialMap: '仓库与物料对照表',
+  dimensionSpare: '备用',
   wangdianDataMain: '国内数据',
   wangdianSpare1: '京东库存',
   wangdianSpare2: '京东ID与品号匹配',
@@ -2584,6 +2586,16 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         raw: row,
         warehouseCode: pick(row, mapping.warehouseCode),
         warehouseName: pick(row, mapping.warehouseName)
+      };
+    }
+    if (slotId === 'warehouseMaterialMap') {
+      return {
+        raw: row,
+        warehouseCode: pick(row, mapping.warehouseCode) || pickAny(row, ['仓库编码', '仓库代码']),
+        warehouseName: pick(row, mapping.warehouseName) || pickAny(row, ['仓库名称', '仓库名', '仓库']),
+        materialCode: pick(row, mapping.materialCode) || pickAny(row, ['物料编码', '品号', '商品编码', '存货编码']),
+        sku: pick(row, mapping.sku) || pickAny(row, ['SKU', '系统SKU', '商品SKU']),
+        remark: pick(row, mapping.remark) || pickAny(row, ['备注', '说明'])
       };
     }
     if (slotId === 'spare2') {

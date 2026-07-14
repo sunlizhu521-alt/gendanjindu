@@ -1523,8 +1523,10 @@ function DomesticBoard({ token, setMessage }) {
   const [sourceApplications, setSourceApplications] = useState([]);
   const [drafts, setDrafts] = useState({});
   const [saving, setSaving] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
   const [operationSelectedMerchantCodes, setOperationSelectedMerchantCodes] = useState([]);
   const [purchaseSelectedMerchantCodes, setPurchaseSelectedMerchantCodes] = useState([]);
+  const pageSize = 20;
   const [filters, setFilters] = useSessionFilters('domesticBoard', {
     keyword: '',
     stockupStatus: '',
@@ -1617,9 +1619,19 @@ function DomesticBoard({ token, setMessage }) {
   }, [options, filters, setFilters]);
 
   const filtered = useMemo(() => rows.filter((row) => matchesDomesticFilters(row)), [rows, filters]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pageRows = useMemo(
+    () => filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [filtered, currentPage]
+  );
   const filteredMerchantCodes = useMemo(() => filtered.map((row) => row.merchantCode).filter(Boolean), [filtered]);
   const allOperationFilteredSelected = filteredMerchantCodes.length > 0 && filteredMerchantCodes.every((code) => operationSelectedMerchantCodes.includes(code));
   const allPurchaseFilteredSelected = filteredMerchantCodes.length > 0 && filteredMerchantCodes.every((code) => purchaseSelectedMerchantCodes.includes(code));
+
+  useEffect(() => { setCurrentPage(1); }, [filters]);
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   function toggleAllFilteredRows(selectedCodes, setSelectedCodes, allSelected) {
     setSelectedCodes((prev) => {
@@ -1793,7 +1805,7 @@ function DomesticBoard({ token, setMessage }) {
     <>
       <div className="section-heading-row">
         <h2>国内事业部看板</h2>
-        <span className="section-count">当前显示 {filtered.length} / {rows.length} 条</span>
+        <span className="section-count">当前筛选 {filtered.length} / {rows.length} 条，第 {currentPage} / {totalPages} 页</span>
       </div>
       <SourceApplicationsNote sources={sourceApplications} />
       <section className="panel domestic-filter-panel">
@@ -1822,7 +1834,7 @@ function DomesticBoard({ token, setMessage }) {
       </section>
       <DataTable
         className="domestic-board-table"
-        rows={filtered}
+        rows={pageRows}
         columns={[
           '品牌', '产品类型', '商家编码', '系统SKU-必填',
           '旺店通在库量', '非自营近7天出库', '非自营近30天出库', '非自营日销', '非自营未来两周需求量',
@@ -1842,10 +1854,10 @@ function DomesticBoard({ token, setMessage }) {
           '采购提交'
         ]}
         render={(row) => [
-          row.brand,
-          row.productType,
-          row.merchantCode,
-          row.systemSku,
+          <span className="domestic-fixed-cell" title={row.brand}>{row.brand}</span>,
+          <span className="domestic-fixed-cell" title={row.productType}>{row.productType}</span>,
+          <span className="domestic-fixed-cell" title={row.merchantCode}>{row.merchantCode}</span>,
+          <span className="domestic-fixed-cell" title={row.systemSku}>{row.systemSku}</span>,
           numberCell(row.wdtStockQty),
           numberCell(row.nonSelf7dOutQty),
           numberCell(row.nonSelf30dOutQty),
@@ -1873,6 +1885,7 @@ function DomesticBoard({ token, setMessage }) {
           <button type="button" className="compact-button" disabled={saving === row.merchantCode} onClick={() => saveRow(row, 'purchase')}>{saving === row.merchantCode ? '提交中...' : '采购提交'}</button>
         ]}
       />
+      <TablePagination label="国内事业部看板分页" currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} pageSize={pageSize} />
     </>
   );
 }

@@ -1413,6 +1413,19 @@ th {
   background: #f0f7ff;
 }
 
+.domestic-board-table th:nth-child(-n+4),
+.domestic-board-table td:nth-child(-n+4) {
+  overflow: hidden;
+}
+
+.domestic-fixed-cell {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .domestic-board-table th:nth-child(15),
 .domestic-board-table td:nth-child(15),
 .domestic-board-table th:nth-child(28),

@@ -1133,7 +1133,7 @@ function SourceApplicationsNote({ sources = [] }) {
 const CROSS_BORDER_FILTER_DEFAULTS = {
   inventoryType: '', storeName: '', marketplace: '', warehouseName: '', kingdeeWarehouse: '',
   businessUnit: '', level1WarehouseCategory: '', level2WarehouseCategory: '', productLine: '',
-  productSeries: '', materialCode: '', sku: '', stockStatus: '有库存', mappingStatus: '', keyword: ''
+  productSeries: '', stockStatus: '有库存', mappingStatus: '', keyword: ''
 };
 
 function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOpenMissing }) {
@@ -1162,7 +1162,7 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
       row.productSeries, row.model].join(' ').toLowerCase();
     const fields = ['inventoryType', 'storeName', 'marketplace', 'warehouseName', 'businessUnit',
       'level1WarehouseCategory', 'level2WarehouseCategory', 'productLine', 'productSeries',
-      'materialCode', 'sku', 'stockStatus', 'mappingStatus'];
+      'stockStatus', 'mappingStatus'];
     if (keyword && !text.includes(keyword)) return false;
     if (omit !== 'kingdeeWarehouse' && filters.kingdeeWarehouse && row.kingdeeWarehouseName !== filters.kingdeeWarehouse) return false;
     return fields.every((field) => field === omit || !filters[field] || row[field] === filters[field]);
@@ -1181,8 +1181,6 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
       level2Categories: unique(rowsFor('level2WarehouseCategory').map((row) => row.level2WarehouseCategory)),
       productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
       productSeries: unique(rowsFor('productSeries').map((row) => row.productSeries)),
-      materialCodes: unique(rowsFor('materialCode').map((row) => row.materialCode)),
-      skus: unique(rowsFor('sku').map((row) => row.sku)),
       stockStatuses: unique(rowsFor('stockStatus').map((row) => row.stockStatus)),
       mappingStatuses: unique(rowsFor('mappingStatus').map((row) => row.mappingStatus))
     };
@@ -1193,7 +1191,7 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
       warehouseName: options.warehouseNames, kingdeeWarehouse: options.kingdeeWarehouses,
       businessUnit: options.businessUnits, level1WarehouseCategory: options.level1Categories,
       level2WarehouseCategory: options.level2Categories, productLine: options.productLines,
-      productSeries: options.productSeries, materialCode: options.materialCodes, sku: options.skus,
+      productSeries: options.productSeries,
       stockStatus: options.stockStatuses, mappingStatus: options.mappingStatuses
     });
     if (next) setFilters(next);
@@ -1251,8 +1249,6 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
         <SelectField label="二级仓库分类" value={filters.level2WarehouseCategory} options={options.level2Categories} onChange={(value) => setFilters({ ...filters, level2WarehouseCategory: value })} />
         <SelectField label="销售产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
         <SelectField label="销售系列" value={filters.productSeries} options={options.productSeries} onChange={(value) => setFilters({ ...filters, productSeries: value })} />
-        <SelectField label="物料编码" value={filters.materialCode} options={options.materialCodes} onChange={(value) => setFilters({ ...filters, materialCode: value })} />
-        <SelectField label="SKU" value={filters.sku} options={options.skus} onChange={(value) => setFilters({ ...filters, sku: value })} />
         <SelectField label="库存状态" value={filters.stockStatus} options={options.stockStatuses} onChange={(value) => setFilters({ ...filters, stockStatus: value })} />
         <SelectField label="映射状态" value={filters.mappingStatus} options={options.mappingStatuses} onChange={(value) => setFilters({ ...filters, mappingStatus: value })} />
         <input className="search-input" placeholder="搜索店铺、SKU、物料、仓库、产品维度" value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} />

@@ -2227,6 +2227,28 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
       .finally(() => setUnassignedLoading(false));
   }, [token, unassignedPage]);
 
+  async function exportUnassignedOrders() {
+    try {
+      const response = await fetch(`${API}/api/difference-allocations/unassigned-purchase-orders/export`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || '导出请求失败');
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = '未分配采购下单人明细.xlsx';
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setMessage(`已导出 ${unassignedOrders.total || 0} 条未分配采购下单人明细。`);
+    } catch (error) {
+      setMessage(`导出失败：${error.message}`);
+    }
+  }
+
   function setRowValue(rowId, key, value) {
     const current = rowInputs[rowId] || {};
     const next = { ...current, [key]: value };
@@ -2534,13 +2556,16 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
       <section className="panel" style={{ marginTop: 16 }}>
         <div className="section-heading-row">
           <h3>未分配采购下单人明细</h3>
-          <span className="section-count">{unassignedLoading ? '加载中...' : `共 ${unassignedOrders.total || 0} 条`}</span>
+          <div className="card-actions">
+            <span className="section-count">{unassignedLoading ? '加载中...' : `共 ${unassignedOrders.total || 0} 条`}</span>
+            <button type="button" className="compact-button" disabled={unassignedLoading || !unassignedOrders.total} onClick={exportUnassignedOrders}>导出明细</button>
+          </div>
         </div>
         <DataTable
           className="compact-table"
           rows={unassignedOrders.rows || []}
-          columns={['供应商', '采购订单号', '物料编码', '物料名称', '采购数量']}
-          render={(row) => [row.supplier, row.orderNo, row.materialCode, row.materialName, row.quantity]}
+          columns={['采购组织', '供应商', '创建人', '采购订单号', '物料编码', '物料名称', '采购数量']}
+          render={(row) => [row.purchaseOrg, row.supplier, row.creator, row.orderNo, row.materialCode, row.materialName, row.quantity]}
         />
         <TablePagination
           label="未分配采购下单人明细分页"

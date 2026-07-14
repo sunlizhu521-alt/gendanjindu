@@ -1591,7 +1591,7 @@ function unassignedPurchaseOrderRows() {
   const lookups = dimensionLookups();
   const grouped = new Map();
   all(
-    `SELECT k.supplier, k.order_no, k.material_code, k.material_name, k.quantity, k.creator
+    `SELECT k.purchase_org, k.supplier, k.creator, k.order_no, k.material_code, k.material_name, k.quantity
      FROM kingdee_orders k
      JOIN order_demands d
        ON d.demand_key = k.demand_key
@@ -1601,9 +1601,11 @@ function unassignedPurchaseOrderRows() {
   ).forEach((row) => {
     const enriched = enrichDemandFields(row.supplier, row.material_code, row.creator, lookups);
     if (realPurchaseOwner(enriched.purchaseOwner)) return;
-    const key = [row.supplier, row.order_no, row.material_code, row.material_name].map(normalize).join('|');
+    const key = [row.purchase_org, row.supplier, row.creator, row.order_no, row.material_code, row.material_name].map(normalize).join('|');
     const current = grouped.get(key) || {
+      purchaseOrg: normalize(row.purchase_org),
       supplier: normalize(row.supplier),
+      creator: normalize(row.creator),
       orderNo: normalize(row.order_no),
       materialCode: normalize(row.material_code),
       materialName: normalize(row.material_name) || enriched.materialName || '',
@@ -1613,7 +1615,9 @@ function unassignedPurchaseOrderRows() {
     grouped.set(key, current);
   });
   return [...grouped.values()].sort((left, right) => (
-    left.supplier.localeCompare(right.supplier, 'zh-Hans-CN')
+    left.purchaseOrg.localeCompare(right.purchaseOrg, 'zh-Hans-CN')
+    || left.supplier.localeCompare(right.supplier, 'zh-Hans-CN')
+    || left.creator.localeCompare(right.creator, 'zh-Hans-CN')
     || left.orderNo.localeCompare(right.orderNo, 'zh-Hans-CN')
     || left.materialCode.localeCompare(right.materialCode, 'zh-Hans-CN')
   ));
@@ -2156,6 +2160,29 @@ app.get('/api/difference-allocations/unassigned-purchase-orders', requireAuth, r
     pageSize,
     totalPages
   });
+});
+
+app.get('/api/difference-allocations/unassigned-purchase-orders/export', requireAuth, requirePage('differenceAllocation'), (req, res) => {
+  const rows = unassignedPurchaseOrderRows();
+  const headers = ['采购组织', '供应商', '创建人', '采购订单号', '物料编码', '物料名称', '采购数量'];
+  const aoa = [headers, ...rows.map((row) => [
+    row.purchaseOrg,
+    row.supplier,
+    row.creator,
+    row.orderNo,
+    row.materialCode,
+    row.materialName,
+    row.quantity
+  ])];
+  const workbook = xlsx.utils.book_new();
+  const worksheet = xlsx.utils.aoa_to_sheet(aoa);
+  worksheet['!cols'] = [18, 36, 14, 18, 18, 42, 14].map((wch) => ({ wch }));
+  xlsx.utils.book_append_sheet(workbook, worksheet, '未分配采购下单人明细');
+  const buffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+  const fileName = '未分配采购下单人明细.xlsx';
+  res.setHeader('Content-Disposition', `attachment; filename="unassigned-purchase-owner-details.xlsx"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buffer);
 });
 
 app.post('/api/difference-allocations/compare', requireAuth, requirePage('differenceAllocation'), upload.single('file'), (req, res) => {

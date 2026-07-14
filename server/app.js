@@ -23,6 +23,7 @@ const ALL_PAGES = [
   'operationBoard',
   'domesticBoard',
   'wangdianData',
+  'lingxingInventory',
   'trace',
   'kingdeeImport',
   'dimensionLibrary',
@@ -37,6 +38,7 @@ const PAGE_LABELS = {
   progressRefresh: '生产跟进',
   differenceAllocation: '差异分配',
   wangdianData: '国内数据',
+  lingxingInventory: '领星库存',
   dimensionLibrary: '维度表库',
   trace: '变更追溯',
   permissions: '权限管理'
@@ -49,7 +51,11 @@ const DIMENSION_SLOTS = {
   wangdianDataMain: '国内数据',
   wangdianSpare1: '京东库存',
   wangdianSpare2: '京东ID与品号匹配',
-  wangdianSpare3: '备用3'
+  wangdianSpare3: '备用3',
+  lingxingFbaInventory: 'FBA库存',
+  lingxingFbmInventory: 'FBM库存',
+  lingxingWfsInventory: 'WFS库存',
+  lingxingWarehouseMap: '领星&金蝶仓库对照表'
 };
 const DIFF_NORMAL_ORDER = '正常订单';
 const DIFF_ORDER_COMPLETE_REASON = '订单已完结';
@@ -2524,7 +2530,7 @@ app.post('/api/difference-allocations/:sessionId/apply', requireAuth, requirePag
   res.json({ batchId, status: { ...allocationStatus(req.params.sessionId), applied: true }, demands: demandRows(false, req.user) });
 });
 
-app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData']), (req, res) => {
+app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory']), (req, res) => {
   const rows = all('SELECT slot_id, title, file_name, sheet_name, sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at FROM dimension_files');
   res.json({
     rows: rows.map((row) => {
@@ -2541,7 +2547,7 @@ app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'wan
   });
 });
 
-app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData']), upload.single('file'), (req, res) => {
+app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory']), upload.single('file'), (req, res) => {
   const slotId = req.params.slotId;
   const mapping = parseJson(req.body.mapping, {});
   const sheetName = normalize(req.body.sheetName);
@@ -2615,6 +2621,28 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         materialCode: pick(row, mapping.materialCode) || pickAny(row, ['品号', '物料编码', '商品编码', '货品编号', '存货编码'])
       };
     }
+    if (slotId === 'lingxingWarehouseMap') {
+      return {
+        raw: row,
+        lingxingWarehouseName: pick(row, mapping.lingxingWarehouseName) || pickAny(row, ['领星仓库名称', '领星仓库', '仓库名称', '仓库']),
+        kingdeeWarehouseCode: pick(row, mapping.kingdeeWarehouseCode) || pickAny(row, ['金蝶仓库编码', '仓库编码', '仓库代码']),
+        kingdeeWarehouseName: pick(row, mapping.kingdeeWarehouseName) || pickAny(row, ['金蝶仓库名称', '金蝶仓库'])
+      };
+    }
+    if (['lingxingFbaInventory', 'lingxingFbmInventory', 'lingxingWfsInventory'].includes(slotId)) {
+      return {
+        raw: row,
+        storeName: pick(row, mapping.storeName) || pickAny(row, ['店铺', '店铺名称', '账号', '账号名称']),
+        marketplace: pick(row, mapping.marketplace) || pickAny(row, ['站点', '国家', '国家/地区', '销售平台']),
+        sku: pick(row, mapping.sku) || pickAny(row, ['SKU', 'MSKU', 'Seller SKU', '卖家SKU', '商品SKU']),
+        fnsku: pick(row, mapping.fnsku) || pickAny(row, ['FNSKU']),
+        asin: pick(row, mapping.asin) || pickAny(row, ['ASIN']),
+        itemId: pick(row, mapping.itemId) || pickAny(row, ['Item ID', 'ItemID', '商品ID', '产品ID']),
+        warehouseName: pick(row, mapping.warehouseName) || pickAny(row, ['仓库名称', '仓库名', '仓库']),
+        availableQty: pick(row, mapping.availableQty) || pickAny(row, ['可用库存', '可售库存', '可用数量', '可售数量', '可售']),
+        totalQty: pick(row, mapping.totalQty) || pickAny(row, ['总库存', '库存数量', '库存总量', '库存'])
+      };
+    }
     return row;
   }).filter((row) => Object.entries(row).some(([key, value]) => key !== 'raw' && Boolean(value)));
   const now = nowText();
@@ -2632,7 +2660,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   res.json({ rowCount: rows.length, sheetName, sheetNames: parsed.sheetNames, applied: true, diagnostics: dimensionDiagnostics(slotId, rows), rows: demandRows(false, req.user) });
 });
 
-app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData']), (req, res) => {
+app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory']), (req, res) => {
   const beforeOrderCounts = orderDataCounts();
   transaction(() => {
     run('UPDATE dimension_files SET applied = 1, updated_at = ? WHERE slot_id = ?', [nowText(), req.params.slotId]);
@@ -2642,7 +2670,7 @@ app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensio
   res.json({ rows: demandRows(false, req.user) });
 });
 
-app.delete('/api/dimensions/:slotId', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData']), (req, res) => {
+app.delete('/api/dimensions/:slotId', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory']), (req, res) => {
   run('DELETE FROM dimension_files WHERE slot_id = ?', [req.params.slotId]);
   saveDatabase();
   res.json({ ok: true });

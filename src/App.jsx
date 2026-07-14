@@ -10,6 +10,7 @@ const PAGE_ORDER = [
   'operationBoard',
   'domesticBoard',
   'wangdianData',
+  'lingxingInventory',
   'trace',
   'kingdeeImport',
   'dimensionLibrary',
@@ -25,6 +26,7 @@ const PAGE_LABELS = {
   progressRefresh: '生产跟进',
   differenceAllocation: '差异分配',
   wangdianData: '国内数据',
+  lingxingInventory: '领星库存',
   dimensionLibrary: '维度表库',
   trace: '变更追溯',
   permissions: '权限管理'
@@ -104,6 +106,41 @@ const WANGDIAN_SLOTS = [
     ['materialCode', '品号']
   ] },
   { ...DIMENSION_SLOTS[3], id: 'wangdianSpare3', title: '备用3' }
+];
+
+const LINGXING_INVENTORY_SLOTS = [
+  { id: 'lingxingFbaInventory', title: 'FBA库存', fields: [
+    ['storeName', '店铺'],
+    ['marketplace', '站点'],
+    ['sku', 'SKU'],
+    ['fnsku', 'FNSKU'],
+    ['asin', 'ASIN'],
+    ['warehouseName', '仓库名称'],
+    ['availableQty', '可用库存'],
+    ['totalQty', '总库存']
+  ] },
+  { id: 'lingxingFbmInventory', title: 'FBM库存', fields: [
+    ['storeName', '店铺'],
+    ['marketplace', '站点'],
+    ['sku', 'SKU'],
+    ['warehouseName', '仓库名称'],
+    ['availableQty', '可用库存'],
+    ['totalQty', '总库存']
+  ] },
+  { id: 'lingxingWfsInventory', title: 'WFS库存', fields: [
+    ['storeName', '店铺'],
+    ['marketplace', '站点'],
+    ['sku', 'SKU'],
+    ['itemId', 'Item ID'],
+    ['warehouseName', '仓库名称'],
+    ['availableQty', '可用库存'],
+    ['totalQty', '总库存']
+  ] },
+  { id: 'lingxingWarehouseMap', title: '领星&金蝶仓库对照表', fields: [
+    ['lingxingWarehouseName', '领星仓库名称'],
+    ['kingdeeWarehouseCode', '金蝶仓库编码'],
+    ['kingdeeWarehouseName', '金蝶仓库名称']
+  ] }
 ];
 
 const KINGDEE_FIELDS = [
@@ -3273,6 +3310,7 @@ function App() {
         {shouldMount('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} reloadDemands={reloadDemands} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('differenceAllocation') && <PagePane page="differenceAllocation" activeTab={activeTab}><DifferenceAllocationPage token={token} user={user} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('wangdianData') && <PagePane page="wangdianData" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="国内数据" slots={WANGDIAN_SLOTS} /></PagePane>}
+        {shouldMount('lingxingInventory') && <PagePane page="lingxingInventory" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="领星库存" slots={LINGXING_INVENTORY_SLOTS} /></PagePane>}
         {shouldMount('dimensionLibrary') && <PagePane page="dimensionLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
         {shouldMount('trace') && <PagePane page="trace" activeTab={activeTab}><TracePage token={token} setMessage={setMessage} /></PagePane>}
         {shouldMount('permissions') && <PagePane page="permissions" activeTab={activeTab}><PermissionsPage token={token} pages={pages} setMessage={setMessage} /></PagePane>}

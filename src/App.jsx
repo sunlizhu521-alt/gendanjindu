@@ -2359,10 +2359,13 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
       row.productLine,
       row.productSeries,
       row.materialCode,
+      row.logisticsCode,
       row.oaFlowNo,
       row.sku,
       row.materialName,
-      row.purchaseOwner
+      row.purchaseOwner,
+      row.oldOrderNos,
+      row.newOrderNos
     ].join(' ').toLowerCase();
     return (!keyword || text.includes(keyword))
       && (!filters.month || row.month === filters.month)
@@ -2464,7 +2467,7 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
               />
               <span>选择</span>
             </label>,
-            '采购下单人', '供应商', '事业部', '采购组织', '采购订单创建人', '原采购订单号', '原采购订单创建时间', '新采购订单号', '新采购订单创建时间', '原采购数量', '新采购数量', '差异', '原因', '操作', '备注', '提交人', '提交时间', '提交'
+            '采购下单人', '供应商', '物流编码', '物料名称', '事业部', '采购组织', '采购订单创建人', '原采购订单号', '原采购订单创建时间', '新采购订单号', '新采购订单创建时间', '原采购数量', '新采购数量', '采购差异', '原累计入库', '新累计入库', '入库差异', '原因', '操作', '备注', '提交人', '提交时间', '提交'
           ]}
           renderRow={(row) => {
             const input = rowInputs[row.id] || {};
@@ -2484,6 +2487,8 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
                 </td>
                 <td>{row.purchaseOwner}</td>
                 <td>{supplierName(row)}</td>
+                <td>{row.logisticsCode}</td>
+                <td>{row.materialName}</td>
                 <td>{row.businessUnit}</td>
                 <td>{row.purchaseOrg}</td>
                 <td>{row.orderCreator}</td>
@@ -2494,6 +2499,9 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
                 <td>{row.oldQty}</td>
                 <td>{row.newQty}</td>
                 <td>{signedNumber(row.deltaQty)}</td>
+                <td>{row.oldInboundQty}</td>
+                <td>{row.inboundQty}</td>
+                <td>{signedNumber(row.inboundDeltaQty)}</td>
                 <td>
                   {allocated ? allocation?.reason : (
                     <select value={input.reason || ''} onChange={(event) => setRowValue(row.id, 'reason', event.target.value)}>
@@ -2543,8 +2551,8 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
         <DataTable
           className="compact-table"
           rows={recordPageRows}
-          columns={['处理方式', '主键', 'OA备货流程号', '采购下单人', '物料编码', '原采购订单号', '原采购订单创建时间', '新采购订单号', '新采购订单创建时间', '原采购数量', '原累计入库', '新采购数量', '新累计入库', '差异', '原因', '操作', '备注', '提交时间']}
-          render={(row) => [row.automatic ? '系统自动' : '人工提交', row.displayKey || row.demandKey, row.oaFlowNo || '', row.orderCreator || '', row.materialCode || '', row.oldOrderNos || '', row.oldOrderDates || '', row.newOrderNos || '', row.newOrderDates || '', row.oldQty, row.oldInboundQty || '', row.newQty, row.inboundQty || '', signedNumber(row.deltaQty), row.reason, row.actionType, row.remark, row.createdAt]}
+          columns={['处理方式', '主键', 'OA备货流程号', '采购下单人', '物料编码', '原采购订单号', '原采购订单创建时间', '新采购订单号', '新采购订单创建时间', '原采购数量', '原累计入库', '新采购数量', '新累计入库', '采购差异', '入库差异', '原因', '操作', '备注', '提交时间']}
+          render={(row) => [row.automatic ? '系统自动' : '人工提交', row.displayKey || row.demandKey, row.oaFlowNo || '', row.orderCreator || '', row.materialCode || '', row.oldOrderNos || '', row.oldOrderDates || '', row.newOrderNos || '', row.newOrderDates || '', row.oldQty, row.oldInboundQty || '', row.newQty, row.inboundQty || '', signedNumber(row.deltaQty), signedNumber(row.inboundDeltaQty), row.reason, row.actionType, row.remark, row.createdAt]}
         />
         <nav className="table-pagination" aria-label="采购订单记录分页">
           <button type="button" className="ghost compact-button" disabled={recordPage === 1} onClick={() => setRecordPage((page) => Math.max(1, page - 1))}>上一页</button>

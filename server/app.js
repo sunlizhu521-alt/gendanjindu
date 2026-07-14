@@ -403,6 +403,7 @@ function mappedKingdeeRows(rows, mapping) {
     const deliveryDate = pickMapped(row, mapping, 'deliveryDate', ['交货日期', '预计交货日期']);
     const isGift = pickMapped(row, mapping, 'isGift', ['是否赠品', '赠品']);
     const businessClose = pickMapped(row, mapping, 'businessClose', ['业务关闭']);
+    const orderNo = pickMapped(row, mapping, 'orderNo', ['单据编号', '采购订单号', '采购单号', '订单号', '采购订单编号']);
     const rowValues = Object.values(row).map(normalize).filter(Boolean);
     const isSummaryRow = (!month && !supplier && !materialCode)
       && rowValues.some((value) => value === '合计' || value === '总计');
@@ -439,7 +440,7 @@ function mappedKingdeeRows(rows, mapping) {
       isTracking: closeStatus === TRACKING_CLOSE_STATUS,
       dateSort: dateSortValue(createDate),
       sourceIndex: index,
-      orderNo: pickMapped(row, mapping, 'orderNo', ['单据编号', '采购订单号', '采购单号', '订单号', '采购订单编号']),
+      orderNo,
       quantity,
       inboundQty,
       remainingInboundQty,
@@ -1233,6 +1234,44 @@ function currentAppliedAt() {
   return normalize(batch?.applied_at) || normalize(batch?.imported_at);
 }
 
+function purchaseOrderLineKey(row) {
+  const orderNo = normalize(row.orderNo || row.order_no);
+  const materialCode = normalize(row.materialCode || row.material_code);
+  return `${orderNo}|${materialCode}`;
+}
+
+function summarizePurchaseOrderLines(rows) {
+  const map = new Map();
+  [...rows].sort(compareOaRows).forEach((row) => {
+    const orderNo = normalize(row.orderNo || row.order_no);
+    const materialCode = normalize(row.materialCode || row.material_code);
+    if (!orderNo || !materialCode) return;
+    const key = purchaseOrderLineKey(row);
+    const current = map.get(key) || {
+      key,
+      orderNo,
+      materialCode,
+      demandKey: normalize(row.demandKey || row.demand_key),
+      month: normalize(row.month),
+      businessUnit: normalize(row.businessUnit || row.business_unit),
+      supplier: normalize(row.supplier),
+      purchaseOrg: normalize(row.purchaseOrg || row.purchase_org),
+      creator: '',
+      orderDate: '',
+      materialName: normalize(row.materialName || row.material_name),
+      quantity: 0,
+      inboundQty: 0
+    };
+    current.quantity += numberValue(row.quantity);
+    current.inboundQty += numberValue(row.inboundQty ?? row.inbound_qty);
+    current.creator = appendUniqueDelimited(current.creator, row.creator);
+    current.orderDate = appendUniqueDelimited(current.orderDate, rawOrderDate(row));
+    current.materialName ||= normalize(row.materialName || row.material_name);
+    map.set(key, current);
+  });
+  return map;
+}
+
 function compareRowsFromSummary(summary, sourceRows, user) {
   const currentRows = demandRows(false, user);
   const currentMap = new Map(currentRows.map((row) => [row.demandKey, row]));
@@ -1244,37 +1283,44 @@ function compareRowsFromSummary(summary, sourceRows, user) {
       .map((row) => [row.demand_key, row.source_batch_id])
   );
   const currentBatchIds = [...new Set([...currentSourceMap.values()].map(normalize).filter(Boolean))];
-  const oldOrderRowsByDemand = new Map();
+  const oldOrderRows = [];
   if (currentBatchIds.length) {
     const placeholders = currentBatchIds.map(() => '?').join(',');
     all(
-      `SELECT batch_id, demand_key, creator, order_no, raw_json
+      `SELECT batch_id, demand_key, month, business_unit, supplier, material_code, purchase_org,
+              creator, order_no, quantity, inbound_qty, purchase_date, material_name, raw_json
        FROM kingdee_orders
        WHERE batch_id IN (${placeholders})`,
       currentBatchIds
     ).forEach((row, index) => {
       if (normalize(currentSourceMap.get(row.demand_key)) !== normalize(row.batch_id)) return;
-      const list = oldOrderRowsByDemand.get(row.demand_key) || [];
-      list.push(orderRowDateSort(row, index));
-      oldOrderRowsByDemand.set(row.demand_key, list);
+      oldOrderRows.push(orderRowDateSort(row, index));
     });
   }
-  const sourceRowsByDemand = new Map();
-  sourceRows.forEach((row) => {
-    const list = sourceRowsByDemand.get(row.demandKey) || [];
-    list.push(row);
-    sourceRowsByDemand.set(row.demandKey, list);
-  });
-  const keys = [...new Set([...currentMap.keys(), ...nextMap.keys()])];
+  const oldLines = summarizePurchaseOrderLines(oldOrderRows);
+  const newLines = summarizePurchaseOrderLines(sourceRows);
+  const keys = [...new Set([...oldLines.keys(), ...newLines.keys()])];
   return keys.map((key) => {
-    const current = currentMap.get(key);
-    const next = nextMap.get(key);
-    const oldQty = numberValue(current?.currentOrderQty);
-    const newQty = numberValue(next?.currentOrderQty);
-    const oldInboundQty = numberValue(current?.totalInboundQty);
-    const newInboundQty = numberValue(next?.currentInboundQty);
+    const oldLine = oldLines.get(key);
+    const newLine = newLines.get(key);
+    const oldQty = numberValue(oldLine?.quantity);
+    const newQty = numberValue(newLine?.quantity);
+    const oldInboundQty = numberValue(oldLine?.inboundQty);
+    const newInboundQty = numberValue(newLine?.inboundQty);
     const deltaQty = newQty - oldQty;
-    if (deltaQty === 0) return null;
+    if (Math.abs(deltaQty) < 0.000001) return null;
+
+    const current = currentMap.get(oldLine?.demandKey || newLine?.demandKey);
+    const next = nextMap.get(newLine?.demandKey || oldLine?.demandKey);
+    const metadata = newLine || oldLine;
+    const month = newLine?.month || oldLine?.month || next?.month || current?.month || '';
+    const businessUnit = newLine?.businessUnit || oldLine?.businessUnit || next?.businessUnit || current?.businessUnit || '';
+    const supplier = newLine?.supplier || oldLine?.supplier || next?.supplier || current?.supplier || '';
+    const materialCode = metadata?.materialCode || next?.materialCode || current?.materialCode || '';
+    const purchaseOrg = newLine?.purchaseOrg || oldLine?.purchaseOrg || next?.purchaseOrg || current?.purchaseOrg || '';
+    const demandKeyValue = newLine?.demandKey || oldLine?.demandKey || demandKey(purchaseOrg, month, businessUnit, supplier, materialCode);
+    const orderCreator = newLine?.creator || oldLine?.creator || current?.orderCreator || '';
+    const enriched = enrichDemandFields(supplier, materialCode, orderCreator, lookups);
     const progressInput = current ? {
       demand_key: current.demandKey,
       in_production_qty: current.inProductionQty,
@@ -1284,67 +1330,45 @@ function compareRowsFromSummary(summary, sourceRows, user) {
     const projectedProgress = next
       ? progressAfterInbound(next.trackingRemainingQty, progressInput, next.trackingInboundQty, { preserveExistingProgress: Boolean(current) })
       : progressAfterInbound(0, progressInput, 0, { preserveExistingProgress: Boolean(current) });
-    const nextOrderRows = sourceRowsByDemand.get(key) || [];
-    const oldOrderRows = oldOrderRowsByDemand.get(key) || [];
-    const orderCreator = uniqueCreators(nextOrderRows) || uniqueCreators(oldOrderRows) || current?.orderCreator || '';
-    const enriched = next ? enrichDemandFields(next.supplier, next.materialCode, orderCreator, lookups) : {};
-    const base = current || {
-      demandKey: key,
-      month: next.month,
-      businessUnit: next.businessUnit,
-      supplier: next.supplier,
-      supplierShortName: enriched.supplierShortName,
-      materialCode: next.materialCode,
-      sku: enriched.sku,
-      logisticsCode: enriched.logisticsCode,
-      materialName: next.materialName || enriched.materialName,
-      productLine: enriched.productLine,
-      productSeries: enriched.productSeries,
-      purchaseGroup: enriched.purchaseGroup,
-      purchaseOwner: enriched.purchaseOwner,
-      purchaseOrg: next.purchaseOrg || enriched.purchaseOrg,
-      stockQty: 0,
-      inProductionQty: projectedProgress.inProduction,
-      finishedQty: projectedProgress.finished,
-      shippedQty: projectedProgress.shipped,
-      progressTotal: 0
-    };
     const stock = current
       ? { stock_qty: current.stockQty }
-      : inventoryMap.get(stockKey(next.businessUnit, next.supplier, next.materialCode)) || { stock_qty: 0 };
+      : inventoryMap.get(stockKey(businessUnit, supplier, materialCode)) || { stock_qty: 0 };
     const handlingType = oldQty === 0 && newQty > 0
       ? 'auto_new'
       : oldQty > 0 && newQty === 0 && Math.abs(oldQty - oldInboundQty) < 0.000001
         ? 'auto_closed'
         : 'pending';
+    const displayBase = { purchaseOrg, month, businessUnit, supplier };
     return {
-      demandKey: key,
-      displayKey: displayDemandKey(base),
-      month: base.month,
-      businessUnit: base.businessUnit,
-      supplier: base.supplier,
-      supplierShortName: base.supplierShortName || '',
-      materialCode: base.materialCode,
-      sku: base.sku || '',
-      logisticsCode: base.logisticsCode || '',
-      materialName: base.materialName || '',
-      productLine: base.productLine || '',
-      productSeries: base.productSeries || '',
-      purchaseGroup: base.purchaseGroup || '',
-      purchaseOwner: base.purchaseOwner || enriched.purchaseOwner || UNASSIGNED_PURCHASE_OWNER,
-      purchaseOrg: next?.purchaseOrg || base.purchaseOrg || '',
+      demandKey: demandKeyValue,
+      displayKey: displayDemandKey(displayBase),
+      month,
+      businessUnit,
+      supplier,
+      supplierShortName: current?.supplierShortName || enriched.supplierShortName || '',
+      materialCode,
+      sku: current?.sku || enriched.sku || '',
+      logisticsCode: current?.logisticsCode || enriched.logisticsCode || '',
+      materialName: newLine?.materialName || oldLine?.materialName || next?.materialName || current?.materialName || enriched.materialName || '',
+      productLine: current?.productLine || enriched.productLine || '',
+      productSeries: current?.productSeries || enriched.productSeries || '',
+      purchaseGroup: current?.purchaseGroup || enriched.purchaseGroup || '',
+      purchaseOwner: current?.purchaseOwner || enriched.purchaseOwner || UNASSIGNED_PURCHASE_OWNER,
+      purchaseOrg,
       orderCreator,
+      orderNo: newLine?.orderNo || oldLine?.orderNo || '',
       oldQty,
       newQty,
       oldInboundQty,
       newInboundQty,
+      inboundDeltaQty: newInboundQty - oldInboundQty,
       deltaQty,
       diffQty: Math.abs(deltaQty),
-      diffType: !current ? '新增' : !next ? '消失' : deltaQty > 0 ? '数量增加' : '数量减少',
-      oldOrderNos: uniqueOrderNos(oldOrderRows) || current?.orderNo || '',
-      newOrderNos: uniqueOrderNos(nextOrderRows),
-      oldOrderDates: uniqueOrderDates(oldOrderRows) || current?.orderDates || '',
-      newOrderDates: uniqueOrderDates(nextOrderRows),
+      diffType: !oldLine ? '新增' : !newLine ? '消失' : deltaQty > 0 ? '数量增加' : '数量减少',
+      oldOrderNos: oldLine?.orderNo || '',
+      newOrderNos: newLine?.orderNo || '',
+      oldOrderDates: oldLine?.orderDate || '',
+      newOrderDates: newLine?.orderDate || '',
       inboundQty: newInboundQty,
       handlingType,
       automaticAction: handlingType === 'auto_new' ? '新增订单' : handlingType === 'auto_closed' ? '正常业务关闭' : '',
@@ -1356,7 +1380,11 @@ function compareRowsFromSummary(summary, sourceRows, user) {
       progressTotal: numberValue(projectedProgress.inProduction) + numberValue(projectedProgress.finished) + numberValue(projectedProgress.shipped),
       newSnapshot: next || null
     };
-  }).filter(Boolean).sort((a, b) => a.month === b.month ? a.demandKey.localeCompare(b.demandKey, 'zh-Hans-CN') : b.month.localeCompare(a.month));
+  }).filter(Boolean).sort((a, b) => (
+    b.month.localeCompare(a.month)
+    || (a.newOrderNos || a.oldOrderNos).localeCompare(b.newOrderNos || b.oldOrderNos, 'zh-Hans-CN')
+    || a.materialCode.localeCompare(b.materialCode, 'zh-Hans-CN')
+  ));
 }
 
 function persistDifferenceCompare({
@@ -1460,6 +1488,7 @@ function allocationRows(sessionId = '') {
       materialCode,
       oaFlowNo: demand?.oa_flow_no || normalize(row.demand_key).split('|')[5] || '',
       sku: demand?.sku || enriched.sku || '',
+      logisticsCode: demand?.logistics_code || enriched.logisticsCode || '',
       materialName: demand?.material_name || enriched.materialName || '',
       productLine: demand?.product_line || enriched.productLine || '',
       productSeries: demand?.product_series || enriched.productSeries || '',
@@ -1477,6 +1506,7 @@ function allocationRows(sessionId = '') {
       newQty: numberValue(row.new_qty),
       inboundQty: numberValue(row.inbound_qty),
       oldInboundQty: numberValue(row.old_inbound_qty),
+      inboundDeltaQty: numberValue(row.inbound_qty) - numberValue(row.old_inbound_qty),
       deltaQty: numberValue(row.delta_qty),
       progressTotal: numberValue(row.progress_total),
       stockQty: numberValue(row.stock_qty),
@@ -1559,6 +1589,7 @@ function compareRowsForSession(sessionId, user) {
       materialCode: row.material_code,
       oaFlowNo: demand?.oa_flow_no || '',
       sku: demand?.sku || enriched.sku || '',
+      logisticsCode: demand?.logistics_code || enriched.logisticsCode || '',
       materialName: demand?.material_name || enriched.materialName || '',
       productLine: demand?.product_line || enriched.productLine || '',
       productSeries: demand?.product_series || enriched.productSeries || '',
@@ -1578,6 +1609,7 @@ function compareRowsForSession(sessionId, user) {
       shippedQty: numberValue(demand?.tracking_inbound_qty),
       inboundQty: numberValue(row.inbound_qty),
       oldInboundQty: numberValue(row.old_inbound_qty),
+      inboundDeltaQty: numberValue(row.inbound_qty) - numberValue(row.old_inbound_qty),
       handlingType: row.handling_type || 'pending',
       inProductionQty: numberValue(progress.in_production_qty),
       finishedQty: numberValue(progress.finished_qty),

@@ -30,6 +30,8 @@ const PAGE_LABELS = {
   permissions: '权限管理'
 };
 
+const DEMAND_DATA_PAGES = new Set(['operationBoard', 'purchaseBoard', 'progressRefresh']);
+
 function visiblePagesForUser(user) {
   return PAGE_ORDER.filter((page) => user?.role === '管理员' || user?.pageAccess?.includes(page));
 }
@@ -354,6 +356,33 @@ function DataTable({ columns, rows, render, renderRow, className = '' }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+function paginationPageNumbers(currentPage, totalPages) {
+  const visiblePages = totalPages <= 7
+    ? Array.from({ length: totalPages }, (_, index) => index + 1)
+    : [...new Set([1, totalPages, currentPage - 1, currentPage, currentPage + 1].filter((page) => page >= 1 && page <= totalPages))].sort((a, b) => a - b);
+  return visiblePages.flatMap((page, index) => (
+    index > 0 && page - visiblePages[index - 1] > 1 ? [`ellipsis-${page}`, page] : [page]
+  ));
+}
+
+function TablePagination({ label, currentPage, totalPages, onPageChange, pageSize = 20 }) {
+  const pageNumbers = paginationPageNumbers(currentPage, totalPages);
+  return (
+    <nav className="table-pagination" aria-label={label}>
+      <button type="button" className="ghost compact-button" disabled={currentPage === 1} onClick={() => onPageChange(Math.max(1, currentPage - 1))}>上一页</button>
+      <div className="pagination-pages">
+        {pageNumbers.map((page) => (
+          typeof page === 'string'
+            ? <span key={page} className="pagination-ellipsis">…</span>
+            : <button key={page} type="button" className={`pagination-page${page === currentPage ? ' active' : ''}`} onClick={() => onPageChange(page)}>{page}</button>
+        ))}
+      </div>
+      <button type="button" className="ghost compact-button" disabled={currentPage === totalPages} onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}>下一页</button>
+      <span className="section-count">第 {currentPage} / {totalPages} 页，每页 {pageSize} 条</span>
+    </nav>
   );
 }
 
@@ -725,6 +754,8 @@ function Login({ onLogin }) {
 function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', currentAppliedAt = '' }) {
   const activeRows = useMemo(() => rows.filter((row) => row.active && numberValue(row.remainingInboundQty) > 0), [rows]);
   const [filters, setFilters] = useSessionFilters(filterKey, { month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
   const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const matchesDashboardFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
@@ -777,6 +808,11 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     if (next) setFilters(next);
   }, [options, filters, setFilters]);
   const filteredRows = useMemo(() => activeRows.filter((row) => matchesDashboardFilters(row)), [activeRows, filters]);
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const pageRows = useMemo(
+    () => filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [filteredRows, currentPage]
+  );
   const clearFilters = () => setFilters({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
   const remainingLabel = filterKey === 'operationBoard' ? '备货剩余数量' : '未交付数量';
   const remainingShortLabel = filterKey === 'operationBoard' ? '备货剩余' : '未交付';
@@ -800,6 +836,14 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     });
     return [...map.values()].sort((a, b) => b.orderQty - a.orderQty);
   }, [filteredRows]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   async function exportDashboardTable() {
     const XLSX = await import('xlsx');
@@ -902,7 +946,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       <section className="panel">
         <DataTable
           className="compact-table"
-          rows={filteredRows}
+          rows={pageRows}
           columns={filterKey === 'operationBoard'
             ? ['下单月份', '事业部', '供应商简称', '采购下单人', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']
             : ['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']}
@@ -940,6 +984,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
                 ]
           )}
         />
+        <TablePagination label={`${title}分页`} currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} pageSize={pageSize} />
       </section>
     </>
   );
@@ -959,6 +1004,8 @@ function SourceApplicationsNote({ sources = [] }) {
 function PurchaseBoard({ rows }) {
   const activeRows = useMemo(() => rows.filter((row) => row.active && numberValue(row.remainingInboundQty) > 0), [rows]);
   const [filters, setFilters] = useSessionFilters('purchaseBoard', { months: [], businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
   const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const matchesFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
@@ -1051,6 +1098,19 @@ function PurchaseBoard({ rows }) {
       items: [...itemMap.values()].sort((a, b) => a.materialCode.localeCompare(b.materialCode, 'zh-Hans-CN'))
     };
   }, [filteredRows]);
+  const totalPages = Math.max(1, Math.ceil(board.items.length / pageSize));
+  const pageItems = useMemo(
+    () => board.items.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [board.items, currentPage]
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const renderOrderCell = (order) => {
     if (!order) return null;
@@ -1117,7 +1177,7 @@ function PurchaseBoard({ rows }) {
             <tbody>
               {board.items.length === 0 ? (
                 <tr><td className="empty" colSpan={4 + Math.max(board.businessUnits.length, 1) * board.months.length}>暂无数据</td></tr>
-              ) : board.items.map((item) => (
+              ) : pageItems.map((item) => (
                 <tr key={item.key}>
                   <td className="board-sticky board-supplier-col">{item.supplier}</td>
                   <td className="board-sticky board-code-col">{item.materialCode}</td>
@@ -1135,6 +1195,7 @@ function PurchaseBoard({ rows }) {
             </tbody>
           </table>
         </div>
+        <TablePagination label="采购看板分页" currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} pageSize={pageSize} />
       </section>
     </>
   );
@@ -3016,26 +3077,35 @@ function App() {
   const [user, setUser] = useState(null);
   const [pages, setPages] = useState(PAGE_LABELS);
   const [activeTab, setActiveTab] = useState(storedActivePage);
+  const [visitedPages, setVisitedPages] = useState(() => {
+    const savedPage = storedActivePage();
+    return new Set(savedPage ? [savedPage] : []);
+  });
   const [demands, setDemands] = useState([]);
   const [demandMeta, setDemandMeta] = useState({ currentAppliedAt: '' });
+  const [demandsLoaded, setDemandsLoaded] = useState(false);
+  const [demandsLoading, setDemandsLoading] = useState(false);
   const [message, setMessage] = useState('');
 
-  async function reloadDemands() {
-    const payload = await request('/api/demands', { token });
-    setDemands(payload.rows || []);
-    setDemandMeta({ currentAppliedAt: payload.currentAppliedAt || '' });
+  async function reloadDemands(currentToken = token) {
+    setDemandsLoading(true);
+    try {
+      const payload = await request('/api/demands', { token: currentToken });
+      setDemands(payload.rows || []);
+      setDemandMeta({ currentAppliedAt: payload.currentAppliedAt || '' });
+      setDemandsLoaded(true);
+      return payload;
+    } finally {
+      setDemandsLoading(false);
+    }
   }
 
   async function bootstrap(currentToken = token) {
-    const [payload, demandPayload] = await Promise.all([
-      request('/api/bootstrap', { token: currentToken }),
-      request('/api/demands', { token: currentToken })
-    ]);
+    const payload = await request('/api/bootstrap', { token: currentToken });
     setUser(payload.user);
     setPages(payload.pages || PAGE_LABELS);
     setActiveTab((currentPage) => resolveActivePage(payload.user, currentPage));
-    setDemands(demandPayload.rows || []);
-    setDemandMeta({ currentAppliedAt: demandPayload.currentAppliedAt || '' });
+    setDemandMeta({ currentAppliedAt: payload.currentAppliedAt || '' });
   }
 
   useEffect(() => {
@@ -3049,6 +3119,9 @@ function App() {
 
   function handleLogin(payload) {
     window.localStorage.setItem(TOKEN_KEY, payload.token);
+    setDemands([]);
+    setDemandsLoaded(false);
+    setVisitedPages(new Set());
     setToken(payload.token);
     setUser(payload.user);
     setPages(payload.pages || PAGE_LABELS);
@@ -3057,6 +3130,12 @@ function App() {
 
   useEffect(() => {
     if (!user || !activeTab || !visiblePagesForUser(user).includes(activeTab)) return;
+    setVisitedPages((current) => {
+      if (current.has(activeTab)) return current;
+      const next = new Set(current);
+      next.add(activeTab);
+      return next;
+    });
     try {
       window.sessionStorage.setItem(ACTIVE_PAGE_KEY, activeTab);
     } catch {
@@ -3064,17 +3143,26 @@ function App() {
     }
   }, [activeTab, user]);
 
+  useEffect(() => {
+    if (!token || !user || !DEMAND_DATA_PAGES.has(activeTab) || demandsLoaded || demandsLoading) return;
+    reloadDemands(token).catch((error) => setMessage(`采购订单数据加载失败：${error.message}`));
+  }, [activeTab, token, user, demandsLoaded]);
+
   async function logout() {
     await request('/api/auth/logout', { token, method: 'POST' }).catch(() => {});
     window.localStorage.removeItem(TOKEN_KEY);
     setToken('');
     setUser(null);
+    setDemands([]);
+    setDemandsLoaded(false);
+    setVisitedPages(new Set());
   }
 
   if (!token || !user) return <Login onLogin={handleLogin} />;
 
   const visiblePages = visiblePagesForUser(user);
   const canView = (page) => visiblePages.includes(page);
+  const shouldMount = (page) => canView(page) && visitedPages.has(page);
 
   return (
     <main className="app-shell" onClick={() => setMessage('')}>
@@ -3096,16 +3184,17 @@ function App() {
       </aside>
       <section className="content" onClick={(event) => event.stopPropagation()}>
         {message && <p className="message">{message}</p>}
-        {canView('domesticBoard') && <PagePane page="domesticBoard" activeTab={activeTab}><DomesticBoard token={token} setMessage={setMessage} /></PagePane>}
-        {canView('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><Dashboard rows={demands} title="运营看板-未交付" filterKey="operationBoard" currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
-        {canView('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
-        {canView('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
-        {canView('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} reloadDemands={reloadDemands} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
-        {canView('differenceAllocation') && <PagePane page="differenceAllocation" activeTab={activeTab}><DifferenceAllocationPage token={token} user={user} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
-        {canView('wangdianData') && <PagePane page="wangdianData" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="国内数据" slots={WANGDIAN_SLOTS} /></PagePane>}
-        {canView('dimensionLibrary') && <PagePane page="dimensionLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
-        {canView('trace') && <PagePane page="trace" activeTab={activeTab}><TracePage token={token} setMessage={setMessage} /></PagePane>}
-        {canView('permissions') && <PagePane page="permissions" activeTab={activeTab}><PermissionsPage token={token} pages={pages} setMessage={setMessage} /></PagePane>}
+        {demandsLoading && DEMAND_DATA_PAGES.has(activeTab) && <p className="section-count">正在加载采购订单数据...</p>}
+        {shouldMount('domesticBoard') && <PagePane page="domesticBoard" activeTab={activeTab}><DomesticBoard token={token} setMessage={setMessage} /></PagePane>}
+        {shouldMount('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><Dashboard rows={demands} title="运营看板-未交付" filterKey="operationBoard" currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
+        {shouldMount('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
+        {shouldMount('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
+        {shouldMount('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} reloadDemands={reloadDemands} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
+        {shouldMount('differenceAllocation') && <PagePane page="differenceAllocation" activeTab={activeTab}><DifferenceAllocationPage token={token} user={user} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
+        {shouldMount('wangdianData') && <PagePane page="wangdianData" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="国内数据" slots={WANGDIAN_SLOTS} /></PagePane>}
+        {shouldMount('dimensionLibrary') && <PagePane page="dimensionLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
+        {shouldMount('trace') && <PagePane page="trace" activeTab={activeTab}><TracePage token={token} setMessage={setMessage} /></PagePane>}
+        {shouldMount('permissions') && <PagePane page="permissions" activeTab={activeTab}><PermissionsPage token={token} pages={pages} setMessage={setMessage} /></PagePane>}
         <PersistentHorizontalScrollbar activeTab={activeTab} />
       </section>
     </main>

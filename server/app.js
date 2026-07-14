@@ -1523,16 +1523,29 @@ function backfillCompareRowsFromSnapshot(session) {
 }
 
 function compareRowsForSession(sessionId, user) {
-  const demands = demandRows(false, user);
-  const demandMap = new Map(demands.map((row) => [row.demandKey, row]));
+  const demandMap = new Map(all('SELECT * FROM order_demands').map((row) => [row.demand_key, row]));
+  const progressMap = new Map(all('SELECT * FROM supplier_progress').map((row) => [row.demand_key, row]));
   const lookups = dimensionLookups();
-  return all('SELECT * FROM difference_compare_rows WHERE session_id = ? ORDER BY month DESC, business_unit, supplier, material_code', [sessionId]).map((row) => {
+  return all(
+    `SELECT r.*
+     FROM difference_compare_rows r
+     WHERE r.session_id = ?
+       AND r.handling_type = 'pending'
+       AND NOT EXISTS (
+         SELECT 1 FROM difference_allocations a
+         WHERE a.session_id = r.session_id AND a.row_id = r.id
+       )
+     ORDER BY r.month DESC, r.business_unit, r.supplier, r.material_code`,
+    [sessionId]
+  ).map((row) => {
     const demand = demandMap.get(row.demand_key);
-    const orderCreator = row.order_creator || demand?.orderCreator || '';
+    const progress = progressMap.get(row.demand_key) || {};
+    const orderCreator = row.order_creator || demand?.order_creator || '';
     const enriched = enrichDemandFields(row.supplier, row.material_code, orderCreator, lookups);
+    const purchaseOwner = realPurchaseOwner(enriched.purchaseOwner, demand?.purchase_owner) || UNASSIGNED_PURCHASE_OWNER;
     const permissionDemand = demand
-      ? { ...demand, order_creator: orderCreator, purchase_owner: demand.purchaseOwner || enriched.purchaseOwner }
-      : { purchase_owner: enriched.purchaseOwner, order_creator: orderCreator, supplier: row.supplier, material_code: row.material_code };
+      ? { ...demand, order_creator: orderCreator, purchase_owner: purchaseOwner }
+      : { purchase_owner: purchaseOwner, order_creator: orderCreator, supplier: row.supplier, material_code: row.material_code };
     if (!canEditDemand(user, permissionDemand)) return null;
     return {
       id: row.id,
@@ -1542,14 +1555,14 @@ function compareRowsForSession(sessionId, user) {
       month: row.month,
       businessUnit: row.business_unit,
       supplier: row.supplier,
-      supplierShortName: row.supplier_short_name || demand?.supplierShortName || '',
+      supplierShortName: row.supplier_short_name || demand?.supplier_short_name || enriched.supplierShortName || '',
       materialCode: row.material_code,
-      oaFlowNo: demand?.oaFlowNo || normalize(row.demand_key).split('|')[5] || '',
+      oaFlowNo: demand?.oa_flow_no || '',
       sku: demand?.sku || enriched.sku || '',
-      materialName: demand?.materialName || enriched.materialName || '',
-      productLine: demand?.productLine || enriched.productLine || '',
-      productSeries: demand?.productSeries || enriched.productSeries || '',
-      purchaseOwner: demand?.purchaseOwner || enriched.purchaseOwner,
+      materialName: demand?.material_name || enriched.materialName || '',
+      productLine: demand?.product_line || enriched.productLine || '',
+      productSeries: demand?.product_series || enriched.productSeries || '',
+      purchaseOwner,
       purchaseOrg: row.purchase_org,
       orderCreator,
       oldQty: numberValue(row.old_qty),
@@ -1562,14 +1575,14 @@ function compareRowsForSession(sessionId, user) {
       newOrderNos: row.new_order_nos || '',
       oldOrderDates: row.old_order_dates || '',
       newOrderDates: row.new_order_dates || '',
-      shippedQty: numberValue(demand?.shippedQty),
+      shippedQty: numberValue(demand?.tracking_inbound_qty),
       inboundQty: numberValue(row.inbound_qty),
       oldInboundQty: numberValue(row.old_inbound_qty),
       handlingType: row.handling_type || 'pending',
-      inProductionQty: numberValue(demand?.inProductionQty),
-      finishedQty: numberValue(demand?.finishedQty),
-      progressTotal: numberValue(demand?.inProductionQty) + numberValue(demand?.finishedQty),
-      stockQty: numberValue(demand?.stockQty ?? row.stock_qty)
+      inProductionQty: numberValue(progress.in_production_qty),
+      finishedQty: numberValue(progress.finished_qty),
+      progressTotal: numberValue(progress.in_production_qty) + numberValue(progress.finished_qty),
+      stockQty: numberValue(row.stock_qty)
     };
   }).filter(Boolean);
 }
@@ -1803,7 +1816,7 @@ app.post('/api/auth/logout', requireAuth, (req, res) => {
 });
 
 app.get('/api/bootstrap', requireAuth, (req, res) => {
-  res.json({ user: userPayload(req.user), pages: PAGE_LABELS, dimensionSlots: DIMENSION_SLOTS });
+  res.json({ user: userPayload(req.user), pages: PAGE_LABELS, dimensionSlots: DIMENSION_SLOTS, currentAppliedAt: currentAppliedAt() });
 });
 
 app.get('/api/domestic-board', requireAuth, requirePage('domesticBoard'), (req, res) => {

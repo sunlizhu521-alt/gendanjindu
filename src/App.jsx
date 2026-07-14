@@ -5,16 +5,15 @@ const TOKEN_KEY = 'gendanjinduToken';
 const ACTIVE_PAGE_KEY = 'gendanjinduActivePage';
 
 const PAGE_ORDER = [
-  'domesticBoard',
-  'operationBoard',
-  'purchaseBoard',
   'progressRefresh',
   'differenceAllocation',
+  'operationBoard',
+  'domesticBoard',
   'trace',
   'kingdeeImport',
-  'wangdianData',
   'dimensionLibrary',
-  'permissions'
+  'permissions',
+  'purchaseBoard'
 ];
 
 const PAGE_LABELS = {

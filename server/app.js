@@ -18,16 +18,15 @@ const ADMIN_NAME = process.env.ADMIN_NAME || '孙立柱';
 const ROLE_ADMIN = '管理员';
 const ROLE_USER = '普通用户';
 const ALL_PAGES = [
-  'domesticBoard',
-  'operationBoard',
-  'purchaseBoard',
   'progressRefresh',
   'differenceAllocation',
+  'operationBoard',
+  'domesticBoard',
   'trace',
   'kingdeeImport',
-  'wangdianData',
   'dimensionLibrary',
-  'permissions'
+  'permissions',
+  'purchaseBoard'
 ];
 const PAGE_LABELS = {
   domesticBoard: '国内事业部看板',

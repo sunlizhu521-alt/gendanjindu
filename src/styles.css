@@ -879,6 +879,15 @@ th {
   min-width: 720px;
 }
 
+.cross-border-table table {
+  min-width: 1480px;
+}
+
+.cross-border-table th,
+.cross-border-table td {
+  white-space: nowrap;
+}
+
 .change-record-table table {
   min-width: 1320px;
 }

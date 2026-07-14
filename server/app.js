@@ -24,6 +24,7 @@ const ALL_PAGES = [
   'domesticBoard',
   'wangdianData',
   'lingxingInventory',
+  'crossBorderInventory',
   'trace',
   'kingdeeImport',
   'dimensionLibrary',
@@ -39,6 +40,7 @@ const PAGE_LABELS = {
   differenceAllocation: '差异分配',
   wangdianData: '国内数据',
   lingxingInventory: '领星库存',
+  crossBorderInventory: '跨境库存看板',
   dimensionLibrary: '维度表库',
   trace: '变更追溯',
   permissions: '权限管理'
@@ -952,6 +954,56 @@ function domesticBoardRows() {
       updatedAt: normalize(manual.updated_at)
     };
   }).filter((row) => row.merchantCode);
+}
+
+function crossBorderInventoryRows() {
+  const warehouseMap = new Map();
+  getDimensionRows('lingxingWarehouseMap').forEach((row) => {
+    const lingxingWarehouseName = rowAliasValue(row, ['lingxingWarehouseName', '领星仓库名称', '领星仓库', '仓库名称', '仓库']);
+    if (!lingxingWarehouseName) return;
+    warehouseMap.set(normalizeMatchPart(lingxingWarehouseName), {
+      kingdeeWarehouseCode: rowAliasValue(row, ['kingdeeWarehouseCode', '金蝶仓库编码', '仓库编码', '仓库代码']),
+      kingdeeWarehouseName: rowAliasValue(row, ['kingdeeWarehouseName', '金蝶仓库名称', '金蝶仓库'])
+    });
+  });
+
+  const sources = [
+    ['lingxingFbaInventory', 'FBA'],
+    ['lingxingFbmInventory', 'FBM'],
+    ['lingxingWfsInventory', 'WFS']
+  ];
+  const rows = [];
+  sources.forEach(([slotId, inventoryType]) => {
+    getDimensionRows(slotId).forEach((row, index) => {
+      const warehouseName = rowAliasValue(row, ['warehouseName', '仓库名称', '仓库名', '仓库']);
+      const warehouse = warehouseMap.get(normalizeMatchPart(warehouseName)) || {};
+      const availableQty = numberValue(rowAliasValue(row, ['availableQty', '可用库存', '可售库存', '可用数量', '可售数量', '可售']));
+      const totalValue = rowAliasValue(row, ['totalQty', '总库存', '库存数量', '库存总量', '库存']);
+      const sku = rowAliasValue(row, ['sku', 'SKU', 'MSKU', 'Seller SKU', '卖家SKU', '商品SKU']);
+      const storeName = rowAliasValue(row, ['storeName', '店铺', '店铺名称', '账号', '账号名称']);
+      const marketplace = rowAliasValue(row, ['marketplace', '站点', '国家', '国家/地区', '销售平台']);
+      const fnsku = rowAliasValue(row, ['fnsku', 'FNSKU']);
+      const asin = rowAliasValue(row, ['asin', 'ASIN']);
+      const itemId = rowAliasValue(row, ['itemId', 'Item ID', 'ItemID', '商品ID', '产品ID']);
+      if (![sku, storeName, marketplace, warehouseName, fnsku, asin, itemId].some(Boolean) && availableQty === 0 && numberValue(totalValue) === 0) return;
+      rows.push({
+        id: [slotId, storeName, marketplace, sku, fnsku, asin, itemId, warehouseName, index].map(normalize).join('|'),
+        inventoryType,
+        storeName,
+        marketplace,
+        sku,
+        fnsku,
+        asin,
+        itemId,
+        warehouseName,
+        kingdeeWarehouseCode: normalize(warehouse.kingdeeWarehouseCode),
+        kingdeeWarehouseName: normalize(warehouse.kingdeeWarehouseName),
+        availableQty,
+        totalQty: totalValue ? numberValue(totalValue) : availableQty
+      });
+    });
+  });
+  return rows;
 }
 
 function enrichDemandFields(supplier, materialCode, orderCreator = '', lookups = dimensionLookups()) {
@@ -2064,6 +2116,20 @@ app.post('/api/auth/logout', requireAuth, (req, res) => {
 
 app.get('/api/bootstrap', requireAuth, (req, res) => {
   res.json({ user: userPayload(req.user), pages: PAGE_LABELS, dimensionSlots: DIMENSION_SLOTS, currentAppliedAt: currentAppliedAt() });
+});
+
+app.get('/api/cross-border-inventory', requireAuth, requirePage('crossBorderInventory'), (req, res) => {
+  const sourceSlots = [
+    ['lingxingFbaInventory', 'FBA库存'],
+    ['lingxingFbmInventory', 'FBM库存'],
+    ['lingxingWfsInventory', 'WFS库存'],
+    ['lingxingWarehouseMap', '领星&金蝶仓库对照表']
+  ];
+  const sourceApplications = sourceSlots.map(([slotId, label]) => {
+    const record = get('SELECT file_name, updated_at FROM dimension_files WHERE slot_id = ? AND applied = 1', [slotId]);
+    return { slotId, label, fileName: record?.file_name || '未上传', appliedAt: record?.updated_at || '暂无' };
+  });
+  res.json({ rows: crossBorderInventoryRows(), sourceApplications });
 });
 
 app.get('/api/domestic-board', requireAuth, requirePage('domesticBoard'), (req, res) => {

@@ -11,6 +11,7 @@ const PAGE_ORDER = [
   'domesticBoard',
   'wangdianData',
   'lingxingInventory',
+  'crossBorderInventory',
   'trace',
   'kingdeeImport',
   'dimensionLibrary',
@@ -27,6 +28,7 @@ const PAGE_LABELS = {
   differenceAllocation: '差异分配',
   wangdianData: '国内数据',
   lingxingInventory: '领星库存',
+  crossBorderInventory: '跨境库存看板',
   dimensionLibrary: '维度表库',
   trace: '变更追溯',
   permissions: '权限管理'
@@ -393,6 +395,51 @@ function ProgressStackedChart({ title, rows, groupBy }) {
                 </div>
               </div>
               <strong className="stack-summary">{remainingQty.toLocaleString()}</strong>
+            </div>
+          );
+        })}
+      </div>
+    </article>
+  );
+}
+
+function InventoryRankingChart({ title, rows, groupBy }) {
+  const chartRows = useMemo(() => {
+    const map = new Map();
+    rows.forEach((row) => {
+      const name = normalize(groupBy(row)) || '未分类';
+      map.set(name, numberValue(map.get(name)) + numberValue(row.availableQty));
+    });
+    return [...map.entries()]
+      .map(([name, value]) => ({ name, value }))
+      .filter((row) => row.value > 0)
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 15);
+  }, [rows, groupBy]);
+  const maxValue = Math.max(...chartRows.map((row) => row.value), 1);
+
+  return (
+    <article className="panel progress-stack-chart">
+      <div className="chart-title-row">
+        <h3>{title}</h3>
+        <span className="chart-legend"><i className="in-production" />可用库存</span>
+      </div>
+      <div className="stack-list">
+        {chartRows.length === 0 ? (
+          <p className="empty-chart">暂无数据</p>
+        ) : chartRows.map((row) => {
+          const barPct = Math.max(Math.min(row.value / maxValue * 100, 100), 8);
+          return (
+            <div key={row.name} className="stack-row">
+              <span title={row.name}>{row.name}</span>
+              <div className="stack-track" title={`${row.name}：${row.value.toLocaleString()}`}>
+                <div className="stack-total" data-segments="1" style={{ width: `${barPct}%` }}>
+                  <div className="stack-fill in-production" style={{ width: '100%' }}>
+                    <b>{row.value.toLocaleString()}</b>
+                  </div>
+                </div>
+              </div>
+              <strong className="stack-summary">{row.value.toLocaleString()}</strong>
             </div>
           );
         })}
@@ -1071,6 +1118,169 @@ function SourceApplicationsNote({ sources = [] }) {
     ? sources.map((source) => `${source.label}：${source.appliedAt || '暂无'}`).join('；')
     : '暂无';
   return <div className="dashboard-applied-note">文件应用时间：{text}</div>;
+}
+
+function CrossBorderInventoryBoard({ token, setMessage }) {
+  const [rows, setRows] = useState([]);
+  const [sourceApplications, setSourceApplications] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
+  const [filters, setFilters] = useSessionFilters('crossBorderInventory', {
+    inventoryType: '',
+    storeName: '',
+    marketplace: '',
+    warehouseName: '',
+    kingdeeWarehouse: '',
+    sku: '',
+    keyword: ''
+  });
+
+  useEffect(() => {
+    request('/api/cross-border-inventory', { token })
+      .then((payload) => {
+        setRows(payload.rows || []);
+        setSourceApplications(payload.sourceApplications || []);
+      })
+      .catch((err) => setMessage(`跨境库存看板加载失败：${err.message}`));
+  }, [token]);
+
+  const matchesFilters = (row, omit = '') => {
+    const keyword = filters.keyword.toLowerCase();
+    const kingdeeWarehouse = normalize(row.kingdeeWarehouseName) || normalize(row.kingdeeWarehouseCode);
+    const text = [
+      row.inventoryType,
+      row.storeName,
+      row.marketplace,
+      row.sku,
+      row.fnsku,
+      row.asin,
+      row.itemId,
+      row.warehouseName,
+      row.kingdeeWarehouseCode,
+      row.kingdeeWarehouseName
+    ].join(' ').toLowerCase();
+    return (!keyword || text.includes(keyword))
+      && (omit === 'inventoryType' || !filters.inventoryType || row.inventoryType === filters.inventoryType)
+      && (omit === 'storeName' || !filters.storeName || row.storeName === filters.storeName)
+      && (omit === 'marketplace' || !filters.marketplace || row.marketplace === filters.marketplace)
+      && (omit === 'warehouseName' || !filters.warehouseName || row.warehouseName === filters.warehouseName)
+      && (omit === 'kingdeeWarehouse' || !filters.kingdeeWarehouse || kingdeeWarehouse === filters.kingdeeWarehouse)
+      && (omit === 'sku' || !filters.sku || row.sku === filters.sku);
+  };
+  const unique = (values) => [...new Set(values.map(normalize).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+  const options = useMemo(() => {
+    const rowsFor = (field) => rows.filter((row) => matchesFilters(row, field));
+    return {
+      inventoryTypes: unique(rowsFor('inventoryType').map((row) => row.inventoryType)),
+      storeNames: unique(rowsFor('storeName').map((row) => row.storeName)),
+      marketplaces: unique(rowsFor('marketplace').map((row) => row.marketplace)),
+      warehouseNames: unique(rowsFor('warehouseName').map((row) => row.warehouseName)),
+      kingdeeWarehouses: unique(rowsFor('kingdeeWarehouse').map((row) => row.kingdeeWarehouseName || row.kingdeeWarehouseCode)),
+      skus: unique(rowsFor('sku').map((row) => row.sku))
+    };
+  }, [rows, filters]);
+  useEffect(() => {
+    const next = clearInvalidFilterValues(filters, {
+      inventoryType: options.inventoryTypes,
+      storeName: options.storeNames,
+      marketplace: options.marketplaces,
+      warehouseName: options.warehouseNames,
+      kingdeeWarehouse: options.kingdeeWarehouses,
+      sku: options.skus
+    });
+    if (next) setFilters(next);
+  }, [options, filters, setFilters]);
+
+  const filteredRows = useMemo(() => rows.filter((row) => matchesFilters(row)), [rows, filters]);
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const pageRows = useMemo(
+    () => filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [filteredRows, currentPage]
+  );
+  const summary = useMemo(() => ({
+    totalQty: filteredRows.reduce((sum, row) => sum + numberValue(row.totalQty), 0),
+    availableQty: filteredRows.reduce((sum, row) => sum + numberValue(row.availableQty), 0),
+    skuCount: new Set(filteredRows.map((row) => normalize(row.sku)).filter(Boolean)).size,
+    warehouseCount: new Set(filteredRows.map((row) => normalize(row.kingdeeWarehouseName || row.warehouseName)).filter(Boolean)).size
+  }), [filteredRows]);
+
+  useEffect(() => { setCurrentPage(1); }, [filters]);
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
+
+  const clearFilters = () => setFilters({ inventoryType: '', storeName: '', marketplace: '', warehouseName: '', kingdeeWarehouse: '', sku: '', keyword: '' });
+
+  async function exportTable() {
+    try {
+      const XLSX = await import('xlsx');
+      const headers = ['库存类型', '店铺', '站点', 'SKU', 'FNSKU', 'ASIN', 'Item ID', '领星仓库', '金蝶仓库编码', '金蝶仓库名称', '可用库存', '总库存'];
+      const aoa = [headers, ...filteredRows.map((row) => [
+        row.inventoryType,
+        row.storeName,
+        row.marketplace,
+        row.sku,
+        row.fnsku,
+        row.asin,
+        row.itemId,
+        row.warehouseName,
+        row.kingdeeWarehouseCode,
+        row.kingdeeWarehouseName,
+        numberValue(row.availableQty),
+        numberValue(row.totalQty)
+      ])];
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+      worksheet['!cols'] = headers.map((header) => ({ wch: Math.max(12, header.length + 4) }));
+      XLSX.utils.book_append_sheet(workbook, worksheet, '跨境库存看板');
+      XLSX.writeFile(workbook, `跨境库存看板_${todayText()}.xlsx`);
+      setMessage(`已导出 ${filteredRows.length} 行跨境库存数据。`);
+    } catch (err) {
+      setMessage(`导出失败：${err.message}`);
+    }
+  }
+
+  return (
+    <>
+      <div className="section-heading-row dashboard-heading">
+        <h2>跨境库存看板</h2>
+        <span className="section-count">当前显示 {filteredRows.length} / {rows.length} 条，第 {currentPage} / {totalPages} 页</span>
+      </div>
+      <SourceApplicationsNote sources={sourceApplications} />
+      <div className="toolbar filters-row">
+        <SelectField label="库存类型" value={filters.inventoryType} options={options.inventoryTypes} onChange={(value) => setFilters({ ...filters, inventoryType: value })} />
+        <SelectField label="店铺" value={filters.storeName} options={options.storeNames} onChange={(value) => setFilters({ ...filters, storeName: value })} />
+        <SelectField label="站点" value={filters.marketplace} options={options.marketplaces} onChange={(value) => setFilters({ ...filters, marketplace: value })} />
+        <SelectField label="领星仓库" value={filters.warehouseName} options={options.warehouseNames} onChange={(value) => setFilters({ ...filters, warehouseName: value })} />
+        <SelectField label="金蝶仓库" value={filters.kingdeeWarehouse} options={options.kingdeeWarehouses} onChange={(value) => setFilters({ ...filters, kingdeeWarehouse: value })} />
+        <SelectField label="SKU" value={filters.sku} options={options.skus} onChange={(value) => setFilters({ ...filters, sku: value })} />
+        <input className="search-input" placeholder="搜索店铺、站点、SKU、FNSKU、ASIN、Item ID、仓库" value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} />
+        <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
+        <button type="button" className="compact-button" onClick={exportTable}>导出表格</button>
+      </div>
+      <section className="metric-grid">
+        <MetricCard label="总库存" value={summary.totalQty.toLocaleString()} />
+        <MetricCard label="可用库存" value={summary.availableQty.toLocaleString()} />
+        <MetricCard label="SKU数量" value={summary.skuCount.toLocaleString()} />
+        <MetricCard label="仓库数量" value={summary.warehouseCount.toLocaleString()} />
+      </section>
+      <section className="progress-chart-grid operation-chart-grid">
+        <InventoryRankingChart title="库存类型可用库存" rows={filteredRows} groupBy={(row) => row.inventoryType} />
+        <InventoryRankingChart title="店铺可用库存" rows={filteredRows} groupBy={(row) => row.storeName} />
+        <InventoryRankingChart title="站点可用库存" rows={filteredRows} groupBy={(row) => row.marketplace} />
+        <InventoryRankingChart title="SKU可用库存" rows={filteredRows} groupBy={(row) => row.sku} />
+      </section>
+      <section className="panel">
+        <DataTable
+          className="compact-table cross-border-table"
+          rows={pageRows}
+          columns={['库存类型', '店铺', '站点', 'SKU', 'FNSKU', 'ASIN', 'Item ID', '领星仓库', '金蝶仓库编码', '金蝶仓库名称', '可用库存', '总库存']}
+          render={(row) => [row.inventoryType, row.storeName, row.marketplace, row.sku, row.fnsku, row.asin, row.itemId, row.warehouseName, row.kingdeeWarehouseCode, row.kingdeeWarehouseName, row.availableQty, row.totalQty]}
+        />
+        <TablePagination label="跨境库存看板分页" currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} pageSize={pageSize} />
+      </section>
+    </>
+  );
 }
 
 function PurchaseBoard({ rows }) {
@@ -3319,6 +3529,7 @@ function App() {
         {shouldMount('differenceAllocation') && <PagePane page="differenceAllocation" activeTab={activeTab}><DifferenceAllocationPage token={token} user={user} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('wangdianData') && <PagePane page="wangdianData" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="国内数据" slots={WANGDIAN_SLOTS} /></PagePane>}
         {shouldMount('lingxingInventory') && <PagePane page="lingxingInventory" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="领星库存" slots={LINGXING_INVENTORY_SLOTS} /></PagePane>}
+        {shouldMount('crossBorderInventory') && <PagePane page="crossBorderInventory" activeTab={activeTab}><CrossBorderInventoryBoard token={token} setMessage={setMessage} /></PagePane>}
         {shouldMount('dimensionLibrary') && <PagePane page="dimensionLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
         {shouldMount('trace') && <PagePane page="trace" activeTab={activeTab}><TracePage token={token} setMessage={setMessage} /></PagePane>}
         {shouldMount('permissions') && <PagePane page="permissions" activeTab={activeTab}><PermissionsPage token={token} pages={pages} setMessage={setMessage} /></PagePane>}

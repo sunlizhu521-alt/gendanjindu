@@ -2041,12 +2041,16 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, selected = fals
 }
 
 function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产跟进', onlyIssues = false, currentAppliedAt = '' }) {
-  const { filters, setFilters, options, filtered } = useFilteredDemands(rows.filter((row) => row.active), onlyIssues ? 'progressIssues' : 'progressRefresh');
+  const trackableRows = useMemo(
+    () => rows.filter((row) => row.active && numberValue(row.remainingInboundQty) > 0),
+    [rows]
+  );
+  const { filters, setFilters, options, filtered } = useFilteredDemands(trackableRows, onlyIssues ? 'progressIssues' : 'progressRefresh');
   const [selectedKeys, setSelectedKeys] = useState([]);
   const [drafts, setDrafts] = useState({});
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
-  const visibleFiltered = useMemo(() => filtered.filter((row) => numberValue(row.remainingInboundQty) > 0), [filtered]);
+  const visibleFiltered = filtered;
   const displayRows = onlyIssues
     ? visibleFiltered.filter((row) => numberValue(row.gap) !== 0 || !row.progressUpdatedAt)
     : visibleFiltered;

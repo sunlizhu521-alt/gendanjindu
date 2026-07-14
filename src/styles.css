@@ -1042,7 +1042,7 @@ th {
   grid-template-columns: minmax(88px, 30%) minmax(0, 1fr) minmax(40px, max-content);
   align-content: start;
   gap: 7px;
-  height: 260px;
+  height: 428px;
   overflow-x: hidden;
   overflow-y: scroll;
   overscroll-behavior: contain;

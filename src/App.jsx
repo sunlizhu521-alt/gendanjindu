@@ -2138,6 +2138,9 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
   const [selectedRowIds, setSelectedRowIds] = useState([]);
   const [filters, setFilters] = useSessionFilters('differenceAllocation', { month: '', supplier: '', businessUnit: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
   const [loading, setLoading] = useState(false);
+  const [pendingPage, setPendingPage] = useState(1);
+  const [recordPage, setRecordPage] = useState(1);
+  const pageSize = 20;
 
   async function loadLatest() {
     setLoading(true);
@@ -2286,11 +2289,44 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
   const pendingRows = useMemo(() => diffRows.filter((row) => !allocatedRowIds.has(row.id)), [diffRows, allocations]);
   const filteredDiffRows = useMemo(() => pendingRows.filter(matchesFilters), [pendingRows, filters]);
   const filteredAllocations = useMemo(() => allocations.filter(matchesFilters), [allocations, filters]);
+  const pendingTotalPages = Math.max(1, Math.ceil(filteredDiffRows.length / pageSize));
+  const recordTotalPages = Math.max(1, Math.ceil(filteredAllocations.length / pageSize));
+  const pendingPageRows = useMemo(
+    () => filteredDiffRows.slice((pendingPage - 1) * pageSize, pendingPage * pageSize),
+    [filteredDiffRows, pendingPage]
+  );
+  const recordPageRows = useMemo(
+    () => filteredAllocations.slice((recordPage - 1) * pageSize, recordPage * pageSize),
+    [filteredAllocations, recordPage]
+  );
+  const pageNumbers = (currentPage, totalPages) => {
+    const visiblePages = totalPages <= 7
+      ? Array.from({ length: totalPages }, (_, index) => index + 1)
+      : [...new Set([1, totalPages, currentPage - 1, currentPage, currentPage + 1].filter((page) => page >= 1 && page <= totalPages))].sort((a, b) => a - b);
+    return visiblePages.flatMap((page, index) => (
+      index > 0 && page - visiblePages[index - 1] > 1 ? [`ellipsis-${page}`, page] : [page]
+    ));
+  };
+  const pendingPageNumbers = useMemo(() => pageNumbers(pendingPage, pendingTotalPages), [pendingPage, pendingTotalPages]);
+  const recordPageNumbers = useMemo(() => pageNumbers(recordPage, recordTotalPages), [recordPage, recordTotalPages]);
   const pendingCount = filteredDiffRows.length;
   const totalPendingCount = pendingRows.length;
   const selectedPendingCount = selectedRowIds.filter((id) => !allocatedRowIds.has(id)).length;
   const allFilteredPendingSelected = pendingCount > 0 && filteredDiffRows.every((row) => selectedRowIds.includes(row.id));
   const clearFilters = () => setFilters({ month: '', supplier: '', businessUnit: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
+
+  useEffect(() => {
+    setPendingPage(1);
+    setRecordPage(1);
+  }, [filters]);
+
+  useEffect(() => {
+    if (pendingPage > pendingTotalPages) setPendingPage(pendingTotalPages);
+  }, [pendingPage, pendingTotalPages]);
+
+  useEffect(() => {
+    if (recordPage > recordTotalPages) setRecordPage(recordTotalPages);
+  }, [recordPage, recordTotalPages]);
 
   return (
     <>
@@ -2330,7 +2366,7 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
         </div>
         <DataTable
           className="diff-allocation-table"
-          rows={filteredDiffRows}
+          rows={pendingPageRows}
           columns={[
             <label className="select-all-header" key="select-all">
               <input
@@ -2424,16 +2460,40 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
             );
           }}
         />
+        <nav className="table-pagination" aria-label="待分配差异分页">
+          <button type="button" className="ghost compact-button" disabled={pendingPage === 1} onClick={() => setPendingPage((page) => Math.max(1, page - 1))}>上一页</button>
+          <div className="pagination-pages">
+            {pendingPageNumbers.map((page) => (
+              typeof page === 'string'
+                ? <span key={page} className="pagination-ellipsis">…</span>
+                : <button key={page} type="button" className={`pagination-page${page === pendingPage ? ' active' : ''}`} onClick={() => setPendingPage(page)}>{page}</button>
+            ))}
+          </div>
+          <button type="button" className="ghost compact-button" disabled={pendingPage === pendingTotalPages} onClick={() => setPendingPage((page) => Math.min(pendingTotalPages, page + 1))}>下一页</button>
+          <span className="section-count">第 {pendingPage} / {pendingTotalPages} 页，每页 20 条</span>
+        </nav>
       </section>
 
       <section className="panel" style={{ marginTop: 16 }}>
         <div className="section-heading-row"><h3>采购订单记录</h3><span className="section-count">自动处理与人工提交共 {filteredAllocations.length} / {allocations.length} 条</span></div>
         <DataTable
           className="compact-table"
-          rows={filteredAllocations}
+          rows={recordPageRows}
           columns={['处理方式', '主键', 'OA备货流程号', '采购下单人', '物料编码', '原采购订单号', '原采购订单创建时间', '新采购订单号', '新采购订单创建时间', '原采购数量', '原累计入库', '新采购数量', '新累计入库', '差异', '原因', '操作', '备注', '提交人', '提交时间']}
           render={(row) => [row.automatic ? '系统自动' : '人工提交', row.displayKey || row.demandKey, row.oaFlowNo || '', row.purchaseOwner || '', row.materialCode || '', row.oldOrderNos || '', row.oldOrderDates || '', row.newOrderNos || '', row.newOrderDates || '', row.oldQty, row.oldInboundQty || '', row.newQty, row.inboundQty || '', signedNumber(row.deltaQty), row.reason, row.actionType, row.remark, row.createdBy, row.createdAt]}
         />
+        <nav className="table-pagination" aria-label="采购订单记录分页">
+          <button type="button" className="ghost compact-button" disabled={recordPage === 1} onClick={() => setRecordPage((page) => Math.max(1, page - 1))}>上一页</button>
+          <div className="pagination-pages">
+            {recordPageNumbers.map((page) => (
+              typeof page === 'string'
+                ? <span key={page} className="pagination-ellipsis">…</span>
+                : <button key={page} type="button" className={`pagination-page${page === recordPage ? ' active' : ''}`} onClick={() => setRecordPage(page)}>{page}</button>
+            ))}
+          </div>
+          <button type="button" className="ghost compact-button" disabled={recordPage === recordTotalPages} onClick={() => setRecordPage((page) => Math.min(recordTotalPages, page + 1))}>下一页</button>
+          <span className="section-count">第 {recordPage} / {recordTotalPages} 页，每页 20 条</span>
+        </nav>
       </section>
     </>
   );

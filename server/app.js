@@ -1589,19 +1589,40 @@ function compareRowsForSession(sessionId, user) {
 
 function unassignedPurchaseOrderRows() {
   const lookups = dimensionLookups();
+  const batches = all(
+    `SELECT id
+     FROM kingdee_import_batches
+     WHERE applied_at <> ''
+     ORDER BY applied_at DESC, imported_at DESC, rowid DESC
+     LIMIT 2`
+  );
+  const currentBatchId = normalize(batches[0]?.id);
+  const previousBatchId = normalize(batches[1]?.id);
+  if (!currentBatchId) return [];
+  const rowKey = (row) => [row.purchase_org, row.supplier, row.order_no, row.material_code].map(normalize).join('|');
+  const previousQuantities = new Map();
+  if (previousBatchId) {
+    all(
+      `SELECT purchase_org, supplier, order_no, material_code, quantity
+       FROM kingdee_orders
+       WHERE batch_id = ?`,
+      [previousBatchId]
+    ).forEach((row) => {
+      const key = rowKey(row);
+      previousQuantities.set(key, numberValue(previousQuantities.get(key)) + numberValue(row.quantity));
+    });
+  }
   const grouped = new Map();
   all(
     `SELECT k.purchase_org, k.supplier, k.creator, k.order_no, k.material_code, k.material_name, k.quantity
      FROM kingdee_orders k
-     JOIN order_demands d
-       ON d.demand_key = k.demand_key
-      AND d.source_batch_id = k.batch_id
-     WHERE d.active = 1
-     ORDER BY k.supplier, k.order_no, k.material_code`
+     WHERE k.batch_id = ?
+     ORDER BY k.supplier, k.order_no, k.material_code`,
+    [currentBatchId]
   ).forEach((row) => {
     const enriched = enrichDemandFields(row.supplier, row.material_code, row.creator, lookups);
     if (realPurchaseOwner(enriched.purchaseOwner)) return;
-    const key = [row.purchase_org, row.supplier, row.creator, row.order_no, row.material_code, row.material_name].map(normalize).join('|');
+    const key = rowKey(row);
     const current = grouped.get(key) || {
       purchaseOrg: normalize(row.purchase_org),
       supplier: normalize(row.supplier),
@@ -1609,9 +1630,11 @@ function unassignedPurchaseOrderRows() {
       orderNo: normalize(row.order_no),
       materialCode: normalize(row.material_code),
       materialName: normalize(row.material_name) || enriched.materialName || '',
-      quantity: 0
+      oldPurchaseQty: numberValue(previousQuantities.get(key)),
+      newPurchaseQty: 0
     };
-    current.quantity += numberValue(row.quantity);
+    current.creator = appendUniqueDelimited(current.creator, row.creator);
+    current.newPurchaseQty += numberValue(row.quantity);
     grouped.set(key, current);
   });
   return [...grouped.values()].sort((left, right) => (
@@ -2164,7 +2187,7 @@ app.get('/api/difference-allocations/unassigned-purchase-orders', requireAuth, r
 
 app.get('/api/difference-allocations/unassigned-purchase-orders/export', requireAuth, requirePage('differenceAllocation'), (req, res) => {
   const rows = unassignedPurchaseOrderRows();
-  const headers = ['采购组织', '供应商', '创建人', '采购订单号', '物料编码', '物料名称', '采购数量'];
+  const headers = ['采购组织', '供应商', '创建人', '采购订单号', '物料编码', '物料名称', '原采购数量', '新采购数量'];
   const aoa = [headers, ...rows.map((row) => [
     row.purchaseOrg,
     row.supplier,
@@ -2172,11 +2195,12 @@ app.get('/api/difference-allocations/unassigned-purchase-orders/export', require
     row.orderNo,
     row.materialCode,
     row.materialName,
-    row.quantity
+    row.oldPurchaseQty,
+    row.newPurchaseQty
   ])];
   const workbook = xlsx.utils.book_new();
   const worksheet = xlsx.utils.aoa_to_sheet(aoa);
-  worksheet['!cols'] = [18, 36, 14, 18, 18, 42, 14].map((wch) => ({ wch }));
+  worksheet['!cols'] = [18, 36, 14, 18, 18, 42, 14, 14].map((wch) => ({ wch }));
   xlsx.utils.book_append_sheet(workbook, worksheet, '未分配采购下单人明细');
   const buffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
   const fileName = '未分配采购下单人明细.xlsx';

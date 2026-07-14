@@ -1646,7 +1646,7 @@ function unassignedPurchaseOrderRows() {
   }
   const grouped = new Map();
   all(
-    `SELECT k.purchase_org, k.supplier, k.creator, k.order_no, k.material_code, k.material_name, k.quantity
+    `SELECT k.purchase_org, k.supplier, k.creator, k.purchase_date, k.order_no, k.material_code, k.material_name, k.quantity
      FROM kingdee_orders k
      WHERE k.batch_id = ?
      ORDER BY k.supplier, k.order_no, k.material_code`,
@@ -1659,6 +1659,7 @@ function unassignedPurchaseOrderRows() {
       purchaseOrg: normalize(row.purchase_org),
       supplier: normalize(row.supplier),
       creator: normalize(row.creator),
+      purchaseDate: normalize(row.purchase_date),
       orderNo: normalize(row.order_no),
       materialCode: normalize(row.material_code),
       materialName: normalize(row.material_name) || enriched.materialName || '',
@@ -1666,6 +1667,7 @@ function unassignedPurchaseOrderRows() {
       newPurchaseQty: 0
     };
     current.creator = appendUniqueDelimited(current.creator, row.creator);
+    current.purchaseDate = appendUniqueDelimited(current.purchaseDate, row.purchase_date);
     current.newPurchaseQty += numberValue(row.quantity);
     grouped.set(key, current);
   });
@@ -2219,11 +2221,12 @@ app.get('/api/difference-allocations/unassigned-purchase-orders', requireAuth, r
 
 app.get('/api/difference-allocations/unassigned-purchase-orders/export', requireAuth, requirePage('differenceAllocation'), (req, res) => {
   const rows = unassignedPurchaseOrderRows();
-  const headers = ['采购组织', '供应商', '创建人', '采购订单号', '物料编码', '物料名称', '原采购数量', '新采购数量'];
+  const headers = ['采购组织', '供应商', '创建人', '采购日期', '采购订单号', '物料编码', '物料名称', '原采购数量', '新采购数量'];
   const aoa = [headers, ...rows.map((row) => [
     row.purchaseOrg,
     row.supplier,
     row.creator,
+    row.purchaseDate,
     row.orderNo,
     row.materialCode,
     row.materialName,
@@ -2232,7 +2235,7 @@ app.get('/api/difference-allocations/unassigned-purchase-orders/export', require
   ])];
   const workbook = xlsx.utils.book_new();
   const worksheet = xlsx.utils.aoa_to_sheet(aoa);
-  worksheet['!cols'] = [18, 36, 14, 18, 18, 42, 14, 14].map((wch) => ({ wch }));
+  worksheet['!cols'] = [18, 36, 14, 16, 18, 18, 42, 14, 14].map((wch) => ({ wch }));
   xlsx.utils.book_append_sheet(workbook, worksheet, '未分配采购下单人明细');
   const buffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
   const fileName = '未分配采购下单人明细.xlsx';

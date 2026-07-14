@@ -2583,8 +2583,8 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
         <DataTable
           className="compact-table"
           rows={unassignedOrders.rows || []}
-          columns={['采购组织', '供应商', '创建人', '采购订单号', '物料编码', '物料名称', '原采购数量', '新采购数量']}
-          render={(row) => [row.purchaseOrg, row.supplier, row.creator, row.orderNo, row.materialCode, row.materialName, row.oldPurchaseQty, row.newPurchaseQty]}
+          columns={['采购组织', '供应商', '创建人', '采购日期', '采购订单号', '物料编码', '物料名称', '原采购数量', '新采购数量']}
+          render={(row) => [row.purchaseOrg, row.supplier, row.creator, row.purchaseDate, row.orderNo, row.materialCode, row.materialName, row.oldPurchaseQty, row.newPurchaseQty]}
         />
         <TablePagination
           label="未分配采购下单人明细分页"

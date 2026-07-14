@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 const API = import.meta.env.DEV ? 'http://localhost:4003' : '';
 const TOKEN_KEY = 'gendanjinduToken';
+const ACTIVE_PAGE_KEY = 'gendanjinduActivePage';
 
 const PAGE_ORDER = [
   'domesticBoard',
@@ -28,6 +29,26 @@ const PAGE_LABELS = {
   trace: '变更追溯',
   permissions: '权限管理'
 };
+
+function visiblePagesForUser(user) {
+  return PAGE_ORDER.filter((page) => user?.role === '管理员' || user?.pageAccess?.includes(page));
+}
+
+function storedActivePage() {
+  try {
+    return window.sessionStorage.getItem(ACTIVE_PAGE_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function resolveActivePage(user, currentPage = '') {
+  const visiblePages = visiblePagesForUser(user);
+  if (visiblePages.includes(currentPage)) return currentPage;
+  const savedPage = storedActivePage();
+  if (visiblePages.includes(savedPage)) return savedPage;
+  return visiblePages[0] || 'domesticBoard';
+}
 
 const DIMENSION_SLOTS = [
   { id: 'productCategory', title: '商品分类', fields: [
@@ -2934,7 +2955,7 @@ function App() {
   const [token, setToken] = useState(() => window.localStorage.getItem(TOKEN_KEY) || '');
   const [user, setUser] = useState(null);
   const [pages, setPages] = useState(PAGE_LABELS);
-  const [activeTab, setActiveTab] = useState('domesticBoard');
+  const [activeTab, setActiveTab] = useState(storedActivePage);
   const [demands, setDemands] = useState([]);
   const [demandMeta, setDemandMeta] = useState({ currentAppliedAt: '' });
   const [message, setMessage] = useState('');
@@ -2952,7 +2973,7 @@ function App() {
     ]);
     setUser(payload.user);
     setPages(payload.pages || PAGE_LABELS);
-    setActiveTab(PAGE_ORDER.find((page) => payload.user.role === '管理员' || payload.user.pageAccess?.includes(page)) || 'domesticBoard');
+    setActiveTab((currentPage) => resolveActivePage(payload.user, currentPage));
     setDemands(demandPayload.rows || []);
     setDemandMeta({ currentAppliedAt: demandPayload.currentAppliedAt || '' });
   }
@@ -2971,8 +2992,17 @@ function App() {
     setToken(payload.token);
     setUser(payload.user);
     setPages(payload.pages || PAGE_LABELS);
-    setActiveTab(PAGE_ORDER.find((page) => payload.user.role === '管理员' || payload.user.pageAccess?.includes(page)) || 'domesticBoard');
+    setActiveTab((currentPage) => resolveActivePage(payload.user, currentPage));
   }
+
+  useEffect(() => {
+    if (!user || !activeTab || !visiblePagesForUser(user).includes(activeTab)) return;
+    try {
+      window.sessionStorage.setItem(ACTIVE_PAGE_KEY, activeTab);
+    } catch {
+      // Session storage availability does not affect navigation.
+    }
+  }, [activeTab, user]);
 
   async function logout() {
     await request('/api/auth/logout', { token, method: 'POST' }).catch(() => {});
@@ -2983,7 +3013,7 @@ function App() {
 
   if (!token || !user) return <Login onLogin={handleLogin} />;
 
-  const visiblePages = PAGE_ORDER.filter((page) => user.role === '管理员' || user.pageAccess?.includes(page));
+  const visiblePages = visiblePagesForUser(user);
   const canView = (page) => visiblePages.includes(page);
 
   return (

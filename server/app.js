@@ -603,6 +603,58 @@ function assignmentSupplierCandidates(row) {
   ].map(normalize).filter(Boolean);
 }
 
+function supplierNamesLikelySame(left, right) {
+  const leftKey = normalizeMatchPart(left);
+  const rightKey = normalizeMatchPart(right);
+  if (!leftKey || !rightKey) return false;
+  if (leftKey === rightKey) return true;
+  const shorter = leftKey.length <= rightKey.length ? leftKey : rightKey;
+  const longer = leftKey.length > rightKey.length ? leftKey : rightKey;
+  return shorter.length >= 2 && longer.includes(shorter);
+}
+
+function selectUniqueAssignment(rows = []) {
+  if (!rows.length) return {};
+  const owners = [...new Set(rows.map((row) => singlePurchaseOwner(assignmentOwner(row))).filter(Boolean))];
+  if (owners.length > 1) return {};
+  return rows.find((row) => assignmentOwner(row)) || rows[0] || {};
+}
+
+function buildAssignmentLookups(assignmentRows = []) {
+  const assignmentRowsByKey = new Map();
+  const assignmentRowsByMaterial = new Map();
+  const supplierMap = new Map();
+  assignmentRows.forEach((row) => {
+    const materialCode = assignmentMaterialCode(row);
+    const materialKey = normalizeMatchPart(materialCode);
+    const supplierCandidates = assignmentSupplierCandidates(row);
+    if (materialKey) {
+      const materialRows = assignmentRowsByMaterial.get(materialKey) || [];
+      materialRows.push(row);
+      assignmentRowsByMaterial.set(materialKey, materialRows);
+    }
+    supplierCandidates.forEach((candidate) => {
+      const supplierKey = normalizeMatchPart(candidate);
+      if (supplierKey && rowAliasValue(row, ['supplierShortName', '供应商简称']) && !supplierMap.has(supplierKey)) supplierMap.set(supplierKey, row);
+      if (!candidate || !materialCode) return;
+      const key = assignmentKey(candidate, materialCode);
+      const keyRows = assignmentRowsByKey.get(key) || [];
+      keyRows.push(row);
+      assignmentRowsByKey.set(key, keyRows);
+    });
+  });
+  return { assignmentRowsByKey, assignmentRowsByMaterial, supplierMap };
+}
+
+function resolveAssignment(lookups, supplier, materialCode) {
+  const exactRows = lookups.assignmentRowsByKey.get(assignmentKey(supplier, materialCode)) || [];
+  if (exactRows.length) return selectUniqueAssignment(exactRows);
+
+  const materialRows = lookups.assignmentRowsByMaterial.get(normalizeMatchPart(materialCode)) || [];
+  const fuzzyRows = materialRows.filter((row) => assignmentSupplierCandidates(row).some((candidate) => supplierNamesLikelySame(supplier, candidate)));
+  return selectUniqueAssignment(fuzzyRows);
+}
+
 function dimensionLookups() {
   const productRows = getDimensionRows('productCategory');
   const assignmentRows = getDimensionRows('purchaseAssignment');
@@ -611,20 +663,7 @@ function dimensionLookups() {
     const materialCode = normalize(row.materialCode);
     if (materialCode && !productMap.has(materialCode)) productMap.set(materialCode, row);
   });
-  const assignmentMap = new Map();
-  const supplierMap = new Map();
-  assignmentRows.forEach((row) => {
-    const materialCode = assignmentMaterialCode(row);
-    const supplierCandidates = assignmentSupplierCandidates(row);
-    supplierCandidates.forEach((candidate) => {
-      const supplierKey = normalizeMatchPart(candidate);
-      if (supplierKey && rowAliasValue(row, ['supplierShortName', '供应商简称']) && !supplierMap.has(supplierKey)) supplierMap.set(supplierKey, row);
-      const key = assignmentKey(candidate, materialCode);
-      const existing = assignmentMap.get(key);
-      if (candidate && materialCode && (!existing || (!assignmentOwner(existing) && assignmentOwner(row)))) assignmentMap.set(key, row);
-    });
-  });
-  return { productMap, assignmentMap, supplierMap };
+  return { productMap, ...buildAssignmentLookups(assignmentRows) };
 }
 
 function splitDelimited(value) {
@@ -649,8 +688,8 @@ function realPurchaseOwner(...values) {
 
 function dimensionDiagnostics(slotId, rows = []) {
   if (slotId === 'purchaseAssignment') {
-    const demandKeys = new Set(all('SELECT supplier, material_code FROM order_demands WHERE active = 1').map((row) => assignmentKey(row.supplier, row.material_code)));
-    const assignmentKeys = new Set();
+    const demands = all('SELECT supplier, material_code FROM order_demands WHERE active = 1');
+    const lookups = buildAssignmentLookups(rows);
     let ownerRows = 0;
     let keyRows = 0;
     rows.forEach((row) => {
@@ -659,11 +698,8 @@ function dimensionDiagnostics(slotId, rows = []) {
       const suppliers = assignmentSupplierCandidates(row);
       if (owner) ownerRows++;
       if (materialCode && suppliers.length) keyRows++;
-      suppliers.forEach((supplier) => {
-        if (materialCode) assignmentKeys.add(assignmentKey(supplier, materialCode));
-      });
     });
-    const matchedRows = [...demandKeys].filter((key) => assignmentKeys.has(key)).length;
+    const matchedRows = demands.filter((demand) => assignmentOwner(resolveAssignment(lookups, demand.supplier, demand.material_code))).length;
     return { totalRows: rows.length, ownerRows, keyRows, matchedRows };
   }
   if (slotId === 'productCategory') {
@@ -910,9 +946,9 @@ function domesticBoardRows() {
 }
 
 function enrichDemandFields(supplier, materialCode, orderCreator = '', lookups = dimensionLookups()) {
-  const { productMap, assignmentMap, supplierMap } = lookups;
+  const { productMap, supplierMap } = lookups;
   const product = productMap.get(normalize(materialCode)) || {};
-  const assignment = assignmentMap.get(assignmentKey(supplier, materialCode)) || {};
+  const assignment = resolveAssignment(lookups, supplier, materialCode);
   const supplierAssignment = supplierMap.get(normalizeMatchPart(supplier)) || {};
   return {
     sku: normalize(product.sku),
@@ -929,10 +965,10 @@ function enrichDemandFields(supplier, materialCode, orderCreator = '', lookups =
 
 function applyDimensionEnrichment() {
   const lookups = dimensionLookups();
-  const { productMap, assignmentMap, supplierMap } = lookups;
+  const { productMap, supplierMap } = lookups;
   const params = all('SELECT * FROM order_demands').map((demand) => {
     const product = productMap.get(normalize(demand.material_code)) || {};
-    const assignment = assignmentMap.get(assignmentKey(demand.supplier, demand.material_code)) || {};
+    const assignment = resolveAssignment(lookups, demand.supplier, demand.material_code);
     const supplierAssignment = supplierMap.get(normalizeMatchPart(demand.supplier)) || {};
     return [
       normalize(product.sku),

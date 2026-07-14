@@ -1173,7 +1173,7 @@ function uniqueDocumentStatuses(rows) {
 
 function rawOrderDate(row) {
   const raw = parseJson(row.raw_json, row.raw || {});
-  return normalize(row.createDate || row.create_date)
+  return normalize(row.purchaseDate || row.purchase_date || row.createDate || row.create_date)
     || pickAny(raw, ['采购日期', '创建日期', '下单日期', '订单日期', '日期', 'createDate', 'purchaseDate', 'orderDate', 'date']);
 }
 
@@ -1278,10 +1278,11 @@ function summarizePurchaseOrderLines(rows) {
   return map;
 }
 
-function compareRowsFromSummary(summary, sourceRows, user) {
-  const currentRows = demandRows(false, user);
+function compareRowsFromSummary(summary, sourceRows, user, options = {}) {
+  const currentRows = options.currentRows || demandRows(false, user);
   const currentMap = new Map(currentRows.map((row) => [row.demandKey, row]));
-  const nextMap = new Map(summary.map((row) => [row.demandKey, row]));
+  const nextRows = options.nextRows || summary;
+  const nextMap = new Map(nextRows.map((row) => [row.demandKey, row]));
   const lookups = dimensionLookups();
   const inventoryMap = new Map(all('SELECT * FROM inventory').map((row) => [row.stock_key, row]));
   const currentSourceMap = new Map(
@@ -1289,8 +1290,9 @@ function compareRowsFromSummary(summary, sourceRows, user) {
       .map((row) => [row.demand_key, row.source_batch_id])
   );
   const currentBatchIds = [...new Set([...currentSourceMap.values()].map(normalize).filter(Boolean))];
-  const oldOrderRows = [];
-  if (currentBatchIds.length) {
+  const hasOldSourceOverride = Array.isArray(options.oldSourceRows);
+  const oldOrderRows = hasOldSourceOverride ? options.oldSourceRows : [];
+  if (!hasOldSourceOverride && currentBatchIds.length) {
     const placeholders = currentBatchIds.map(() => '?').join(',');
     all(
       `SELECT batch_id, demand_key, month, business_unit, supplier, material_code, purchase_org,
@@ -1398,6 +1400,43 @@ function compareRowsFromSummary(summary, sourceRows, user) {
   ));
 }
 
+function writeDifferenceRows(sessionId, rows, now, automaticCreatedBy = '系统自动') {
+  rows.forEach((row) => {
+    if (normalize(row.oldOrderNos).includes('+') || normalize(row.newOrderNos).includes('+')) {
+      throw new Error(`采购订单差异必须按单一订单号保存：${row.oldOrderNos || '空'} -> ${row.newOrderNos || '空'}`);
+    }
+    row.id ||= randomUUID();
+    row.sessionId = sessionId;
+  });
+  runMany(
+    `INSERT INTO difference_compare_rows (
+       id, session_id, demand_key, month, business_unit, supplier, supplier_short_name, material_code,
+       purchase_org, order_creator, old_qty, new_qty, delta_qty, diff_type,
+       old_order_nos, new_order_nos, old_order_dates, new_order_dates,
+       old_inbound_qty, inbound_qty, handling_type, progress_total, stock_qty, new_snapshot_json, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    rows.map((row) => [
+      row.id, sessionId, row.demandKey, row.month, row.businessUnit, row.supplier, row.supplierShortName,
+      row.materialCode, row.purchaseOrg, row.orderCreator || '', row.oldQty, row.newQty, row.deltaQty,
+      row.diffType, row.oldOrderNos, row.newOrderNos, row.oldOrderDates, row.newOrderDates,
+      row.oldInboundQty, row.newInboundQty, row.handlingType, row.progressTotal, row.stockQty,
+      JSON.stringify(row.newSnapshot), now
+    ])
+  );
+  runMany(
+    `INSERT INTO difference_allocations (
+       id, session_id, row_id, demand_key, action_type, allocated_qty, reason, remark,
+       old_order_nos, new_order_nos, old_qty, new_qty, delta_qty, progress_total, stock_qty,
+       automatic, created_by, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+    rows.filter((row) => row.handlingType !== 'pending').map((row) => [
+      randomUUID(), sessionId, row.id, row.demandKey, row.automaticAction, Math.abs(row.deltaQty),
+      row.automaticReason, row.oldOrderNos, row.newOrderNos, row.oldQty, row.newQty,
+      row.deltaQty, row.progressTotal, row.stockQty, automaticCreatedBy, now
+    ])
+  );
+}
+
 function persistDifferenceCompare({
   file,
   sheetName,
@@ -1413,10 +1452,6 @@ function persistDifferenceCompare({
   const sessionId = randomUUID();
   const now = nowText();
   const oldAppliedAt = currentAppliedAt();
-  rows.forEach((row) => {
-    row.id = randomUUID();
-    row.sessionId = sessionId;
-  });
   const writeRecords = () => {
     run(
       `INSERT INTO difference_compare_sessions (id, file_name, sheet_name, mapping_json, summary_json, source_rows_json, total_rows, valid_rows, skipped_rows, status, old_applied_at, created_by, created_at)
@@ -1436,33 +1471,7 @@ function persistDifferenceCompare({
         now
       ]
     );
-    runMany(
-      `INSERT INTO difference_compare_rows (
-         id, session_id, demand_key, month, business_unit, supplier, supplier_short_name, material_code,
-         purchase_org, order_creator, old_qty, new_qty, delta_qty, diff_type,
-         old_order_nos, new_order_nos, old_order_dates, new_order_dates,
-         old_inbound_qty, inbound_qty, handling_type, progress_total, stock_qty, new_snapshot_json, created_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      rows.map((row) => [
-        row.id, sessionId, row.demandKey, row.month, row.businessUnit, row.supplier, row.supplierShortName,
-        row.materialCode, row.purchaseOrg, row.orderCreator || '', row.oldQty, row.newQty, row.deltaQty,
-        row.diffType, row.oldOrderNos, row.newOrderNos, row.oldOrderDates, row.newOrderDates,
-        row.oldInboundQty, row.newInboundQty, row.handlingType, row.progressTotal, row.stockQty,
-        JSON.stringify(row.newSnapshot), now
-      ])
-    );
-    runMany(
-      `INSERT INTO difference_allocations (
-         id, session_id, row_id, demand_key, action_type, allocated_qty, reason, remark,
-         old_order_nos, new_order_nos, old_qty, new_qty, delta_qty, progress_total, stock_qty,
-         automatic, created_by, created_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-      rows.filter((row) => row.handlingType !== 'pending').map((row) => [
-        randomUUID(), sessionId, row.id, row.demandKey, row.automaticAction, Math.abs(row.deltaQty),
-        row.automaticReason, row.oldOrderNos, row.newOrderNos, row.oldQty, row.newQty,
-        row.deltaQty, row.progressTotal, row.stockQty, '系统自动', now
-      ])
-    );
+    writeDifferenceRows(sessionId, rows, now);
   };
   if (transactionManaged) writeRecords();
   else transaction(writeRecords);
@@ -1691,11 +1700,137 @@ function unassignedPurchaseOrderRows() {
   ));
 }
 
+function storedOrderRows(batchId) {
+  if (!batchId) return [];
+  return all('SELECT * FROM kingdee_orders WHERE batch_id = ? ORDER BY rowid', [batchId])
+    .map((row, index) => orderRowDateSort(row, index));
+}
+
+function previousBatchForCompareSession(session) {
+  const newBatchId = normalize(session.applied_batch_id);
+  const oldAppliedAt = normalize(session.old_applied_at);
+  if (!newBatchId) return null;
+  if (oldAppliedAt) {
+    const exact = get(
+      `SELECT * FROM kingdee_import_batches
+       WHERE id <> ? AND COALESCE(NULLIF(applied_at, ''), imported_at) = ?
+       ORDER BY rowid DESC LIMIT 1`,
+      [newBatchId, oldAppliedAt]
+    );
+    if (exact) return exact;
+  }
+  return get(
+    `SELECT * FROM kingdee_import_batches
+     WHERE id <> ?
+       AND rowid < COALESCE((SELECT rowid FROM kingdee_import_batches WHERE id = ?), 9223372036854775807)
+     ORDER BY rowid DESC LIMIT 1`,
+    [newBatchId, newBatchId]
+  );
+}
+
+function allocationOrderKey(oldOrderNo, newOrderNo, materialCode, deltaQty) {
+  return [oldOrderNo, newOrderNo, materialCode, numberValue(deltaQty)].map(normalize).join('|');
+}
+
+function copyCompatibleManualAllocations(oldSessionId, newSessionId, rows) {
+  const targetRows = new Map(
+    rows.filter((row) => row.handlingType === 'pending').map((row) => [
+      allocationOrderKey(row.oldOrderNos, row.newOrderNos, row.materialCode, row.deltaQty),
+      row
+    ])
+  );
+  const copiedRowIds = new Set();
+  const manualRows = all(
+    `SELECT a.*, r.material_code
+     FROM difference_allocations a
+     JOIN difference_compare_rows r ON r.id = a.row_id
+     WHERE a.session_id = ? AND a.automatic = 0
+     ORDER BY a.created_at`,
+    [oldSessionId]
+  );
+  manualRows.forEach((allocation) => {
+    if (normalize(allocation.old_order_nos).includes('+') || normalize(allocation.new_order_nos).includes('+')) return;
+    const target = targetRows.get(allocationOrderKey(
+      allocation.old_order_nos,
+      allocation.new_order_nos,
+      allocation.material_code,
+      allocation.delta_qty
+    ));
+    if (!target || copiedRowIds.has(target.id)) return;
+    run(
+      `INSERT INTO difference_allocations (
+         id, session_id, row_id, demand_key, action_type, allocated_qty, reason, remark,
+         old_order_nos, new_order_nos, old_qty, new_qty, delta_qty, progress_total, stock_qty,
+         automatic, created_by, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+      [
+        randomUUID(), newSessionId, target.id, target.demandKey, allocation.action_type,
+        allocation.allocated_qty, allocation.reason, allocation.remark || '', target.oldOrderNos,
+        target.newOrderNos, target.oldQty, target.newQty, target.deltaQty, target.progressTotal,
+        target.stockQty, allocation.created_by, allocation.created_at
+      ]
+    );
+    copiedRowIds.add(target.id);
+  });
+  return copiedRowIds.size;
+}
+
+function rebuildLegacyOrderCompareSession(session, user) {
+  if (!session?.id || !session.applied_batch_id) return session;
+  const combinedCount = numberValue(get(
+    `SELECT COUNT(*) AS count
+     FROM difference_compare_rows
+     WHERE session_id = ? AND (INSTR(old_order_nos, '+') > 0 OR INSTR(new_order_nos, '+') > 0)`,
+    [session.id]
+  )?.count);
+  if (!combinedCount) return session;
+  const oldBatch = previousBatchForCompareSession(session);
+  if (!oldBatch?.id) {
+    throw new Error(`无法找到差异会话 ${session.id} 对应的原采购订单批次`);
+  }
+  const oldRows = storedOrderRows(oldBatch.id);
+  const newRows = storedOrderRows(session.applied_batch_id);
+  if (!oldRows.length || !newRows.length) {
+    throw new Error(`差异会话 ${session.id} 的原、新采购订单批次明细不完整`);
+  }
+  const currentRows = demandRows(false, user);
+  const rows = compareRowsFromSummary([], newRows, user, {
+    oldSourceRows: oldRows,
+    currentRows,
+    nextRows: currentRows
+  });
+  const rebuiltSessionId = randomUUID();
+  const now = nowText();
+  let copiedManualCount = 0;
+  transaction(() => {
+    run(
+      `INSERT INTO difference_compare_sessions (
+         id, file_name, sheet_name, mapping_json, summary_json, source_rows_json,
+         total_rows, valid_rows, skipped_rows, status, applied_batch_id, applied_at,
+         old_applied_at, new_applied_at, created_by, created_at
+       ) VALUES (?, ?, ?, ?, '[]', '[]', ?, ?, ?, 'snapshot_applied', ?, ?, ?, ?, ?, ?)`,
+      [
+        rebuiltSessionId, session.file_name, session.sheet_name || '', session.mapping_json || '{}',
+        numberValue(session.total_rows) || newRows.length, numberValue(session.valid_rows) || newRows.length,
+        numberValue(session.skipped_rows), session.applied_batch_id, session.applied_at || session.new_applied_at || now,
+        session.old_applied_at || oldBatch.applied_at || oldBatch.imported_at || '',
+        session.new_applied_at || session.applied_at || now, '系统按采购订单重建', now
+      ]
+    );
+    writeDifferenceRows(rebuiltSessionId, rows, now, '系统自动');
+    copiedManualCount = copyCompatibleManualAllocations(session.id, rebuiltSessionId, rows);
+    run('UPDATE difference_compare_sessions SET status = ? WHERE id = ?', ['legacy_replaced', session.id]);
+  });
+  console.info(`[Difference repair] rebuilt ${session.id} as ${rebuiltSessionId}: ${rows.length} rows, ${copiedManualCount} manual allocations retained`);
+  return get('SELECT * FROM difference_compare_sessions WHERE id = ?', [rebuiltSessionId]);
+}
+
 function latestComparePayload(user) {
-  const session = get('SELECT * FROM difference_compare_sessions ORDER BY created_at DESC LIMIT 1');
+  let session = get('SELECT * FROM difference_compare_sessions ORDER BY created_at DESC, rowid DESC LIMIT 1');
   if (!session) {
     return { sessionId: '', diffRows: [], allocations: allocationRows(), status: { total: 0, allocated: 0, complete: false }, actions: DIFF_ALLOCATION_ACTIONS, reasons: DIFF_ALLOCATION_REASONS };
   }
+  session = rebuildLegacyOrderCompareSession(session, user) || session;
   backfillCompareRowsFromSnapshot(session);
   return {
     sessionId: session.id,
@@ -2799,6 +2934,12 @@ app.get(/^\/(?!api).*/, (req, res) => res.sendFile(path.join(distDir, 'index.htm
 
 await initDatabase();
 await ensureAdmin();
+try {
+  const latestSession = get('SELECT * FROM difference_compare_sessions ORDER BY created_at DESC, rowid DESC LIMIT 1');
+  if (latestSession) rebuildLegacyOrderCompareSession(latestSession, { name: '系统修复', role: ROLE_ADMIN });
+} catch (error) {
+  console.error('[Difference repair] startup rebuild failed:', error);
+}
 
 app.listen(port, () => {
   console.log(`Gendanjindu server running at http://localhost:${port}`);

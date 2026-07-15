@@ -3344,11 +3344,11 @@ app.post('/api/inventory', requireAuth, requirePage('inventory'), (req, res) => 
 
 app.get('/api/progress/export', requireAuth, (req, res) => {
   const rows = demandRows(false, req.user).filter((row) => numberValue(row.remainingInboundQty) > 0);
-  const headers = ['demandKey', '采购组', '采购下单人', '月份', '采购订单号', 'OA备货流程号', '采购组织', '事业部', '供应商', '产品线', '系列', '物料编码', '物料', '物流编码', 'SKU', '未交付数量', '在产品', '完工产品', '已发货数量', '备注'];
+  const headers = ['demandKey', '采购组', '采购下单人', '月份', '采购订单号', '创建人', 'OA备货流程号', '采购组织', '事业部', '供应商', '产品线', '系列', '物料编码', '物料', '物流编码', 'SKU', '未交付数量', '在产品', '完工产品', '已发货数量', '备注'];
   const aoa = [headers];
   rows.forEach((row) => {
     aoa.push([
-      row.demandKey, row.purchaseGroup, row.purchaseOwner, row.month, row.orderNo, row.oaFlowNo, row.purchaseOrg,
+      row.demandKey, row.purchaseGroup, row.purchaseOwner, row.month, row.orderNo, row.orderCreator, row.oaFlowNo, row.purchaseOrg,
       row.businessUnit, row.supplierShortName || row.supplier,
       row.productLine, row.productSeries, row.materialCode, row.materialName || row.materialCode,
       row.logisticsCode, row.sku, row.remainingInboundQty,

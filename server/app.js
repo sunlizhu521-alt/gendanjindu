@@ -24,6 +24,7 @@ const ALL_PAGES = [
   'domesticBoard',
   'wangdianData',
   'lingxingInventory',
+  'firstMileDatabase',
   'crossBorderInventory',
   'dimensionMissing',
   'trace',
@@ -41,6 +42,7 @@ const PAGE_LABELS = {
   differenceAllocation: '差异分配',
   wangdianData: '国内数据',
   lingxingInventory: '领星库存',
+  firstMileDatabase: '头程数据库',
   crossBorderInventory: '跨境库存看板',
   dimensionMissing: '维度表缺失',
   dimensionLibrary: '维度表库',
@@ -64,7 +66,11 @@ const DIMENSION_SLOTS = {
   lingxingFbaInventory: 'FBA库存',
   lingxingFbmInventory: 'FBM库存',
   lingxingWfsInventory: 'WFS库存',
-  lingxingSpare: '备用'
+  lingxingSpare: '备用',
+  firstMileData1: '头程数据1',
+  firstMileData2: '头程数据2',
+  firstMileData3: '头程数据3',
+  firstMileSpare: '备用'
 };
 const DIFF_NORMAL_ORDER = '正常订单';
 const DIFF_ORDER_COMPLETE_REASON = '订单已完结';
@@ -2976,7 +2982,7 @@ app.post('/api/difference-allocations/:sessionId/apply', requireAuth, requirePag
   res.json({ batchId, status: { ...allocationStatus(req.params.sessionId), applied: true }, demands: demandRows(false, req.user) });
 });
 
-app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory']), (req, res) => {
+app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'firstMileDatabase']), (req, res) => {
   const rows = all('SELECT slot_id, title, file_name, sheet_name, sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at FROM dimension_files');
   res.json({
     rows: rows.map((row) => {
@@ -2993,7 +2999,7 @@ app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'wan
   });
 });
 
-app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory']), upload.single('file'), (req, res) => {
+app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'firstMileDatabase']), upload.single('file'), (req, res) => {
   const slotId = req.params.slotId;
   const mapping = parseJson(req.body.mapping, {});
   const sheetName = normalize(req.body.sheetName);
@@ -3140,7 +3146,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   res.json({ rowCount: rows.length, sheetName, sheetNames: parsed.sheetNames, applied: true, diagnostics: dimensionDiagnostics(slotId, rows), rows: demandRows(false, req.user) });
 });
 
-app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory']), (req, res) => {
+app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'firstMileDatabase']), (req, res) => {
   const beforeOrderCounts = orderDataCounts();
   transaction(() => {
     run('UPDATE dimension_files SET applied = 1, updated_at = ? WHERE slot_id = ?', [nowText(), req.params.slotId]);
@@ -3150,7 +3156,7 @@ app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensio
   res.json({ rows: demandRows(false, req.user) });
 });
 
-app.delete('/api/dimensions/:slotId', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory']), (req, res) => {
+app.delete('/api/dimensions/:slotId', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'firstMileDatabase']), (req, res) => {
   run('DELETE FROM dimension_files WHERE slot_id = ?', [req.params.slotId]);
   saveDatabase();
   res.json({ ok: true });

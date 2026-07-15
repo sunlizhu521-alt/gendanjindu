@@ -1992,3 +1992,69 @@ th {
   flex: 0 0 320px;
   width: 320px;
 }
+
+.source-application-line {
+  margin: -4px 0 12px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.first-mile-filters {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding-bottom: 5px;
+}
+
+.first-mile-filters .filter-control {
+  flex: 0 0 168px;
+  width: 168px;
+}
+
+.first-mile-filters .search-input {
+  flex: 0 0 300px;
+  width: 300px;
+}
+
+.first-mile-table {
+  max-height: calc(100vh - 310px);
+}
+
+.first-mile-table table {
+  width: max-content;
+  min-width: 2900px;
+}
+
+.first-mile-table th,
+.first-mile-table td {
+  min-width: 112px;
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
+.first-mile-table .tight-cell {
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.first-mile-table th {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: #f1f5f9;
+}
+
+.first-mile-table th:nth-child(9),
+.first-mile-table td:nth-child(9),
+.first-mile-table th:nth-child(12),
+.first-mile-table td:nth-child(12),
+.first-mile-table th:nth-child(21),
+.first-mile-table td:nth-child(21) {
+  min-width: 220px;
+}
+
+.first-mile-table tbody tr:nth-child(even) td {
+  background: #f8fafc;
+}

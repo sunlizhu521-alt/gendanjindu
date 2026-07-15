@@ -12,6 +12,7 @@ const PAGE_ORDER = [
   'wangdianData',
   'lingxingInventory',
   'firstMileDatabase',
+  'firstMileBoard',
   'crossBorderInventory',
   'dimensionMissing',
   'trace',
@@ -31,6 +32,7 @@ const PAGE_LABELS = {
   wangdianData: '国内数据',
   lingxingInventory: '领星库存',
   firstMileDatabase: '头程数据库',
+  firstMileBoard: '头程数据看板',
   crossBorderInventory: '跨境库存看板',
   dimensionMissing: '维度表缺失',
   dimensionLibrary: '维度表库',
@@ -168,12 +170,12 @@ const LINGXING_INVENTORY_SLOTS = [
 ];
 
 const FIRST_MILE_DATABASE_SLOTS = [
-  { id: 'firstMileData1', title: '张婷婷头程数据', fields: [] },
-  { id: 'firstMileData2', title: '扈翠云头程数据', fields: [] },
-  { id: 'firstMileData3', title: '魏静头程数据', fields: [] },
-  { id: 'firstMileData4', title: '李紫媛头程数据', fields: [] },
-  { id: 'firstMileData5', title: '李娜婷头程数据', fields: [] },
-  { id: 'firstMileSpare', title: '备用', fields: [] }
+  { id: 'firstMileData1', title: '张婷婷头程数据', fields: [], firstMile: true },
+  { id: 'firstMileData2', title: '扈翠云头程数据', fields: [], firstMile: true },
+  { id: 'firstMileData3', title: '魏静头程数据', fields: [], firstMile: true },
+  { id: 'firstMileData4', title: '李紫媛头程数据', fields: [], firstMile: true },
+  { id: 'firstMileData5', title: '李娜婷头程数据', fields: [], firstMile: true },
+  { id: 'firstMileSpare', title: '备用', fields: [], firstMile: true }
 ];
 
 const KINGDEE_FIELDS = [
@@ -3110,6 +3112,181 @@ function InventoryPage({ token, reloadDemands, setMessage }) {
   );
 }
 
+function FirstMileBoard({ token, setMessage, refreshVersion = 0 }) {
+  const [data, setData] = useState({ rows: [], sourceApplications: [], qualitySummary: {} });
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
+  const [filters, setFilters] = useSessionFilters('firstMileBoard', {
+    cargoStatus: '',
+    businessUnit: '',
+    storeName: '',
+    operatorName: '',
+    productLine: '',
+    productSeries: '',
+    transportMode: '',
+    keyword: ''
+  });
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    request('/api/first-mile-board', { token })
+      .then((payload) => { if (active) setData(payload); })
+      .catch((error) => { if (active) setMessage(`头程数据加载失败：${error.message}`); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [token, refreshVersion]);
+
+  const rows = data.rows || [];
+  const unique = (values) => [...new Set(values.map(normalize).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+  const matchesFilters = (row, omit = '') => {
+    const keyword = normalize(filters.keyword).toLowerCase();
+    return (omit === 'cargoStatus' || !filters.cargoStatus || row.cargoStatus === filters.cargoStatus)
+      && (omit === 'businessUnit' || !filters.businessUnit || row.businessUnit === filters.businessUnit)
+      && (omit === 'storeName' || !filters.storeName || row.storeName === filters.storeName)
+      && (omit === 'operatorName' || !filters.operatorName || row.operatorName === filters.operatorName)
+      && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
+      && (omit === 'productSeries' || !filters.productSeries || row.productSeries === filters.productSeries)
+      && (omit === 'transportMode' || !filters.transportMode || row.transportMode === filters.transportMode)
+      && (!keyword || [
+        row.oaApprovalNo, row.materialCode, row.sku, row.materialName, row.shipmentNo,
+        row.sourceOwner, row.sourceFileText, row.sourceSheetText
+      ].join(' ').toLowerCase().includes(keyword));
+  };
+  const options = useMemo(() => {
+    const rowsFor = (field) => rows.filter((row) => matchesFilters(row, field));
+    return {
+      cargoStatuses: unique(rowsFor('cargoStatus').map((row) => row.cargoStatus)),
+      businessUnits: unique(rowsFor('businessUnit').map((row) => row.businessUnit)),
+      stores: unique(rowsFor('storeName').map((row) => row.storeName)),
+      operators: unique(rowsFor('operatorName').map((row) => row.operatorName)),
+      productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
+      productSeries: unique(rowsFor('productSeries').map((row) => row.productSeries)),
+      transportModes: unique(rowsFor('transportMode').map((row) => row.transportMode))
+    };
+  }, [rows, filters]);
+  const filteredRows = useMemo(() => rows.filter((row) => matchesFilters(row)), [rows, filters]);
+  const pageSize = 20;
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageRows = filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const totalQuantity = filteredRows.reduce((sum, row) => sum + numberValue(row.quantity), 0);
+  const transitQuantity = filteredRows
+    .filter((row) => row.cargoStatus === '海上在途')
+    .reduce((sum, row) => sum + numberValue(row.quantity), 0);
+  const listedQuantity = filteredRows
+    .filter((row) => row.cargoStatus === '已上架')
+    .reduce((sum, row) => sum + numberValue(row.quantity), 0);
+
+  useEffect(() => { setPage(1); }, [filters]);
+
+  const clearFilters = () => setFilters({
+    cargoStatus: '', businessUnit: '', storeName: '', operatorName: '', productLine: '',
+    productSeries: '', transportMode: '', keyword: ''
+  });
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const response = await fetch(`${API}/api/first-mile-board/export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+        body: JSON.stringify({ filters })
+      });
+      if (!response.ok) throw new Error(`导出失败（${response.status}）`);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = '头程数据看板.xlsx';
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setMessage(`已导出当前筛选的 ${filteredRows.length} 条头程明细。`);
+    } catch (error) {
+      setMessage(`头程数据导出失败：${error.message}`);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="section-heading-row">
+        <h2>头程数据看板</h2>
+        <span className="section-count">当前显示 {filteredRows.length} / {rows.length} 条</span>
+        <button type="button" className="compact-button" disabled={exporting || filteredRows.length === 0} onClick={handleExport}>
+          {exporting ? '导出中...' : '导出当前筛选'}
+        </button>
+      </div>
+      {(data.sourceApplications || []).length > 0 && (
+        <p className="source-application-line">
+          数据应用时间：{data.sourceApplications.map((source) => `${source.label} ${source.appliedAt || '暂无'}`).join('；')}
+        </p>
+      )}
+      {(data.qualitySummary?.duplicateRows > 0 || data.qualitySummary?.issueRows > 0 || data.qualitySummary?.unmappedRows > 0) && (
+        <p className="quality-banner">
+          已合并重复来源 {data.qualitySummary.duplicateRows || 0} 行；解析异常 {data.qualitySummary.issueRows || 0} 行；商品未映射 {data.qualitySummary.unmappedRows || 0} 行。
+        </p>
+      )}
+      {data.qualitySummary?.reuploadSources > 0 && (
+        <p className="quality-banner">
+          有 {data.qualitySummary.reuploadSources} 个头程文件仍是旧解析格式，请到“头程数据库”重新上传对应原始Excel。
+        </p>
+      )}
+      <div className="toolbar filters-row first-mile-filters">
+        <SelectField label="货物状态" value={filters.cargoStatus} options={options.cargoStatuses} onChange={(value) => setFilters({ ...filters, cargoStatus: value })} />
+        <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
+        <SelectField label="店铺" value={filters.storeName} options={options.stores} onChange={(value) => setFilters({ ...filters, storeName: value })} />
+        <SelectField label="运营" value={filters.operatorName} options={options.operators} onChange={(value) => setFilters({ ...filters, operatorName: value })} />
+        <SelectField label="销售产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
+        <SelectField label="销售系列" value={filters.productSeries} options={options.productSeries} onChange={(value) => setFilters({ ...filters, productSeries: value })} />
+        <SelectField label="运输方式" value={filters.transportMode} options={options.transportModes} onChange={(value) => setFilters({ ...filters, transportMode: value })} />
+        <input className="search-input" placeholder="搜索OA、物料、SKU、货件号、来源" value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} />
+        <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
+      </div>
+      <section className="metric-grid">
+        <MetricCard label="明细数量" value={filteredRows.length.toLocaleString()} />
+        <MetricCard label="在途数量" value={transitQuantity.toLocaleString()} />
+        <MetricCard label="已上架数量" value={listedQuantity.toLocaleString()} />
+        <MetricCard label="货物数量合计" value={totalQuantity.toLocaleString()} />
+      </section>
+      {loading ? (
+        <p className="section-count">正在加载头程数据...</p>
+      ) : rows.length === 0 ? (
+        <p className="quality-banner">暂无头程看板数据。请在“头程数据库”重新上传并应用5个工作簿，新解析规则才会生效。</p>
+      ) : (
+        <>
+          <DataTable
+            className="first-mile-table"
+            rows={pageRows}
+            columns={[
+              '运输方式', '货物状态', '事业部', '店铺', '运营', '销售产品线', '销售系列',
+              '来源负责人', 'OA审批单号', '物料编码', 'SKU', '物料名称', '数量',
+              '预计开船时间', '实际开船时间', '预计到港时间', '到港时间',
+              '预计派送时间', '实际派送时间', '上架时间', '来源文件', '来源Sheet'
+            ]}
+            render={(row) => [
+              <TightCell value={row.transportMode} />, <TightCell value={row.cargoStatus} />,
+              <TightCell value={row.businessUnit} />, <TightCell value={row.storeName} />,
+              <TightCell value={row.operatorName} />, <TightCell value={row.productLine} />,
+              <TightCell value={row.productSeries} />, <TightCell value={row.sourceOwner} />,
+              <TightCell value={row.oaApprovalNo} />, <TightCell value={row.materialCode} />,
+              <TightCell value={row.sku} />, <TightCell value={row.materialName} />,
+              numberValue(row.quantity).toLocaleString(), <TightCell value={row.expectedSailingAt} />,
+              <TightCell value={row.actualSailingAt} />, <TightCell value={row.expectedArrivalAt} />,
+              <TightCell value={row.actualArrivalAt} />, <TightCell value={row.expectedDeliveryAt} />,
+              <TightCell value={row.actualDeliveryAt} />, <TightCell value={row.listingAt} />,
+              <TightCell value={row.sourceFileText} />, <TightCell value={row.sourceSheetText} />
+            ]}
+          />
+          <TablePagination label="头程数据分页" currentPage={currentPage} totalPages={totalPages} onPageChange={setPage} pageSize={pageSize} />
+        </>
+      )}
+    </>
+  );
+}
+
 function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表库', slots = DIMENSION_SLOTS, gridColumns = 2, onDataApplied = () => {}, highlightSlotId = '' }) {
   const [records, setRecords] = useState([]);
   const [local, setLocal] = useState({});
@@ -3143,6 +3320,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
     try {
       const data = new FormData();
       data.append('file', file);
+      data.append('slotId', slot.id);
       const payload = await request('/api/workbook/inspect', { token, method: 'POST', body: data });
       const record = records.find((item) => item.slot_id === slot.id);
       const columns = payload.columns || [];
@@ -3171,7 +3349,9 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
             inspectRowCount,
             progress: columns.length ? 100 : 70,
             statusText: columns.length
-              ? `解析完成：识别 ${payload.sheetNames?.length || 1} 个工作表，共 ${inspectRowCount} 行，请检查字段映射`
+              ? slot.firstMile
+                ? `解析完成：识别 ${payload.recognizedSheets || payload.sheetNames?.length || 1} 个业务工作表，共 ${inspectRowCount} 行`
+                : `解析完成：识别 ${payload.sheetNames?.length || 1} 个工作表，共 ${inspectRowCount} 行，请检查字段映射`
               : '未识别到表头，请检查前10行是否包含字段名',
             statusType: columns.length ? 'success' : 'warning',
             busy: ''
@@ -3181,7 +3361,9 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
       if (!columns.length) {
         setMessage(`${slot.title} 未识别到表头，请检查前10行是否包含字段名`);
       } else {
-        setMessage(`${slot.title} 解析完成，请检查字段映射后上传保存`);
+        setMessage(slot.firstMile
+          ? `${slot.title} 解析完成，将自动读取全部业务工作表`
+          : `${slot.title} 解析完成，请检查字段映射后上传保存`);
       }
     } catch (err) {
       setSlotState(slot.id, {
@@ -3237,13 +3419,18 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
       data.append('mapping', JSON.stringify(state.mapping || {}));
       if (state.sheetName) data.append('sheetName', state.sheetName);
       const payload = await request(`/api/dimensions/${slot.id}/upload`, { token, method: 'POST', body: data });
+      const parseSummary = payload.parseSummary;
       setSlotState(slot.id, {
         progress: 78,
-        statusText: `上传保存完成：${payload.rowCount} 行，正在应用刷新...`,
+        statusText: parseSummary
+          ? `上传保存完成：${payload.rowCount} 行，${parseSummary.issueRows || 0} 行异常，正在应用刷新...`
+          : `上传保存完成：${payload.rowCount} 行，正在应用刷新...`,
         statusType: 'active',
         busy: 'apply'
       });
-      setMessage(`${slot.title} 已上传 ${payload.rowCount} 行，并已自动应用刷新。`);
+      setMessage(parseSummary
+        ? `${slot.title} 已自动解析并应用 ${payload.rowCount} 行，异常 ${parseSummary.issueRows || 0} 行。`
+        : `${slot.title} 已上传 ${payload.rowCount} 行，并已自动应用刷新。`);
       await load();
       await reloadDemands();
       onDataApplied(slot.id);
@@ -3347,7 +3534,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
           const record = records.find((item) => item.slot_id === slot.id);
           const state = local[slot.id] || {};
           const busy = Boolean(state.busy);
-          const hasSheets = (state.sheetNames?.length || record?.sheetNames?.length || 0) > 1;
+          const hasSheets = !slot.firstMile && (state.sheetNames?.length || record?.sheetNames?.length || 0) > 1;
           const sheetNames = state.sheetNames?.length ? state.sheetNames : (record?.sheetNames || []);
           const currentSheet = state.sheetName || record?.sheetName || '';
           return (
@@ -3400,6 +3587,13 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
                 {state.file && <span>本次解析行数：{state.inspectRowCount || 0}</span>}
                 {record && <span>已保存行数：{record.rowCount}</span>}
                 {record?.diagnostics && diagnosticsText(slot.id, record.diagnostics) && <span>{diagnosticsText(slot.id, record.diagnostics)}</span>}
+                {slot.firstMile && record?.mapping?.__firstMileSummary && (
+                  <span>
+                    业务工作表：{record.mapping.__firstMileSummary.recognizedSheets?.length || 0}，
+                    有效 {record.mapping.__firstMileSummary.validRows || 0} 行，
+                    异常 {record.mapping.__firstMileSummary.issueRows || 0} 行
+                  </span>
+                )}
                 {record && <span>更新：{record.updated_at}</span>}
               </div>
               <div className="card-actions">
@@ -3609,6 +3803,7 @@ function App() {
   const [demandsLoading, setDemandsLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [crossBorderVersion, setCrossBorderVersion] = useState(0);
+  const [firstMileVersion, setFirstMileVersion] = useState(0);
   const [highlightSlotId, setHighlightSlotId] = useState('');
 
   async function reloadDemands(currentToken = token) {
@@ -3688,6 +3883,7 @@ function App() {
   const canView = (page) => visiblePages.includes(page);
   const shouldMount = (page) => canView(page) && visitedPages.has(page);
   const refreshCrossBorderData = () => setCrossBorderVersion((version) => version + 1);
+  const refreshFirstMileData = () => setFirstMileVersion((version) => version + 1);
   const maintainDimensionSlot = (page, slotId) => {
     if (!canView(page)) {
       setMessage('当前账号没有对应文件库权限，请联系管理员授权。');
@@ -3726,7 +3922,8 @@ function App() {
         {shouldMount('differenceAllocation') && <PagePane page="differenceAllocation" activeTab={activeTab}><DifferenceAllocationPage token={token} user={user} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('wangdianData') && <PagePane page="wangdianData" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="国内数据" slots={WANGDIAN_SLOTS} gridColumns={3} /></PagePane>}
         {shouldMount('lingxingInventory') && <PagePane page="lingxingInventory" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="领星库存" slots={LINGXING_INVENTORY_SLOTS} onDataApplied={refreshCrossBorderData} highlightSlotId={highlightSlotId} /></PagePane>}
-        {shouldMount('firstMileDatabase') && <PagePane page="firstMileDatabase" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="头程数据库" slots={FIRST_MILE_DATABASE_SLOTS} gridColumns={3} /></PagePane>}
+        {shouldMount('firstMileDatabase') && <PagePane page="firstMileDatabase" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="头程数据库" slots={FIRST_MILE_DATABASE_SLOTS} gridColumns={3} onDataApplied={refreshFirstMileData} /></PagePane>}
+        {shouldMount('firstMileBoard') && <PagePane page="firstMileBoard" activeTab={activeTab}><FirstMileBoard token={token} setMessage={setMessage} refreshVersion={firstMileVersion} /></PagePane>}
         {shouldMount('crossBorderInventory') && <PagePane page="crossBorderInventory" activeTab={activeTab}><CrossBorderInventoryBoard token={token} setMessage={setMessage} refreshVersion={crossBorderVersion} onOpenMissing={() => canView('dimensionMissing') ? setActiveTab('dimensionMissing') : setMessage('当前账号没有维度表缺失页面权限。')} /></PagePane>}
         {shouldMount('dimensionMissing') && <PagePane page="dimensionMissing" activeTab={activeTab}><DimensionMissingPage token={token} user={user} setMessage={setMessage} refreshVersion={crossBorderVersion} onMaintain={maintainDimensionSlot} /></PagePane>}
         {shouldMount('dimensionLibrary') && <PagePane page="dimensionLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} gridColumns={3} onDataApplied={refreshCrossBorderData} highlightSlotId={highlightSlotId} /></PagePane>}

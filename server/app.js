@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import xlsx from 'xlsx';
 import { all, get, initDatabase, run, runMany, saveDatabase, transaction } from './database.js';
+import { dedupeFirstMileRows, inspectFirstMileWorkbook, isFirstMileSlot, parseFirstMileWorkbook } from './first-mile.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -25,6 +26,7 @@ const ALL_PAGES = [
   'wangdianData',
   'lingxingInventory',
   'firstMileDatabase',
+  'firstMileBoard',
   'crossBorderInventory',
   'dimensionMissing',
   'trace',
@@ -43,6 +45,7 @@ const PAGE_LABELS = {
   wangdianData: '国内数据',
   lingxingInventory: '领星库存',
   firstMileDatabase: '头程数据库',
+  firstMileBoard: '头程数据看板',
   crossBorderInventory: '跨境库存看板',
   dimensionMissing: '维度表缺失',
   dimensionLibrary: '维度表库',
@@ -736,6 +739,109 @@ function dimensionLookups() {
     if (materialCode && !productMap.has(materialCode)) productMap.set(materialCode, row);
   });
   return { productMap, ...buildAssignmentLookups(assignmentRows) };
+}
+
+const FIRST_MILE_SLOT_IDS = [
+  'firstMileData1',
+  'firstMileData2',
+  'firstMileData3',
+  'firstMileData4',
+  'firstMileData5',
+  'firstMileSpare'
+];
+
+function firstMileProductLookups() {
+  const byMaterial = new Map();
+  const bySku = new Map();
+  getDimensionRows('productCategory').forEach((row) => {
+    const materialCode = rowAliasValue(row, ['materialCode', '物料编码', '商品编码', '品号']);
+    const sku = rowAliasValue(row, ['sku', 'SKU', '系统SKU', '库存SKU']);
+    if (materialCode && !byMaterial.has(normalizeMatchPart(materialCode))) byMaterial.set(normalizeMatchPart(materialCode), row);
+    if (sku && !bySku.has(normalizeMatchPart(sku))) bySku.set(normalizeMatchPart(sku), row);
+  });
+  return { byMaterial, bySku };
+}
+
+function firstMileBoardModel() {
+  const records = all(
+    `SELECT slot_id, title, file_name, mapping_json, rows_json, updated_at
+     FROM dimension_files
+     WHERE applied = 1 AND slot_id IN (${FIRST_MILE_SLOT_IDS.map(() => '?').join(', ')})`,
+    FIRST_MILE_SLOT_IDS
+  );
+  const sourceApplications = records.map((record) => {
+    const mapping = parseJson(record.mapping_json, {});
+    return {
+      slotId: record.slot_id,
+      label: record.title,
+      fileName: record.file_name,
+      appliedAt: record.updated_at,
+      parseSummary: mapping.__firstMileSummary || null,
+      requiresReupload: !mapping.__firstMileSummary
+    };
+  });
+  const sourceRows = records.flatMap((record) => parseJson(record.rows_json, [])
+    .filter((row) => row?.businessType && row?.sourceFile)
+    .map((row) => ({ ...row, sourceAppliedAt: record.updated_at })));
+  const { byMaterial, bySku } = firstMileProductLookups();
+  const rows = dedupeFirstMileRows(sourceRows).map((row) => {
+    const product = byMaterial.get(normalizeMatchPart(row.materialCode))
+      || bySku.get(normalizeMatchPart(row.sourceSku))
+      || {};
+    const materialCode = normalize(row.materialCode)
+      || rowAliasValue(product, ['materialCode', '物料编码', '商品编码', '品号']);
+    const sku = rowAliasValue(product, ['sku', 'SKU', '系统SKU']) || normalize(row.sourceSku) || '未映射';
+    const productLine = rowAliasValue(product, ['productLine', '销售产品线', '产品线']) || '未映射';
+    const productSeries = rowAliasValue(product, ['productSeries', '销售系列', '系列']) || '未映射';
+    const materialName = normalize(row.materialName)
+      || rowAliasValue(product, ['materialName', '物料名称', '金蝶名称', '中文名称'])
+      || '未映射';
+    return {
+      ...row,
+      materialCode: materialCode || '未映射',
+      sku,
+      materialName,
+      productLine,
+      productSeries,
+      sourceFileText: (row.sourceFiles || [row.sourceFile]).join(' + '),
+      sourceSheetText: (row.sourceSheets || [row.sourceSheet]).join(' + '),
+      mappingStatus: productLine === '未映射' || productSeries === '未映射' ? '商品未映射' : '完整'
+    };
+  }).sort((left, right) => (
+    dateSortValue(right.actualSailingAt || right.expectedSailingAt || right.factoryShippedAt)
+    - dateSortValue(left.actualSailingAt || left.expectedSailingAt || left.factoryShippedAt)
+    || normalize(left.oaApprovalNo).localeCompare(normalize(right.oaApprovalNo), 'zh-Hans-CN')
+  ));
+  const issueRows = sourceApplications.reduce((sum, record) => sum + numberValue(record.parseSummary?.issueRows), 0);
+  return {
+    rows,
+    sourceApplications,
+    qualitySummary: {
+      sourceRows: sourceRows.length,
+      mergedRows: rows.length,
+      duplicateRows: Math.max(0, sourceRows.length - rows.length),
+      issueRows,
+      unmappedRows: rows.filter((row) => row.mappingStatus !== '完整').length,
+      reuploadSources: sourceApplications.filter((source) => source.requiresReupload).length
+    }
+  };
+}
+
+function filterFirstMileRows(rows, filters = {}) {
+  const keyword = normalize(filters.keyword).toLowerCase();
+  return rows.filter((row) => (
+    (!filters.cargoStatus || row.cargoStatus === filters.cargoStatus)
+    && (!filters.businessUnit || row.businessUnit === filters.businessUnit)
+    && (!filters.storeName || row.storeName === filters.storeName)
+    && (!filters.operatorName || row.operatorName === filters.operatorName)
+    && (!filters.productLine || row.productLine === filters.productLine)
+    && (!filters.productSeries || row.productSeries === filters.productSeries)
+    && (!filters.transportMode || row.transportMode === filters.transportMode)
+    && (!keyword || [
+      row.oaApprovalNo, row.materialCode, row.sku, row.materialName, row.shipmentNo,
+      row.sourceOwner, row.sourceFileText, row.sourceSheetText
+    ].join(' ').toLowerCase().includes(keyword))
+  ));
 }
 
 function splitDelimited(value) {
@@ -2507,6 +2613,36 @@ app.get('/api/cross-border-inventory', requireAuth, requirePage('crossBorderInve
   res.json({ rows: model.rows, sourceApplications: model.sourceApplications, qualitySummary: model.qualitySummary });
 });
 
+app.get('/api/first-mile-board', requireAuth, requirePage('firstMileBoard'), (req, res) => {
+  res.json(firstMileBoardModel());
+});
+
+app.post('/api/first-mile-board/export', requireAuth, requirePage('firstMileBoard'), (req, res) => {
+  const rows = filterFirstMileRows(firstMileBoardModel().rows, req.body?.filters || {});
+  const headers = [
+    '运输方式', '货物状态', '事业部', '店铺', '运营', '销售产品线', '销售系列',
+    '来源负责人', 'OA审批单号', '物料编码', 'SKU', '物料名称', '数量',
+    '预计开船时间', '实际开船时间', '预计到港时间', '到港时间',
+    '预计派送时间', '实际派送时间', '上架时间', '来源文件', '来源Sheet'
+  ];
+  const data = rows.map((row) => [
+    row.transportMode, row.cargoStatus, row.businessUnit, row.storeName, row.operatorName,
+    row.productLine, row.productSeries, row.sourceOwner, row.oaApprovalNo, row.materialCode,
+    row.sku, row.materialName, row.quantity, row.expectedSailingAt, row.actualSailingAt,
+    row.expectedArrivalAt, row.actualArrivalAt, row.expectedDeliveryAt, row.actualDeliveryAt,
+    row.listingAt, row.sourceFileText, row.sourceSheetText
+  ]);
+  const workbook = xlsx.utils.book_new();
+  const worksheet = xlsx.utils.aoa_to_sheet([headers, ...data]);
+  worksheet['!cols'] = headers.map((header) => ({ wch: Math.max(12, Math.min(30, header.length * 2 + 4)) }));
+  xlsx.utils.book_append_sheet(workbook, worksheet, '头程数据明细');
+  const buffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+  const fileName = `头程数据看板_${nowText().slice(0, 10).replace(/-/g, '')}.xlsx`;
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="first-mile-board.xlsx"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+  res.send(buffer);
+});
+
 app.get('/api/dimension-missing/cross-border', requireAuth, requirePage('dimensionMissing'), (req, res) => {
   const model = buildCrossBorderInventoryModel();
   res.json({
@@ -2581,6 +2717,9 @@ app.put('/api/mappings/:kind', requireAuth, (req, res) => {
 
 app.post('/api/workbook/inspect', requireAuth, upload.single('file'), (req, res) => {
   const sheetName = normalize(req.body.sheetName);
+  if (isFirstMileSlot(normalize(req.body.slotId))) {
+    return res.json(inspectFirstMileWorkbook(req.file));
+  }
   res.json(workbookInspect(req.file, sheetName || null));
 });
 
@@ -3005,8 +3144,11 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   const slotId = req.params.slotId;
   const mapping = parseJson(req.body.mapping, {});
   const sheetName = normalize(req.body.sheetName);
-  const parsed = workbookRows(req.file, sheetName || null, { includePreviews: false });
-  const rows = parsed.rows.map((row) => {
+  const firstMileParsed = isFirstMileSlot(slotId)
+    ? parseFirstMileWorkbook(req.file, { slotId, fileName: safeFilename(req.file) })
+    : null;
+  const parsed = firstMileParsed || workbookRows(req.file, sheetName || null, { includePreviews: false });
+  const rows = firstMileParsed ? firstMileParsed.rows : parsed.rows.map((row) => {
     if (slotId === 'productCategory') {
       return {
         raw: row,
@@ -3133,6 +3275,9 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     }
     return row;
   });
+  const storedMapping = firstMileParsed
+    ? { ...mapping, __firstMileSummary: firstMileParsed.summary }
+    : mapping;
   const now = nowText();
   const beforeOrderCounts = orderDataCounts();
   transaction(() => {
@@ -3140,12 +3285,20 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
       `INSERT INTO dimension_files (slot_id, title, file_name, sheet_name, sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
       ON CONFLICT(slot_id) DO UPDATE SET title = excluded.title, file_name = excluded.file_name, sheet_name = excluded.sheet_name, sheet_names = excluded.sheet_names, mapping_json = excluded.mapping_json, rows_json = excluded.rows_json, applied = 1, uploaded_by = excluded.uploaded_by, updated_at = excluded.updated_at`,
-      [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), sheetName, JSON.stringify(parsed.sheetNames), JSON.stringify(mapping), JSON.stringify(rows), req.user.name, now]
+      [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), firstMileParsed ? '' : sheetName, JSON.stringify(parsed.sheetNames), JSON.stringify(storedMapping), JSON.stringify(rows), req.user.name, now]
     );
     if (slotId === 'productCategory' || slotId === 'purchaseAssignment') applyDimensionEnrichment();
     assertOrderDataUnchanged(beforeOrderCounts);
   });
-  res.json({ rowCount: rows.length, sheetName, sheetNames: parsed.sheetNames, applied: true, diagnostics: dimensionDiagnostics(slotId, rows), rows: demandRows(false, req.user) });
+  res.json({
+    rowCount: rows.length,
+    sheetName: firstMileParsed ? '' : sheetName,
+    sheetNames: parsed.sheetNames,
+    applied: true,
+    diagnostics: dimensionDiagnostics(slotId, rows),
+    parseSummary: firstMileParsed?.summary || null,
+    rows: demandRows(false, req.user)
+  });
 });
 
 app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'firstMileDatabase']), (req, res) => {

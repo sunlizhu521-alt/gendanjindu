@@ -347,8 +347,17 @@ function workbookInspect(file, sheetName = null) {
     return { sheetName: name, columns: data.columns, rowCount: data.rowCount, previewRows: data.previewRows, headerRow: data.headerRow };
   });
   const targetName = sheetName && workbook.SheetNames.includes(sheetName) ? sheetName : workbook.SheetNames[0];
-  const target = sheetPreviews.find((sheet) => sheet.sheetName === targetName) || { columns: [], previewRows: [] };
-  return { sheetNames: workbook.SheetNames, sheetPreviews, columns: target.columns, previewRows: target.previewRows };
+  const target = sheetPreviews.find((sheet) => sheet.sheetName === targetName) || { columns: [], previewRows: [], rowCount: 0, headerRow: 0 };
+  const totalRowCount = sheetPreviews.reduce((sum, sheet) => sum + numberValue(sheet.rowCount), 0);
+  return {
+    sheetNames: workbook.SheetNames,
+    sheetPreviews,
+    columns: target.columns,
+    previewRows: target.previewRows,
+    rowCount: sheetName ? target.rowCount : totalRowCount,
+    totalRowCount,
+    headerRow: target.headerRow
+  };
 }
 
 function pick(row, column) {
@@ -3085,7 +3094,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
       };
     }
     return row;
-  }).filter((row) => Object.entries(row).some(([key, value]) => key !== 'raw' && Boolean(value)));
+  });
   const now = nowText();
   const beforeOrderCounts = orderDataCounts();
   transaction(() => {

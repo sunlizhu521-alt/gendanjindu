@@ -3123,6 +3123,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
       const payload = await request('/api/workbook/inspect', { token, method: 'POST', body: data });
       const record = records.find((item) => item.slot_id === slot.id);
       const columns = payload.columns || [];
+      const inspectRowCount = Number(payload.rowCount || 0);
       setLocal((prev) => {
         const prevState = prev[slot.id] || {};
         const savedMapping = prevState.savedMapping || prevState.mapping || record?.mapping || {};
@@ -3144,9 +3145,10 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
             sheetMappings: { ...sheetMappings, '': mapping },
             mapping,
             sheetName: '',
+            inspectRowCount,
             progress: columns.length ? 100 : 70,
             statusText: columns.length
-              ? `解析完成：识别 ${payload.sheetNames?.length || 1} 个工作表，请检查字段映射`
+              ? `解析完成：识别 ${payload.sheetNames?.length || 1} 个工作表，共 ${inspectRowCount} 行，请检查字段映射`
               : '未识别到表头，请检查前10行是否包含字段名',
             statusType: columns.length ? 'success' : 'warning',
             busy: ''
@@ -3177,13 +3179,19 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
     const nextKey = sheetName || '';
     const sheetMappings = { ...(state.sheetMappings || {}), [currentKey]: state.mapping || {} };
     const mapping = validMappingForColumns(sheetMappings[nextKey] || state.savedMapping || {}, nextColumns, slot.fields);
+    const inspectRowCount = sheetName
+      ? Number(sheet?.rowCount || 0)
+      : (state.sheetPreviews || []).reduce((sum, item) => sum + Number(item.rowCount || 0), 0);
     setSlotState(slot.id, {
       sheetName,
       columns: nextColumns,
       sheetMappings,
       mapping,
+      inspectRowCount,
       progress: 100,
-      statusText: sheetName ? `已切换到工作表：${sheetName}` : '已切换到全部工作表',
+      statusText: sheetName
+        ? `已切换到工作表：${sheetName}，共 ${inspectRowCount} 行`
+        : `已切换到全部工作表，共 ${inspectRowCount} 行`,
       statusType: 'success'
     });
   }
@@ -3366,7 +3374,8 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
               <div className="slot-info">
                 {record && <span>文件：{record.file_name}</span>}
                 {hasSheets && <span>工作表：{sheetNames.join('、')}</span>}
-                {record && <span>行数：{record.rowCount}</span>}
+                {state.file && <span>本次解析行数：{state.inspectRowCount || 0}</span>}
+                {record && <span>已保存行数：{record.rowCount}</span>}
                 {record?.diagnostics && diagnosticsText(slot.id, record.diagnostics) && <span>{diagnosticsText(slot.id, record.diagnostics)}</span>}
                 {record && <span>更新：{record.updated_at}</span>}
               </div>

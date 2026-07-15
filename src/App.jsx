@@ -1167,7 +1167,7 @@ function SourceApplicationsNote({ sources = [] }) {
 }
 
 const CROSS_BORDER_FILTER_DEFAULTS = {
-  inventoryType: '', marketplace: '', warehouseName: '', kingdeeWarehouse: '',
+  inventoryType: '', sku: '', marketplace: '', warehouseName: '', kingdeeWarehouse: '',
   businessUnit: '', level1WarehouseCategory: '', level2WarehouseCategory: '', productLine: '',
   productSeries: '', stockStatus: '有库存', mappingStatus: '', keyword: ''
 };
@@ -1196,7 +1196,7 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
       row.materialCode, row.materialName, row.fnsku, row.asin, row.itemId, row.warehouseName,
       row.kingdeeWarehouseCode, row.kingdeeWarehouseName, row.businessUnit, row.productLine,
       row.productSeries, row.model].join(' ').toLowerCase();
-    const fields = ['inventoryType', 'marketplace', 'warehouseName', 'businessUnit',
+    const fields = ['inventoryType', 'sku', 'marketplace', 'warehouseName', 'businessUnit',
       'level1WarehouseCategory', 'level2WarehouseCategory', 'productLine', 'productSeries',
       'stockStatus', 'mappingStatus'];
     if (keyword && !text.includes(keyword)) return false;
@@ -1208,6 +1208,7 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
     const rowsFor = (field) => rows.filter((row) => matchesFilters(row, field));
     return {
       inventoryTypes: unique(rowsFor('inventoryType').map((row) => row.inventoryType)),
+      skus: unique(rowsFor('sku').map((row) => row.sku)),
       marketplaces: unique(rowsFor('marketplace').map((row) => row.marketplace)),
       warehouseNames: unique(rowsFor('warehouseName').map((row) => row.warehouseName)),
       kingdeeWarehouses: unique(rowsFor('kingdeeWarehouse').map((row) => row.kingdeeWarehouseName)),
@@ -1222,7 +1223,7 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
   }, [rows, filters]);
   useEffect(() => {
     const next = clearInvalidFilterValues(filters, {
-      inventoryType: options.inventoryTypes, marketplace: options.marketplaces,
+      inventoryType: options.inventoryTypes, sku: options.skus, marketplace: options.marketplaces,
       warehouseName: options.warehouseNames, kingdeeWarehouse: options.kingdeeWarehouses,
       businessUnit: options.businessUnits, level1WarehouseCategory: options.level1Categories,
       level2WarehouseCategory: options.level2Categories, productLine: options.productLines,
@@ -1279,6 +1280,7 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
         <div className="cross-border-filter-scroll">
           <div className="toolbar filters-row cross-border-filter-row">
             <SelectField label="库存类型" value={filters.inventoryType} options={options.inventoryTypes} onChange={(value) => setFilters({ ...filters, inventoryType: value })} />
+            <SelectField label="SKU" value={filters.sku} options={options.skus} onChange={(value) => setFilters({ ...filters, sku: value })} />
             <SelectField label="站点" value={filters.marketplace} options={options.marketplaces} onChange={(value) => setFilters({ ...filters, marketplace: value })} />
             <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
             <SelectField label="一级仓库分类" value={filters.level1WarehouseCategory} options={options.level1Categories} onChange={(value) => setFilters({ ...filters, level1WarehouseCategory: value })} />

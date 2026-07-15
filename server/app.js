@@ -263,7 +263,7 @@ const HEADER_HINTS = [
   '物料编码', '物流编码', 'SKU', '物料名称', '产品名称', '供应商', '供应商简称',
   '产品明细供应商', '产品线明细供应商', '采购下单人', '创建人', '采购组', '采购组织', '产品线', '系列',
   '事业部', '采购日期', '创建日期', '采购数量', '下单数量', '入库数量', '采购订单号', 'OA备货流程号',
-  '仓库编码', '仓库代码', '仓库名称', '一级仓库分类', '二级仓库分类', '一级分类', '二级分类'
+  '仓库编码', '仓库代码', '仓库名称', '站点', '站点名称', '一级仓库分类', '二级仓库分类', '一级分类', '二级分类'
 ];
 
 function compactHeader(value) {
@@ -273,9 +273,21 @@ function compactHeader(value) {
 function headerScore(values) {
   const cells = values.map(compactHeader).filter(Boolean);
   if (!cells.length) return 0;
-  const text = cells.join('|');
-  const hintHits = HEADER_HINTS.filter((hint) => text.includes(compactHeader(hint))).length;
-  return (hintHits * 20) + Math.min(cells.length, 12) + (cells.length >= 2 ? 5 : 0);
+  const hints = HEADER_HINTS.map(compactHeader).filter(Boolean);
+  const hintScore = cells.reduce((total, cell) => {
+    const best = hints.reduce((score, hint) => {
+      if (cell === hint) return Math.max(score, 30);
+      if (hint.length >= 2 && cell.length <= hint.length + 8 && (cell.startsWith(hint) || cell.endsWith(hint))) {
+        return Math.max(score, 18);
+      }
+      if (hint.length >= 3 && cell.length <= hint.length + 8 && cell.includes(hint)) {
+        return Math.max(score, 10);
+      }
+      return score;
+    }, 0);
+    return total + best;
+  }, 0);
+  return hintScore + Math.min(cells.length, 12) + (cells.length >= 2 ? 5 : 0);
 }
 
 function uniqueColumns(values) {
@@ -1002,7 +1014,7 @@ const CROSS_BORDER_TARGETS = {
   lingxingWarehouseMap: { title: '领星&金蝶仓库对照', page: 'dimensionLibrary', fields: ['领星仓库名称', '金蝶仓库名称'] },
   productCategory: { title: '商品分类', page: 'dimensionLibrary', fields: ['物料编码', 'SKU', '物料名称', '销售产品线', '销售系列', '型号'] },
   warehouseMaterialMap: { title: '仓库与物料对照表', page: 'dimensionLibrary', fields: ['金蝶仓库名称', '物料编码', '事业部'] },
-  spare1: { title: '仓库名称', page: 'dimensionLibrary', fields: ['金蝶仓库名称', '一级仓库分类', '二级仓库分类'] }
+  spare1: { title: '仓库名称', page: 'dimensionLibrary', fields: ['金蝶仓库名称', '站点', '一级仓库分类', '二级仓库分类'] }
 };
 
 function strictNumberValue(value) {
@@ -1101,6 +1113,7 @@ function buildCrossBorderInventoryModel() {
     (row) => rowAliasValue(row, ['warehouseName', 'kingdeeWarehouseName', '金蝶仓库名称', '仓库名称']),
     (row) => ({
       warehouseCode: rowAliasValue(row, ['warehouseCode', 'kingdeeWarehouseCode', '金蝶仓库编码', '仓库编码']),
+      marketplace: rowAliasValue(row, ['marketplace', '站点', '站点名称', '国家站点', '销售站点', '国家/地区']),
       level1WarehouseCategory: rowAliasValue(row, ['level1WarehouseCategory', '一级仓库分类']),
       level2WarehouseCategory: rowAliasValue(row, ['level2WarehouseCategory', '二级仓库分类'])
     })
@@ -1297,10 +1310,10 @@ function buildCrossBorderInventoryModel() {
     let warehouseCategory = {};
     if (kingdeeWarehouseName) {
       const result = warehouseCategoryLookup.resolve(kingdeeWarehouseName);
-      if (result.status === 'ok' && normalize(result.value.level1WarehouseCategory) && normalize(result.value.level2WarehouseCategory)) {
+      if (result.status === 'ok' && normalize(result.value.marketplace) && normalize(result.value.level1WarehouseCategory) && normalize(result.value.level2WarehouseCategory)) {
         warehouseCategory = result.value;
       } else {
-        addMappingIssue(row, result.status === 'conflict' ? 'conflict' : 'missing', 'spare1', '金蝶仓库缺少仓库分类', kingdeeWarehouseName, result.values || []);
+        addMappingIssue(row, result.status === 'conflict' ? 'conflict' : 'missing', 'spare1', '金蝶仓库缺少站点或仓库分类', kingdeeWarehouseName, result.values || []);
         if (result.status === 'ok') warehouseCategory = result.value;
       }
     }
@@ -1316,6 +1329,8 @@ function buildCrossBorderInventoryModel() {
       model: normalize(product.model) || '未映射',
       kingdeeWarehouseCode: normalize(warehouse.kingdeeWarehouseCode) || '未映射',
       kingdeeWarehouseName: kingdeeWarehouseName || '未映射',
+      sourceMarketplace: normalize(row.marketplace),
+      marketplace: normalize(warehouseCategory.marketplace) || '未映射',
       businessUnit: normalize(warehouseMaterial.businessUnit) || '未映射',
       level1WarehouseCategory: normalize(warehouseCategory.level1WarehouseCategory) || '未映射',
       level2WarehouseCategory: normalize(warehouseCategory.level2WarehouseCategory) || '未映射',
@@ -3007,6 +3022,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         raw: row,
         warehouseCode: pick(row, mapping.warehouseCode) || pickDimensionAlias(row, ['仓库编码', '仓库代码', '仓库编号', '金蝶仓库编码', '仓库ID']),
         warehouseName: pick(row, mapping.warehouseName) || pickDimensionAlias(row, ['仓库名称', '仓库名', '金蝶仓库名称']),
+        marketplace: pick(row, mapping.marketplace) || pickDimensionAlias(row, ['站点', '站点名称', '国家站点', '销售站点', '国家/地区']),
         level1WarehouseCategory: pick(row, mapping.level1WarehouseCategory) || pickDimensionAlias(row, ['一级仓库分类', '仓库一级分类', '一级分类', '仓库大类', '一级仓库类型']),
         level2WarehouseCategory: pick(row, mapping.level2WarehouseCategory) || pickDimensionAlias(row, ['二级仓库分类', '仓库二级分类', '二级分类', '仓库小类', '二级仓库类型'])
       };

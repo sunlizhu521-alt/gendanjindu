@@ -82,6 +82,7 @@ const DIMENSION_SLOTS = [
   { id: 'spare1', title: '仓库名称', fields: [
     ['warehouseCode', '仓库编码'],
     ['warehouseName', '仓库名称'],
+    ['marketplace', '站点'],
     ['level1WarehouseCategory', '一级仓库分类'],
     ['level2WarehouseCategory', '二级仓库分类']
   ] },
@@ -750,6 +751,7 @@ function FieldMapping({ fields, columns, mapping, onChange }) {
 const FIELD_MAPPING_ALIASES = {
   warehouseCode: ['仓库编码', '仓库代码', '仓库编号', '金蝶仓库编码', '仓库ID'],
   warehouseName: ['仓库名称', '仓库名', '金蝶仓库名称'],
+  marketplace: ['站点', '站点名称', '国家站点', '销售站点', '国家/地区'],
   level1WarehouseCategory: ['一级仓库分类', '仓库一级分类', '一级分类', '仓库大类', '一级仓库类型'],
   level2WarehouseCategory: ['二级仓库分类', '仓库二级分类', '二级分类', '仓库小类', '二级仓库类型']
 };
@@ -1165,7 +1167,7 @@ function SourceApplicationsNote({ sources = [] }) {
 }
 
 const CROSS_BORDER_FILTER_DEFAULTS = {
-  inventoryType: '', storeName: '', marketplace: '', warehouseName: '', kingdeeWarehouse: '',
+  inventoryType: '', marketplace: '', warehouseName: '', kingdeeWarehouse: '',
   businessUnit: '', level1WarehouseCategory: '', level2WarehouseCategory: '', productLine: '',
   productSeries: '', stockStatus: '有库存', mappingStatus: '', keyword: ''
 };
@@ -1194,7 +1196,7 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
       row.materialCode, row.materialName, row.fnsku, row.asin, row.itemId, row.warehouseName,
       row.kingdeeWarehouseCode, row.kingdeeWarehouseName, row.businessUnit, row.productLine,
       row.productSeries, row.model].join(' ').toLowerCase();
-    const fields = ['inventoryType', 'storeName', 'marketplace', 'warehouseName', 'businessUnit',
+    const fields = ['inventoryType', 'marketplace', 'warehouseName', 'businessUnit',
       'level1WarehouseCategory', 'level2WarehouseCategory', 'productLine', 'productSeries',
       'stockStatus', 'mappingStatus'];
     if (keyword && !text.includes(keyword)) return false;
@@ -1206,7 +1208,6 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
     const rowsFor = (field) => rows.filter((row) => matchesFilters(row, field));
     return {
       inventoryTypes: unique(rowsFor('inventoryType').map((row) => row.inventoryType)),
-      storeNames: unique(rowsFor('storeName').map((row) => row.storeName)),
       marketplaces: unique(rowsFor('marketplace').map((row) => row.marketplace)),
       warehouseNames: unique(rowsFor('warehouseName').map((row) => row.warehouseName)),
       kingdeeWarehouses: unique(rowsFor('kingdeeWarehouse').map((row) => row.kingdeeWarehouseName)),
@@ -1221,7 +1222,7 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
   }, [rows, filters]);
   useEffect(() => {
     const next = clearInvalidFilterValues(filters, {
-      inventoryType: options.inventoryTypes, storeName: options.storeNames, marketplace: options.marketplaces,
+      inventoryType: options.inventoryTypes, marketplace: options.marketplaces,
       warehouseName: options.warehouseNames, kingdeeWarehouse: options.kingdeeWarehouses,
       businessUnit: options.businessUnits, level1WarehouseCategory: options.level1Categories,
       level2WarehouseCategory: options.level2Categories, productLine: options.productLines,
@@ -1235,12 +1236,14 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const pageRows = filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const summary = useMemo(() => {
-    const completeRows = filteredRows.filter((row) => row.mappingStatus === '完整');
+    const validDistinctCount = (field) => new Set(
+      filteredRows.map((row) => normalize(row[field])).filter((value) => value && value !== '未映射')
+    ).size;
     return {
       inventoryQty: filteredRows.reduce((sum, row) => sum + numberValue(row.inventoryQty), 0),
-      materialCount: new Set(filteredRows.map((row) => normalize(row.materialCode)).filter((value) => value && value !== '未映射')).size,
-      completeInventoryQty: completeRows.reduce((sum, row) => sum + numberValue(row.inventoryQty), 0),
-      issueInventoryQty: filteredRows.filter((row) => row.mappingStatus !== '完整').reduce((sum, row) => sum + numberValue(row.inventoryQty), 0)
+      warehouseCount: validDistinctCount('kingdeeWarehouseName'),
+      marketplaceCount: validDistinctCount('marketplace'),
+      productLineCount: validDistinctCount('productLine')
     };
   }, [filteredRows]);
   useEffect(() => { setCurrentPage(1); }, [filters]);
@@ -1274,7 +1277,6 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
       <SourceApplicationsNote sources={sourceApplications} />
       <div className="toolbar filters-row">
         <SelectField label="库存类型" value={filters.inventoryType} options={options.inventoryTypes} onChange={(value) => setFilters({ ...filters, inventoryType: value })} />
-        <SelectField label="店铺" value={filters.storeName} options={options.storeNames} onChange={(value) => setFilters({ ...filters, storeName: value })} />
         <SelectField label="站点" value={filters.marketplace} options={options.marketplaces} onChange={(value) => setFilters({ ...filters, marketplace: value })} />
         <SelectField label="领星仓库" value={filters.warehouseName} options={options.warehouseNames} onChange={(value) => setFilters({ ...filters, warehouseName: value })} />
         <SelectField label="金蝶仓库" value={filters.kingdeeWarehouse} options={options.kingdeeWarehouses} onChange={(value) => setFilters({ ...filters, kingdeeWarehouse: value })} />
@@ -1292,9 +1294,9 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
       </div>
       <section className="metric-grid">
         <MetricCard label="库存数量合计" value={summary.inventoryQty.toLocaleString()} />
-        <MetricCard label="物料数" value={summary.materialCount.toLocaleString()} />
-        <MetricCard label="映射完整库存" value={summary.completeInventoryQty.toLocaleString()} />
-        <MetricCard label="未映射/冲突库存" value={summary.issueInventoryQty.toLocaleString()} />
+        <MetricCard label="仓库数量" value={summary.warehouseCount.toLocaleString()} />
+        <MetricCard label="站点数" value={summary.marketplaceCount.toLocaleString()} />
+        <MetricCard label="产品线数" value={summary.productLineCount.toLocaleString()} />
       </section>
       {(qualitySummary.missingTaskCount > 0 || qualitySummary.conflictCount > 0 || qualitySummary.sourceAnomalyCount > 0 || qualitySummary.filteredFbaRows > 0) && (
         <div className="quality-banner">数据质量：维度缺失 {qualitySummary.missingTaskCount || 0} 项，映射冲突 {qualitySummary.conflictCount || 0} 项，源文件异常 {qualitySummary.sourceAnomalyCount || 0} 项；FBA规则过滤 {qualitySummary.filteredFbaRows || 0} 行。</div>

@@ -1208,7 +1208,7 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
     const rowsFor = (field) => rows.filter((row) => matchesFilters(row, field));
     return {
       inventoryTypes: unique(rowsFor('inventoryType').map((row) => row.inventoryType)),
-      skus: unique(rowsFor('sku').map((row) => row.sku)),
+      skus: unique(rowsFor('sku').map((row) => row.sku)).filter((value) => value !== '未映射'),
       marketplaces: unique(rowsFor('marketplace').map((row) => row.marketplace)),
       warehouseNames: unique(rowsFor('warehouseName').map((row) => row.warehouseName)),
       kingdeeWarehouses: unique(rowsFor('kingdeeWarehouse').map((row) => row.kingdeeWarehouseName)),

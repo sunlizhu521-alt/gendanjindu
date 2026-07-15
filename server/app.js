@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import xlsx from 'xlsx';
 import { all, get, initDatabase, run, runMany, saveDatabase, transaction } from './database.js';
-import { dedupeFirstMileRows, inspectFirstMileWorkbook, isFirstMileSlot, parseFirstMileWorkbook } from './first-mile.js';
+import { dedupeFirstMileRows, firstMileOwner, inspectFirstMileWorkbook, isFirstMileSlot, parseFirstMileWorkbook } from './first-mile.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -74,7 +74,7 @@ const DIMENSION_SLOTS = {
   firstMileData2: '扈翠云头程数据',
   firstMileData3: '魏静头程数据',
   firstMileData4: '李紫媛头程数据',
-  firstMileData5: '李娜婷头程数据',
+  firstMileData5: '李宛宸头程数据',
   firstMileSpare: '备用'
 };
 const DIFF_NORMAL_ORDER = '正常订单';
@@ -773,16 +773,18 @@ function firstMileBoardModel() {
     const mapping = parseJson(record.mapping_json, {});
     return {
       slotId: record.slot_id,
-      label: record.title,
+      label: DIMENSION_SLOTS[record.slot_id] || record.title,
       fileName: record.file_name,
       appliedAt: record.updated_at,
-      parseSummary: mapping.__firstMileSummary || null,
+      parseSummary: mapping.__firstMileSummary
+        ? { ...mapping.__firstMileSummary, owner: firstMileOwner(record.slot_id) }
+        : null,
       requiresReupload: !mapping.__firstMileSummary
     };
   });
   const sourceRows = records.flatMap((record) => parseJson(record.rows_json, [])
     .filter((row) => row?.businessType && row?.sourceFile)
-    .map((row) => ({ ...row, sourceAppliedAt: record.updated_at })));
+    .map((row) => ({ ...row, sourceOwner: firstMileOwner(record.slot_id), sourceAppliedAt: record.updated_at })));
   const { byMaterial, bySku } = firstMileProductLookups();
   const rows = dedupeFirstMileRows(sourceRows).map((row) => {
     const product = byMaterial.get(normalizeMatchPart(row.materialCode))
@@ -3128,11 +3130,16 @@ app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'wan
   res.json({
     rows: rows.map((row) => {
       const dimensionRows = parseJson(row.rows_json, []);
+      const mapping = parseJson(row.mapping_json, {});
+      if (isFirstMileSlot(row.slot_id) && mapping.__firstMileSummary) {
+        mapping.__firstMileSummary = { ...mapping.__firstMileSummary, owner: firstMileOwner(row.slot_id) };
+      }
       const { rows_json: _rowsJson, ...safeRow } = row;
       return {
         ...safeRow,
+        title: DIMENSION_SLOTS[row.slot_id] || safeRow.title,
         sheetNames: parseJson(row.sheet_names, []),
-        mapping: parseJson(row.mapping_json, {}),
+        mapping,
         rowCount: dimensionRows.length,
         diagnostics: dimensionDiagnostics(row.slot_id, dimensionRows)
       };

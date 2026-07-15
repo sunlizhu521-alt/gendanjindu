@@ -6,7 +6,7 @@ const FIRST_MILE_SLOT_OWNERS = {
   firstMileData2: '扈翠云',
   firstMileData3: '魏静',
   firstMileData4: '李紫媛',
-  firstMileData5: '李娜婷',
+  firstMileData5: '李宛宸',
   firstMileSpare: '备用'
 };
 

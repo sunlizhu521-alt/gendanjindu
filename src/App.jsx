@@ -1275,22 +1275,30 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
         <span className="section-count">当前显示 {filteredRows.length} / {rows.length} 条，第 {currentPage} / {totalPages} 页</span>
       </div>
       <SourceApplicationsNote sources={sourceApplications} />
-      <div className="toolbar filters-row">
-        <SelectField label="库存类型" value={filters.inventoryType} options={options.inventoryTypes} onChange={(value) => setFilters({ ...filters, inventoryType: value })} />
-        <SelectField label="站点" value={filters.marketplace} options={options.marketplaces} onChange={(value) => setFilters({ ...filters, marketplace: value })} />
-        <SelectField label="领星仓库" value={filters.warehouseName} options={options.warehouseNames} onChange={(value) => setFilters({ ...filters, warehouseName: value })} />
-        <SelectField label="金蝶仓库" value={filters.kingdeeWarehouse} options={options.kingdeeWarehouses} onChange={(value) => setFilters({ ...filters, kingdeeWarehouse: value })} />
-        <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
-        <SelectField label="一级仓库分类" value={filters.level1WarehouseCategory} options={options.level1Categories} onChange={(value) => setFilters({ ...filters, level1WarehouseCategory: value })} />
-        <SelectField label="二级仓库分类" value={filters.level2WarehouseCategory} options={options.level2Categories} onChange={(value) => setFilters({ ...filters, level2WarehouseCategory: value })} />
-        <SelectField label="销售产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
-        <SelectField label="销售系列" value={filters.productSeries} options={options.productSeries} onChange={(value) => setFilters({ ...filters, productSeries: value })} />
-        <SelectField label="库存状态" value={filters.stockStatus} options={options.stockStatuses} onChange={(value) => setFilters({ ...filters, stockStatus: value })} />
-        <SelectField label="映射状态" value={filters.mappingStatus} options={options.mappingStatuses} onChange={(value) => setFilters({ ...filters, mappingStatus: value })} />
-        <input className="search-input" placeholder="搜索店铺、SKU、物料、仓库、产品维度" value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} />
-        <button type="button" className="ghost compact-button" onClick={() => setFilters(CROSS_BORDER_FILTER_DEFAULTS)}>清空筛选</button>
-        <button type="button" className="compact-button" onClick={exportTable}>导出表格</button>
-        <button type="button" className="ghost compact-button" onClick={onOpenMissing}>查看维度问题</button>
+      <div className="cross-border-filter-groups">
+        <div className="cross-border-filter-scroll">
+          <div className="toolbar filters-row cross-border-filter-row">
+            <SelectField label="库存类型" value={filters.inventoryType} options={options.inventoryTypes} onChange={(value) => setFilters({ ...filters, inventoryType: value })} />
+            <SelectField label="站点" value={filters.marketplace} options={options.marketplaces} onChange={(value) => setFilters({ ...filters, marketplace: value })} />
+            <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
+            <SelectField label="一级仓库分类" value={filters.level1WarehouseCategory} options={options.level1Categories} onChange={(value) => setFilters({ ...filters, level1WarehouseCategory: value })} />
+            <SelectField label="二级仓库分类" value={filters.level2WarehouseCategory} options={options.level2Categories} onChange={(value) => setFilters({ ...filters, level2WarehouseCategory: value })} />
+            <SelectField label="销售产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
+            <SelectField label="销售系列" value={filters.productSeries} options={options.productSeries} onChange={(value) => setFilters({ ...filters, productSeries: value })} />
+          </div>
+        </div>
+        <div className="cross-border-filter-scroll">
+          <div className="toolbar filters-row cross-border-filter-row">
+            <SelectField label="领星仓库" value={filters.warehouseName} options={options.warehouseNames} onChange={(value) => setFilters({ ...filters, warehouseName: value })} />
+            <SelectField label="金蝶仓库" value={filters.kingdeeWarehouse} options={options.kingdeeWarehouses} onChange={(value) => setFilters({ ...filters, kingdeeWarehouse: value })} />
+            <SelectField label="库存状态" value={filters.stockStatus} options={options.stockStatuses} onChange={(value) => setFilters({ ...filters, stockStatus: value })} />
+            <SelectField label="映射状态" value={filters.mappingStatus} options={options.mappingStatuses} onChange={(value) => setFilters({ ...filters, mappingStatus: value })} />
+            <input className="search-input" placeholder="搜索店铺、SKU、物料、仓库、产品维度" value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} />
+            <button type="button" className="ghost compact-button" onClick={() => setFilters(CROSS_BORDER_FILTER_DEFAULTS)}>清空筛选</button>
+            <button type="button" className="compact-button" onClick={exportTable}>导出表格</button>
+            <button type="button" className="ghost compact-button" onClick={onOpenMissing}>查看维度问题</button>
+          </div>
+        </div>
       </div>
       <section className="metric-grid">
         <MetricCard label="库存数量合计" value={summary.inventoryQty.toLocaleString()} />

@@ -1958,3 +1958,37 @@ th {
 .error-text { color: #dc2626; font-weight: 600; }
 .skipped-details { margin-top: 8px; }
 .skipped-details summary { cursor: pointer; color: #6b7280; font-size: 13px; }
+
+.cross-border-filter-groups {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 16px;
+}
+
+.cross-border-filter-scroll {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+}
+
+.cross-border-filter-row {
+  width: max-content;
+  min-width: 100%;
+  margin-bottom: 0;
+  padding-bottom: 4px;
+  flex-wrap: nowrap;
+  align-items: end;
+}
+
+.cross-border-filter-row .filter-control {
+  flex: 0 0 178px;
+  width: 178px;
+  min-width: 178px;
+}
+
+.cross-border-filter-row .search-input {
+  flex: 0 0 320px;
+  width: 320px;
+}

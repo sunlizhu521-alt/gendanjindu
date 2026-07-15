@@ -1307,7 +1307,7 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
         <MetricCard label="产品线数" value={summary.productLineCount.toLocaleString()} />
       </section>
       {(qualitySummary.missingTaskCount > 0 || qualitySummary.conflictCount > 0 || qualitySummary.sourceAnomalyCount > 0 || qualitySummary.filteredFbaRows > 0) && (
-        <div className="quality-banner">数据质量：维度缺失 {qualitySummary.missingTaskCount || 0} 项，映射冲突 {qualitySummary.conflictCount || 0} 项，源文件异常 {qualitySummary.sourceAnomalyCount || 0} 项；FBA规则过滤 {qualitySummary.filteredFbaRows || 0} 行。</div>
+        <div className="quality-banner">数据质量：维度缺失 {qualitySummary.missingTaskCount || 0} 项，映射冲突 {qualitySummary.conflictCount || 0} 项，源文件异常 {qualitySummary.sourceAnomalyCount || 0} 项；FBA去重过滤（非“全部”属性） {qualitySummary.filteredFbaRows || 0} 行。</div>
       )}
       <section className="progress-chart-grid operation-chart-grid">
         <InventoryRankingChart title="事业部库存" rows={filteredRows} groupBy={(row) => row.businessUnit} valueKey="inventoryQty" />

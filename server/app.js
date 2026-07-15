@@ -1198,7 +1198,15 @@ function buildCrossBorderInventoryModel() {
           filteredFbaRows += 1;
           return;
         }
-        quantityRaw = rowAliasValue(rawRow, ['endingInventoryQty', '期末库存(含移仓)', '期末库存（含移仓）']);
+        quantityRaw = rowAliasValue(rawRow, [
+          'endingInventoryQty',
+          'totalQty',
+          '期末库存(含移仓)',
+          '期末库存（含移仓）',
+          '期末库存(含移仓)-数量',
+          '期末库存（含移仓）-数量',
+          '期末库存(含移仓)数量'
+        ]);
       } else if (inventoryType === 'FBM') {
         sourceProductKey = identifier;
         quantityRaw = rowAliasValue(rawRow, ['actualTotalQty', '实际总量']);
@@ -3101,7 +3109,13 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         itemId: pick(row, mapping.itemId) || pickAny(row, ['Item ID', 'ItemID', '商品ID', '产品ID']),
         warehouseName: pick(row, mapping.warehouseName) || pickAny(row, ['仓库名称', '仓库名', '仓库']),
         inventoryAttribute: pick(row, mapping.inventoryAttribute) || pickAny(row, ['库存属性']),
-        endingInventoryQty: pick(row, mapping.endingInventoryQty) || pickAny(row, ['期末库存(含移仓)', '期末库存（含移仓）']),
+        endingInventoryQty: pick(row, mapping.endingInventoryQty) || pick(row, mapping.totalQty) || pickAny(row, [
+          '期末库存(含移仓)',
+          '期末库存（含移仓）',
+          '期末库存(含移仓)-数量',
+          '期末库存（含移仓）-数量',
+          '期末库存(含移仓)数量'
+        ]),
         identifier: pick(row, mapping.identifier) || pickAny(row, ['识别码']),
         actualTotalQty: pick(row, mapping.actualTotalQty) || pickAny(row, ['实际总量']),
         totalInventoryQty: pick(row, mapping.totalInventoryQty) || pickAny(row, ['总库存(数量)', '总库存（数量）']),

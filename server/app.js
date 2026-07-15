@@ -67,9 +67,11 @@ const DIMENSION_SLOTS = {
   lingxingFbmInventory: 'FBM库存',
   lingxingWfsInventory: 'WFS库存',
   lingxingSpare: '备用',
-  firstMileData1: '头程数据1',
-  firstMileData2: '头程数据2',
-  firstMileData3: '头程数据3',
+  firstMileData1: '张婷婷头程数据',
+  firstMileData2: '扈翠云头程数据',
+  firstMileData3: '魏静头程数据',
+  firstMileData4: '李紫媛头程数据',
+  firstMileData5: '李娜婷头程数据',
   firstMileSpare: '备用'
 };
 const DIFF_NORMAL_ORDER = '正常订单';

@@ -283,7 +283,7 @@ export function parseFirstMileWorkbook(file, { slotId, fileName }) {
       parsedRows: normalizedRows.length,
       validRows: rows.length,
       issueRows: issues.length,
-      issues: issues.slice(0, 50)
+      issues
     },
     sheetNames: workbook.SheetNames
   };

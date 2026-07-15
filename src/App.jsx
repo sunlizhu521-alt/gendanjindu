@@ -3292,6 +3292,22 @@ function FirstMileBoard({ token, setMessage, refreshVersion = 0 }) {
 function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表库', slots = DIMENSION_SLOTS, gridColumns = 2, onDataApplied = () => {}, highlightSlotId = '' }) {
   const [records, setRecords] = useState([]);
   const [local, setLocal] = useState({});
+  const [issuePage, setIssuePage] = useState(1);
+  const isFirstMileLibrary = slots.some((slot) => slot.firstMile);
+  const issuePageSize = 20;
+  const issueRows = useMemo(() => records.flatMap((record) => {
+    const summary = record.mapping?.__firstMileSummary;
+    if (!summary || !slots.some((slot) => slot.id === record.slot_id && slot.firstMile)) return [];
+    return (summary.issues || []).map((issue, index) => ({
+      id: `${record.slot_id}-${issue.sourceSheet || ''}-${issue.sourceExcelRow || ''}-${index}`,
+      owner: summary.owner || '',
+      fileName: record.file_name || '',
+      ...issue
+    }));
+  }), [records, slots]);
+  const issueTotalPages = Math.max(1, Math.ceil(issueRows.length / issuePageSize));
+  const currentIssuePage = Math.min(issuePage, issueTotalPages);
+  const pagedIssueRows = issueRows.slice((currentIssuePage - 1) * issuePageSize, currentIssuePage * issuePageSize);
 
   function setSlotState(slotId, patch) {
     setLocal((prev) => ({ ...prev, [slotId]: { ...(prev[slotId] || {}), ...patch } }));
@@ -3303,6 +3319,9 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
   }
 
   useEffect(() => { load().catch(() => {}); }, []);
+  useEffect(() => {
+    if (issuePage > issueTotalPages) setIssuePage(issueTotalPages);
+  }, [issuePage, issueTotalPages]);
   useEffect(() => {
     if (!highlightSlotId) return;
     window.setTimeout(() => document.getElementById(`dimension-slot-${highlightSlotId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);
@@ -3607,6 +3626,39 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
           );
         })}
       </section>
+      {isFirstMileLibrary && (
+        <section className="first-mile-issue-section">
+          <div className="section-heading-row">
+            <h3>异常行明细</h3>
+            <span className="section-count">共 {issueRows.length} 条，每页 {issuePageSize} 条</span>
+          </div>
+          <DataTable
+            className="first-mile-issue-table"
+            rows={pagedIssueRows}
+            columns={['来源负责人', '文件', 'Sheet', 'Excel行号', 'OA审批单号', '物料编码', 'SKU', '原始数量', '异常原因']}
+            render={(row) => [
+              row.owner || '未识别',
+              <span className="tight-cell" title={row.fileName}>{row.fileName || '-'}</span>,
+              row.sourceSheet || '-',
+              row.sourceExcelRow || '-',
+              row.oaApprovalNo || '-',
+              row.materialCode || '-',
+              row.sourceSku || '-',
+              row.quantitySource || '-',
+              <span className="issue-reason" title={row.reason}>{row.reason || '-'}</span>
+            ]}
+          />
+          {issueRows.length > 0 && (
+            <TablePagination
+              label="头程数据库异常行分页"
+              currentPage={currentIssuePage}
+              totalPages={issueTotalPages}
+              onPageChange={setIssuePage}
+              pageSize={issuePageSize}
+            />
+          )}
+        </section>
+      )}
     </>
   );
 }

@@ -2058,3 +2058,31 @@ th {
 .first-mile-table tbody tr:nth-child(even) td {
   background: #f8fafc;
 }
+
+.first-mile-issue-section {
+  margin-top: 18px;
+}
+
+.first-mile-issue-table table {
+  min-width: 1420px;
+}
+
+.first-mile-issue-table th,
+.first-mile-issue-table td {
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+
+.first-mile-issue-table .tight-cell {
+  display: inline-block;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.first-mile-issue-table .issue-reason {
+  display: inline-block;
+  min-width: 220px;
+  color: #b45309;
+}

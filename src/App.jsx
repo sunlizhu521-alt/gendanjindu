@@ -16,6 +16,7 @@ const PAGE_ORDER = [
   'crossBorderInventory',
   'dimensionMissing',
   'trace',
+  'operationLogs',
   'kingdeeImport',
   'dimensionLibrary',
   'permissions',
@@ -37,6 +38,7 @@ const PAGE_LABELS = {
   dimensionMissing: '维度表缺失',
   dimensionLibrary: '维度表库',
   trace: '变更追溯',
+  operationLogs: '操作日常',
   permissions: '权限管理'
 };
 
@@ -3763,6 +3765,139 @@ function TracePage({ token }) {
   );
 }
 
+function auditDeviceLabel(userAgent) {
+  const agent = normalize(userAgent);
+  if (!agent) return '未知设备';
+  const system = /Windows/i.test(agent) ? 'Windows'
+    : /Android/i.test(agent) ? 'Android'
+      : /iPhone|iPad/i.test(agent) ? 'iOS'
+        : /Mac OS/i.test(agent) ? 'macOS'
+          : /Linux/i.test(agent) ? 'Linux' : '其他设备';
+  const browser = /Edg\//i.test(agent) ? 'Edge'
+    : /Chrome\//i.test(agent) ? 'Chrome'
+      : /Firefox\//i.test(agent) ? 'Firefox'
+        : /Safari\//i.test(agent) ? 'Safari' : '其他浏览器';
+  return `${system} / ${browser}`;
+}
+
+function OperationLogsPage({ token, setMessage }) {
+  const initialFilters = { userName: '', pageKey: '', action: '', result: '', startDate: '', endDate: '', keyword: '' };
+  const [filters, setFilters] = useSessionFilters('operationLogs', initialFilters);
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState({ rows: [], total: 0, totalPages: 1, options: { users: [], pages: [], actions: [], results: [] } });
+  const [loading, setLoading] = useState(false);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const query = new URLSearchParams({ page: String(page), pageSize: '20' });
+      Object.entries(filters).forEach(([key, value]) => {
+        if (normalize(value)) query.set(key, value);
+      });
+      const payload = await request(`/api/operation-logs?${query}`, { token });
+      setData(payload);
+      if (payload.page && payload.page !== page) setPage(payload.page);
+    } catch (error) {
+      setMessage(`操作日志加载失败：${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, [token, page, filters, refreshVersion]);
+
+  function updateFilter(key, value) {
+    setPage(1);
+    setFilters({ ...filters, [key]: value });
+  }
+
+  function clearFilters() {
+    setPage(1);
+    setFilters(initialFilters);
+  }
+
+  async function exportLogs() {
+    try {
+      const response = await fetch(`${API}/api/operation-logs/export`, {
+        method: 'POST',
+        headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filters })
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || '导出请求失败');
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `操作日常_${todayText().replaceAll('-', '')}.xlsx`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setMessage(`已导出当前筛选的 ${data.total || 0} 条操作记录。`);
+      setRefreshVersion((version) => version + 1);
+    } catch (error) {
+      setMessage(`操作日志导出失败：${error.message}`);
+    }
+  }
+
+  const options = data.options || {};
+  return (
+    <>
+      <div className="section-heading-row">
+        <h2>操作日常</h2>
+        <span className="section-count">{loading ? '正在加载...' : `共 ${data.total || 0} 条，第 ${data.page || page} / ${data.totalPages || 1} 页`}</span>
+      </div>
+      <div className="toolbar operation-log-filters">
+        <SelectField label="登录人" value={filters.userName} options={options.users || []} onChange={(value) => updateFilter('userName', value)} />
+        {(options.pages || []).length > 0 && (
+          <label className="filter-control">
+            <span>操作页面</span>
+            <select value={filters.pageKey} onChange={(event) => updateFilter('pageKey', event.target.value)}>
+              <option value="">全部</option>
+              {(options.pages || []).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+        )}
+        <SelectField label="操作类型" value={filters.action} options={options.actions || []} onChange={(value) => updateFilter('action', value)} />
+        <SelectField label="操作结果" value={filters.result} options={options.results || []} onChange={(value) => updateFilter('result', value)} />
+        <label className="filter-control"><span>开始日期</span><input type="date" value={filters.startDate} onChange={(event) => updateFilter('startDate', event.target.value)} /></label>
+        <label className="filter-control"><span>结束日期</span><input type="date" value={filters.endDate} onChange={(event) => updateFilter('endDate', event.target.value)} /></label>
+        <input className="search-input" placeholder="搜索人员、操作、对象、IP" value={filters.keyword} onChange={(event) => updateFilter('keyword', event.target.value)} />
+        <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
+        <button type="button" className="ghost compact-button" onClick={() => setRefreshVersion((version) => version + 1)}>刷新日志</button>
+        <button type="button" className="compact-button" onClick={exportLogs}>导出当前筛选</button>
+      </div>
+      <DataTable
+        className="operation-log-table"
+        rows={data.rows || []}
+        columns={['操作时间', '登录人', '角色', '事件', '页面', '操作类型', '操作内容/对象', '补充信息', '结果', '登录位置(IP)', '设备/浏览器']}
+        render={(row) => [
+          row.createdAt,
+          row.userName,
+          row.userRole || '-',
+          row.eventType,
+          row.pageLabel,
+          row.action,
+          <TightCell value={row.target} />,
+          <TightCell value={row.details} />,
+          <span className={`operation-result ${row.result === '成功' ? 'success' : 'failed'}`}>{row.result}</span>,
+          row.ipAddress,
+          <span title={row.userAgent}>{auditDeviceLabel(row.userAgent)}</span>
+        ]}
+      />
+      <TablePagination
+        label="操作日常分页"
+        currentPage={data.page || page}
+        totalPages={data.totalPages || 1}
+        onPageChange={setPage}
+        pageSize={20}
+      />
+    </>
+  );
+}
+
 function PermissionsPage({ token, pages, setMessage }) {
   const [users, setUsers] = useState([]);
   const [form, setForm] = useState({ name: '', password: '' });
@@ -3982,6 +4117,7 @@ function App() {
         {shouldMount('dimensionMissing') && <PagePane page="dimensionMissing" activeTab={activeTab}><DimensionMissingPage token={token} user={user} setMessage={setMessage} refreshVersion={crossBorderVersion} onMaintain={maintainDimensionSlot} /></PagePane>}
         {shouldMount('dimensionLibrary') && <PagePane page="dimensionLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} gridColumns={3} onDataApplied={refreshCrossBorderData} highlightSlotId={highlightSlotId} /></PagePane>}
         {shouldMount('trace') && <PagePane page="trace" activeTab={activeTab}><TracePage token={token} setMessage={setMessage} /></PagePane>}
+        {shouldMount('operationLogs') && <PagePane page="operationLogs" activeTab={activeTab}><OperationLogsPage token={token} setMessage={setMessage} /></PagePane>}
         {shouldMount('permissions') && <PagePane page="permissions" activeTab={activeTab}><PermissionsPage token={token} pages={pages} setMessage={setMessage} /></PagePane>}
         <PersistentHorizontalScrollbar activeTab={activeTab} />
       </section>

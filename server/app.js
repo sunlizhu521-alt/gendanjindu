@@ -30,6 +30,7 @@ const ALL_PAGES = [
   'crossBorderInventory',
   'dimensionMissing',
   'trace',
+  'operationLogs',
   'kingdeeImport',
   'dimensionLibrary',
   'permissions',
@@ -50,6 +51,7 @@ const PAGE_LABELS = {
   dimensionMissing: '维度表缺失',
   dimensionLibrary: '维度表库',
   trace: '变更追溯',
+  operationLogs: '操作日常',
   permissions: '权限管理'
 };
 const DIMENSION_SLOTS = {
@@ -269,6 +271,134 @@ function requireAdmin(req, res, next) {
 function safeFilename(file) {
   return Buffer.from(file.originalname, 'latin1').toString('utf8');
 }
+
+let auditSaveTimer = null;
+
+function auditIpAddress(req) {
+  const forwarded = normalize(req.headers['x-forwarded-for']).split(',')[0].trim();
+  return forwarded
+    || normalize(req.headers['x-real-ip'])
+    || normalize(req.socket?.remoteAddress).replace(/^::ffff:/, '')
+    || '未知';
+}
+
+function auditPageForRequest(req) {
+  const requestPath = req.path;
+  if (requestPath.startsWith('/api/auth/')) return { key: 'system', label: '系统登录' };
+  if (requestPath.startsWith('/api/operation-logs')) return { key: 'operationLogs', label: PAGE_LABELS.operationLogs };
+  if (requestPath.startsWith('/api/progress')) return { key: 'progressRefresh', label: PAGE_LABELS.progressRefresh };
+  if (requestPath.startsWith('/api/difference')) return { key: 'differenceAllocation', label: PAGE_LABELS.differenceAllocation };
+  if (requestPath.startsWith('/api/imports/kingdee') || requestPath.startsWith('/api/mappings/kingdee')) return { key: 'kingdeeImport', label: PAGE_LABELS.kingdeeImport };
+  if (requestPath.startsWith('/api/first-mile-board')) return { key: 'firstMileBoard', label: PAGE_LABELS.firstMileBoard };
+  if (requestPath.startsWith('/api/cross-border-inventory')) return { key: 'crossBorderInventory', label: PAGE_LABELS.crossBorderInventory };
+  if (requestPath.startsWith('/api/dimension-missing')) return { key: 'dimensionMissing', label: PAGE_LABELS.dimensionMissing };
+  if (requestPath.startsWith('/api/domestic-board')) return { key: 'domesticBoard', label: PAGE_LABELS.domesticBoard };
+  if (requestPath.startsWith('/api/change-notes')) return { key: 'trace', label: PAGE_LABELS.trace };
+  if (requestPath.startsWith('/api/users')) return { key: 'permissions', label: PAGE_LABELS.permissions };
+  if (requestPath.startsWith('/api/dimensions') || requestPath.startsWith('/api/workbook/inspect')) {
+    const pathSlot = requestPath.match(/^\/api\/dimensions\/([^/]+)/)?.[1];
+    const slotId = normalize(pathSlot || req.body?.slotId);
+    if (slotId.startsWith('firstMile')) return { key: 'firstMileDatabase', label: PAGE_LABELS.firstMileDatabase };
+    if (slotId.startsWith('wangdian')) return { key: 'wangdianData', label: PAGE_LABELS.wangdianData };
+    if (slotId.startsWith('lingxingF')) return { key: 'lingxingInventory', label: PAGE_LABELS.lingxingInventory };
+    return { key: 'dimensionLibrary', label: PAGE_LABELS.dimensionLibrary };
+  }
+  return { key: 'system', label: '系统操作' };
+}
+
+function auditActionForRequest(req) {
+  const requestPath = req.path;
+  if (requestPath === '/api/auth/login') return '登录系统';
+  if (requestPath === '/api/auth/logout') return '退出登录';
+  if (requestPath === '/api/operation-logs/export') return '导出操作日志';
+  if (requestPath.includes('/export')) return '导出数据';
+  if (requestPath.includes('/preview') || requestPath === '/api/workbook/inspect') return '解析预览';
+  if (requestPath.includes('/test-cache') || requestPath.endsWith('/cache')) return '清除采购订单缓存';
+  if (requestPath.startsWith('/api/users') && req.method === 'POST') return '创建用户';
+  if (requestPath.startsWith('/api/users') && req.method === 'PATCH' && normalize(req.body?.password)) return '重置用户密码';
+  if (requestPath.startsWith('/api/users') && req.method === 'PATCH' && Array.isArray(req.body?.pageAccess)) return '分配页面权限';
+  if (requestPath.includes('/reallocate')) return '重新分配生产进度';
+  if (requestPath.startsWith('/api/progress') && requestPath.includes('/bulk')) return '批量提交生产跟进';
+  if (requestPath.startsWith('/api/progress') && requestPath.includes('/import')) return '导入生产跟进';
+  if (requestPath.startsWith('/api/progress')) return '提交生产跟进';
+  if (requestPath.startsWith('/api/difference') && requestPath.includes('/allocations')) return '提交差异分配';
+  if (requestPath.startsWith('/api/imports/kingdee') && requestPath.includes('/apply')) return '应用采购订单';
+  if (requestPath.startsWith('/api/imports/kingdee')) return '上传采购订单';
+  if (requestPath.startsWith('/api/dimensions') && requestPath.includes('/upload')) return '上传数据文件';
+  if (requestPath.startsWith('/api/dimensions') && requestPath.includes('/apply')) return '应用数据文件';
+  if (requestPath.startsWith('/api/dimensions') && req.method === 'DELETE') return '删除数据文件';
+  if (requestPath.startsWith('/api/domestic-board') && requestPath.includes('/bulk')) return '批量提交国内看板';
+  if (requestPath.startsWith('/api/domestic-board')) return '提交国内看板';
+  if (requestPath.startsWith('/api/change-notes')) return '新增变更记录';
+  if (req.method === 'DELETE') return '删除数据';
+  if (req.method === 'PATCH' || req.method === 'PUT') return '修改数据';
+  return '提交数据';
+}
+
+function auditTargetForRequest(req) {
+  if (req.file) return safeFilename(req.file);
+  const body = req.body || {};
+  const target = body.name || body.demandKey || body.merchantCode || body.rowId || body.id;
+  if (target) return normalize(target).slice(0, 500);
+  return normalize(req.path.replace(/^\/api\//, '')).slice(0, 500);
+}
+
+function auditDetailsForRequest(req) {
+  if (req.file) return `文件：${safeFilename(req.file).slice(0, 500)}，大小：${Math.ceil(numberValue(req.file.size) / 1024)} KB`;
+  if (Array.isArray(req.body?.rows)) return `提交 ${req.body.rows.length} 条记录`;
+  if (Array.isArray(req.body?.pageAccess)) return `页面权限 ${req.body.pageAccess.length} 项`;
+  if (req.path.includes('/export')) return '导出当前筛选结果';
+  return '';
+}
+
+function scheduleAuditSave() {
+  if (auditSaveTimer) clearTimeout(auditSaveTimer);
+  auditSaveTimer = setTimeout(() => {
+    auditSaveTimer = null;
+    try {
+      saveDatabase();
+    } catch (error) {
+      console.error(`[${nowText()}] Failed to persist operation log:`, error);
+    }
+  }, 800);
+}
+
+function recordOperation(req, statusCode) {
+  const auditUser = req.auditUser || req.user || {};
+  const attemptedName = req.path === '/api/auth/login' ? normalize(req.body?.name).slice(0, 200) : '';
+  const page = auditPageForRequest(req);
+  const action = auditActionForRequest(req);
+  run(
+    `INSERT INTO operation_logs (
+       id, user_id, user_name, user_role, event_type, page_key, page_label,
+       action, target, details, ip_address, user_agent, method, request_path,
+       status_code, result, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      randomUUID(), normalize(auditUser.id).slice(0, 200), normalize(auditUser.name).slice(0, 200) || attemptedName || '未登录用户',
+      normalize(auditUser.role).slice(0, 100), req.path.startsWith('/api/auth/') ? '登录' : '操作', page.key, page.label,
+      action, auditTargetForRequest(req), auditDetailsForRequest(req), auditIpAddress(req),
+      normalize(req.headers['user-agent']).slice(0, 1000), req.method, normalize(req.originalUrl || req.path).slice(0, 1000),
+      statusCode, statusCode < 400 ? '成功' : '失败', nowText()
+    ]
+  );
+  scheduleAuditSave();
+}
+
+app.use((req, res, next) => {
+  const shouldAudit = req.path.startsWith('/api/')
+    && (req.method !== 'GET' || req.path.includes('/export'));
+  if (shouldAudit) {
+    res.on('finish', () => {
+      try {
+        recordOperation(req, res.statusCode);
+      } catch (error) {
+        console.error(`[${nowText()}] Failed to record operation ${req.method} ${req.path}:`, error);
+      }
+    });
+  }
+  next();
+});
 
 const HEADER_HINTS = [
   '物料编码', '物流编码', 'SKU', '物料名称', '产品名称', '供应商', '供应商简称',
@@ -2593,6 +2723,7 @@ app.post('/api/auth/login', async (req, res) => {
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
     return res.status(401).json({ error: '账号或密码不正确' });
   }
+  req.auditUser = user;
   const token = randomUUID();
   run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', [token, user.id, nowText()]);
   saveDatabase();
@@ -3555,6 +3686,119 @@ app.post('/api/change-notes', requireAuth, requirePage('trace'), (req, res) => {
   );
   saveDatabase();
   res.json({ ok: true });
+});
+
+function operationLogWhere(filters = {}) {
+  const clauses = [];
+  const params = [];
+  const equal = (column, value) => {
+    const normalized = normalize(value);
+    if (!normalized) return;
+    clauses.push(`${column} = ?`);
+    params.push(normalized);
+  };
+  equal('user_name', filters.userName);
+  equal('page_key', filters.pageKey);
+  equal('action', filters.action);
+  equal('result', filters.result);
+  const startDate = normalize(filters.startDate);
+  const endDate = normalize(filters.endDate);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+    clauses.push('created_at >= ?');
+    params.push(`${startDate} 00:00:00`);
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+    clauses.push('created_at <= ?');
+    params.push(`${endDate} 23:59:59`);
+  }
+  const keyword = normalize(filters.keyword);
+  if (keyword) {
+    const pattern = `%${keyword}%`;
+    clauses.push('(user_name LIKE ? OR page_label LIKE ? OR action LIKE ? OR target LIKE ? OR details LIKE ? OR ip_address LIKE ? OR request_path LIKE ?)');
+    params.push(pattern, pattern, pattern, pattern, pattern, pattern, pattern);
+  }
+  return { sql: clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '', params };
+}
+
+function operationLogPayload(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    userName: row.user_name,
+    userRole: row.user_role,
+    eventType: row.event_type,
+    pageKey: row.page_key,
+    pageLabel: row.page_label,
+    action: row.action,
+    target: row.target,
+    details: row.details,
+    ipAddress: row.ip_address,
+    userAgent: row.user_agent,
+    method: row.method,
+    requestPath: row.request_path,
+    statusCode: numberValue(row.status_code),
+    result: row.result,
+    createdAt: row.created_at
+  };
+}
+
+function filteredOperationLogs(filters = {}, limit = 50000, offset = 0) {
+  const where = operationLogWhere(filters);
+  return all(
+    `SELECT * FROM operation_logs${where.sql} ORDER BY created_at DESC, rowid DESC LIMIT ? OFFSET ?`,
+    [...where.params, limit, offset]
+  ).map(operationLogPayload);
+}
+
+app.get('/api/operation-logs', requireAuth, requirePage('operationLogs'), (req, res) => {
+  const filters = {
+    userName: req.query.userName,
+    pageKey: req.query.pageKey,
+    action: req.query.action,
+    result: req.query.result,
+    startDate: req.query.startDate,
+    endDate: req.query.endDate,
+    keyword: req.query.keyword
+  };
+  const pageSize = Math.min(100, Math.max(1, Math.floor(numberValue(req.query.pageSize) || 20)));
+  const where = operationLogWhere(filters);
+  const total = numberValue(get(`SELECT COUNT(*) AS total FROM operation_logs${where.sql}`, where.params)?.total);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(totalPages, Math.max(1, Math.floor(numberValue(req.query.page) || 1)));
+  const distinctValues = (column) => all(
+    `SELECT DISTINCT ${column} AS value FROM operation_logs WHERE ${column} <> '' ORDER BY ${column}`
+  ).map((row) => row.value).filter(Boolean);
+  res.json({
+    rows: filteredOperationLogs(filters, pageSize, (page - 1) * pageSize),
+    total,
+    page,
+    pageSize,
+    totalPages,
+    options: {
+      users: distinctValues('user_name'),
+      pages: all("SELECT page_key, MAX(page_label) AS page_label FROM operation_logs WHERE page_key <> '' GROUP BY page_key ORDER BY page_label").map((row) => ({ value: row.page_key, label: row.page_label })),
+      actions: distinctValues('action'),
+      results: distinctValues('result')
+    }
+  });
+});
+
+app.post('/api/operation-logs/export', requireAuth, requirePage('operationLogs'), (req, res) => {
+  const rows = filteredOperationLogs(req.body?.filters || {});
+  const headers = ['操作时间', '登录人', '角色', '事件类型', '页面', '操作类型', '操作内容/对象', '补充信息', '结果', '状态码', '登录位置(IP)', '设备/浏览器', '请求方式', '请求路径'];
+  const data = rows.map((row) => [
+    row.createdAt, row.userName, row.userRole, row.eventType, row.pageLabel, row.action,
+    row.target, row.details, row.result, row.statusCode, row.ipAddress, row.userAgent,
+    row.method, row.requestPath
+  ]);
+  const workbook = xlsx.utils.book_new();
+  const worksheet = xlsx.utils.aoa_to_sheet([headers, ...data]);
+  xlsx.utils.book_append_sheet(workbook, worksheet, '操作日常');
+  const buffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+  const fileName = `操作日常_${nowText().slice(0, 10).replaceAll('-', '')}.xlsx`;
+  res.setHeader('Content-Disposition', `attachment; filename="operation-logs.xlsx"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buffer);
 });
 
 app.get('/api/users', requireAuth, requirePage('permissions'), requireAdmin, (req, res) => {

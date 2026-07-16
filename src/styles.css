@@ -2086,3 +2086,63 @@ th {
   min-width: 220px;
   color: #b45309;
 }
+
+.operation-log-filters {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: end;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.operation-log-filters .filter-control {
+  flex: 0 0 150px;
+}
+
+.operation-log-filters .search-input {
+  flex: 0 0 230px;
+}
+
+.operation-log-filters .compact-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.operation-log-table table {
+  min-width: 1480px;
+}
+
+.operation-log-table th,
+.operation-log-table td {
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+
+.operation-log-table .tight-cell {
+  display: inline-block;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.operation-result {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.operation-result.success {
+  color: #047857;
+  background: #ecfdf5;
+}
+
+.operation-result.failed {
+  color: #b91c1c;
+  background: #fef2f2;
+}

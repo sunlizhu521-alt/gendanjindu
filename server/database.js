@@ -89,6 +89,28 @@ function migrate() {
       user_id TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS operation_logs (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL DEFAULT '',
+      user_name TEXT NOT NULL DEFAULT '',
+      user_role TEXT NOT NULL DEFAULT '',
+      event_type TEXT NOT NULL DEFAULT '操作',
+      page_key TEXT NOT NULL DEFAULT '',
+      page_label TEXT NOT NULL DEFAULT '',
+      action TEXT NOT NULL,
+      target TEXT NOT NULL DEFAULT '',
+      details TEXT NOT NULL DEFAULT '',
+      ip_address TEXT NOT NULL DEFAULT '',
+      user_agent TEXT NOT NULL DEFAULT '',
+      method TEXT NOT NULL DEFAULT '',
+      request_path TEXT NOT NULL DEFAULT '',
+      status_code INTEGER NOT NULL DEFAULT 0,
+      result TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_operation_logs_created_at ON operation_logs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_operation_logs_user_name ON operation_logs(user_name);
+    CREATE INDEX IF NOT EXISTS idx_operation_logs_page_key ON operation_logs(page_key);
     CREATE TABLE IF NOT EXISTS import_mappings (
       kind TEXT PRIMARY KEY,
       mapping_json TEXT NOT NULL,

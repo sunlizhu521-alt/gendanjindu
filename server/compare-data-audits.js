@@ -9,7 +9,7 @@ if (!baselineFile || !postFile) {
 
 const baseline = JSON.parse(fs.readFileSync(baselineFile, 'utf8'));
 const post = JSON.parse(fs.readFileSync(postFile, 'utf8'));
-const ignoredTables = new Set(['sessions']);
+const ignoredTables = new Set(['sessions', 'operation_logs']);
 
 const tableNames = new Set([
   ...Object.keys(baseline.tableCounts || {}),

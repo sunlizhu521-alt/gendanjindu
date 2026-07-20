@@ -83,7 +83,7 @@ jobs:
               }
               console.log(JSON.stringify(summary, null, 2));
               db.close();
-            NODE
+          NODE
 
             TOKEN=$(node --input-type=module << 'NODE'
               import fs from 'node:fs';
@@ -93,7 +93,7 @@ jobs:
               const result = db.exec("SELECT sessions.token FROM sessions JOIN users ON users.id = sessions.user_id WHERE users.role = '管理员' ORDER BY sessions.created_at DESC LIMIT 1");
               console.log(result[0]?.values?.[0]?.[0] || '');
               db.close();
-            NODE
+          NODE
             )
             test -n "$TOKEN"
             RESPONSE=$(mktemp)
@@ -115,5 +115,5 @@ jobs:
                   sum: rows.reduce((total, row) => total + number(row[field]), 0)
                 }]))
               }, null, 2));
-            NODE
+          NODE
           EOF

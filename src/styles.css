@@ -535,6 +535,124 @@ h3 {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
+  margin-bottom: 22px;
+}
+
+.inventory-summary-filters {
+  position: relative;
+  z-index: 10;
+  align-items: end;
+  overflow: visible;
+  margin-bottom: 16px;
+}
+
+.inventory-summary-filters .search-input {
+  flex: 1 1 260px;
+  min-width: 240px;
+}
+
+.multi-filter {
+  position: relative;
+  display: grid;
+  flex: 0 0 178px;
+  width: 178px;
+  gap: 6px;
+}
+
+.multi-filter-label {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.multi-filter-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 38px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #334155;
+  box-shadow: none;
+  font-size: 13px;
+  text-align: left;
+}
+
+.multi-filter-button:hover,
+.multi-filter-button[aria-expanded="true"] {
+  border-color: #3b82f6;
+  background: #f8fbff;
+}
+
+.multi-filter-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multi-filter-button b {
+  flex: 0 0 auto;
+  color: #64748b;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.multi-filter-menu {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 4px);
+  left: 0;
+  display: grid;
+  width: 250px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid #dbe3ee;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
+}
+
+.multi-filter-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  color: #334155;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.multi-filter-option:hover {
+  background: #eff6ff;
+}
+
+.multi-filter-option input {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #ff6b35;
+}
+
+.inventory-summary-table-heading {
+  margin-top: 0;
+}
+
+.inventory-summary-table table {
+  min-width: 980px;
+}
+
+.inventory-summary-table th:nth-last-child(-n + 3),
+.inventory-summary-table td:nth-last-child(-n + 3) {
+  text-align: right;
 }
 
 .inventory-summary-card {
@@ -2044,6 +2162,22 @@ th {
 
   .filter-control,
   .search-input {
+    width: 100%;
+  }
+
+  .inventory-summary-filters {
+    align-items: stretch;
+    overflow: visible;
+  }
+
+  .inventory-summary-filters .multi-filter,
+  .inventory-summary-filters .search-input {
+    flex-basis: 100%;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .multi-filter-menu {
     width: 100%;
   }
 

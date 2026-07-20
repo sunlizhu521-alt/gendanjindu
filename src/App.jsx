@@ -136,7 +136,11 @@ const DIMENSION_SLOTS = [
 
 const WANGDIAN_SLOTS = [
   { id: 'wangdianDataMain', title: '国内数据', fields: [
+    ['stockupStatus', '是否正常备货'],
+    ['brand', '品牌'],
+    ['productType', '产品类型'],
     ['merchantCode', '商家编码'],
+    ['systemSku', '系统SKU-必填'],
     ['wdtStockQty', '旺店通在库量'],
     ['nonSelf7dOutQty', '非自营近7天出库'],
     ['nonSelf30dOutQty', '非自营近30天出库']
@@ -358,6 +362,10 @@ function InventorySummary({ token, active }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [filters, setFilters] = useState({ businessUnits: [], productLines: [], productSeries: [], skus: [], keyword: '' });
+  const [searchInput, setSearchInput] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 50;
 
   useEffect(() => {
     if (!active) return undefined;
@@ -380,7 +388,51 @@ function InventorySummary({ token, active }) {
   }, [active, token]);
 
   const formatQuantity = (value) => numberValue(value).toLocaleString('zh-CN');
-  const inventory = data?.['在库量'] || {};
+  const rows = data?.rows || [];
+  const unique = (values) => [...new Set(values.map(normalize).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+  const options = useMemo(() => ({
+    businessUnits: unique(rows.map((row) => row.businessUnit)),
+    productLines: unique(rows.map((row) => row.productLine)),
+    productSeries: unique(rows.map((row) => row.productSeries)),
+    skus: unique(rows.map((row) => row.sku))
+  }), [rows]);
+  const filteredRows = useMemo(() => {
+    const keyword = normalize(filters.keyword).toLowerCase();
+    const selected = (values, value) => values.length === 0 || values.includes(normalize(value));
+    return rows.filter((row) => (
+      selected(filters.businessUnits, row.businessUnit)
+      && selected(filters.productLines, row.productLine)
+      && selected(filters.productSeries, row.productSeries)
+      && selected(filters.skus, row.sku)
+      && (!keyword || [row.materialCode, row.sku, row.materialName].join(' ').toLowerCase().includes(keyword))
+    ));
+  }, [rows, filters]);
+  const totals = useMemo(() => filteredRows.reduce((summary, row) => ({
+    productionQty: summary.productionQty + numberValue(row.productionQty),
+    transitQty: summary.transitQty + numberValue(row.transitQty),
+    domesticInventoryQty: summary.domesticInventoryQty + numberValue(row.domesticInventoryQty),
+    crossBorderInventoryQty: summary.crossBorderInventoryQty + numberValue(row.crossBorderInventoryQty),
+    inventoryQty: summary.inventoryQty + numberValue(row.inventoryQty)
+  }), { productionQty: 0, transitQty: 0, domesticInventoryQty: 0, crossBorderInventoryQty: 0, inventoryQty: 0 }), [filteredRows]);
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const pageRows = filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setFilters((current) => ({ ...current, keyword: searchInput }));
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+  useEffect(() => { setCurrentPage(1); }, [filters]);
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
+
+  const updateFilter = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
+  const clearFilters = () => {
+    setSearchInput('');
+    setFilters({ businessUnits: [], productLines: [], productSeries: [], skus: [], keyword: '' });
+  };
 
   return (
     <>
@@ -393,44 +445,81 @@ function InventorySummary({ token, active }) {
       ) : error ? (
         <div className="inventory-summary-status error" role="alert">库存汇总加载失败：{error}</div>
       ) : (
-        <section className="inventory-summary-grid" aria-label="库存汇总指标">
-          <article className="inventory-summary-card production">
-            <div className="inventory-summary-card-heading">
-              <span>在制量</span>
-              <small>采购订单剩余入库</small>
-            </div>
-            <div className="inventory-summary-value">
-              <strong>{formatQuantity(data?.['在制量'])}</strong>
-              <span>件</span>
-            </div>
-            <p>全部月份备货剩余数量</p>
-          </article>
-          <article className="inventory-summary-card transit">
-            <div className="inventory-summary-card-heading">
-              <span>在途量</span>
-              <small>头程数据看板</small>
-            </div>
-            <div className="inventory-summary-value">
-              <strong>{formatQuantity(data?.['在途量'])}</strong>
-              <span>件</span>
-            </div>
-            <p>货物状态：海上在途</p>
-          </article>
-          <article className="inventory-summary-card stock">
-            <div className="inventory-summary-card-heading">
-              <span>在库量</span>
-              <small>国内与跨境合计</small>
-            </div>
-            <div className="inventory-summary-value">
-              <strong>{formatQuantity(inventory['合计'])}</strong>
-              <span>件</span>
-            </div>
-            <div className="inventory-summary-breakdown">
-              <span>国内 <strong>{formatQuantity(inventory['国内'])}</strong> 件</span>
-              <span>跨境 <strong>{formatQuantity(inventory['跨境'])}</strong> 件</span>
-            </div>
-          </article>
-        </section>
+        <>
+          <div className="toolbar filters-row inventory-summary-filters">
+            <MultiSelectFilter label="事业部" allLabel="全部事业部" value={filters.businessUnits} options={options.businessUnits} onChange={(value) => updateFilter('businessUnits', value)} />
+            <MultiSelectFilter label="产品线" allLabel="全部产品线" value={filters.productLines} options={options.productLines} onChange={(value) => updateFilter('productLines', value)} />
+            <MultiSelectFilter label="系列" allLabel="全部系列" value={filters.productSeries} options={options.productSeries} onChange={(value) => updateFilter('productSeries', value)} />
+            <MultiSelectFilter label="SKU" allLabel="全部SKU" value={filters.skus} options={options.skus} onChange={(value) => updateFilter('skus', value)} />
+            <input
+              className="search-input"
+              placeholder="搜索物料编码、SKU、物料名称"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+            />
+            <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
+          </div>
+          <section className="inventory-summary-grid" aria-label="库存汇总指标">
+            <article className="inventory-summary-card production">
+              <div className="inventory-summary-card-heading">
+                <span>在制量</span>
+                <small>采购订单剩余入库</small>
+              </div>
+              <div className="inventory-summary-value">
+                <strong>{formatQuantity(totals.productionQty)}</strong>
+                <span>件</span>
+              </div>
+              <p>全部月份备货剩余数量</p>
+            </article>
+            <article className="inventory-summary-card transit">
+              <div className="inventory-summary-card-heading">
+                <span>在途量</span>
+                <small>头程数据看板</small>
+              </div>
+              <div className="inventory-summary-value">
+                <strong>{formatQuantity(totals.transitQty)}</strong>
+                <span>件</span>
+              </div>
+              <p>货物状态：海上在途</p>
+            </article>
+            <article className="inventory-summary-card stock">
+              <div className="inventory-summary-card-heading">
+                <span>在库量</span>
+                <small>国内与跨境合计</small>
+              </div>
+              <div className="inventory-summary-value">
+                <strong>{formatQuantity(totals.inventoryQty)}</strong>
+                <span>件</span>
+              </div>
+              <div className="inventory-summary-breakdown">
+                <span>国内 <strong>{formatQuantity(totals.domesticInventoryQty)}</strong> 件</span>
+                <span>跨境 <strong>{formatQuantity(totals.crossBorderInventoryQty)}</strong> 件</span>
+              </div>
+            </article>
+          </section>
+          <div className="section-heading-row inventory-summary-table-heading">
+            <h3>库存明细</h3>
+            <span className="section-count">当前筛选 {filteredRows.length} / {rows.length} 条</span>
+          </div>
+          <DataTable
+            className="inventory-summary-table"
+            rows={pageRows}
+            columns={['事业部', '产品线', '系列', 'SKU', '物料名称', '在制量', '在途量', '在库量']}
+            render={(row) => [
+              row.businessUnit,
+              row.productLine || '未匹配',
+              row.productSeries || '未匹配',
+              row.sku || '未匹配',
+              row.materialName || '未匹配',
+              formatQuantity(row.productionQty),
+              formatQuantity(row.transitQty),
+              formatQuantity(row.inventoryQty)
+            ]}
+          />
+          {filteredRows.length > pageSize && (
+            <TablePagination label="库存汇总分页" currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} pageSize={pageSize} />
+          )}
+        </>
       )}
     </>
   );
@@ -672,7 +761,12 @@ function PersistentHorizontalScrollbar({ activeTab }) {
         const distance = intersection > 0 ? 0 : Math.min(Math.abs(rect.top - viewportHeight), Math.abs(rect.bottom));
         return { element, rect, intersection, distance };
       }).sort((a, b) => b.intersection - a.intersection || a.distance - b.distance);
-      const { element: source, rect } = ranked[0];
+      const { element: source, rect, intersection } = ranked[0];
+      if (intersection <= 0) {
+        attachSource(null);
+        setLayout((current) => current.visible ? { ...current, visible: false } : current);
+        return;
+      }
       attachSource(source);
       setLayout({
         visible: true,
@@ -754,6 +848,62 @@ function SelectField({ label, value, options, onChange }) {
         {availableOptions.map((option) => <option key={option} value={option}>{option}</option>)}
       </select>
     </label>
+  );
+}
+
+function MultiSelectFilter({ label, allLabel, value = [], options = [], onChange }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  const availableOptions = useMemo(
+    () => [...new Set(options.map(normalize).filter(Boolean))],
+    [options]
+  );
+  const selected = value.filter((item) => availableOptions.includes(item));
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (rootRef.current && !rootRef.current.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick);
+  }, [open]);
+
+  if (availableOptions.length === 0) return null;
+  const buttonLabel = selected.length === 0
+    ? allLabel
+    : selected.length <= 2
+      ? selected.join('、')
+      : `已选${selected.length}项`;
+  const toggle = (option) => {
+    const next = selected.includes(option)
+      ? selected.filter((item) => item !== option)
+      : [...selected, option];
+    onChange(next);
+  };
+
+  return (
+    <div className="multi-filter" ref={rootRef}>
+      <span className="multi-filter-label">{label}</span>
+      <button type="button" className="multi-filter-button" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+        <span>{buttonLabel}</span>
+        <b aria-hidden="true">⌄</b>
+      </button>
+      {open && (
+        <div className="multi-filter-menu">
+          <label className="multi-filter-option">
+            <input type="checkbox" checked={selected.length === 0} onChange={() => onChange([])} />
+            <span>{allLabel}</span>
+          </label>
+          {availableOptions.map((option) => (
+            <label key={option} className="multi-filter-option">
+              <input type="checkbox" checked={selected.includes(option)} onChange={() => toggle(option)} />
+              <span>{option}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

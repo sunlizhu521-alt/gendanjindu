@@ -1152,9 +1152,12 @@ function saveDomesticManualInput(merchantCode, payload, userName) {
 function domesticBoardRows(demands = null) {
   const defaultRows = getDimensionRows('spare2');
   const wangdianRows = getDimensionRows('wangdianDataMain');
-  const baseRows = defaultRows.some((row) => normalize(domesticMerchantCode(row)))
-    ? defaultRows
-    : wangdianRows;
+  const baseRowMap = new Map();
+  [...defaultRows, ...wangdianRows].forEach((row) => {
+    const merchantCode = normalize(domesticMerchantCode(row));
+    if (merchantCode && !baseRowMap.has(merchantCode)) baseRowMap.set(merchantCode, row);
+  });
+  const baseRows = [...baseRowMap.values()];
   const jdInventoryRows = getDimensionRows('wangdianSpare1');
   const jdMatchRows = getDimensionRows('wangdianSpare2');
   const jdMaterialMap = new Map();
@@ -1187,7 +1190,7 @@ function domesticBoardRows(demands = null) {
   const domesticMetaMap = new Map();
   const productCategoryMap = new Map();
   getDimensionRows('productCategory').forEach((product) => {
-    const materialCode = normalize(product.materialCode);
+    const materialCode = normalize(rowAliasValue(product, ['materialCode', '物料编码', '品号', '商品编码', '存货编码']));
     if (materialCode && !productCategoryMap.has(materialCode)) productCategoryMap.set(materialCode, product);
   });
   (demands || demandRows(false)).forEach((demand) => {
@@ -1212,9 +1215,9 @@ function domesticBoardRows(demands = null) {
     const manual = manualMap.get(merchantCode) || {};
     const domesticMeta = domesticMetaMap.get(materialCode) || {};
     const product = productCategoryMap.get(materialCode) || {};
-    const wdtStockQty = numberValue(wdt.wdtStockQty ?? rowAliasValue(wdt, ['旺店通在库量']));
-    const nonSelf7dOutQty = numberValue(wdt.nonSelf7dOutQty ?? rowAliasValue(wdt, ['非自营近7天出库']));
-    const nonSelf30dOutQty = numberValue(wdt.nonSelf30dOutQty ?? rowAliasValue(wdt, ['非自营近30天出库']));
+    const wdtStockQty = numberValue(rowAliasValue(wdt, ['wdtStockQty', '旺店通在库量', '在库量', '库存量', '库存', '可发库存', '可用库存', '现货库存']));
+    const nonSelf7dOutQty = numberValue(rowAliasValue(wdt, ['nonSelf7dOutQty', '非自营近7天出库', '非自营7天出库', '非自营近7日出库', '近7天出库', '近7日出库']));
+    const nonSelf30dOutQty = numberValue(rowAliasValue(wdt, ['nonSelf30dOutQty', '非自营近30天出库', '非自营30天出库', '非自营近30日出库', '近30天出库', '近30日出库']));
     const nonSelfDailySales = roundQty((nonSelf7dOutQty + nonSelf30dOutQty) / 37);
     const nonSelfFuture14dDemandQty = roundQty(nonSelfDailySales * 14);
     const jdStockQty = numberValue(jdStockQtyValue(jdInventory));
@@ -1226,13 +1229,39 @@ function domesticBoardRows(demands = null) {
     const allChannelFuture14dMinDemandQty = roundQty(selfFuture14dInboundQty + nonSelfFuture14dDemandQty);
     const sellableDays = (nonSelfDailySales + selfDailySales) > 0 ? roundQty(wdtStockQty / (nonSelfDailySales + selfDailySales)) : 0;
     return {
-      stockupStatus: normalize(row.stockupStatus || rowAliasValue(row, ['是否正常备货'])),
-      brand: normalize(row.brand || rowAliasValue(row, ['品牌'])),
-      productType: normalize(row.productType || rowAliasValue(row, ['产品类型'])),
+      stockupStatus: normalize(
+        rowAliasValue(row, ['stockupStatus', '是否正常备货', '备货状态'])
+        || rowAliasValue(wdt, ['stockupStatus', '是否正常备货', '备货状态'])
+        || rowAliasValue(product, ['stockupStatus', '是否正常备货', '备货状态'])
+      ),
+      brand: normalize(
+        rowAliasValue(row, ['brand', '品牌', '品牌名称', '商品品牌'])
+        || rowAliasValue(wdt, ['brand', '品牌', '品牌名称', '商品品牌'])
+        || rowAliasValue(product, ['brand', '品牌', '品牌名称', '商品品牌'])
+      ),
+      productType: normalize(
+        rowAliasValue(row, ['productType', '产品类型', '商品类型', '产品类别', '商品类别', '品类'])
+        || rowAliasValue(wdt, ['productType', '产品类型', '商品类型', '产品类别', '商品类别', '品类'])
+        || rowAliasValue(product, ['productType', '产品类型', '商品类型', '产品类别', '商品类别', '品类'])
+      ),
+      businessUnit: '国内事业部',
+      materialCode,
       merchantCode,
-      systemSku: normalize(row.systemSku || rowAliasValue(row, ['系统SKU-必填', '系统SKU', 'SKU'])),
-      salesProductLine: normalize(domesticMeta.productLine || product.productLine || rowAliasValue(row, ['销售产品线', '产品线'])),
-      salesSeries: normalize(domesticMeta.productSeries || product.productSeries || rowAliasValue(row, ['销售系列', '系列'])),
+      systemSku: normalize(
+        rowAliasValue(row, ['systemSku', '系统SKU-必填', '系统SKU', 'SKU', 'sku', '商品SKU'])
+        || rowAliasValue(wdt, ['systemSku', '系统SKU-必填', '系统SKU', 'SKU', 'sku', '商品SKU'])
+        || rowAliasValue(product, ['sku', 'SKU', 'systemSku', '系统SKU', '商品SKU'])
+      ),
+      salesProductLine: normalize(
+        domesticMeta.productLine
+        || rowAliasValue(product, ['productLine', '销售产品线', '产品线'])
+        || rowAliasValue(row, ['销售产品线', '产品线'])
+      ),
+      salesSeries: normalize(
+        domesticMeta.productSeries
+        || rowAliasValue(product, ['productSeries', '销售系列', '系列'])
+        || rowAliasValue(row, ['销售系列', '系列'])
+      ),
       model: normalize(productCategoryModel(product)),
       purchaseOwner: normalize(domesticMeta.purchaseOwner || rowAliasValue(row, ['采购下单人', '下单人', '采购负责人'])),
       wdtStockQty,
@@ -1636,14 +1665,80 @@ function buildCrossBorderInventoryModel() {
 
 function inventorySummaryData() {
   const demands = demandRows(false);
-  const productionQty = demands.reduce((sum, row) => sum + numberValue(row.remainingInboundQty), 0);
-  const transitQty = firstMileBoardModel().rows
-    .filter((row) => row.cargoStatus === '海上在途')
-    .reduce((sum, row) => sum + numberValue(row.quantity), 0);
-  const domesticInventoryQty = domesticBoardRows(demands)
-    .reduce((sum, row) => sum + numberValue(row.wdtStockQty) + numberValue(row.jdStockQty), 0);
-  const crossBorderInventoryQty = buildCrossBorderInventoryModel().rows
-    .reduce((sum, row) => sum + numberValue(row.inventoryQty ?? row.totalQty), 0);
+  const transitRows = firstMileBoardModel().rows.filter((row) => row.cargoStatus === '海上在途');
+  const domesticRows = domesticBoardRows(demands);
+  const crossBorderRows = buildCrossBorderInventoryModel().rows;
+  const rowMap = new Map();
+  let fallbackIndex = 0;
+
+  const usableText = (...values) => {
+    for (const value of values) {
+      const text = normalize(value);
+      if (text && !['未映射', '未填写', '未匹配'].includes(text)) return text;
+    }
+    return '';
+  };
+  const businessUnitText = (value) => {
+    const text = usableText(value);
+    if (text.includes('国内事业部') || text.includes('国内业务部')) return '国内事业部';
+    return text || '未匹配';
+  };
+  const addSummaryRow = (source, quantities) => {
+    const businessUnit = businessUnitText(source.businessUnit);
+    const materialCode = usableText(source.materialCode, source.merchantCode);
+    const sku = usableText(source.sku, source.systemSku, source.sourceSku);
+    const materialName = usableText(source.materialName, source.itemName);
+    const itemKey = materialCode || sku || materialName || usableText(source.id) || `未识别-${fallbackIndex += 1}`;
+    const key = [businessUnit, itemKey].map(normalizeMatchPart).join('|');
+    const target = rowMap.get(key) || {
+      id: key,
+      businessUnit,
+      productLine: '',
+      productSeries: '',
+      sku: '',
+      materialCode: '',
+      materialName: '',
+      productionQty: 0,
+      transitQty: 0,
+      inventoryQty: 0,
+      domesticInventoryQty: 0,
+      crossBorderInventoryQty: 0
+    };
+    target.productLine ||= usableText(source.productLine, source.salesProductLine);
+    target.productSeries ||= usableText(source.productSeries, source.salesSeries);
+    target.sku ||= sku;
+    target.materialCode ||= materialCode;
+    target.materialName ||= materialName;
+    target.productionQty += numberValue(quantities.productionQty);
+    target.transitQty += numberValue(quantities.transitQty);
+    target.domesticInventoryQty += numberValue(quantities.domesticInventoryQty);
+    target.crossBorderInventoryQty += numberValue(quantities.crossBorderInventoryQty);
+    target.inventoryQty = target.domesticInventoryQty + target.crossBorderInventoryQty;
+    rowMap.set(key, target);
+  };
+
+  demands.forEach((row) => addSummaryRow(row, { productionQty: row.remainingInboundQty }));
+  transitRows.forEach((row) => addSummaryRow(row, { transitQty: row.quantity }));
+  domesticRows.forEach((row) => addSummaryRow(row, {
+    domesticInventoryQty: numberValue(row.wdtStockQty) + numberValue(row.jdStockQty)
+  }));
+  crossBorderRows.forEach((row) => addSummaryRow(row, {
+    crossBorderInventoryQty: row.inventoryQty ?? row.totalQty
+  }));
+
+  const rows = [...rowMap.values()]
+    .filter((row) => row.productionQty !== 0 || row.transitQty !== 0 || row.inventoryQty !== 0)
+    .sort((left, right) => (
+      left.businessUnit.localeCompare(right.businessUnit, 'zh-Hans-CN')
+      || left.productLine.localeCompare(right.productLine, 'zh-Hans-CN')
+      || left.productSeries.localeCompare(right.productSeries, 'zh-Hans-CN')
+      || left.sku.localeCompare(right.sku, 'zh-Hans-CN')
+      || left.materialCode.localeCompare(right.materialCode, 'zh-Hans-CN')
+    ));
+  const productionQty = rows.reduce((sum, row) => sum + row.productionQty, 0);
+  const transitQty = rows.reduce((sum, row) => sum + row.transitQty, 0);
+  const domesticInventoryQty = rows.reduce((sum, row) => sum + row.domesticInventoryQty, 0);
+  const crossBorderInventoryQty = rows.reduce((sum, row) => sum + row.crossBorderInventoryQty, 0);
 
   return {
     在制量: productionQty,
@@ -1652,7 +1747,8 @@ function inventorySummaryData() {
       国内: domesticInventoryQty,
       跨境: crossBorderInventoryQty,
       合计: domesticInventoryQty + crossBorderInventoryQty
-    }
+    },
+    rows
   };
 }
 
@@ -3387,10 +3483,14 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     if (slotId === 'wangdianDataMain') {
       return {
         raw: row,
+        stockupStatus: pick(row, mapping.stockupStatus) || pickAny(row, ['是否正常备货', '备货状态']),
+        brand: pick(row, mapping.brand) || pickAny(row, ['品牌', '品牌名称', '商品品牌']),
+        productType: pick(row, mapping.productType) || pickAny(row, ['产品类型', '商品类型', '产品类别', '商品类别', '品类']),
         merchantCode: pick(row, mapping.merchantCode) || pickAny(row, ['商家编码', '商品编码']),
-        wdtStockQty: pick(row, mapping.wdtStockQty) || pickAny(row, ['旺店通在库量', '在库量', '库存']),
-        nonSelf7dOutQty: pick(row, mapping.nonSelf7dOutQty) || pickAny(row, ['非自营近7天出库', '非自营7天出库', '近7天出库']),
-        nonSelf30dOutQty: pick(row, mapping.nonSelf30dOutQty) || pickAny(row, ['非自营近30天出库', '非自营30天出库', '近30天出库'])
+        systemSku: pick(row, mapping.systemSku) || pickAny(row, ['系统SKU-必填', '系统SKU', 'SKU', '商品SKU']),
+        wdtStockQty: pick(row, mapping.wdtStockQty) || pickAny(row, ['旺店通在库量', '在库量', '库存量', '库存', '可发库存', '可用库存', '现货库存']),
+        nonSelf7dOutQty: pick(row, mapping.nonSelf7dOutQty) || pickAny(row, ['非自营近7天出库', '非自营7天出库', '非自营近7日出库', '近7天出库', '近7日出库']),
+        nonSelf30dOutQty: pick(row, mapping.nonSelf30dOutQty) || pickAny(row, ['非自营近30天出库', '非自营30天出库', '非自营近30日出库', '近30天出库', '近30日出库'])
       };
     }
     if (slotId === 'wangdianSpare1') {

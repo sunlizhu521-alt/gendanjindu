@@ -90,6 +90,11 @@ test('inventory summary and domestic board use complete source models and enforc
       merchantCode: 'M2',
       wdtStockQty: '',
       raw: { 商家编码: 'M2', 库存量: '200' }
+    },
+    {
+      merchantCode: 'WDT-X',
+      wdtStockQty: '100',
+      raw: { 商家编码: 'WDT-X', 货品名称: 'Unique Product' }
     }
   ]);
   putDimension('wangdianSpare1', 'JD inventory', [
@@ -101,6 +106,10 @@ test('inventory summary and domestic board use complete source models and enforc
     { jdId: 'JD-2', materialCode: 'M2' }
   ]);
   putDimension('productCategory', 'Product category', [
+    {
+      materialCode: '',
+      raw: { 品牌: 'Inherited Brand' }
+    },
     {
       materialCode: 'M1',
       sku: 'SKU-1',
@@ -119,6 +128,15 @@ test('inventory summary and domestic board use complete source models and enforc
         销售系列: 'Category Series',
         型号: 'Category Model'
       }
+    },
+    {
+      materialCode: 'M9',
+      sku: 'SKU-9',
+      materialName: 'Unique Product',
+      productLine: 'Unique Line',
+      productSeries: 'Unique Series',
+      model: 'Unique Model',
+      raw: { 销售产品分类: 'Unique Type' }
     }
   ]);
   putDimension('lingxingWfsInventory', 'WFS inventory', [
@@ -161,7 +179,7 @@ test('inventory summary and domestic board use complete source models and enforc
     }, {
       在制量: 1500,
       在途量: 2000,
-      在库量: { 国内: 3600, 跨境: 5000, 合计: 8600 }
+      在库量: { 国内: 3700, 跨境: 5000, 合计: 8700 }
     });
     assert.ok(Array.isArray(summary.rows));
     assert.deepEqual(
@@ -192,7 +210,7 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(summary.rows.reduce((sum, row) => sum + row.transitQty, 0), summary.在途量);
     assert.equal(summary.rows.reduce((sum, row) => sum + row.inventoryQty, 0), summary.在库量.合计);
     const domesticRows = (await domesticResponse.json()).rows;
-    assert.equal(domesticRows.length, 2);
+    assert.equal(domesticRows.length, 3);
     assert.deepEqual(
       domesticRows.map((row) => ({
         merchantCode: row.merchantCode,
@@ -212,6 +230,10 @@ test('inventory summary and domestic board use complete source models and enforc
         {
           merchantCode: 'M2', brand: 'Category Brand', productType: 'Category Type', systemSku: 'SKU-2',
           wdtStockQty: 200, salesProductLine: 'Category Line', salesSeries: 'Category Series', model: 'Category Model'
+        },
+        {
+          merchantCode: 'WDT-X', brand: 'Category Brand', productType: 'Unique Type', systemSku: 'SKU-9',
+          wdtStockQty: 100, salesProductLine: 'Unique Line', salesSeries: 'Unique Series', model: 'Unique Model'
         }
       ]
     );

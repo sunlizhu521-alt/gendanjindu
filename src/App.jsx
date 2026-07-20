@@ -82,6 +82,8 @@ const DIMENSION_SLOTS = [
     ['sku', 'SKU'],
     ['logisticsCode', '物流编码'],
     ['materialName', '物料名称'],
+    ['brand', '品牌'],
+    ['productType', '产品类型/销售产品分类'],
     ['productLine', '销售产品线'],
     ['productSeries', '销售系列'],
     ['model', '型号']
@@ -124,7 +126,7 @@ const DIMENSION_SLOTS = [
     ['remark', '备注']
   ] },
   { id: 'dimensionSpare2', title: '备用', fields: [] },
-  { id: 'spare2', title: '备用2', fields: [
+  { id: 'spare2', title: '国内商品资料', fields: [
     ['stockupStatus', '是否正常备货'],
     ['brand', '品牌'],
     ['productType', '产品类型'],

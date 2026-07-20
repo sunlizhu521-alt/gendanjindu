@@ -1065,6 +1065,40 @@ function productCategoryModel(row) {
   return rowAliasValue(row, ['model', '型号', '产品型号', '款式', '规格型号', '规格']);
 }
 
+function domesticProductLookups(rows) {
+  const byMaterial = new Map();
+  const nameBuckets = new Map();
+  let inheritedBrand = '';
+  let inheritedProductType = '';
+
+  rows.forEach((row) => {
+    const directBrand = rowAliasValue(row, ['brand', '品牌', '品牌名称', '商品品牌']);
+    const directProductType = rowAliasValue(row, [
+      'productType', '产品类型', '销售产品分类', '商品类型', '产品类别', '商品类别', '品类', '一级品类'
+    ]);
+    if (directBrand) inheritedBrand = directBrand;
+    if (directProductType) inheritedProductType = directProductType;
+    const product = {
+      ...row,
+      domesticBrand: directBrand || inheritedBrand,
+      domesticProductType: directProductType || inheritedProductType
+    };
+    const materialCode = normalizeMatchPart(rowAliasValue(row, ['materialCode', '物料编码', '品号', '商品编码', '存货编码']));
+    if (materialCode && !byMaterial.has(materialCode)) byMaterial.set(materialCode, product);
+    const materialName = normalizeMatchPart(rowAliasValue(row, ['materialName', '物料名称', '金蝶名称', '商品名称', '货品名称']));
+    if (materialCode && materialName) {
+      if (!nameBuckets.has(materialName)) nameBuckets.set(materialName, new Map());
+      nameBuckets.get(materialName).set(materialCode, product);
+    }
+  });
+
+  const byUniqueName = new Map();
+  nameBuckets.forEach((products, materialName) => {
+    if (products.size === 1) byUniqueName.set(materialName, products.values().next().value);
+  });
+  return { byMaterial, byUniqueName };
+}
+
 function roundQty(value, digits = 2) {
   const factor = 10 ** digits;
   return Math.round(numberValue(value) * factor) / factor;
@@ -1152,6 +1186,7 @@ function saveDomesticManualInput(merchantCode, payload, userName) {
 function domesticBoardRows(demands = null) {
   const defaultRows = getDimensionRows('spare2');
   const wangdianRows = getDimensionRows('wangdianDataMain');
+  const productLookups = domesticProductLookups(getDimensionRows('productCategory'));
   const baseRowMap = new Map();
   [...defaultRows, ...wangdianRows].forEach((row) => {
     const merchantCode = normalize(domesticMerchantCode(row));
@@ -1171,7 +1206,16 @@ function domesticBoardRows(demands = null) {
     if (directMaterialCode) return directMaterialCode;
     const jdKey = normalize(jdIdValue(row));
     const merchantCode = normalize(domesticMerchantCode(row));
-    return normalize(jdMaterialMap.get(jdKey) || jdMaterialMap.get(merchantCode) || merchantCode || jdKey);
+    const merchantMatch = productLookups.byMaterial.get(normalizeMatchPart(merchantCode));
+    const materialName = normalizeMatchPart(rowAliasValue(row, ['materialName', '物料名称', '金蝶名称', '商品名称', '货品名称']));
+    const nameMatch = productLookups.byUniqueName.get(materialName);
+    return normalize(
+      jdMaterialMap.get(jdKey)
+      || jdMaterialMap.get(merchantCode)
+      || rowAliasValue(merchantMatch || nameMatch, ['materialCode', '物料编码', '品号', '商品编码', '存货编码'])
+      || merchantCode
+      || jdKey
+    );
   };
   const wangdianMap = new Map();
   wangdianRows.forEach((row) => {
@@ -1188,11 +1232,6 @@ function domesticBoardRows(demands = null) {
   const manualMap = new Map(all('SELECT * FROM domestic_board_inputs').map((row) => [normalize(row.merchant_code), row]));
   const domesticUndeliveredMap = new Map();
   const domesticMetaMap = new Map();
-  const productCategoryMap = new Map();
-  getDimensionRows('productCategory').forEach((product) => {
-    const materialCode = normalize(rowAliasValue(product, ['materialCode', '物料编码', '品号', '商品编码', '存货编码']));
-    if (materialCode && !productCategoryMap.has(materialCode)) productCategoryMap.set(materialCode, product);
-  });
   (demands || demandRows(false)).forEach((demand) => {
     const businessUnit = normalize(demand.businessUnit);
     if (!businessUnit.includes('国内事业部') && !businessUnit.includes('国内业务部')) return;
@@ -1214,7 +1253,7 @@ function domesticBoardRows(demands = null) {
     const jdInventory = jdInventoryMap.get(merchantCode) || jdInventoryMap.get(materialCode) || {};
     const manual = manualMap.get(merchantCode) || {};
     const domesticMeta = domesticMetaMap.get(materialCode) || {};
-    const product = productCategoryMap.get(materialCode) || {};
+    const product = productLookups.byMaterial.get(normalizeMatchPart(materialCode)) || {};
     const wdtStockQty = numberValue(rowAliasValue(wdt, ['wdtStockQty', '旺店通在库量', '在库量', '库存量', '库存', '可发库存', '可用库存', '现货库存']));
     const nonSelf7dOutQty = numberValue(rowAliasValue(wdt, ['nonSelf7dOutQty', '非自营近7天出库', '非自营7天出库', '非自营近7日出库', '近7天出库', '近7日出库']));
     const nonSelf30dOutQty = numberValue(rowAliasValue(wdt, ['nonSelf30dOutQty', '非自营近30天出库', '非自营30天出库', '非自营近30日出库', '近30天出库', '近30日出库']));
@@ -1237,12 +1276,14 @@ function domesticBoardRows(demands = null) {
       brand: normalize(
         rowAliasValue(row, ['brand', '品牌', '品牌名称', '商品品牌'])
         || rowAliasValue(wdt, ['brand', '品牌', '品牌名称', '商品品牌'])
-        || rowAliasValue(product, ['brand', '品牌', '品牌名称', '商品品牌'])
+        || product.domesticBrand
+        || rowAliasValue(jdInventory, ['brand', '品牌', '品牌名称', '商品品牌'])
       ),
       productType: normalize(
-        rowAliasValue(row, ['productType', '产品类型', '商品类型', '产品类别', '商品类别', '品类'])
-        || rowAliasValue(wdt, ['productType', '产品类型', '商品类型', '产品类别', '商品类别', '品类'])
-        || rowAliasValue(product, ['productType', '产品类型', '商品类型', '产品类别', '商品类别', '品类'])
+        rowAliasValue(row, ['productType', '产品类型', '销售产品分类', '商品类型', '产品类别', '商品类别', '品类'])
+        || rowAliasValue(wdt, ['productType', '产品类型', '销售产品分类', '商品类型', '产品类别', '商品类别', '品类'])
+        || product.domesticProductType
+        || rowAliasValue(jdInventory, ['productType', '产品类型', '商品类型', '一级类目', '二级类目', '三级类目'])
       ),
       businessUnit: '国内事业部',
       materialCode,
@@ -1251,6 +1292,7 @@ function domesticBoardRows(demands = null) {
         rowAliasValue(row, ['systemSku', '系统SKU-必填', '系统SKU', 'SKU', 'sku', '商品SKU'])
         || rowAliasValue(wdt, ['systemSku', '系统SKU-必填', '系统SKU', 'SKU', 'sku', '商品SKU'])
         || rowAliasValue(product, ['sku', 'SKU', 'systemSku', '系统SKU', '商品SKU'])
+        || rowAliasValue(jdInventory, ['SKU', 'sku', '商品SKU', '系统SKU'])
       ),
       salesProductLine: normalize(
         domesticMeta.productLine
@@ -2917,7 +2959,7 @@ app.get('/api/dimension-missing/cross-border', requireAuth, requirePage('dimensi
 
 app.get('/api/domestic-board', requireAuth, requirePage('domesticBoard'), (req, res) => {
   const sourceSlots = [
-    ['spare2', '备用2'],
+    ['spare2', '国内商品资料'],
     ['wangdianDataMain', '国内数据'],
     ['wangdianSpare1', '京东库存'],
     ['wangdianSpare2', '京东ID与品号匹配'],
@@ -3422,6 +3464,8 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         sku: pick(row, mapping.sku),
         logisticsCode: pick(row, mapping.logisticsCode),
         materialName: pick(row, mapping.materialName),
+        brand: pick(row, mapping.brand) || pickAny(row, ['品牌', '品牌名称', '商品品牌']),
+        productType: pick(row, mapping.productType) || pickAny(row, ['产品类型', '销售产品分类', '商品类型', '产品类别', '商品类别', '品类', '一级品类']),
         productLine: pick(row, mapping.productLine),
         productSeries: pick(row, mapping.productSeries),
         model: pick(row, mapping.model) || pickAny(row, ['型号', '产品型号', '款式', '规格型号', '规格'])

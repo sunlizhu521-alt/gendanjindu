@@ -23,6 +23,7 @@ const ALL_PAGES = [
   'wangdianData',
   'crossBorderInventory',
   'lingxingInventory',
+  'inventorySummary',
   'operationBoard',
   'progressRefresh',
   'differenceAllocation',
@@ -38,6 +39,7 @@ const ALL_PAGES = [
 ];
 const PAGE_LABELS = {
   domesticBoard: '国内事业部看板',
+  inventorySummary: '库存汇总',
   operationBoard: '运营看板-未交付',
   purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',

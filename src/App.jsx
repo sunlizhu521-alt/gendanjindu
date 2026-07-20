@@ -9,6 +9,7 @@ const PAGE_ORDER = [
   'wangdianData',
   'crossBorderInventory',
   'lingxingInventory',
+  'inventorySummary',
   'operationBoard',
   'progressRefresh',
   'differenceAllocation',
@@ -25,6 +26,7 @@ const PAGE_ORDER = [
 
 const PAGE_LABELS = {
   domesticBoard: '国内事业部看板',
+  inventorySummary: '库存汇总',
   operationBoard: '运营看板-未交付',
   purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',
@@ -45,13 +47,14 @@ const PAGE_LABELS = {
 const NAV_GROUPS = [
   { title: '国内数据', pages: ['domesticBoard', 'wangdianData'] },
   { title: '跨境数据', pages: ['crossBorderInventory', 'lingxingInventory'] },
+  { title: '库存数据', pages: ['inventorySummary'] },
   { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'differenceAllocation', 'trace', 'purchaseBoard'] },
   { title: '头程数据', pages: ['firstMileBoard', 'firstMileDatabase'] },
   { title: '维护数据', pages: ['dimensionMissing', 'dimensionLibrary', 'kingdeeImport'] },
   { title: '系统操作', pages: ['permissions', 'operationLogs'] }
 ];
 
-const DEMAND_DATA_PAGES = new Set(['operationBoard', 'purchaseBoard', 'progressRefresh']);
+const DEMAND_DATA_PAGES = new Set(['inventorySummary', 'operationBoard', 'purchaseBoard', 'progressRefresh']);
 
 function visiblePagesForUser(user) {
   return PAGE_ORDER.filter((page) => user?.role === '管理员' || user?.pageAccess?.includes(page));
@@ -941,6 +944,7 @@ function Login({ onLogin }) {
 }
 
 function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', currentAppliedAt = '' }) {
+  const usesOperationBoardLayout = filterKey === 'operationBoard' || filterKey === 'inventorySummary';
   const activeRows = useMemo(() => rows.filter((row) => row.active && numberValue(row.remainingInboundQty) > 0), [rows]);
   const [filters, setFilters] = useSessionFilters(filterKey, { month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
   const [currentPage, setCurrentPage] = useState(1);
@@ -1003,8 +1007,8 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     [filteredRows, currentPage]
   );
   const clearFilters = () => setFilters({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
-  const remainingLabel = filterKey === 'operationBoard' ? '备货剩余数量' : '未交付数量';
-  const remainingShortLabel = filterKey === 'operationBoard' ? '备货剩余' : '未交付';
+  const remainingLabel = usesOperationBoardLayout ? '备货剩余数量' : '未交付数量';
+  const remainingShortLabel = usesOperationBoardLayout ? '备货剩余' : '未交付';
   const summary = filteredRows.reduce((acc, row) => {
     acc.order += numberValue(row.remainingInboundQty);
     acc.shipped += numberValue(row.shippedQty);
@@ -1036,7 +1040,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
 
   async function exportDashboardTable() {
     const XLSX = await import('xlsx');
-    const isOperationBoard = filterKey === 'operationBoard';
+    const isOperationBoard = usesOperationBoardLayout;
     const headers = isOperationBoard
       ? ['下单月份', '事业部', '供应商简称', '采购下单人', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']
       : ['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号'];
@@ -1091,7 +1095,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
           当前显示 {filteredRows.length} / {activeRows.length} 条；{remainingLabel}=剩余入库数量，已发货=累计入库数量，在产品=供应商在生产中，完工产品=供应商已经生产完待入采购入库
         </span>
       </div>
-      {filterKey === 'operationBoard' && (
+      {usesOperationBoardLayout && (
         <AppliedTimeNote value={currentAppliedAt} />
       )}
       <div className="toolbar filters-row">
@@ -1117,7 +1121,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
         <MetricCard label="在产品" value={summary.inProduction.toLocaleString()} />
         <MetricCard label="完工产品" value={summary.finished.toLocaleString()} />
       </section>
-      {filterKey === 'operationBoard' ? (
+      {usesOperationBoardLayout ? (
         <section className="progress-chart-grid operation-chart-grid">
           <ProgressStackedChart title={`供应商${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => supplierName(row)} />
           <ProgressStackedChart title={`事业部${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => row.businessUnit} />
@@ -1136,11 +1140,11 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
         <DataTable
           className="compact-table"
           rows={pageRows}
-          columns={filterKey === 'operationBoard'
+          columns={usesOperationBoardLayout
             ? ['下单月份', '事业部', '供应商简称', '采购下单人', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']
             : ['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']}
           render={(row) => (
-            filterKey === 'operationBoard'
+            usesOperationBoardLayout
               ? [
                   row.month,
                   row.businessUnit,
@@ -4122,6 +4126,7 @@ function App() {
         {message && <p className="message">{message}</p>}
         {demandsLoading && DEMAND_DATA_PAGES.has(activeTab) && <p className="section-count">正在加载采购订单数据...</p>}
         {shouldMount('domesticBoard') && <PagePane page="domesticBoard" activeTab={activeTab}><DomesticBoard token={token} setMessage={setMessage} /></PagePane>}
+        {shouldMount('inventorySummary') && <PagePane page="inventorySummary" activeTab={activeTab}><Dashboard rows={demands} title="库存汇总" filterKey="inventorySummary" currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><Dashboard rows={demands} title="运营看板-未交付" filterKey="operationBoard" currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
         {shouldMount('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}

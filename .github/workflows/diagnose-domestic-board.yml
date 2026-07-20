@@ -63,6 +63,11 @@ jobs:
                 productLine: ['productLine', '销售产品线', '产品线'],
                 productSeries: ['productSeries', '销售系列', '系列'],
                 model: ['model', '型号', '产品型号', '款式', '规格型号', '规格'],
+                materialName: ['materialName', '物料名称', '金蝶名称', '商品名称', '货品名称'],
+                salesProductCategory: ['销售产品分类'],
+                level1Category: ['一级品类'],
+                level2Category: ['二级分类'],
+                level3Category: ['三级分类'],
                 jdId: ['jdId', 'SKU', 'sku', '京东SKU', '商品SKU', '系统SKU', '京东编码', '京东货号', 'ID']
               };
 
@@ -74,7 +79,7 @@ jobs:
                   updatedAt: record.updated_at,
                   rows: record.rows.length,
                   mapping: record.mapping,
-                  headers: keys(record.rows),
+                  relevantHeaders: keys(record.rows).filter((key) => /品牌|分类|品类|类型|名称|编码|sku/i.test(key)),
                   coverage: Object.fromEntries(Object.entries(aliases).map(([name, names]) => [name, count(record.rows, names)]))
                 };
               }
@@ -84,23 +89,64 @@ jobs:
               const jdMapRows = bySlot.get('wangdianSpare2')?.rows || [];
               const productMaterials = new Set(productRows.map((row) => compact(aliasValue(row, aliases.materialCode))).filter(Boolean));
               const productSkus = new Set(productRows.map((row) => compact(aliasValue(row, aliases.sku))).filter(Boolean));
+              const uniqueProductNames = new Map();
+              const duplicateProductNames = new Set();
+              productRows.forEach((row) => {
+                const name = compact(aliasValue(row, aliases.materialName));
+                const material = compact(aliasValue(row, aliases.materialCode));
+                if (!name || !material) return;
+                if (uniqueProductNames.has(name) && uniqueProductNames.get(name) !== material) duplicateProductNames.add(name);
+                else uniqueProductNames.set(name, material);
+              });
+              duplicateProductNames.forEach((name) => uniqueProductNames.delete(name));
               const jdById = new Map(jdMapRows.map((row) => [compact(aliasValue(row, aliases.jdId)), compact(aliasValue(row, aliases.materialCode))]).filter(([key, value]) => key && value));
               const uniqueBase = new Map();
               baseRows.forEach((row) => {
                 const merchant = compact(aliasValue(row, aliases.merchantCode));
                 if (merchant && !uniqueBase.has(merchant)) uniqueBase.set(merchant, row);
               });
-              const matchStats = { baseRows: uniqueBase.size, merchantToProductMaterial: 0, skuToProductSku: 0, merchantThroughJdMap: 0, anyProductMatch: 0 };
+              const matchStats = { baseRows: uniqueBase.size, merchantToProductMaterial: 0, skuToProductSku: 0, merchantThroughJdMap: 0, uniqueNameToProduct: 0, anyProductMatch: 0 };
               for (const [merchant, row] of uniqueBase) {
                 const sku = compact(aliasValue(row, aliases.sku));
+                const name = compact(aliasValue(row, aliases.materialName));
                 const direct = productMaterials.has(merchant);
                 const skuMatch = sku && productSkus.has(sku);
                 const mapped = jdById.get(merchant) || jdById.get(sku);
                 const jdMatch = mapped && productMaterials.has(mapped);
+                const nameMatch = name && uniqueProductNames.has(name);
                 if (direct) matchStats.merchantToProductMaterial += 1;
                 if (skuMatch) matchStats.skuToProductSku += 1;
                 if (jdMatch) matchStats.merchantThroughJdMap += 1;
-                if (direct || skuMatch || jdMatch) matchStats.anyProductMatch += 1;
+                if (nameMatch) matchStats.uniqueNameToProduct += 1;
+                if (direct || skuMatch || jdMatch || nameMatch) matchStats.anyProductMatch += 1;
+              }
+
+              const inheritedFields = ['brand', 'salesProductCategory', 'level1Category', 'level2Category', 'level3Category'];
+              const inherited = Object.fromEntries(inheritedFields.map((field) => [field, '']));
+              const productByMaterial = new Map();
+              productRows.forEach((row) => {
+                inheritedFields.forEach((field) => {
+                  const value = aliasValue(row, aliases[field]);
+                  if (value) inherited[field] = value;
+                });
+                const material = compact(aliasValue(row, aliases.materialCode));
+                if (material && !productByMaterial.has(material)) {
+                  productByMaterial.set(material, {
+                    directBrand: aliasValue(row, aliases.brand),
+                    inheritedBrand: inherited.brand,
+                    salesProductCategory: inherited.salesProductCategory,
+                    level1Category: inherited.level1Category,
+                    level2Category: inherited.level2Category,
+                    level3Category: inherited.level3Category
+                  });
+                }
+              });
+              const matchedMetadataCoverage = { matchedMaterials: 0, directBrand: 0, inheritedBrand: 0, salesProductCategory: 0, level1Category: 0, level2Category: 0, level3Category: 0 };
+              for (const merchant of uniqueBase.keys()) {
+                const metadata = productByMaterial.get(merchant);
+                if (!metadata) continue;
+                matchedMetadataCoverage.matchedMaterials += 1;
+                Object.keys(metadata).forEach((field) => { if (metadata[field]) matchedMetadataCoverage[field] += 1; });
               }
 
               const demandMaterials = new Set(query("SELECT material_code FROM order_demands WHERE active = 1 AND (business_unit LIKE '%国内事业部%' OR business_unit LIKE '%国内业务部%')")
@@ -111,7 +157,7 @@ jobs:
                 productMatchesDemandMaterial: [...productMaterials].filter((key) => demandMaterials.has(key)).length
               };
 
-              console.log(JSON.stringify({ slotSummary, matchStats, demandStats }, null, 2));
+              console.log(JSON.stringify({ slotSummary, matchStats, matchedMetadataCoverage, demandStats }, null, 2));
               db.close();
-            NODE
+          NODE
           EOF

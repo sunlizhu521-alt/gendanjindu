@@ -82,6 +82,11 @@ test('inventory summary and domestic board use complete source models and enforc
   ]);
   putDimension('wangdianDataMain', 'WDT inventory', [
     {
+      merchantCode: 'M0',
+      wdtStockQty: '0',
+      raw: { 商家编码: 'M0', 可发库存: '0' }
+    },
+    {
       merchantCode: 'M1',
       wdtStockQty: '3,000',
       raw: { 是否正常备货: '正常', 品牌: 'Domestic Brand', 产品类型: 'Domestic Type', '系统SKU-必填': 'SKU-1' }
@@ -210,9 +215,10 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(summary.rows.reduce((sum, row) => sum + row.transitQty, 0), summary.在途量);
     assert.equal(summary.rows.reduce((sum, row) => sum + row.inventoryQty, 0), summary.在库量.合计);
     const domesticRows = (await domesticResponse.json()).rows;
-    assert.equal(domesticRows.length, 3);
+    assert.equal(domesticRows.length, 4);
+    assert.deepEqual(domesticRows.map((row) => row.merchantCode), ['M1', 'M2', 'WDT-X', 'M0']);
     assert.deepEqual(
-      domesticRows.map((row) => ({
+      domesticRows.filter((row) => row.merchantCode !== 'M0').map((row) => ({
         merchantCode: row.merchantCode,
         brand: row.brand,
         productType: row.productType,

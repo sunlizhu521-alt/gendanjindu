@@ -1183,6 +1183,22 @@ function saveDomesticManualInput(merchantCode, payload, userName) {
   return now;
 }
 
+function domesticRowHasActivity(row) {
+  const quantityFields = [
+    'wdtStockQty',
+    'nonSelf7dOutQty',
+    'nonSelf30dOutQty',
+    'jdStockQty',
+    'self7dOutQty',
+    'self30dOutQty',
+    'selfFuture14dInboundQty',
+    'domesticUndeliveredQty',
+    'nextSupplyQty'
+  ];
+  return quantityFields.some((field) => numberValue(row[field]) !== 0)
+    || Boolean(normalize(row.nextSupplyDate) || normalize(row.remark));
+}
+
 function domesticBoardRows(demands = null) {
   const defaultRows = getDimensionRows('spare2');
   const wangdianRows = getDimensionRows('wangdianDataMain');
@@ -1329,7 +1345,10 @@ function domesticBoardRows(demands = null) {
       updatedBy: normalize(manual.updated_by),
       updatedAt: normalize(manual.updated_at)
     };
-  }).filter((row) => row.merchantCode);
+  }).filter((row) => row.merchantCode).sort((left, right) => (
+    Number(domesticRowHasActivity(right)) - Number(domesticRowHasActivity(left))
+    || normalize(left.merchantCode).localeCompare(normalize(right.merchantCode), 'zh-Hans-CN')
+  ));
 }
 
 const CROSS_BORDER_TARGETS = {

@@ -1,0 +1,119 @@
+name: Diagnose Domestic Quantities
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect domestic quantity coverage
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
+            set -Eeuo pipefail
+            cd /home/ubuntu/zhuge-ai-lab/gendanjindu
+            node --input-type=module << 'NODE'
+              import fs from 'node:fs';
+              import initSqlJs from 'sql.js';
+
+              const SQL = await initSqlJs();
+              const db = new SQL.Database(fs.readFileSync('data/gendanjindu.sqlite'));
+              const query = (sql, params = []) => {
+                const statement = db.prepare(sql);
+                statement.bind(params);
+                const rows = [];
+                while (statement.step()) rows.push(statement.getAsObject());
+                statement.free();
+                return rows;
+              };
+              const text = (value) => String(value ?? '').trim();
+              const number = (value) => {
+                const parsed = Number(text(value).replace(/,/g, ''));
+                return Number.isFinite(parsed) ? parsed : 0;
+              };
+              const compact = (value) => text(value).normalize('NFKC').toLowerCase().replace(/[\s_\-—:：/\\()（）]+/g, '');
+              const sources = (row) => [row, row?.raw, row?.rawRow, row?._raw].filter((source) => source && typeof source === 'object');
+              const aliasValue = (row, aliases) => {
+                const wanted = new Set(aliases.map(compact));
+                for (const source of sources(row)) {
+                  for (const [key, value] of Object.entries(source)) {
+                    if (wanted.has(compact(key)) && text(value)) return text(value);
+                  }
+                }
+                return '';
+              };
+              const aliases = {
+                merchantCode: ['merchantCode', '商家编码', '商品编码'],
+                wdtStockQty: ['wdtStockQty', '旺店通在库量', '可发库存', '在库量', '库存量', '库存', '可用库存', '现货库存'],
+                nonSelf7dOutQty: ['nonSelf7dOutQty', '非自营近7天出库', '7天销量', '非自营7天出库', '非自营近7日出库', '近7天出库', '近7日出库'],
+                nonSelf30dOutQty: ['nonSelf30dOutQty', '非自营近30天出库', '30天销量', '非自营30天出库', '非自营近30日出库', '近30天出库', '近30日出库'],
+                jdId: ['jdId', 'SKU', 'sku', '京东SKU', '商品SKU', '系统SKU', '京东编码', '京东货号', 'ID'],
+                jdStockQty: ['jdStockQty', '全国现货库存', '京东库存', '库存数量', '库存', '可用库存', '现货库存'],
+                self7dOutQty: ['self7dOutQty', '全国近7日出库商品件数', '近7日出库商品件数', '全国近7天出库商品件数', '自营近7天出库'],
+                self30dOutQty: ['self30dOutQty', '全国近30日出库商品件数', '近30日出库商品件数', '全国近30天出库商品件数', '自营近30天出库']
+              };
+              const records = query(
+                `SELECT slot_id, file_name, mapping_json, rows_json, applied, updated_at
+                 FROM dimension_files
+                 WHERE slot_id IN ('spare2','wangdianDataMain','wangdianSpare1','wangdianSpare2')`
+              );
+              const summary = {};
+              for (const record of records) {
+                const rows = JSON.parse(record.rows_json || '[]');
+                const metrics = {};
+                for (const [field, names] of Object.entries(aliases)) {
+                  const values = rows.map((row) => aliasValue(row, names));
+                  metrics[field] = {
+                    populated: values.filter(Boolean).length,
+                    nonZero: values.filter((value) => number(value) !== 0).length,
+                    sum: values.reduce((total, value) => total + number(value), 0)
+                  };
+                }
+                summary[record.slot_id] = {
+                  fileName: record.file_name,
+                  applied: Boolean(record.applied),
+                  updatedAt: record.updated_at,
+                  rows: rows.length,
+                  mapping: JSON.parse(record.mapping_json || '{}'),
+                  metrics
+                };
+              }
+              console.log(JSON.stringify(summary, null, 2));
+              db.close();
+            NODE
+
+            TOKEN=$(node --input-type=module << 'NODE'
+              import fs from 'node:fs';
+              import initSqlJs from 'sql.js';
+              const SQL = await initSqlJs();
+              const db = new SQL.Database(fs.readFileSync('data/gendanjindu.sqlite'));
+              const result = db.exec("SELECT sessions.token FROM sessions JOIN users ON users.id = sessions.user_id WHERE users.role = '管理员' ORDER BY sessions.created_at DESC LIMIT 1");
+              console.log(result[0]?.values?.[0]?.[0] || '');
+              db.close();
+            NODE
+            )
+            test -n "$TOKEN"
+            RESPONSE=$(mktemp)
+            trap 'rm -f "$RESPONSE"' EXIT
+            curl -fsS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:4003/api/domestic-board > "$RESPONSE"
+            node --input-type=module - "$RESPONSE" << 'NODE'
+              import fs from 'node:fs';
+              const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+              const rows = payload.rows || [];
+              const number = (value) => {
+                const parsed = Number(String(value ?? '').replace(/,/g, '').trim());
+                return Number.isFinite(parsed) ? parsed : 0;
+              };
+              const fields = ['wdtStockQty', 'nonSelf7dOutQty', 'nonSelf30dOutQty', 'jdStockQty', 'self7dOutQty', 'self30dOutQty', 'domesticUndeliveredQty'];
+              console.log(JSON.stringify({
+                apiRows: rows.length,
+                quantities: Object.fromEntries(fields.map((field) => [field, {
+                  nonZero: rows.filter((row) => number(row[field]) !== 0).length,
+                  sum: rows.reduce((total, row) => total + number(row[field]), 0)
+                }]))
+              }, null, 2));
+            NODE
+          EOF

@@ -1,0 +1,117 @@
+name: Diagnose Domestic Board
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect domestic board source coverage
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
+            set -Eeuo pipefail
+            cd /home/ubuntu/zhuge-ai-lab/gendanjindu
+            node --input-type=module << 'NODE'
+              import fs from 'node:fs';
+              import initSqlJs from 'sql.js';
+
+              const SQL = await initSqlJs();
+              const db = new SQL.Database(fs.readFileSync('data/gendanjindu.sqlite'));
+              const query = (sql, params = []) => {
+                const statement = db.prepare(sql);
+                statement.bind(params);
+                const rows = [];
+                while (statement.step()) rows.push(statement.getAsObject());
+                statement.free();
+                return rows;
+              };
+              const text = (value) => String(value ?? '').trim();
+              const compact = (value) => text(value).normalize('NFKC').toLowerCase().replace(/[\s_\-—:：/\\()（）]+/g, '');
+              const rawSources = (row) => [row, row?.raw, row?.rawRow, row?._raw].filter((source) => source && typeof source === 'object');
+              const aliasValue = (row, aliases) => {
+                const wanted = new Set(aliases.map(compact));
+                for (const source of rawSources(row)) {
+                  for (const [key, value] of Object.entries(source)) {
+                    if (wanted.has(compact(key)) && text(value)) return text(value);
+                  }
+                }
+                return '';
+              };
+              const count = (rows, aliases) => rows.filter((row) => aliasValue(row, aliases)).length;
+              const keys = (rows) => [...new Set(rows.flatMap((row) => rawSources(row).flatMap((source) => Object.keys(source))))].sort();
+              const records = query(
+                `SELECT slot_id, file_name, mapping_json, rows_json, applied, updated_at
+                 FROM dimension_files
+                 WHERE slot_id IN ('spare2','wangdianDataMain','wangdianSpare1','wangdianSpare2','productCategory')`
+              );
+              const bySlot = new Map(records.map((record) => [record.slot_id, {
+                ...record,
+                mapping: JSON.parse(record.mapping_json || '{}'),
+                rows: JSON.parse(record.rows_json || '[]')
+              }]));
+              const aliases = {
+                merchantCode: ['merchantCode', '商家编码', '商品编码'],
+                materialCode: ['materialCode', '物料编码', '品号', '商品编码', '货品编号', '存货编码'],
+                sku: ['sku', 'SKU', 'systemSku', '系统SKU-必填', '系统SKU', '商品SKU'],
+                brand: ['brand', '品牌', '品牌名称', '商品品牌'],
+                productType: ['productType', '产品类型', '商品类型', '产品类别', '商品类别', '品类'],
+                stockupStatus: ['stockupStatus', '是否正常备货', '备货状态'],
+                productLine: ['productLine', '销售产品线', '产品线'],
+                productSeries: ['productSeries', '销售系列', '系列'],
+                model: ['model', '型号', '产品型号', '款式', '规格型号', '规格'],
+                jdId: ['jdId', 'SKU', 'sku', '京东SKU', '商品SKU', '系统SKU', '京东编码', '京东货号', 'ID']
+              };
+
+              const slotSummary = {};
+              for (const [slotId, record] of bySlot) {
+                slotSummary[slotId] = {
+                  fileName: record.file_name,
+                  applied: Boolean(record.applied),
+                  updatedAt: record.updated_at,
+                  rows: record.rows.length,
+                  mapping: record.mapping,
+                  headers: keys(record.rows),
+                  coverage: Object.fromEntries(Object.entries(aliases).map(([name, names]) => [name, count(record.rows, names)]))
+                };
+              }
+
+              const baseRows = [...(bySlot.get('spare2')?.rows || []), ...(bySlot.get('wangdianDataMain')?.rows || [])];
+              const productRows = bySlot.get('productCategory')?.rows || [];
+              const jdMapRows = bySlot.get('wangdianSpare2')?.rows || [];
+              const productMaterials = new Set(productRows.map((row) => compact(aliasValue(row, aliases.materialCode))).filter(Boolean));
+              const productSkus = new Set(productRows.map((row) => compact(aliasValue(row, aliases.sku))).filter(Boolean));
+              const jdById = new Map(jdMapRows.map((row) => [compact(aliasValue(row, aliases.jdId)), compact(aliasValue(row, aliases.materialCode))]).filter(([key, value]) => key && value));
+              const uniqueBase = new Map();
+              baseRows.forEach((row) => {
+                const merchant = compact(aliasValue(row, aliases.merchantCode));
+                if (merchant && !uniqueBase.has(merchant)) uniqueBase.set(merchant, row);
+              });
+              const matchStats = { baseRows: uniqueBase.size, merchantToProductMaterial: 0, skuToProductSku: 0, merchantThroughJdMap: 0, anyProductMatch: 0 };
+              for (const [merchant, row] of uniqueBase) {
+                const sku = compact(aliasValue(row, aliases.sku));
+                const direct = productMaterials.has(merchant);
+                const skuMatch = sku && productSkus.has(sku);
+                const mapped = jdById.get(merchant) || jdById.get(sku);
+                const jdMatch = mapped && productMaterials.has(mapped);
+                if (direct) matchStats.merchantToProductMaterial += 1;
+                if (skuMatch) matchStats.skuToProductSku += 1;
+                if (jdMatch) matchStats.merchantThroughJdMap += 1;
+                if (direct || skuMatch || jdMatch) matchStats.anyProductMatch += 1;
+              }
+
+              const demandMaterials = new Set(query("SELECT material_code FROM order_demands WHERE active = 1 AND (business_unit LIKE '%国内事业部%' OR business_unit LIKE '%国内业务部%')")
+                .map((row) => compact(row.material_code)).filter(Boolean));
+              const demandStats = {
+                activeDomesticMaterials: demandMaterials.size,
+                baseMerchantMatchesDemandMaterial: [...uniqueBase.keys()].filter((key) => demandMaterials.has(key)).length,
+                productMatchesDemandMaterial: [...productMaterials].filter((key) => demandMaterials.has(key)).length
+              };
+
+              console.log(JSON.stringify({ slotSummary, matchStats, demandStats }, null, 2));
+              db.close();
+            NODE
+          EOF

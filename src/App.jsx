@@ -1190,6 +1190,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     const text = [
       row.demandKey,
       row.month,
+      row.orderNo,
       row.businessUnit,
       displaySupplier,
       row.supplier,
@@ -1276,7 +1277,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     const XLSX = await import('xlsx');
     const isOperationBoard = usesOperationBoardLayout;
     const headers = isOperationBoard
-      ? ['下单月份', '事业部', '供应商简称', '采购下单人', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']
+      ? ['下单月份', '采购订单号', '事业部', '供应商简称', '采购下单人', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']
       : ['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号'];
     const aoa = [
       headers,
@@ -1284,6 +1285,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
         isOperationBoard
           ? [
               row.month,
+              row.orderNo,
               row.businessUnit,
               supplierName(row),
               row.purchaseOwner,
@@ -1342,7 +1344,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
         <SelectField label="采购下单人" value={filters.purchaseOwner} options={options.purchaseOwners} onChange={(value) => setFilters({ ...filters, purchaseOwner: value })} />
         <input
           className="search-input"
-          placeholder="搜索供应商、物料编码、OA备货流程号、SKU、物料名称、采购下单人"
+          placeholder="搜索供应商、采购订单号、物料编码、OA备货流程号、SKU、物料名称、采购下单人"
           value={filters.keyword}
           onChange={(event) => setFilters({ ...filters, keyword: event.target.value })}
         />
@@ -1375,12 +1377,13 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
           className="compact-table"
           rows={pageRows}
           columns={usesOperationBoardLayout
-            ? ['下单月份', '事业部', '供应商简称', '采购下单人', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']
+            ? ['下单月份', '采购订单号', '事业部', '供应商简称', '采购下单人', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']
             : ['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']}
           render={(row) => (
             usesOperationBoardLayout
               ? [
                   row.month,
+                  row.orderNo,
                   row.businessUnit,
                   supplierName(row),
                   row.purchaseOwner,

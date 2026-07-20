@@ -1151,6 +1151,9 @@ function saveDomesticManualInput(merchantCode, payload, userName) {
 function domesticBoardRows() {
   const defaultRows = getDimensionRows('spare2');
   const wangdianRows = getDimensionRows('wangdianDataMain');
+  const baseRows = defaultRows.some((row) => normalize(domesticMerchantCode(row)))
+    ? defaultRows
+    : wangdianRows;
   const jdInventoryRows = getDimensionRows('wangdianSpare1');
   const jdMatchRows = getDimensionRows('wangdianSpare2');
   const jdMaterialMap = new Map();
@@ -1200,7 +1203,7 @@ function domesticBoardRows() {
       purchaseOwner: uniqueDelimitedValues([existing.purchaseOwner, demand.purchaseOwner])
     });
   });
-  return defaultRows.map((row) => {
+  return baseRows.map((row) => {
     const merchantCode = normalize(domesticMerchantCode(row));
     const materialCode = resolveDomesticMaterialCode(row);
     const wdt = wangdianMap.get(merchantCode) || {};

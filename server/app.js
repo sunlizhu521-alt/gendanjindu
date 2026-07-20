@@ -19,22 +19,22 @@ const ADMIN_NAME = process.env.ADMIN_NAME || '孙立柱';
 const ROLE_ADMIN = '管理员';
 const ROLE_USER = '普通用户';
 const ALL_PAGES = [
-  'progressRefresh',
-  'differenceAllocation',
-  'operationBoard',
   'domesticBoard',
   'wangdianData',
-  'lingxingInventory',
-  'firstMileDatabase',
-  'firstMileBoard',
   'crossBorderInventory',
-  'dimensionMissing',
+  'lingxingInventory',
+  'operationBoard',
+  'progressRefresh',
+  'differenceAllocation',
   'trace',
-  'operationLogs',
-  'kingdeeImport',
+  'purchaseBoard',
+  'firstMileBoard',
+  'firstMileDatabase',
+  'dimensionMissing',
   'dimensionLibrary',
+  'kingdeeImport',
   'permissions',
-  'purchaseBoard'
+  'operationLogs'
 ];
 const PAGE_LABELS = {
   domesticBoard: '国内事业部看板',

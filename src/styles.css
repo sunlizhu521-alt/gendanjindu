@@ -135,15 +135,28 @@ textarea {
 
 .sidebar-nav {
   display: grid;
+  gap: 12px;
+}
+
+.sidebar-nav-group {
+  display: grid;
   gap: 4px;
+}
+
+.sidebar-nav-title {
+  padding: 6px 10px 3px;
+  color: #d45113;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.25;
 }
 
 .sidebar-nav button {
   width: 100%;
-  padding: 13px 14px;
+  padding: 9px 14px 9px 22px;
   background: transparent;
   color: #6b4226;
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 700;
   text-align: left;
   box-shadow: none;

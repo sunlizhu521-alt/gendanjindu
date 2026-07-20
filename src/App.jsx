@@ -5,22 +5,22 @@ const TOKEN_KEY = 'gendanjinduToken';
 const ACTIVE_PAGE_KEY = 'gendanjinduActivePage';
 
 const PAGE_ORDER = [
-  'progressRefresh',
-  'differenceAllocation',
-  'operationBoard',
   'domesticBoard',
   'wangdianData',
-  'lingxingInventory',
-  'firstMileDatabase',
-  'firstMileBoard',
   'crossBorderInventory',
-  'dimensionMissing',
+  'lingxingInventory',
+  'operationBoard',
+  'progressRefresh',
+  'differenceAllocation',
   'trace',
-  'operationLogs',
-  'kingdeeImport',
+  'purchaseBoard',
+  'firstMileBoard',
+  'firstMileDatabase',
+  'dimensionMissing',
   'dimensionLibrary',
+  'kingdeeImport',
   'permissions',
-  'purchaseBoard'
+  'operationLogs'
 ];
 
 const PAGE_LABELS = {
@@ -41,6 +41,15 @@ const PAGE_LABELS = {
   operationLogs: '操作日常',
   permissions: '权限管理'
 };
+
+const NAV_GROUPS = [
+  { title: '国内数据', pages: ['domesticBoard', 'wangdianData'] },
+  { title: '跨境数据', pages: ['crossBorderInventory', 'lingxingInventory'] },
+  { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'differenceAllocation', 'trace', 'purchaseBoard'] },
+  { title: '头程数据', pages: ['firstMileBoard', 'firstMileDatabase'] },
+  { title: '维护数据', pages: ['dimensionMissing', 'dimensionLibrary', 'kingdeeImport'] },
+  { title: '系统操作', pages: ['permissions', 'operationLogs'] }
+];
 
 const DEMAND_DATA_PAGES = new Set(['operationBoard', 'purchaseBoard', 'progressRefresh']);
 
@@ -4085,14 +4094,23 @@ function App() {
   return (
     <main className="app-shell" onClick={() => setMessage('')}>
       <aside className="sidebar" onClick={(event) => event.stopPropagation()}>
-        <h1>采购跟单进度</h1>
+        <h1>采购跟单&头程数据</h1>
         <span className="app-version-time">服务器共享数据</span>
         <nav className="sidebar-nav">
-          {visiblePages.map((page) => (
-            <button key={page} type="button" className={activeTab === page ? 'active' : ''} onClick={() => setActiveTab(page)}>
-              {pages[page] || PAGE_LABELS[page]}
-            </button>
-          ))}
+          {NAV_GROUPS.map((group) => {
+            const groupPages = group.pages.filter((page) => visiblePages.includes(page));
+            if (!groupPages.length) return null;
+            return (
+              <div className="sidebar-nav-group" key={group.title}>
+                <div className="sidebar-nav-title">{group.title}</div>
+                {groupPages.map((page) => (
+                  <button key={page} type="button" className={activeTab === page ? 'active' : ''} onClick={() => setActiveTab(page)}>
+                    {pages[page] || PAGE_LABELS[page]}
+                  </button>
+                ))}
+              </div>
+            );
+          })}
         </nav>
         <div className="user-box">
           <strong>{user.name}</strong>

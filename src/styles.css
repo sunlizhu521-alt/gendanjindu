@@ -531,6 +531,108 @@ h3 {
   color: #dc2626;
 }
 
+.inventory-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.inventory-summary-card {
+  display: grid;
+  align-content: space-between;
+  min-height: 220px;
+  padding: 24px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+.inventory-summary-card.production {
+  border-color: #bbf7d0;
+  background: #ecfdf5;
+  color: #15803d;
+}
+
+.inventory-summary-card.transit {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.inventory-summary-card.stock {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.inventory-summary-card-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.inventory-summary-card-heading span {
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.inventory-summary-card-heading small,
+.inventory-summary-card p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.inventory-summary-value {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.inventory-summary-value strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 42px;
+  line-height: 1;
+}
+
+.inventory-summary-value span {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.inventory-summary-breakdown {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #fed7aa;
+  color: #7c2d12;
+  font-size: 13px;
+}
+
+.inventory-summary-breakdown span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.inventory-summary-breakdown strong {
+  color: #9a3412;
+  font-size: 15px;
+}
+
+.inventory-summary-status {
+  padding: 28px 0;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+  color: #64748b;
+  text-align: center;
+}
+
+.inventory-summary-status.error {
+  color: #b91c1c;
+}
+
 .dashboard-heading {
   flex-wrap: nowrap;
   overflow-x: auto;
@@ -1923,6 +2025,7 @@ th {
   }
 
   .metric-grid,
+  .inventory-summary-grid,
   .dashboard-grid,
   .progress-chart-grid,
   .series-chart-grid,

@@ -287,6 +287,7 @@ function auditIpAddress(req) {
 function auditPageForRequest(req) {
   const requestPath = req.path;
   if (requestPath.startsWith('/api/auth/')) return { key: 'system', label: '系统登录' };
+  if (requestPath.startsWith('/api/inventory-summary')) return { key: 'inventorySummary', label: PAGE_LABELS.inventorySummary };
   if (requestPath.startsWith('/api/operation-logs')) return { key: 'operationLogs', label: PAGE_LABELS.operationLogs };
   if (requestPath.startsWith('/api/progress')) return { key: 'progressRefresh', label: PAGE_LABELS.progressRefresh };
   if (requestPath.startsWith('/api/difference')) return { key: 'differenceAllocation', label: PAGE_LABELS.differenceAllocation };
@@ -1148,7 +1149,7 @@ function saveDomesticManualInput(merchantCode, payload, userName) {
   return now;
 }
 
-function domesticBoardRows() {
+function domesticBoardRows(demands = null) {
   const defaultRows = getDimensionRows('spare2');
   const wangdianRows = getDimensionRows('wangdianDataMain');
   const baseRows = defaultRows.some((row) => normalize(domesticMerchantCode(row)))
@@ -1189,7 +1190,7 @@ function domesticBoardRows() {
     const materialCode = normalize(product.materialCode);
     if (materialCode && !productCategoryMap.has(materialCode)) productCategoryMap.set(materialCode, product);
   });
-  demandRows(false).forEach((demand) => {
+  (demands || demandRows(false)).forEach((demand) => {
     const businessUnit = normalize(demand.businessUnit);
     if (!businessUnit.includes('国内事业部') && !businessUnit.includes('国内业务部')) return;
     if (numberValue(demand.remainingInboundQty) <= 0) return;
@@ -1629,6 +1630,28 @@ function buildCrossBorderInventoryModel() {
       conflictCount: conflicts.length,
       sourceAnomalyCount: sourceAnomalies.length,
       filteredFbaRows
+    }
+  };
+}
+
+function inventorySummaryData() {
+  const demands = demandRows(false);
+  const productionQty = demands.reduce((sum, row) => sum + numberValue(row.remainingInboundQty), 0);
+  const transitQty = firstMileBoardModel().rows
+    .filter((row) => row.cargoStatus === '海上在途')
+    .reduce((sum, row) => sum + numberValue(row.quantity), 0);
+  const domesticInventoryQty = domesticBoardRows(demands)
+    .reduce((sum, row) => sum + numberValue(row.wdtStockQty) + numberValue(row.jdStockQty), 0);
+  const crossBorderInventoryQty = buildCrossBorderInventoryModel().rows
+    .reduce((sum, row) => sum + numberValue(row.inventoryQty ?? row.totalQty), 0);
+
+  return {
+    在制量: productionQty,
+    在途量: transitQty,
+    在库量: {
+      国内: domesticInventoryQty,
+      跨境: crossBorderInventoryQty,
+      合计: domesticInventoryQty + crossBorderInventoryQty
     }
   };
 }
@@ -2744,6 +2767,10 @@ app.post('/api/auth/logout', requireAuth, (req, res) => {
 
 app.get('/api/bootstrap', requireAuth, (req, res) => {
   res.json({ user: userPayload(req.user), pages: PAGE_LABELS, dimensionSlots: DIMENSION_SLOTS, currentAppliedAt: currentAppliedAt() });
+});
+
+app.get('/api/inventory-summary', requireAuth, requirePage('inventorySummary'), (req, res) => {
+  res.json(inventorySummaryData());
 });
 
 app.get('/api/cross-border-inventory', requireAuth, requirePage('crossBorderInventory'), (req, res) => {

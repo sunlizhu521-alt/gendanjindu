@@ -54,7 +54,7 @@ const NAV_GROUPS = [
   { title: '系统操作', pages: ['permissions', 'operationLogs'] }
 ];
 
-const DEMAND_DATA_PAGES = new Set(['inventorySummary', 'operationBoard', 'purchaseBoard', 'progressRefresh']);
+const DEMAND_DATA_PAGES = new Set(['operationBoard', 'purchaseBoard', 'progressRefresh']);
 
 function visiblePagesForUser(user) {
   return PAGE_ORDER.filter((page) => user?.role === '管理员' || user?.pageAccess?.includes(page));
@@ -351,6 +351,88 @@ function MetricCard({ label, value, tone = '' }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </article>
+  );
+}
+
+function InventorySummary({ token, active }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!active) return undefined;
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    request('/api/inventory-summary', { token })
+      .then((payload) => {
+        if (!cancelled) setData(payload);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message || '库存汇总加载失败');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [active, token]);
+
+  const formatQuantity = (value) => numberValue(value).toLocaleString('zh-CN');
+  const inventory = data?.['在库量'] || {};
+
+  return (
+    <>
+      <div className="section-heading-row">
+        <h2>库存汇总</h2>
+        <span className="section-count">采购、头程、国内与跨境库存全量汇总</span>
+      </div>
+      {loading ? (
+        <div className="inventory-summary-status" role="status">加载中</div>
+      ) : error ? (
+        <div className="inventory-summary-status error" role="alert">库存汇总加载失败：{error}</div>
+      ) : (
+        <section className="inventory-summary-grid" aria-label="库存汇总指标">
+          <article className="inventory-summary-card production">
+            <div className="inventory-summary-card-heading">
+              <span>在制量</span>
+              <small>采购订单剩余入库</small>
+            </div>
+            <div className="inventory-summary-value">
+              <strong>{formatQuantity(data?.['在制量'])}</strong>
+              <span>件</span>
+            </div>
+            <p>全部月份备货剩余数量</p>
+          </article>
+          <article className="inventory-summary-card transit">
+            <div className="inventory-summary-card-heading">
+              <span>在途量</span>
+              <small>头程数据看板</small>
+            </div>
+            <div className="inventory-summary-value">
+              <strong>{formatQuantity(data?.['在途量'])}</strong>
+              <span>件</span>
+            </div>
+            <p>货物状态：海上在途</p>
+          </article>
+          <article className="inventory-summary-card stock">
+            <div className="inventory-summary-card-heading">
+              <span>在库量</span>
+              <small>国内与跨境合计</small>
+            </div>
+            <div className="inventory-summary-value">
+              <strong>{formatQuantity(inventory['合计'])}</strong>
+              <span>件</span>
+            </div>
+            <div className="inventory-summary-breakdown">
+              <span>国内 <strong>{formatQuantity(inventory['国内'])}</strong> 件</span>
+              <span>跨境 <strong>{formatQuantity(inventory['跨境'])}</strong> 件</span>
+            </div>
+          </article>
+        </section>
+      )}
+    </>
   );
 }
 
@@ -944,7 +1026,7 @@ function Login({ onLogin }) {
 }
 
 function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', currentAppliedAt = '' }) {
-  const usesOperationBoardLayout = filterKey === 'operationBoard' || filterKey === 'inventorySummary';
+  const usesOperationBoardLayout = filterKey === 'operationBoard';
   const activeRows = useMemo(() => rows.filter((row) => row.active && numberValue(row.remainingInboundQty) > 0), [rows]);
   const [filters, setFilters] = useSessionFilters(filterKey, { month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
   const [currentPage, setCurrentPage] = useState(1);
@@ -4126,7 +4208,7 @@ function App() {
         {message && <p className="message">{message}</p>}
         {demandsLoading && DEMAND_DATA_PAGES.has(activeTab) && <p className="section-count">正在加载采购订单数据...</p>}
         {shouldMount('domesticBoard') && <PagePane page="domesticBoard" activeTab={activeTab}><DomesticBoard token={token} setMessage={setMessage} /></PagePane>}
-        {shouldMount('inventorySummary') && <PagePane page="inventorySummary" activeTab={activeTab}><Dashboard rows={demands} title="库存汇总" filterKey="inventorySummary" currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
+        {shouldMount('inventorySummary') && <PagePane page="inventorySummary" activeTab={activeTab}><InventorySummary token={token} active={activeTab === 'inventorySummary'} /></PagePane>}
         {shouldMount('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><Dashboard rows={demands} title="运营看板-未交付" filterKey="operationBoard" currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
         {shouldMount('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}

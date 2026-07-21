@@ -3615,7 +3615,7 @@ function FirstMileBoard({ token, setMessage, refreshVersion = 0 }) {
       </div>
       {(data.sourceApplications || []).length > 0 && (
         <p className="source-application-line">
-          数据应用时间：{data.sourceApplications.map((source) => `${source.label} ${source.appliedAt || '暂无'}`).join('；')}
+          每周周一、三、五更新表格；数据应用时间：{data.sourceApplications.map((source) => `${source.label} ${source.appliedAt || '暂无'}`).join('；')}
         </p>
       )}
       {(data.qualitySummary?.duplicateRows > 0 || data.qualitySummary?.issueRows > 0 || data.qualitySummary?.unmappedRows > 0) && (

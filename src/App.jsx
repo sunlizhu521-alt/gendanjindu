@@ -229,6 +229,10 @@ function numberValue(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function formatQuantity(value) {
+  return numberValue(value).toLocaleString('zh-CN');
+}
+
 function signedNumber(value) {
   const n = numberValue(value);
   if (n > 0) return `+${n.toLocaleString()}`;
@@ -390,7 +394,6 @@ function InventorySummary({ token, active }) {
     };
   }, [active, token]);
 
-  const formatQuantity = (value) => numberValue(value).toLocaleString('zh-CN');
   const rows = data?.rows || [];
   const unique = (values) => [...new Set(values.map(normalize).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const options = useMemo(() => ({

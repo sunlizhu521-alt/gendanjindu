@@ -39,7 +39,7 @@ jobs:
             TIMESTAMP=$(date +%Y%m%d-%H%M%S)
             DB_FILE="$APP_DIR/data/gendanjindu.sqlite"
             BASELINE_FILE="$BACKUP_ROOT/baseline-$TIMESTAMP.json"
-            BACKUP_DB="$BACKUP_ROOT/gendanjindu-$TIMESTAMP.sqlite"
+            BACKUP_DB="$BACKUP_ROOT/gendanjindu-$TIMESTAMP.sqlite.gz"
             BACKUP_AUDIT="$BACKUP_ROOT/backup-audit-$TIMESTAMP.json"
             BACKUP_TAR="$BACKUP_ROOT/data-$TIMESTAMP.tar.gz"
             POST_AUDIT="$BACKUP_ROOT/post-audit-$TIMESTAMP.json"
@@ -53,6 +53,11 @@ jobs:
             trap restart_on_error EXIT
 
             mkdir -p "$BACKUP_ROOT" "$APP_DIR/server"
+            FAILED_BACKUP="$BACKUP_ROOT/gendanjindu-20260721-161951.sqlite"
+            if [ -f "$FAILED_BACKUP" ] && [ ! -f "$BACKUP_ROOT/backup-audit-20260721-161951.json" ]; then
+              echo "Removing incomplete backup from failed deployment: $FAILED_BACKUP"
+              rm -f "$FAILED_BACKUP"
+            fi
             tar -xzf "$DEPLOY_ARCHIVE" -C "$APP_DIR" ./server/data-audit.js
             if [ ! -s "$DB_FILE" ]; then
               echo "Database safety gate failed: $DB_FILE is missing or empty."
@@ -62,21 +67,22 @@ jobs:
             pm2 stop gendanjindu
             SERVICE_STOPPED=1
             node server/data-audit.js "$DB_FILE" > "$BASELINE_FILE"
-            cp --preserve=timestamps "$DB_FILE" "$BACKUP_DB"
-            cmp --silent "$DB_FILE" "$BACKUP_DB"
-            node server/data-audit.js "$BACKUP_DB" > "$BACKUP_AUDIT"
+            gzip -c "$DB_FILE" > "$BACKUP_DB.tmp"
+            gzip -t "$BACKUP_DB.tmp"
+            mv "$BACKUP_DB.tmp" "$BACKUP_DB"
             DB_SHA=$(sha256sum "$DB_FILE" | awk '{print $1}')
-            BACKUP_SHA=$(sha256sum "$BACKUP_DB" | awk '{print $1}')
+            BACKUP_SHA=$(gzip -dc "$BACKUP_DB" | sha256sum | awk '{print $1}')
             if [ "$DB_SHA" != "$BACKUP_SHA" ]; then
               echo "Database backup checksum mismatch."
               exit 1
             fi
+            cp "$BASELINE_FILE" "$BACKUP_AUDIT"
             tar -czf "$BACKUP_TAR" data
             test -s "$BACKUP_TAR"
             tar -tzf "$BACKUP_TAR" >/dev/null
             echo "Database backup verified: $BACKUP_DB"
             echo "Full data backup verified: $BACKUP_TAR"
-            echo "Rollback database: $BACKUP_DB"
+            echo "Rollback database: gzip -dc $BACKUP_DB > $DB_FILE"
             ls -lh "$BASELINE_FILE" "$BACKUP_DB" "$BACKUP_AUDIT" "$BACKUP_TAR"
 
             # Extract over the existing app directory. Do not blanket-delete server files:

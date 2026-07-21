@@ -75,7 +75,7 @@ const DIMENSION_SLOTS = {
   lingxingWfsInventory: 'WFS库存',
   lingxingSpare: '备用',
   firstMileData1: '张婷婷头程数据',
-  firstMileData2: '扈翠云头程数据',
+  firstMileData2: '扈翠芸头程数据',
   firstMileData3: '魏静头程数据',
   firstMileData4: '李紫媛头程数据',
   firstMileData5: '李宛宸头程数据',

@@ -3,7 +3,7 @@ import xlsx from 'xlsx';
 const EMPTY_SHEET_PATTERN = /^Sheet\d*$/i;
 const FIRST_MILE_SLOT_OWNERS = {
   firstMileData1: '张婷婷',
-  firstMileData2: '扈翠云',
+  firstMileData2: '扈翠芸',
   firstMileData3: '魏静',
   firstMileData4: '李紫媛',
   firstMileData5: '李宛宸',

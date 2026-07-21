@@ -192,7 +192,7 @@ const LINGXING_INVENTORY_SLOTS = [
 
 const FIRST_MILE_DATABASE_SLOTS = [
   { id: 'firstMileData1', title: '张婷婷头程数据', fields: [], firstMile: true },
-  { id: 'firstMileData2', title: '扈翠云头程数据', fields: [], firstMile: true },
+  { id: 'firstMileData2', title: '扈翠芸头程数据', fields: [], firstMile: true },
   { id: 'firstMileData3', title: '魏静头程数据', fields: [], firstMile: true },
   { id: 'firstMileData4', title: '李紫媛头程数据', fields: [], firstMile: true },
   { id: 'firstMileData5', title: '李宛宸头程数据', fields: [], firstMile: true },

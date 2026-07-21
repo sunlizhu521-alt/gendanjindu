@@ -3074,6 +3074,12 @@ app.post('/api/workbook/inspect', requireAuth, upload.single('file'), (req, res)
   res.json(workbookInspect(req.file, sheetName || null));
 });
 
+function kingdeeImportMapping(body = {}) {
+  if (normalize(body.mapping)) return parseJson(body.mapping, {});
+  const saved = get('SELECT mapping_json FROM import_mappings WHERE kind = ?', ['kingdee']);
+  return parseJson(saved?.mapping_json, {});
+}
+
 app.get('/api/imports/kingdee/current-status', requireAuth, requirePage('kingdeeImport'), (req, res) => {
   const batch = get(
     `SELECT b.*
@@ -3160,7 +3166,7 @@ app.delete('/api/imports/kingdee/test-cache', requireAuth, requirePage('kingdeeI
 });
 
 app.post('/api/imports/kingdee/preview', requireAuth, requirePage('kingdeeImport'), upload.single('file'), (req, res) => {
-  const mapping = parseJson(req.body.mapping, {});
+  const mapping = kingdeeImportMapping(req.body);
   const sheetName = normalize(req.body.sheetName);
   const parsed = workbookRows(req.file, sheetName || null, { includePreviews: false });
   const result = mappedKingdeeRows(parsed.rows, mapping);
@@ -3177,28 +3183,21 @@ app.post('/api/imports/kingdee/preview', requireAuth, requirePage('kingdeeImport
   });
 });
 
-app.post('/api/imports/kingdee/apply', requireAuth, requirePage('kingdeeImport'), upload.single('file'), (req, res) => {
-  const mapping = parseJson(req.body.mapping, {});
-  const sheetName = normalize(req.body.sheetName);
-  const parsed = workbookRows(req.file, sheetName || null, { includePreviews: false });
-  const result = mappedKingdeeRows(parsed.rows, mapping);
-  const summary = summarizeDemands(result.rows);
-  const stats = kingdeeImportStats(result, summary);
-  const diffs = [];
-  const now = nowText();
-  let batchId = '';
-  transaction(() => {
-    batchId = applyKingdeeSnapshot({ fileName: safeFilename(req.file), sourceRows: result.rows, summary, diffs, mapping, userName: req.user.name, now, importMode: 'baseline', skippedRows: result.skippedRows, skipped: result.skipped });
-  });
-  res.json({ batchId, rowCount: result.rows.length, diffs, ...stats });
+app.post('/api/imports/kingdee/apply', requireAuth, requirePage('kingdeeImport'), (_req, res) => {
+  res.status(410).json({ error: '当前应用采购订单已改为只读，请通过“新采购订单上传”自动解析并应用。' });
 });
 
 app.post('/api/imports/kingdee/new-snapshot', requireAuth, requirePage('kingdeeImport'), upload.single('file'), (req, res) => {
   const startedAt = Date.now();
-  const mapping = parseJson(req.body.mapping, {});
+  const mapping = kingdeeImportMapping(req.body);
   const sheetName = normalize(req.body.sheetName);
   const parsed = workbookRows(req.file, sheetName || null, { includePreviews: false });
   const result = mappedKingdeeRows(parsed.rows, mapping);
+  if (!result.validRows) {
+    return res.status(400).json({
+      error: `未解析到有效采购订单，已停止应用。共读取 ${result.totalRows} 行，跳过 ${result.skippedRows} 行，请检查文件格式和必填字段。`
+    });
+  }
   const summary = summarizeDemands(result.rows);
   const stats = kingdeeImportStats(result, summary);
   const diffs = diffAgainstCurrent(summary);

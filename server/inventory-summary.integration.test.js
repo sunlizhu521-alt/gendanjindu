@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import xlsx from 'xlsx';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const now = '2026-07-20 15:00:00';
@@ -158,6 +159,10 @@ test('inventory summary and domestic board use complete source models and enforc
     { storeName: 'Test Store', marketplace: 'US', warehouseName: 'Test Warehouse', sku: 'SKU-EMPTY', totalInventoryQty: '' },
     { storeName: 'Test Store', marketplace: 'US', warehouseName: 'Test Warehouse', sku: 'SKU-BAD', totalInventoryQty: 'invalid' }
   ]);
+  database.run(
+    'INSERT INTO import_mappings (kind, mapping_json, updated_by, updated_at) VALUES (?, ?, ?, ?)',
+    ['kingdee', JSON.stringify({ createDate: '自定义日期', supplier: '自定义供应商', materialCode: '自定义物料', quantity: '自定义数量' }), 'Test Admin', now]
+  );
   database.saveDatabase();
 
   const port = await getAvailablePort();
@@ -276,6 +281,52 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(demandRows.find((row) => row.materialCode === 'M1')?.operatorName, '薛文乐');
     const firstMileRows = (await firstMileResponse.json()).rows;
     assert.equal(firstMileRows.find((row) => row.materialCode === 'M1')?.model, 'Model One');
+
+    const legacyApplyResponse = await fetch(`http://127.0.0.1:${port}/api/imports/kingdee/apply`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token' }
+    });
+    assert.equal(legacyApplyResponse.status, 410);
+
+    const validWorkbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(validWorkbook, xlsx.utils.json_to_sheet([{
+      自定义日期: '2026-07-22',
+      自定义供应商: 'Auto Supplier',
+      自定义物料: 'AUTO-001',
+      自定义数量: 12
+    }]), '采购订单');
+    const validForm = new FormData();
+    validForm.append('file', new Blob([xlsx.write(validWorkbook, { type: 'buffer', bookType: 'xlsx' })]), '自动应用测试.xlsx');
+    const autoApplyResponse = await fetch(`http://127.0.0.1:${port}/api/imports/kingdee/new-snapshot`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token' },
+      body: validForm
+    });
+    assert.equal(autoApplyResponse.status, 200);
+    assert.equal((await autoApplyResponse.json()).rowCount, 1);
+
+    const statusAfterValid = await fetch(`http://127.0.0.1:${port}/api/imports/kingdee/current-status`, {
+      headers: { Authorization: 'Bearer admin-token' }
+    }).then((response) => response.json());
+    assert.equal(statusAfterValid.current.fileName, '自动应用测试.xlsx');
+    assert.equal(statusAfterValid.current.activeRows, 1);
+
+    const invalidWorkbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(invalidWorkbook, xlsx.utils.json_to_sheet([{ 无效字段: '无有效采购订单' }]), '错误数据');
+    const invalidForm = new FormData();
+    invalidForm.append('file', new Blob([xlsx.write(invalidWorkbook, { type: 'buffer', bookType: 'xlsx' })]), '无效采购订单.xlsx');
+    const rejectedResponse = await fetch(`http://127.0.0.1:${port}/api/imports/kingdee/new-snapshot`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token' },
+      body: invalidForm
+    });
+    assert.equal(rejectedResponse.status, 400);
+
+    const statusAfterRejected = await fetch(`http://127.0.0.1:${port}/api/imports/kingdee/current-status`, {
+      headers: { Authorization: 'Bearer admin-token' }
+    }).then((response) => response.json());
+    assert.equal(statusAfterRejected.current.fileName, '自动应用测试.xlsx');
+    assert.equal(statusAfterRejected.current.activeRows, 1);
   } finally {
     child.kill();
     if (child.exitCode === null) {

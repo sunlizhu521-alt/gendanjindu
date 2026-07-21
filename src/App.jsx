@@ -199,27 +199,6 @@ const FIRST_MILE_DATABASE_SLOTS = [
   { id: 'firstMileSpare', title: '备用', fields: [], firstMile: true }
 ];
 
-const KINGDEE_FIELDS = [
-  ['createDate', '采购日期'],
-  ['deliveryDate', '交货日期'],
-  ['businessUnit', '事业部'],
-  ['supplier', '供应商'],
-  ['purchaseOrg', '采购组织'],
-  ['materialCode', '物料编码'],
-  ['materialName', '物料名称'],
-  ['creator', '创建人（采购订单）'],
-  ['operatorName', '运营'],
-  ['oaFlowNo', 'OA备货流程号'],
-  ['quantity', '采购订单数量'],
-  ['inboundQty', '累计入库数量'],
-  ['remainingInboundQty', '剩余入库数量'],
-  ['orderNo', '采购订单号'],
-  ['documentStatus', '单据状态'],
-  ['closeStatus', '关闭状态'],
-  ['isGift', '是否赠品'],
-  ['businessClose', '业务关闭']
-];
-
 function normalize(value) {
   return String(value ?? '').trim();
 }
@@ -2049,14 +2028,8 @@ function PurchaseBoard({ rows }) {
 
 function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, description, mode, showImportHistory = false, historyVersion = 0, onImportApplied = () => {} }) {
   const [file, setFile] = useState(null);
-  const [columns, setColumns] = useState([]);
-  const [mapping, setMapping] = useState({});
   const [preview, setPreview] = useState(null);
-  const [sheetName, setSheetName] = useState('');
-  const [sheetNames, setSheetNames] = useState([]);
-  const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [applying, setApplying] = useState(false);
   const [operationProgress, setOperationProgress] = useState(null);
   const [currentStatus, setCurrentStatus] = useState(null);
   const [importHistory, setImportHistory] = useState([]);
@@ -2067,7 +2040,6 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
   })));
 
   useEffect(() => {
-    request('/api/mappings/kingdee', { token }).then((payload) => setMapping(payload.mapping || {})).catch(() => {});
     if (mode === 'current' || showImportHistory) loadCurrentStatus().catch(() => {});
   }, [token, mode, showImportHistory, historyVersion]);
 
@@ -2077,129 +2049,40 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
     setImportHistory(payload.history || []);
   }
 
-  async function inspect(nextFile) {
+  async function doSave(nextFile = file) {
+    if (!nextFile || saving) return;
     setFile(nextFile);
     setPreview(null);
-    setSheetName('');
-    setOperationProgress({ label: '正在读取文件并识别工作表...', progress: 15 });
-    try {
-      const data = new FormData();
-      data.append('file', nextFile);
-      setOperationProgress({ label: '正在解析表头字段...', progress: 55 });
-      const payload = await request('/api/workbook/inspect', { token, method: 'POST', body: data });
-      setColumns(payload.columns || []);
-      setSheetNames(payload.sheetNames || []);
-      setOperationProgress({ label: `文件读取完成，识别到 ${payload.columns?.length || 0} 个字段`, progress: 100, statusType: 'success' });
-    } catch (err) {
-      setOperationProgress({ label: `文件读取失败：${err.message}`, progress: 100, statusType: 'error' });
-      setMessage('文件读取失败：' + err.message);
-    }
-  }
-
-  async function selectSheet(name) {
-    setSheetName(name);
-    setOperationProgress({ label: name ? `正在切换工作表：${name}` : '正在切换为全部工作表', progress: 25 });
-    const data = new FormData();
-    data.append('file', file);
-    if (name) data.append('sheetName', name);
-    try {
-      const payload = await request('/api/workbook/inspect', { token, method: 'POST', body: data });
-      setColumns(payload.columns || []);
-      setOperationProgress({ label: `工作表字段已更新，共 ${payload.columns?.length || 0} 个字段`, progress: 100, statusType: 'success' });
-    } catch (err) {
-      setOperationProgress({ label: `工作表切换失败：${err.message}`, progress: 100, statusType: 'error' });
-      setMessage('工作表切换失败：' + err.message);
-    }
-  }
-
-  async function doParse() {
-    setParsing(true);
-    setOperationProgress({ label: '正在上传文件并开始解析...', progress: 20 });
-    try {
-      const data = new FormData();
-      data.append('file', file);
-      data.append('mapping', JSON.stringify(mapping));
-      if (sheetName) data.append('sheetName', sheetName);
-      setOperationProgress({ label: '正在按字段映射解析采购订单...', progress: 55 });
-      const payload = await request('/api/imports/kingdee/preview', { token, method: 'POST', body: data });
-      setOperationProgress({ label: '正在生成解析结果和差异预览...', progress: 85 });
-      setPreview(payload);
-      if (payload.validRows === 0) {
-        setOperationProgress({ label: '解析完成，但没有有效行', progress: 100, statusType: 'warning' });
-        setMessage('解析失败：0行有效，请检查字段映射和Excel列是否匹配');
-      } else {
-        setOperationProgress({ label: `解析完成：${payload.validRows}/${payload.totalRows} 行有效`, progress: 100, statusType: 'success' });
-        setMessage(`解析完成：${payload.validRows} 条明细，${payload.summaryRows || 0} 条合计，合并 ${payload.mergedRows || 0} 个主键，未关闭 ${payload.trackingRows || 0} 条`);
-      }
-    } catch (err) {
-      setOperationProgress({ label: `解析失败：${err.message}`, progress: 100, statusType: 'error' });
-      setMessage('解析失败：' + err.message);
-    } finally {
-      setParsing(false);
-    }
-  }
-
-  async function doSave() {
     setSaving(true);
-    setOperationProgress({ label: mode === 'new' ? '正在上传新采购订单...' : '正在上传保存采购订单...', progress: 20 });
+    setOperationProgress({ label: '正在上传新采购订单...', progress: 20 });
     const startedAt = Date.now();
     const progressTimer = window.setInterval(() => {
       const elapsedSeconds = Math.max(1, Math.floor((Date.now() - startedAt) / 1000));
       setOperationProgress((current) => ({
         ...current,
-        label: mode === 'new'
-          ? `服务器正在批量比对并写入，已处理 ${elapsedSeconds} 秒，请勿重复操作`
-          : `服务器正在写入采购订单，已处理 ${elapsedSeconds} 秒，请勿重复操作`,
+        label: `服务器正在批量比对并写入，已处理 ${elapsedSeconds} 秒，请勿重复操作`,
         progress: Math.min(90, 60 + Math.floor(elapsedSeconds / 3))
       }));
     }, 1000);
     try {
       const data = new FormData();
-      data.append('file', file);
-      data.append('mapping', JSON.stringify(mapping));
-      if (sheetName) data.append('sheetName', sheetName);
-      const path = mode === 'new' ? '/api/imports/kingdee/new-snapshot' : '/api/imports/kingdee/apply';
-      setOperationProgress({ label: mode === 'new' ? '正在生成差异并应用新基线...' : '正在写入采购订单基线...', progress: 60 });
-      const payload = await request(path, { token, method: 'POST', body: data });
+      data.append('file', nextFile);
+      setOperationProgress({ label: '正在生成差异并应用新基线...', progress: 60 });
+      const payload = await request('/api/imports/kingdee/new-snapshot', { token, method: 'POST', body: data });
       setOperationProgress({ label: '正在刷新页面数据...', progress: 85 });
-      if (mode === 'new') {
-        setPreview({ ...payload, diffs: payload.diffRows || [] });
-        const automaticCount = (payload.diffRows || []).filter((row) => row.handlingType !== 'pending').length;
-        const durationText = payload.durationMs ? `，服务器处理 ${(payload.durationMs / 1000).toFixed(1)} 秒` : '';
-        setMessage(`新采购订单已上传并应用：${payload.rowCount} 条明细，待分配 ${payload.status?.total || 0} 条，自动记录 ${automaticCount} 条，导入日期：${payload.importedAt || payload.appliedAt || '暂无'}${durationText}`);
-        await reloadDemands();
-      } else {
-        setMessage(`全量基线已保存：${payload.validRows || payload.rowCount} 条明细，合并 ${payload.mergedRows || 0} 个主键，未关闭 ${payload.trackingRows || 0} 条`);
-        await reloadDemands();
-      }
-      if (mode === 'current') await loadCurrentStatus();
+      setPreview({ ...payload, diffs: payload.diffRows || [] });
+      const automaticCount = (payload.diffRows || []).filter((row) => row.handlingType !== 'pending').length;
+      const durationText = payload.durationMs ? `，服务器处理 ${(payload.durationMs / 1000).toFixed(1)} 秒` : '';
+      setMessage(`新采购订单已上传并应用：${payload.rowCount} 条明细，待分配 ${payload.status?.total || 0} 条，自动记录 ${automaticCount} 条，导入日期：${payload.importedAt || payload.appliedAt || '暂无'}${durationText}`);
+      await reloadDemands();
       onImportApplied();
-      setOperationProgress({ label: mode === 'new' ? '新采购订单上传并应用完成' : '上传保存完成', progress: 100, statusType: 'success' });
+      setOperationProgress({ label: '新采购订单上传并应用完成', progress: 100, statusType: 'success' });
     } catch (err) {
       setOperationProgress({ label: `上传保存失败：${err.message}`, progress: 100, statusType: 'error' });
       setMessage('上传保存失败：' + err.message);
     } finally {
       window.clearInterval(progressTimer);
       setSaving(false);
-    }
-  }
-
-  async function doApplyRefresh() {
-    setApplying(true);
-    setOperationProgress({ label: '正在应用刷新采购总览...', progress: 35 });
-    const currentPreview = preview;
-    try {
-      await reloadDemands();
-      setOperationProgress({ label: '正在刷新当前采购订单状态...', progress: 75 });
-      if (mode === 'current') await loadCurrentStatus();
-      setPreview(currentPreview);
-      setOperationProgress({ label: '应用刷新完成', progress: 100, statusType: 'success' });
-      setMessage('应用刷新完成，采购总览已更新');
-    } catch (err) {
-      setOperationProgress({ label: `应用刷新失败：${err.message}`, progress: 100, statusType: 'error' });
-      setMessage('应用刷新失败：' + err.message);
-    } finally {
-      setApplying(false);
     }
   }
 
@@ -2218,25 +2101,6 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
             <span>合并后总行数：{currentStatus?.activeRows ?? 0}</span>
           </div>
         )}
-        {file && (
-          <div className="card-actions">
-            <button type="button" className="compact-button" disabled={parsing || saving || applying} onClick={doParse}>
-              {parsing ? '解析中...' : '解析预览'}
-            </button>
-            {preview && preview.validRows > 0 && (
-              <>
-                <button type="button" className="compact-button" disabled={parsing || saving || applying} onClick={doSave}>
-                  {saving ? '保存中...' : mode === 'new' ? '上传新订单并应用' : '上传保存'}
-                </button>
-                {mode !== 'new' && (
-                  <button type="button" className="compact-button" disabled={parsing || saving || applying} onClick={doApplyRefresh}>
-                    {applying ? '刷新中...' : '应用刷新'}
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-        )}
         {operationProgress && (
           <div className={`slot-progress ${operationProgress.statusType || ''}`}>
             <div className="slot-progress-meta">
@@ -2248,23 +2112,21 @@ function KingdeeUploadPanel({ token, reloadDemands, setMessage, title, descripti
             </div>
           </div>
         )}
-        <label className="drop-zone">
-          <input type="file" accept=".xlsx,.xls,.csv" disabled={parsing || saving || applying} onChange={(event) => event.target.files?.[0] && inspect(event.target.files[0])} />
-          <strong>{file ? file.name : `${title} Excel`}</strong>
-          <span>选择文件后配置字段映射，点击解析预览查看进度</span>
-        </label>
-        {sheetNames.length > 1 && (
-          <div className="sheet-selector">
-            <label>选择工作表
-              <select value={sheetName} disabled={parsing || saving || applying} onChange={(e) => selectSheet(e.target.value)}>
-                <option value="">全部工作表</option>
-                {sheetNames.map((name) => <option key={name} value={name}>{name}</option>)}
-              </select>
-            </label>
-          </div>
-        )}
-        {columns.length > 0 && (
-          <FieldMapping fields={KINGDEE_FIELDS} columns={columns} mapping={mapping} onChange={setMapping} />
+        {mode === 'new' && (
+          <label className="drop-zone">
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              disabled={saving}
+              onChange={(event) => {
+                const nextFile = event.target.files?.[0];
+                if (nextFile) doSave(nextFile);
+                event.target.value = '';
+              }}
+            />
+            <strong>{saving ? '正在自动解析并应用...' : file?.name || `${title} Excel`}</strong>
+            <span>选择文件后将自动解析、上传并立即应用，无需手动确认</span>
+          </label>
         )}
       </section>
       {preview && (
@@ -2732,7 +2594,7 @@ function KingdeeImport({ token, user, reloadDemands, setMessage }) {
     <>
       <div className="section-heading-row">
         <h2>采购订单</h2>
-        <span className="section-count">字段映射会保存最近一次配置</span>
+        <span className="section-count">新文件选择后自动解析并应用</span>
       </div>
       {user?.name === '孙立柱' && (
         <section className="panel">
@@ -2746,7 +2608,7 @@ function KingdeeImport({ token, user, reloadDemands, setMessage }) {
         reloadDemands={reloadDemands}
         setMessage={setMessage}
         title="当前应用采购订单"
-        description="首次导入或直接刷新当前金蝶基线"
+        description="仅展示当前已应用采购订单信息"
         mode="current"
         historyVersion={historyVersion}
         onImportApplied={refreshImportHistory}
@@ -2756,7 +2618,7 @@ function KingdeeImport({ token, user, reloadDemands, setMessage }) {
         reloadDemands={reloadDemands}
         setMessage={setMessage}
         title="新采购订单上传"
-        description="生成差异分配并立即应用为新的当前采购订单"
+        description="选择文件后自动解析、生成差异并立即应用"
         mode="new"
         showImportHistory
         historyVersion={historyVersion}

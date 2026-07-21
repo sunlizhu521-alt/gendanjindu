@@ -2098,6 +2098,16 @@ th {
   min-width: 1500px;
 }
 
+.diagnostic-match-table table {
+  min-width: 2100px;
+}
+
+.diagnostic-actions {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
 .diagnostic-table th,
 .diagnostic-table td {
   white-space: nowrap;

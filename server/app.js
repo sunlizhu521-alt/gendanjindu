@@ -1492,6 +1492,15 @@ function buildCrossBorderInventoryModel() {
   }
 
   function addMappingIssue(row, status, targetSlotId, issueCode, missingKey, candidates = []) {
+    const target = CROSS_BORDER_TARGETS[targetSlotId];
+    if (target && !row.maintenanceTargets.some((item) => item.slotId === targetSlotId)) {
+      row.maintenanceTargets.push({
+        slotId: targetSlotId,
+        title: target.title,
+        page: target.page,
+        requiredFields: target.fields
+      });
+    }
     row.problemCodes.push(issueCode);
     if (status === 'conflict') {
       row.hasConflict = true;
@@ -1585,6 +1594,7 @@ function buildCrossBorderInventoryModel() {
         sourceAppliedAt: application?.appliedAt || '暂无',
         problemCodes: [],
         sourceProblemCodes: [],
+        maintenanceTargets: [],
         hasMissing: false,
         hasConflict: false
       });
@@ -1700,6 +1710,12 @@ function buildCrossBorderInventoryModel() {
   })).sort((a, b) => Math.abs(b.inventoryQty) - Math.abs(a.inventoryQty));
   const missingTasks = finalizeAggregates(missingMap);
   const conflicts = finalizeAggregates(conflictMap);
+  const detailedSourceAnomalies = sourceAnomalies.map((row) => ({
+    ...row,
+    targetSlotId: row.slotId,
+    targetTitle: row.sourceTitle || applicationMap.get(row.slotId)?.label || row.inventoryType,
+    maintainPage: 'lingxingInventory'
+  }));
   const inventoryQty = rows.reduce((sum, row) => sum + row.inventoryQty, 0);
   const completeRows = rows.filter((row) => row.mappingStatus === '完整');
   const completeInventoryQty = completeRows.reduce((sum, row) => sum + row.inventoryQty, 0);
@@ -1707,7 +1723,7 @@ function buildCrossBorderInventoryModel() {
     rows,
     missingTasks,
     conflicts,
-    sourceAnomalies,
+    sourceAnomalies: detailedSourceAnomalies,
     sourceApplications,
     qualitySummary: {
       rowCount: rows.length,
@@ -1718,7 +1734,7 @@ function buildCrossBorderInventoryModel() {
       issueInventoryQty: inventoryQty - completeInventoryQty,
       missingTaskCount: missingTasks.length,
       conflictCount: conflicts.length,
-      sourceAnomalyCount: sourceAnomalies.length,
+      sourceAnomalyCount: detailedSourceAnomalies.length,
       filteredFbaRows
     }
   };
@@ -2968,6 +2984,7 @@ app.post('/api/first-mile-board/export', requireAuth, requirePage('firstMileBoar
 app.get('/api/dimension-missing/cross-border', requireAuth, requirePage('dimensionMissing'), (req, res) => {
   const model = buildCrossBorderInventoryModel();
   res.json({
+    matchRows: model.rows,
     missingTasks: model.missingTasks,
     conflicts: model.conflicts,
     sourceAnomalies: model.sourceAnomalies,

@@ -165,15 +165,17 @@ test('inventory summary and domestic board use complete source models and enforc
   try {
     await waitForServer(`http://127.0.0.1:${port}/gendanjindu/`, child, logs);
     const endpoint = `http://127.0.0.1:${port}/api/inventory-summary`;
-    const [adminResponse, domesticResponse, anonymousResponse, limitedResponse] = await Promise.all([
+    const [adminResponse, domesticResponse, dimensionMissingResponse, anonymousResponse, limitedResponse] = await Promise.all([
       fetch(endpoint, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/domestic-board`, { headers: { Authorization: 'Bearer admin-token' } }),
+      fetch(`http://127.0.0.1:${port}/api/dimension-missing/cross-border`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(endpoint),
       fetch(endpoint, { headers: { Authorization: 'Bearer limited-token' } })
     ]);
 
     assert.equal(adminResponse.status, 200);
     assert.equal(domesticResponse.status, 200);
+    assert.equal(dimensionMissingResponse.status, 200);
     assert.equal(anonymousResponse.status, 401);
     assert.equal(limitedResponse.status, 403);
     const summary = await adminResponse.json();
@@ -243,6 +245,20 @@ test('inventory summary and domestic board use complete source models and enforc
         }
       ]
     );
+    const dimensionMissing = await dimensionMissingResponse.json();
+    assert.equal(dimensionMissing.matchRows.length, 1);
+    assert.deepEqual({
+      sourceSku: dimensionMissing.matchRows[0].sourceSku,
+      inventoryQty: dimensionMissing.matchRows[0].inventoryQty,
+      mappingStatus: dimensionMissing.matchRows[0].mappingStatus,
+      maintenanceTargets: dimensionMissing.matchRows[0].maintenanceTargets.map((target) => target.title)
+    }, {
+      sourceSku: 'SKU-WFS',
+      inventoryQty: 5000,
+      mappingStatus: '维度缺失',
+      maintenanceTargets: ['领星SKU和物料编码对照', '领星&金蝶仓库对照']
+    });
+    assert.ok(dimensionMissing.sourceAnomalies.every((row) => row.targetTitle && row.targetSlotId && row.maintainPage));
   } finally {
     child.kill();
     if (child.exitCode === null) {

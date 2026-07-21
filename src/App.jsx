@@ -697,6 +697,7 @@ function TablePagination({ label, currentPage, totalPages, onPageChange, pageSiz
   const pageNumbers = paginationPageNumbers(currentPage, totalPages);
   return (
     <nav className="table-pagination" aria-label={label}>
+      <button type="button" className="ghost compact-button" disabled={currentPage === 1} onClick={() => onPageChange(1)}>首页</button>
       <button type="button" className="ghost compact-button" disabled={currentPage === 1} onClick={() => onPageChange(Math.max(1, currentPage - 1))}>上一页</button>
       <div className="pagination-pages">
         {pageNumbers.map((page) => (
@@ -706,6 +707,7 @@ function TablePagination({ label, currentPage, totalPages, onPageChange, pageSiz
         ))}
       </div>
       <button type="button" className="ghost compact-button" disabled={currentPage === totalPages} onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}>下一页</button>
+      <button type="button" className="ghost compact-button" disabled={currentPage === totalPages} onClick={() => onPageChange(totalPages)}>末页</button>
       <span className="section-count">第 {currentPage} / {totalPages} 页，每页 {pageSize} 条</span>
     </nav>
   );
@@ -852,6 +854,21 @@ function SelectField({ label, value, options, onChange }) {
       </select>
     </label>
   );
+}
+
+function usePaginatedRows(rows, resetKey, pageSize = 20) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  useEffect(() => setCurrentPage(1), [resetKey]);
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
+  const pageRows = useMemo(
+    () => rows.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [pageSize, rows, safePage]
+  );
+  return { currentPage: safePage, pageRows, pageSize, setCurrentPage, totalPages };
 }
 
 function MultiSelectFilter({ label, allLabel, value = [], options = [], onChange }) {
@@ -1600,7 +1617,7 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
 }
 
 function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onMaintain }) {
-  const [payload, setPayload] = useState({ missingTasks: [], conflicts: [], sourceAnomalies: [], qualitySummary: {} });
+  const [payload, setPayload] = useState({ matchRows: [], missingTasks: [], conflicts: [], sourceAnomalies: [], qualitySummary: {} });
   const [filters, setFilters] = useSessionFilters('dimensionMissing', { targetTitle: '', inventoryType: '', keyword: '' });
 
   useEffect(() => {
@@ -1610,9 +1627,14 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
   }, [token, refreshVersion]);
 
   const allTasks = [...(payload.missingTasks || []), ...(payload.conflicts || [])];
-  const targetOptions = [...new Set(allTasks.map((row) => row.targetTitle).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+  const targetOptions = [...new Set([
+    ...allTasks.map((row) => row.targetTitle),
+    ...(payload.matchRows || []).flatMap((row) => (row.maintenanceTargets || []).map((target) => target.title)),
+    ...(payload.sourceAnomalies || []).map((row) => row.targetTitle)
+  ].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const inventoryTypeOptions = [...new Set([
     ...allTasks.flatMap((row) => normalize(row.inventoryTypes).split('、')),
+    ...(payload.matchRows || []).map((row) => row.inventoryType),
     ...(payload.sourceAnomalies || []).map((row) => row.inventoryType)
   ].filter(Boolean))].sort();
   const matchTask = (row) => {
@@ -1624,17 +1646,42 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
   };
   const missingTasks = (payload.missingTasks || []).filter(matchTask);
   const conflicts = (payload.conflicts || []).filter(matchTask);
+  const matchRows = (payload.matchRows || []).filter((row) => {
+    const keyword = normalize(filters.keyword).toLowerCase();
+    const maintenanceTitles = (row.maintenanceTargets || []).map((target) => target.title);
+    const text = [maintenanceTitles.join(' '), row.problemCodes?.join(' '), row.sourceProblemCodes?.join(' '), row.inventoryType,
+      row.storeName, row.sourceSku, row.identifier, row.warehouseName, row.materialCode, row.sku, row.materialName,
+      row.kingdeeWarehouseName, row.businessUnit, row.productLine, row.productSeries, row.marketplace].join(' ').toLowerCase();
+    return (!filters.targetTitle || maintenanceTitles.includes(filters.targetTitle))
+      && (!filters.inventoryType || row.inventoryType === filters.inventoryType)
+      && (!keyword || text.includes(keyword));
+  });
   const sourceAnomalies = (payload.sourceAnomalies || []).filter((row) => {
     const keyword = normalize(filters.keyword).toLowerCase();
     const text = [row.sourceTitle, row.issueType, row.detail, row.sourceKey, row.storeName, row.marketplace, row.warehouseName].join(' ').toLowerCase();
-    return !filters.targetTitle && (!filters.inventoryType || row.inventoryType === filters.inventoryType) && (!keyword || text.includes(keyword));
+    return (!filters.targetTitle || row.targetTitle === filters.targetTitle)
+      && (!filters.inventoryType || row.inventoryType === filters.inventoryType)
+      && (!keyword || text.includes(keyword));
   });
+  const paginationResetKey = `${filters.targetTitle}|${filters.inventoryType}|${filters.keyword}|${refreshVersion}`;
+  const matchPagination = usePaginatedRows(matchRows, paginationResetKey, 20);
+  const missingPagination = usePaginatedRows(missingTasks, paginationResetKey, 20);
+  const conflictPagination = usePaginatedRows(conflicts, paginationResetKey, 20);
+  const sourcePagination = usePaginatedRows(sourceAnomalies, paginationResetKey, 20);
   const canMaintainPage = (page) => user?.role === '管理员' || user?.pageAccess?.includes(page);
 
   async function exportMissing() {
     try {
       const XLSX = await import('xlsx');
       const workbook = XLSX.utils.book_new();
+      if (matchRows.length) XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(matchRows.map((row) => ({
+        需要维护的表: (row.maintenanceTargets || []).map((target) => target.title).join('、') || '无需维护',
+        匹配状态: row.mappingStatus, 问题: [...(row.problemCodes || []), ...(row.sourceProblemCodes || [])].join('、'),
+        库存类型: row.inventoryType, 店铺: row.storeName, 源SKU或识别码: row.sourceSku || row.identifier,
+        源仓库: row.warehouseName, 物料编码: row.materialCode, 金蝶仓库: row.kingdeeWarehouseName,
+        事业部: row.businessUnit, SKU: row.sku, 物料名称: row.materialName, 销售产品线: row.productLine,
+        销售系列: row.productSeries, 库存数量: row.inventoryQty
+      }))), '全部匹配明细');
       const grouped = new Map();
       missingTasks.forEach((row) => {
         if (!grouped.has(row.targetTitle)) grouped.set(row.targetTitle, []);
@@ -1662,23 +1709,29 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
     }
   }
 
-  const maintainButton = (row, page = row.maintainPage, slotId = row.targetSlotId) => (
-    <button type="button" className="compact-button" disabled={!canMaintainPage(page)} title={canMaintainPage(page) ? `去维护${row.targetTitle || row.sourceTitle}` : '当前账号没有对应文件库权限'} onClick={() => onMaintain(page, slotId)}>
+  const maintainButton = (row, page = row.maintainPage, slotId = row.targetSlotId, key) => (
+    <button key={key} type="button" className="compact-button" disabled={!canMaintainPage(page)} title={canMaintainPage(page) ? `去维护${row.targetTitle || row.sourceTitle}` : '当前账号没有对应文件库权限'} onClick={() => onMaintain(page, slotId)}>
       去维护
     </button>
   );
+  const maintenanceTitles = (row) => (row.maintenanceTargets || []).map((target) => target.title).join('、') || '无需维护';
+  const maintenanceActions = (row) => (row.maintenanceTargets || []).length ? (
+    <div className="diagnostic-actions">
+      {row.maintenanceTargets.map((target) => maintainButton({ targetTitle: target.title }, target.page, target.slotId, target.slotId))}
+    </div>
+  ) : '-';
   const quality = payload.qualitySummary || {};
   return (
     <>
       <div className="section-heading-row dashboard-heading">
         <h2>维度表缺失</h2>
-        <span className="section-count">缺失 {payload.missingTasks?.length || 0} 项，冲突 {payload.conflicts?.length || 0} 项，源异常 {payload.sourceAnomalies?.length || 0} 项</span>
+        <span className="section-count">匹配明细 {payload.matchRows?.length || 0} 条，缺失 {payload.missingTasks?.length || 0} 项，冲突 {payload.conflicts?.length || 0} 项，源异常 {payload.sourceAnomalies?.length || 0} 项</span>
       </div>
       <SourceApplicationsNote sources={payload.sourceApplications || []} />
       <div className="toolbar filters-row">
-        <SelectField label="目标维表" value={filters.targetTitle} options={targetOptions} onChange={(value) => setFilters({ ...filters, targetTitle: value })} />
+        <SelectField label="需要维护的表" value={filters.targetTitle} options={targetOptions} onChange={(value) => setFilters({ ...filters, targetTitle: value })} />
         <SelectField label="库存类型" value={filters.inventoryType} options={inventoryTypeOptions} onChange={(value) => setFilters({ ...filters, inventoryType: value })} />
-        <input className="search-input" placeholder="搜索缺失键、问题、店铺、站点" value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} />
+        <input className="search-input" placeholder="搜索物料、SKU、仓库、问题、店铺、站点" value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} />
         <button type="button" className="ghost compact-button" onClick={() => setFilters({ targetTitle: '', inventoryType: '', keyword: '' })}>清空筛选</button>
         <button type="button" className="compact-button" onClick={exportMissing}>导出待维护 Excel</button>
       </div>
@@ -1689,20 +1742,33 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
         <MetricCard label="FBA规则过滤行" value={numberValue(quality.filteredFbaRows).toLocaleString()} />
       </section>
       <section className="panel diagnostic-section">
+        <div className="section-heading-row"><h3>全部匹配相关数据</h3><span className="section-count">筛选后 {matchRows.length} / {payload.matchRows?.length || 0} 条</span></div>
+        <DataTable className="compact-table diagnostic-table diagnostic-match-table" rows={matchPagination.pageRows}
+          columns={['需要维护的表', '匹配状态', '问题', '库存类型', '店铺', '源SKU/识别码', '源仓库', '物料编码', '金蝶仓库', '事业部', 'SKU', '物料名称', '产品线', '系列', '库存数量', '操作']}
+          render={(row) => [maintenanceTitles(row), row.mappingStatus, [...(row.problemCodes || []), ...(row.sourceProblemCodes || [])].join('、') || '-',
+            row.inventoryType, row.storeName, row.sourceSku || row.identifier, row.warehouseName, row.materialCode,
+            row.kingdeeWarehouseName, row.businessUnit, row.sku, row.materialName, row.productLine, row.productSeries,
+            row.inventoryQty, maintenanceActions(row)]} />
+        <TablePagination label="全部匹配相关数据分页" currentPage={matchPagination.currentPage} totalPages={matchPagination.totalPages} onPageChange={matchPagination.setCurrentPage} pageSize={matchPagination.pageSize} />
+      </section>
+      <section className="panel diagnostic-section">
         <div className="section-heading-row"><h3>维度缺失</h3><span className="section-count">{missingTasks.length} 项</span></div>
-        <DataTable className="compact-table diagnostic-table" rows={missingTasks} columns={['需要维护的维表', '缺失类型', '缺失键', '待填字段', '影响明细', '影响库存', '来源平台', '店铺', '站点', '更新时间', '操作']}
+        <DataTable className="compact-table diagnostic-table" rows={missingPagination.pageRows} columns={['需要维护的维表', '缺失类型', '缺失键', '待填字段', '影响明细', '影响库存', '来源平台', '店铺', '站点', '更新时间', '操作']}
           render={(row) => [row.targetTitle, row.issueCode, row.missingKey, row.requiredFields?.join('、'), row.affectedRows, row.inventoryQty, row.inventoryTypes, row.stores, row.marketplaces, row.updatedAt, maintainButton(row)]} />
+        <TablePagination label="维度缺失分页" currentPage={missingPagination.currentPage} totalPages={missingPagination.totalPages} onPageChange={missingPagination.setCurrentPage} pageSize={missingPagination.pageSize} />
       </section>
       <section className="panel diagnostic-section">
         <div className="section-heading-row"><h3>映射冲突</h3><span className="section-count">{conflicts.length} 项</span></div>
-        <DataTable className="compact-table diagnostic-table" rows={conflicts} columns={['需要维护的维表', '冲突类型', '冲突键', '候选结果', '影响明细', '影响库存', '来源平台', '操作']}
+        <DataTable className="compact-table diagnostic-table" rows={conflictPagination.pageRows} columns={['需要维护的维表', '冲突类型', '冲突键', '候选结果', '影响明细', '影响库存', '来源平台', '操作']}
           render={(row) => [row.targetTitle, row.issueCode, row.missingKey, <span className="diagnostic-candidates" title={JSON.stringify(row.candidates)}>{JSON.stringify(row.candidates)}</span>, row.affectedRows, row.inventoryQty, row.inventoryTypes, maintainButton(row)]} />
+        <TablePagination label="映射冲突分页" currentPage={conflictPagination.currentPage} totalPages={conflictPagination.totalPages} onPageChange={conflictPagination.setCurrentPage} pageSize={conflictPagination.pageSize} />
       </section>
       <section className="panel diagnostic-section">
         <div className="section-heading-row"><h3>源文件异常</h3><span className="section-count">{sourceAnomalies.length} 项</span></div>
-        <DataTable className="compact-table diagnostic-table" rows={sourceAnomalies} columns={['来源文件', '库存类型', '异常类型', '说明', '来源键', '店铺', '站点', '仓库', '库存数量', '更新时间', '操作']}
-          render={(row) => [row.sourceTitle, row.inventoryType, row.issueType, row.detail, row.sourceKey, row.storeName, row.marketplace, row.warehouseName, row.inventoryQty, row.updatedAt,
-            maintainButton({ ...row, targetTitle: row.sourceTitle }, 'lingxingInventory', row.slotId)]} />
+        <DataTable className="compact-table diagnostic-table" rows={sourcePagination.pageRows} columns={['需要维护的表', '来源文件', '库存类型', '异常类型', '说明', '来源键', '店铺', '站点', '仓库', '库存数量', '更新时间', '操作']}
+          render={(row) => [row.targetTitle, row.sourceTitle, row.inventoryType, row.issueType, row.detail, row.sourceKey, row.storeName, row.marketplace, row.warehouseName, row.inventoryQty, row.updatedAt,
+            maintainButton(row)]} />
+        <TablePagination label="源文件异常分页" currentPage={sourcePagination.currentPage} totalPages={sourcePagination.totalPages} onPageChange={sourcePagination.setCurrentPage} pageSize={sourcePagination.pageSize} />
       </section>
     </>
   );

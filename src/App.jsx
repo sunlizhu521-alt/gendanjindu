@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { purchaseTrackingBusinessUnit } from './business-unit.js';
 
 const API = import.meta.env.DEV ? 'http://localhost:4003' : '';
 const TOKEN_KEY = 'gendanjinduToken';
@@ -1084,7 +1085,7 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
       && (omit === 'month' || !filters.month || row.month === filters.month)
       && (omit === 'supplier' || !filters.supplier || displaySupplier === filters.supplier)
       && (omit === 'purchaseOrg' || !filters.purchaseOrg || row.purchaseOrg === filters.purchaseOrg)
-      && (omit === 'businessUnit' || !filters.businessUnit || row.businessUnit === filters.businessUnit)
+      && (omit === 'businessUnit' || !filters.businessUnit || purchaseTrackingBusinessUnit(row.businessUnit) === filters.businessUnit)
       && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
       && (omit === 'series' || !filters.series || row.productSeries === filters.series)
       && (omit === 'purchaseGroup' || !filters.purchaseGroup || row.purchaseGroup === filters.purchaseGroup)
@@ -1096,7 +1097,7 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
       months: unique(rowsFor('month').map((row) => row.month)),
       suppliers: unique(rowsFor('supplier').map((row) => supplierName(row))),
       purchaseOrgs: unique(rowsFor('purchaseOrg').map((row) => row.purchaseOrg)),
-      businessUnits: unique(rowsFor('businessUnit').map((row) => row.businessUnit)),
+      businessUnits: unique(rowsFor('businessUnit').map((row) => purchaseTrackingBusinessUnit(row.businessUnit))),
       productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
       series: unique(rowsFor('series').map((row) => row.productSeries)),
       purchaseGroups: unique(rowsFor('purchaseGroup').map((row) => row.purchaseGroup)),
@@ -1204,7 +1205,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     ].join(' ').toLowerCase();
     return (!keyword || text.includes(keyword))
       && (omit === 'month' || !filters.month || row.month === filters.month)
-      && (omit === 'businessUnit' || !filters.businessUnit || row.businessUnit === filters.businessUnit)
+      && (omit === 'businessUnit' || !filters.businessUnit || purchaseTrackingBusinessUnit(row.businessUnit) === filters.businessUnit)
       && (omit === 'supplier' || !filters.supplier || displaySupplier === filters.supplier)
       && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
       && (omit === 'series' || !filters.series || row.productSeries === filters.series)
@@ -1215,7 +1216,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     const rowsFor = (field) => activeRows.filter((row) => matchesDashboardFilters(row, field));
     return {
       months: unique(rowsFor('month').map((row) => row.month)),
-      businessUnits: unique(rowsFor('businessUnit').map((row) => row.businessUnit)),
+      businessUnits: unique(rowsFor('businessUnit').map((row) => purchaseTrackingBusinessUnit(row.businessUnit))),
       suppliers: unique(rowsFor('supplier').map((row) => supplierName(row))),
       productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
       series: unique(rowsFor('series').map((row) => row.productSeries)),
@@ -1360,7 +1361,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       {usesOperationBoardLayout ? (
         <section className="progress-chart-grid operation-chart-grid">
           <ProgressStackedChart title={`供应商${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => supplierName(row)} />
-          <ProgressStackedChart title={`事业部${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => row.businessUnit} />
+          <ProgressStackedChart title={`事业部${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => purchaseTrackingBusinessUnit(row.businessUnit)} />
           <ProgressStackedChart title={`系列${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => row.productSeries} />
           <ProgressStackedChart title={`SKU${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => row.sku} />
         </section>
@@ -1737,7 +1738,7 @@ function PurchaseBoard({ rows }) {
     const selectedMonths = Array.isArray(filters.months) ? filters.months : [];
     return (!keyword || text.includes(keyword))
       && (omit === 'month' || selectedMonths.length === 0 || selectedMonths.includes(row.month))
-      && (omit === 'businessUnit' || !filters.businessUnit || row.businessUnit === filters.businessUnit)
+      && (omit === 'businessUnit' || !filters.businessUnit || purchaseTrackingBusinessUnit(row.businessUnit) === filters.businessUnit)
       && (omit === 'supplier' || !filters.supplier || displaySupplier === filters.supplier)
       && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
       && (omit === 'series' || !filters.series || row.productSeries === filters.series)
@@ -1748,7 +1749,7 @@ function PurchaseBoard({ rows }) {
     const rowsFor = (field) => activeRows.filter((row) => matchesFilters(row, field));
     return {
       months: unique(rowsFor('month').map((row) => row.month)),
-      businessUnits: unique(rowsFor('businessUnit').map((row) => row.businessUnit)),
+      businessUnits: unique(rowsFor('businessUnit').map((row) => purchaseTrackingBusinessUnit(row.businessUnit))),
       suppliers: unique(rowsFor('supplier').map((row) => supplierName(row))),
       productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
       series: unique(rowsFor('series').map((row) => row.productSeries)),
@@ -1773,7 +1774,7 @@ function PurchaseBoard({ rows }) {
 
   const board = useMemo(() => {
     const monthsWithData = new Set();
-    const businessUnits = unique(filteredRows.map((row) => row.businessUnit));
+    const businessUnits = unique(filteredRows.map((row) => purchaseTrackingBusinessUnit(row.businessUnit)));
     const itemMap = new Map();
     filteredRows.forEach((row) => {
       if (row.month && (numberValue(row.currentOrderQty) > 0 || progressTotal(row) > 0)) {
@@ -1789,7 +1790,7 @@ function PurchaseBoard({ rows }) {
         supplier: displaySupplier,
         orders: new Map()
       };
-      const orderKey = `${row.month}|${row.businessUnit || '未分事业部'}`;
+      const orderKey = `${row.month}|${purchaseTrackingBusinessUnit(row.businessUnit) || '未分事业部'}`;
       const order = item.orders.get(orderKey) || { shipped: 0, finished: 0, inProduction: 0, uncovered: 0 };
       order.shipped += numberValue(row.shippedQty);
       order.finished += numberValue(row.finishedQty);
@@ -2872,7 +2873,7 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
         <FilterBar filters={filters} setFilters={setFilters} options={options} />
         <section className="progress-chart-grid">
           <ProgressStackedChart title="供应商未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => supplierName(row)} />
-          <ProgressStackedChart title="事业部未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => row.businessUnit} />
+          <ProgressStackedChart title="事业部未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => purchaseTrackingBusinessUnit(row.businessUnit)} />
           <ProgressStackedChart title="系列未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => row.productSeries} />
           <ProgressStackedChart title="SKU未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => row.sku} />
         </section>
@@ -3062,7 +3063,7 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
   const options = useMemo(() => ({
     months: unique(filterSourceRows.map((row) => row.month)),
     suppliers: unique(filterSourceRows.map((row) => supplierName(row))),
-    businessUnits: unique(filterSourceRows.map((row) => row.businessUnit)),
+    businessUnits: unique(filterSourceRows.map((row) => purchaseTrackingBusinessUnit(row.businessUnit))),
     productLines: unique(filterSourceRows.map((row) => row.productLine)),
     series: unique(filterSourceRows.map((row) => row.productSeries)),
     skus: unique(filterSourceRows.map((row) => row.sku)),
@@ -3092,7 +3093,7 @@ function DifferenceAllocationPage({ token, user, setMessage, currentAppliedAt = 
     return (!keyword || text.includes(keyword))
       && (!filters.month || row.month === filters.month)
       && (!filters.supplier || displaySupplier === filters.supplier)
-      && (!filters.businessUnit || row.businessUnit === filters.businessUnit)
+      && (!filters.businessUnit || purchaseTrackingBusinessUnit(row.businessUnit) === filters.businessUnit)
       && (!filters.productLine || row.productLine === filters.productLine)
       && (!filters.series || row.productSeries === filters.series)
       && (!filters.sku || row.sku === filters.sku)
@@ -3949,7 +3950,7 @@ function TracePage({ token }) {
     ].join(' ').toLowerCase();
     return (!keyword || text.includes(keyword))
       && (omit === 'month' || !filters.month || row.month === filters.month)
-      && (omit === 'businessUnit' || !filters.businessUnit || row.businessUnit === filters.businessUnit)
+      && (omit === 'businessUnit' || !filters.businessUnit || purchaseTrackingBusinessUnit(row.businessUnit) === filters.businessUnit)
       && (omit === 'supplier' || !filters.supplier || displaySupplier === filters.supplier)
       && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
       && (omit === 'series' || !filters.series || row.productSeries === filters.series)
@@ -3960,7 +3961,7 @@ function TracePage({ token }) {
     const rowsFor = (field) => rows.filter((row) => matchesTraceFilters(row, field));
     return {
       months: unique(rowsFor('month').map((row) => row.month)),
-      businessUnits: unique(rowsFor('businessUnit').map((row) => row.businessUnit)),
+      businessUnits: unique(rowsFor('businessUnit').map((row) => purchaseTrackingBusinessUnit(row.businessUnit))),
       suppliers: unique(rowsFor('supplier').map((row) => supplierName(row))),
       productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
       series: unique(rowsFor('series').map((row) => row.productSeries)),

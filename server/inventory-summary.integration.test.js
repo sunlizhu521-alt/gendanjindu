@@ -55,15 +55,23 @@ test('inventory summary and domestic board use complete source models and enforc
   const demandSql = `INSERT INTO order_demands
     (demand_key, month, business_unit, supplier, material_code, current_order_qty, current_inbound_qty,
      tracking_order_qty, tracking_inbound_qty, tracking_remaining_qty, active, logistics_code,
-     purchase_org, oa_flow_no, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+     purchase_org, oa_flow_no, source_batch_id, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
   [
-    ['active-june', '2026-06', '国内事业部', 'Supplier A', 'M1', 1200, 200, 1200, 200, 1000, 1, '', '', '', now],
-    ['active-july', '2026-07', '跨境事业部', 'Supplier B', 'M2', 500, 0, 500, 0, '500', 1, '', '', '', now],
-    ['active-zero-may', '2026-05', '跨境事业部', 'Supplier C', 'M3', 0, 0, 0, 0, 0, 1, '', '', '', now],
-    ['active-zero-april', '2026-04', '跨境事业部', 'Supplier D', 'M4', 0, 0, 0, 0, 0, 1, '', '', '', now],
-    ['inactive', '2026-03', '国内事业部', 'Supplier E', 'M5', 9999, 0, 9999, 0, 9999, 0, '', '', '', now]
+    ['active-june', '2026-06', '国内事业部', 'Supplier A', 'M1', 1200, 200, 1200, 200, 1000, 1, '', '', '', 'batch-june', now],
+    ['active-july', '2026-07', '跨境事业部', 'Supplier B', 'M2', 500, 0, 500, 0, '500', 1, '', '', '', '', now],
+    ['active-zero-may', '2026-05', '跨境事业部', 'Supplier C', 'M3', 0, 0, 0, 0, 0, 1, '', '', '', '', now],
+    ['active-zero-april', '2026-04', '跨境事业部', 'Supplier D', 'M4', 0, 0, 0, 0, 0, 1, '', '', '', '', now],
+    ['inactive', '2026-03', '国内事业部', 'Supplier E', 'M5', 9999, 0, 9999, 0, 9999, 0, '', '', '', '', now]
   ].forEach((params) => database.run(demandSql, params));
+
+  database.run(
+    `INSERT INTO kingdee_orders
+      (id, batch_id, demand_key, month, business_unit, supplier, material_code, quantity,
+       operator_name, close_status, raw_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ['order-june', 'batch-june', 'active-june', '2026-06', '国内事业部', 'Supplier A', 'M1', 1200, '薛文乐7月柜1', '未关闭', '{}']
+  );
 
   const dimensionSql = `INSERT INTO dimension_files
     (slot_id, title, file_name, sheet_name, sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at)
@@ -165,10 +173,11 @@ test('inventory summary and domestic board use complete source models and enforc
   try {
     await waitForServer(`http://127.0.0.1:${port}/gendanjindu/`, child, logs);
     const endpoint = `http://127.0.0.1:${port}/api/inventory-summary`;
-    const [adminResponse, domesticResponse, dimensionMissingResponse, anonymousResponse, limitedResponse] = await Promise.all([
+    const [adminResponse, domesticResponse, dimensionMissingResponse, demandsResponse, anonymousResponse, limitedResponse] = await Promise.all([
       fetch(endpoint, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/domestic-board`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/dimension-missing/cross-border`, { headers: { Authorization: 'Bearer admin-token' } }),
+      fetch(`http://127.0.0.1:${port}/api/demands`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(endpoint),
       fetch(endpoint, { headers: { Authorization: 'Bearer limited-token' } })
     ]);
@@ -176,6 +185,7 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(adminResponse.status, 200);
     assert.equal(domesticResponse.status, 200);
     assert.equal(dimensionMissingResponse.status, 200);
+    assert.equal(demandsResponse.status, 200);
     assert.equal(anonymousResponse.status, 401);
     assert.equal(limitedResponse.status, 403);
     const summary = await adminResponse.json();
@@ -259,6 +269,8 @@ test('inventory summary and domestic board use complete source models and enforc
       maintenanceTargets: ['领星SKU和物料编码对照', '领星&金蝶仓库对照']
     });
     assert.ok(dimensionMissing.sourceAnomalies.every((row) => row.targetTitle && row.targetSlotId && row.maintainPage));
+    const demandRows = (await demandsResponse.json()).rows;
+    assert.equal(demandRows.find((row) => row.materialCode === 'M1')?.operatorName, '薛文乐');
   } finally {
     child.kill();
     if (child.exitCode === null) {

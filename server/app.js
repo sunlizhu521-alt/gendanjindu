@@ -1958,7 +1958,7 @@ function demandLoadContext(demands) {
   if (batchIds.length) {
     const placeholders = batchIds.map(() => '?').join(',');
     all(
-      `SELECT batch_id, demand_key, creator, oa_flow_no, order_no, material_name, document_status, close_status, raw_json
+      `SELECT batch_id, demand_key, creator, operator_name, oa_flow_no, order_no, material_name, document_status, close_status, raw_json
        FROM kingdee_orders
        WHERE batch_id IN (${placeholders})`,
       batchIds
@@ -1990,6 +1990,7 @@ function demandRows(includeInactive = false, user = null) {
     const stock = context.inventoryMap.get(stockKey(demand.business_unit, demand.supplier, demand.material_code)) || { stock_qty: 0 };
     const orderRows = context.orderRowsByDemand.get(demandBatchKey(demand.source_batch_id, demand.demand_key)) || [];
     const orderCreator = uniqueCreators(orderRows);
+    const operatorName = uniqueOperatorNames(orderRows);
     const orderNo = uniqueOrderNos(orderRows);
     const documentStatus = uniqueDocumentStatuses(orderRows);
     const orderDates = uniqueOrderDates(orderRows);
@@ -2007,6 +2008,7 @@ function demandRows(includeInactive = false, user = null) {
       displayKey: displayDemandKey(demand),
       month: demand.month,
       businessUnit: demand.business_unit,
+      operatorName,
       supplier: demand.supplier,
       supplierShortName: demand.supplier_short_name || enriched.supplierShortName || '',
       materialCode: demand.material_code,
@@ -2103,6 +2105,14 @@ function oldOaFlowNosForDemand(demandKeyValue) {
 
 function uniqueCreators(rows) {
   return uniqueDelimitedValues(rows.map((row) => row.creator));
+}
+
+function normalizeOperatorName(value) {
+  return normalize(normalize(value).replace(/[0-9０-９]{1,2}月柜[0-9０-９]*.*$/u, ''));
+}
+
+function uniqueOperatorNames(rows) {
+  return uniqueDelimitedValues(rows.map((row) => normalizeOperatorName(row.operatorName || row.operator_name)));
 }
 
 function oldCreatorsForDemand(demandKeyValue) {

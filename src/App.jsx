@@ -1198,7 +1198,7 @@ function Login({ onLogin }) {
 function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', currentAppliedAt = '' }) {
   const usesOperationBoardLayout = filterKey === 'operationBoard';
   const activeRows = useMemo(() => rows.filter((row) => row.active && numberValue(row.remainingInboundQty) > 0), [rows]);
-  const [filters, setFilters] = useSessionFilters(filterKey, { month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
+  const [filters, setFilters] = useSessionFilters(filterKey, { month: '', businessUnit: '', operatorName: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
   const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
@@ -1210,6 +1210,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       row.month,
       row.orderNo,
       row.businessUnit,
+      row.operatorName,
       displaySupplier,
       row.supplier,
       row.productLine,
@@ -1223,6 +1224,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     return (!keyword || text.includes(keyword))
       && (omit === 'month' || !filters.month || row.month === filters.month)
       && (omit === 'businessUnit' || !filters.businessUnit || purchaseTrackingBusinessUnit(row.businessUnit) === filters.businessUnit)
+      && (omit === 'operatorName' || !filters.operatorName || row.operatorName === filters.operatorName)
       && (omit === 'supplier' || !filters.supplier || displaySupplier === filters.supplier)
       && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
       && (omit === 'series' || !filters.series || row.productSeries === filters.series)
@@ -1234,6 +1236,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     return {
       months: unique(rowsFor('month').map((row) => row.month)),
       businessUnits: unique(rowsFor('businessUnit').map((row) => purchaseTrackingBusinessUnit(row.businessUnit))),
+      operators: unique(rowsFor('operatorName').map((row) => row.operatorName)),
       suppliers: unique(rowsFor('supplier').map((row) => supplierName(row))),
       productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
       series: unique(rowsFor('series').map((row) => row.productSeries)),
@@ -1245,6 +1248,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     const next = clearInvalidFilterValues(filters, {
       month: options.months,
       businessUnit: options.businessUnits,
+      operatorName: options.operators,
       supplier: options.suppliers,
       productLine: options.productLines,
       series: options.series,
@@ -1259,7 +1263,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     () => filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize),
     [filteredRows, currentPage]
   );
-  const clearFilters = () => setFilters({ month: '', businessUnit: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
+  const clearFilters = () => setFilters({ month: '', businessUnit: '', operatorName: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
   const remainingLabel = usesOperationBoardLayout ? '备货剩余数量' : '未交付数量';
   const remainingShortLabel = usesOperationBoardLayout ? '备货剩余' : '未交付';
   const summary = filteredRows.reduce((acc, row) => {
@@ -1295,7 +1299,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     const XLSX = await import('xlsx');
     const isOperationBoard = usesOperationBoardLayout;
     const headers = isOperationBoard
-      ? ['下单月份', '采购订单号', '事业部', '供应商简称', '采购下单人', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']
+      ? ['下单月份', '采购订单号', '事业部', '运营', '供应商简称', '采购下单人', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']
       : ['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号'];
     const aoa = [
       headers,
@@ -1305,6 +1309,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
               row.month,
               row.orderNo,
               row.businessUnit,
+              row.operatorName,
               supplierName(row),
               row.purchaseOwner,
               row.productLine,
@@ -1355,6 +1360,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       <div className="toolbar filters-row">
         <MonthCalendarFilter label="下单月份" value={filters.month} options={options.months} multiple={false} onChange={(value) => setFilters({ ...filters, month: value })} />
         <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
+        {usesOperationBoardLayout && <SelectField label="运营" value={filters.operatorName} options={options.operators} onChange={(value) => setFilters({ ...filters, operatorName: value })} />}
         <SelectField label="供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
         <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
         <SelectField label="系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
@@ -1362,7 +1368,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
         <SelectField label="采购下单人" value={filters.purchaseOwner} options={options.purchaseOwners} onChange={(value) => setFilters({ ...filters, purchaseOwner: value })} />
         <input
           className="search-input"
-          placeholder="搜索供应商、采购订单号、物料编码、OA备货流程号、SKU、物料名称、采购下单人"
+          placeholder="搜索运营、供应商、采购订单号、物料编码、OA备货流程号、SKU、物料名称、采购下单人"
           value={filters.keyword}
           onChange={(event) => setFilters({ ...filters, keyword: event.target.value })}
         />
@@ -1395,7 +1401,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
           className="compact-table"
           rows={pageRows}
           columns={usesOperationBoardLayout
-            ? ['下单月份', '采购订单号', '事业部', '供应商简称', '采购下单人', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']
+            ? ['下单月份', '采购订单号', '事业部', '运营', '供应商简称', '采购下单人', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']
             : ['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']}
           render={(row) => (
             usesOperationBoardLayout
@@ -1403,6 +1409,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
                   row.month,
                   row.orderNo,
                   row.businessUnit,
+                  row.operatorName,
                   supplierName(row),
                   row.purchaseOwner,
                   <TightCell value={row.productLine} />,

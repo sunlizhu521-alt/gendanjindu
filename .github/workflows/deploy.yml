@@ -53,11 +53,30 @@ jobs:
             trap restart_on_error EXIT
 
             mkdir -p "$BACKUP_ROOT" "$APP_DIR/server"
-            FAILED_BACKUP="$BACKUP_ROOT/gendanjindu-20260721-161951.sqlite"
-            if [ -f "$FAILED_BACKUP" ] && [ ! -f "$BACKUP_ROOT/backup-audit-20260721-161951.json" ]; then
-              echo "Removing incomplete backup from failed deployment: $FAILED_BACKUP"
-              rm -f "$FAILED_BACKUP"
-            fi
+            rm -f \
+              "$BACKUP_ROOT/gendanjindu-20260721-161951.sqlite" \
+              "$BACKUP_ROOT/data-20260721-162456.tar.gz"
+            find "$BACKUP_ROOT" -maxdepth 1 -type f -name '*.tmp' -print -delete
+
+            mapfile -t OLD_DB_BACKUPS < <(
+              find "$BACKUP_ROOT" -maxdepth 1 -type f \
+                \( -name 'gendanjindu-*.sqlite' -o -name 'gendanjindu-*.sqlite.gz' \) \
+                -printf '%T@ %p\n' | sort -nr | tail -n +2 | cut -d' ' -f2-
+            )
+            for backup in "${OLD_DB_BACKUPS[@]}"; do
+              echo "Pruning old database backup: $backup"
+              rm -f -- "$backup"
+            done
+
+            mapfile -t OLD_DATA_BACKUPS < <(
+              find "$BACKUP_ROOT" -maxdepth 1 -type f -name 'data-*.tar.gz' \
+                -printf '%T@ %p\n' | sort -nr | tail -n +2 | cut -d' ' -f2-
+            )
+            for backup in "${OLD_DATA_BACKUPS[@]}"; do
+              echo "Pruning old full-data backup: $backup"
+              rm -f -- "$backup"
+            done
+            df -h "$APP_DIR"
             tar -xzf "$DEPLOY_ARCHIVE" -C "$APP_DIR" ./server/data-audit.js
             if [ ! -s "$DB_FILE" ]; then
               echo "Database safety gate failed: $DB_FILE is missing or empty."
@@ -81,9 +100,10 @@ jobs:
               exit 1
             fi
             cp "$BASELINE_FILE" "$BACKUP_AUDIT"
-            tar -czf "$BACKUP_TAR" data
-            test -s "$BACKUP_TAR"
-            tar -tzf "$BACKUP_TAR" >/dev/null
+            tar -czf "$BACKUP_TAR.tmp" data
+            test -s "$BACKUP_TAR.tmp"
+            tar -tzf "$BACKUP_TAR.tmp" >/dev/null
+            mv "$BACKUP_TAR.tmp" "$BACKUP_TAR"
             echo "Database backup verified: $BACKUP_DB"
             echo "Full data backup verified: $BACKUP_TAR"
             echo "Rollback database: gzip -dc $BACKUP_DB > $DB_FILE"

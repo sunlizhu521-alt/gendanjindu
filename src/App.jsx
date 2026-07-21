@@ -661,6 +661,48 @@ function InventoryRankingChart({ title, rows, groupBy, valueKey = 'availableQty'
   );
 }
 
+const FIRST_MILE_BAR_COLORS = ['#1683ff', '#2ccf66', '#ff9f0a', '#a855f7', '#ff315f', '#38bdf8', '#5454d4', '#22c55e'];
+
+function FirstMileDimensionChart({ title, rows, groupBy }) {
+  const total = rows.reduce((sum, row) => sum + numberValue(row.quantity), 0);
+  const grouped = new Map();
+  rows.forEach((row) => {
+    const name = normalize(groupBy(row)) || '未匹配';
+    grouped.set(name, numberValue(grouped.get(name)) + numberValue(row.quantity));
+  });
+  const chartRows = [...grouped.entries()]
+    .map(([name, value]) => ({ name, value }))
+    .filter((row) => row.value > 0)
+    .sort((left, right) => right.value - left.value)
+    .slice(0, 8);
+  const maxValue = Math.max(...chartRows.map((row) => row.value), 1);
+
+  return (
+    <article className="panel first-mile-dimension-chart">
+      <div className="first-mile-chart-title">
+        <h3>{title}</h3>
+        <span>合计 {formatQuantity(total)} 件</span>
+      </div>
+      <div className="first-mile-bar-list">
+        {chartRows.length === 0 ? (
+          <p className="empty-chart">暂无数据</p>
+        ) : chartRows.map((row, index) => {
+          const percentage = total > 0 ? row.value / total * 100 : 0;
+          return (
+            <div className="first-mile-bar-row" key={row.name}>
+              <span title={row.name}>{row.name}</span>
+              <div className="first-mile-bar-track" title={`${row.name}：${formatQuantity(row.value)} 件，占 ${percentage.toFixed(2)}%`}>
+                <i style={{ width: `${Math.max(row.value / maxValue * 100, 2)}%`, background: FIRST_MILE_BAR_COLORS[index % FIRST_MILE_BAR_COLORS.length] }} />
+              </div>
+              <strong>{formatQuantity(row.value)} / {percentage.toFixed(2)}%</strong>
+            </div>
+          );
+        })}
+      </div>
+    </article>
+  );
+}
+
 function DataTable({ columns, rows, render, renderRow, className = '' }) {
   return (
     <div className={`table-wrap ${className}`}>
@@ -3600,6 +3642,14 @@ function FirstMileBoard({ token, setMessage, refreshVersion = 0 }) {
         <MetricCard label="已上架数量" value={listedQuantity.toLocaleString()} />
         <MetricCard label="货物数量合计" value={totalQuantity.toLocaleString()} />
       </section>
+      {!loading && rows.length > 0 && (
+        <section className="first-mile-dimension-chart-grid">
+          <FirstMileDimensionChart title="事业部货物数量" rows={filteredRows} groupBy={(row) => row.businessUnit} />
+          <FirstMileDimensionChart title="销售产品线货物数量" rows={filteredRows} groupBy={(row) => row.productLine} />
+          <FirstMileDimensionChart title="销售系列货物数量" rows={filteredRows} groupBy={(row) => row.productSeries} />
+          <FirstMileDimensionChart title="型号货物数量" rows={filteredRows} groupBy={(row) => row.model} />
+        </section>
+      )}
       {loading ? (
         <p className="section-count">正在加载头程数据...</p>
       ) : rows.length === 0 ? (

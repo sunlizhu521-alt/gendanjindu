@@ -928,6 +928,7 @@ function firstMileBoardModel() {
     const sku = rowAliasValue(product, ['sku', 'SKU', '系统SKU']) || normalize(row.sourceSku) || '未映射';
     const productLine = rowAliasValue(product, ['productLine', '销售产品线', '产品线']) || '未映射';
     const productSeries = rowAliasValue(product, ['productSeries', '销售系列', '系列']) || '未映射';
+    const model = rowAliasValue(product, ['model', '型号']) || '未映射';
     const materialName = normalize(row.materialName)
       || rowAliasValue(product, ['materialName', '物料名称', '金蝶名称', '中文名称'])
       || '未映射';
@@ -938,6 +939,7 @@ function firstMileBoardModel() {
       materialName,
       productLine,
       productSeries,
+      model,
       sourceFileText: (row.sourceFiles || [row.sourceFile]).join(' + '),
       sourceSheetText: (row.sourceSheets || [row.sourceSheet]).join(' + '),
       mappingStatus: productLine === '未映射' || productSeries === '未映射' ? '商品未映射' : '完整'

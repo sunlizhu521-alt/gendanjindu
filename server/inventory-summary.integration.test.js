@@ -128,7 +128,8 @@ test('inventory summary and domestic board use complete source models and enforc
       sku: 'SKU-1',
       materialName: 'Material One',
       productLine: 'Line A',
-      productSeries: 'Series A'
+      productSeries: 'Series A',
+      model: 'Model One'
     },
     {
       materialCode: '',
@@ -173,11 +174,12 @@ test('inventory summary and domestic board use complete source models and enforc
   try {
     await waitForServer(`http://127.0.0.1:${port}/gendanjindu/`, child, logs);
     const endpoint = `http://127.0.0.1:${port}/api/inventory-summary`;
-    const [adminResponse, domesticResponse, dimensionMissingResponse, demandsResponse, anonymousResponse, limitedResponse] = await Promise.all([
+    const [adminResponse, domesticResponse, dimensionMissingResponse, demandsResponse, firstMileResponse, anonymousResponse, limitedResponse] = await Promise.all([
       fetch(endpoint, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/domestic-board`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/dimension-missing/cross-border`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/demands`, { headers: { Authorization: 'Bearer admin-token' } }),
+      fetch(`http://127.0.0.1:${port}/api/first-mile-board`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(endpoint),
       fetch(endpoint, { headers: { Authorization: 'Bearer limited-token' } })
     ]);
@@ -186,6 +188,7 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(domesticResponse.status, 200);
     assert.equal(dimensionMissingResponse.status, 200);
     assert.equal(demandsResponse.status, 200);
+    assert.equal(firstMileResponse.status, 200);
     assert.equal(anonymousResponse.status, 401);
     assert.equal(limitedResponse.status, 403);
     const summary = await adminResponse.json();
@@ -243,7 +246,7 @@ test('inventory summary and domestic board use complete source models and enforc
       [
         {
           merchantCode: 'M1', brand: 'Domestic Brand', productType: 'Domestic Type', systemSku: 'SKU-1',
-          wdtStockQty: 3000, salesProductLine: 'Line A', salesSeries: 'Series A', model: ''
+          wdtStockQty: 3000, salesProductLine: 'Line A', salesSeries: 'Series A', model: 'Model One'
         },
         {
           merchantCode: 'M2', brand: 'Category Brand', productType: 'Category Type', systemSku: 'SKU-2',
@@ -271,6 +274,8 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.ok(dimensionMissing.sourceAnomalies.every((row) => row.targetTitle && row.targetSlotId && row.maintainPage));
     const demandRows = (await demandsResponse.json()).rows;
     assert.equal(demandRows.find((row) => row.materialCode === 'M1')?.operatorName, '薛文乐');
+    const firstMileRows = (await firstMileResponse.json()).rows;
+    assert.equal(firstMileRows.find((row) => row.materialCode === 'M1')?.model, 'Model One');
   } finally {
     child.kill();
     if (child.exitCode === null) {

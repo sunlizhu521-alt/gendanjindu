@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import bcrypt from 'bcryptjs';
+import initSqlJs from 'sql.js';
 import xlsx from 'xlsx';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -39,12 +41,26 @@ async function waitForServer(url, child, logs) {
 test('inventory summary and domestic board use complete source models and enforce page access', async () => {
   const dataDir = mkdtempSync(path.join(os.tmpdir(), 'gendanjindu-inventory-summary-'));
   process.env.DATA_DIR = dataDir;
+  const SQL = await initSqlJs();
+  const legacyDatabase = new SQL.Database();
+  legacyDatabase.run(`CREATE TABLE sessions (
+    token TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`);
+  writeFileSync(path.join(dataDir, 'gendanjindu.sqlite'), Buffer.from(legacyDatabase.export()));
+  legacyDatabase.close();
+
   const database = await import(`./database.js?inventory-summary-test=${Date.now()}`);
   await database.initDatabase();
+  assert.ok(database.all('PRAGMA table_info(sessions)').some((row) => row.name === 'expires_at'));
+
+  const adminPassword = 'fixture-password';
+  const adminPasswordHash = await bcrypt.hash(adminPassword, 4);
 
   database.run(
     'INSERT INTO users (id, name, password_hash, role, page_access, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    ['admin-id', 'Test Admin', 'unused', '管理员', '[]', now, now]
+    ['admin-id', 'Test Admin', adminPasswordHash, '管理员', '[]', now, now]
   );
   database.run(
     'INSERT INTO users (id, name, password_hash, role, page_access, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -52,6 +68,7 @@ test('inventory summary and domestic board use complete source models and enforc
   );
   database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['admin-token', 'admin-id', now]);
   database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['limited-token', 'limited-id', now]);
+  database.run('INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)', ['expired-token', 'admin-id', now, '2020-01-01 00:00:00']);
 
   const demandSql = `INSERT INTO order_demands
     (demand_key, month, business_unit, supplier, material_code, current_order_qty, current_inbound_qty,
@@ -179,14 +196,15 @@ test('inventory summary and domestic board use complete source models and enforc
   try {
     await waitForServer(`http://127.0.0.1:${port}/gendanjindu/`, child, logs);
     const endpoint = `http://127.0.0.1:${port}/api/inventory-summary`;
-    const [adminResponse, domesticResponse, dimensionMissingResponse, demandsResponse, firstMileResponse, anonymousResponse, limitedResponse] = await Promise.all([
+    const [adminResponse, domesticResponse, dimensionMissingResponse, demandsResponse, firstMileResponse, anonymousResponse, limitedResponse, expiredResponse] = await Promise.all([
       fetch(endpoint, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/domestic-board`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/dimension-missing/cross-border`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/demands`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/first-mile-board`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(endpoint),
-      fetch(endpoint, { headers: { Authorization: 'Bearer limited-token' } })
+      fetch(endpoint, { headers: { Authorization: 'Bearer limited-token' } }),
+      fetch(`http://127.0.0.1:${port}/api/bootstrap`, { headers: { Authorization: 'Bearer expired-token' } })
     ]);
 
     assert.equal(adminResponse.status, 200);
@@ -196,6 +214,25 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(firstMileResponse.status, 200);
     assert.equal(anonymousResponse.status, 401);
     assert.equal(limitedResponse.status, 403);
+    assert.equal(expiredResponse.status, 401);
+    assert.equal((await expiredResponse.json()).error, '登录已过期，请重新登录');
+
+    const usersResponse = await fetch(`http://127.0.0.1:${port}/api/users`, {
+      headers: { Authorization: 'Bearer admin-token' }
+    });
+    assert.equal(usersResponse.status, 200);
+    const userRows = (await usersResponse.json()).rows;
+    assert.ok(userRows.length > 0);
+    assert.ok(userRows.every((row) => !Object.hasOwn(row, 'password_hash')));
+
+    const duplicateUserResponse = await fetch(`http://127.0.0.1:${port}/api/users`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Test Admin', password: 'duplicate-user-password' })
+    });
+    assert.equal(duplicateUserResponse.status, 500);
+    assert.deepEqual(await duplicateUserResponse.json(), { error: '服务器处理失败，请稍后重试' });
+
     const summary = await adminResponse.json();
     assert.deepEqual({
       在制量: summary.在制量,
@@ -281,6 +318,51 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(demandRows.find((row) => row.materialCode === 'M1')?.operatorName, '薛文乐');
     const firstMileRows = (await firstMileResponse.json()).rows;
     assert.equal(firstMileRows.find((row) => row.materialCode === 'M1')?.model, 'Model One');
+
+    const loginResponse = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Test Admin', password: adminPassword })
+    });
+    assert.equal(loginResponse.status, 200);
+    const loginPayload = await loginResponse.json();
+    const loggedInBootstrap = await fetch(`http://127.0.0.1:${port}/api/bootstrap`, {
+      headers: { Authorization: `Bearer ${loginPayload.token}` }
+    });
+    assert.equal(loggedInBootstrap.status, 200);
+
+    const persistedDatabase = new SQL.Database(readFileSync(path.join(dataDir, 'gendanjindu.sqlite')));
+    const sessionStatement = persistedDatabase.prepare('SELECT created_at, expires_at FROM sessions WHERE token = ?');
+    sessionStatement.bind([loginPayload.token]);
+    assert.equal(sessionStatement.step(), true);
+    const persistedSession = sessionStatement.getAsObject();
+    sessionStatement.free();
+    const expiredStatement = persistedDatabase.prepare('SELECT COUNT(*) AS count FROM sessions WHERE token = ?');
+    expiredStatement.bind(['expired-token']);
+    expiredStatement.step();
+    assert.equal(expiredStatement.getAsObject().count, 0);
+    expiredStatement.free();
+    persistedDatabase.close();
+    const sessionDurationMs = new Date(String(persistedSession.expires_at).replace(' ', 'T')).getTime()
+      - new Date(String(persistedSession.created_at).replace(' ', 'T')).getTime();
+    assert.ok(sessionDurationMs >= 24 * 60 * 60 * 1000 - 1000);
+    assert.ok(sessionDurationMs <= 24 * 60 * 60 * 1000 + 1000);
+
+    for (let attempt = 0; attempt < 9; attempt += 1) {
+      const failedLogin = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Test Admin', password: `wrong-password-${attempt}` })
+      });
+      assert.equal(failedLogin.status, 401);
+    }
+    const rateLimitedLogin = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Test Admin', password: 'wrong-password-rate-limited' })
+    });
+    assert.equal(rateLimitedLogin.status, 429);
+    assert.deepEqual(await rateLimitedLogin.json(), { error: '登录尝试过多，请15分钟后再试' });
 
     const legacyApplyResponse = await fetch(`http://127.0.0.1:${port}/api/imports/kingdee/apply`, {
       method: 'POST',

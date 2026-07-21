@@ -94,6 +94,13 @@ const TRACKING_CLOSE_STATUS = '未关闭';
 const app = express();
 const UPLOAD_LIMIT_BYTES = 100 * 1024 * 1024;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: UPLOAD_LIMIT_BYTES } });
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: '登录尝试过多，请15分钟后再试' }
+});
 
 app.use(cors({ origin: 'https://zhugeaishiyanshi.com' }));
 app.use(helmet({
@@ -243,6 +250,11 @@ async function requireAuth(req, res, next) {
   const token = normalize(req.headers.authorization).replace(/^Bearer\s+/i, '');
   if (!token) return res.status(401).json({ error: '未登录' });
   const session = get('SELECT * FROM sessions WHERE token = ?', [token]);
+  if (session?.expires_at && session.expires_at < nowText()) {
+    run('DELETE FROM sessions WHERE token = ?', [token]);
+    saveDatabase();
+    return res.status(401).json({ error: '登录已过期，请重新登录' });
+  }
   if (!session) return res.status(401).json({ error: '登录已失效' });
   const user = get('SELECT * FROM users WHERE id = ?', [session.user_id]);
   if (!user) return res.status(401).json({ error: '用户不存在' });
@@ -2929,7 +2941,7 @@ function applyKingdeeSnapshot({
   return batchId;
 }
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
   const name = normalize(req.body?.name);
   const password = normalize(req.body?.password);
   const user = get('SELECT * FROM users WHERE name = ?', [name]);
@@ -2938,7 +2950,11 @@ app.post('/api/auth/login', async (req, res) => {
   }
   req.auditUser = user;
   const token = randomUUID();
-  run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', [token, user.id, nowText()]);
+  const now = nowText();
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const p = (n) => String(n).padStart(2, '0');
+  const expiresText = `${expiresAt.getFullYear()}-${p(expiresAt.getMonth() + 1)}-${p(expiresAt.getDate())} ${p(expiresAt.getHours())}:${p(expiresAt.getMinutes())}:${p(expiresAt.getSeconds())}`;
+  run('INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)', [token, user.id, now, expiresText]);
   saveDatabase();
   res.json({ token, user: userPayload(user), pages: PAGE_LABELS });
 });
@@ -4064,7 +4080,7 @@ app.use((err, req, res, next) => {
   const status = isMulterError ? 400 : Number(err.status || err.statusCode || 500);
   const error = isMulterError && err.code === 'LIMIT_FILE_SIZE'
     ? '文件过大，请压缩到100MB以内再上传'
-    : (err.message || '服务器处理失败');
+    : '服务器处理失败，请稍后重试';
   console.error(`[${nowText()}] API error ${req.method} ${req.path}:`, err);
   return res.status(status).json({ error });
 });
@@ -4076,6 +4092,16 @@ app.get(/^\/gendanjindu\/(?!api).*/, (req, res) => res.sendFile(path.join(distDi
 app.get(/^\/(?!api).*/, (req, res) => res.sendFile(path.join(distDir, 'index.html')));
 
 await initDatabase();
+// 每30分钟清理过期session
+const sessionCleanupTimer = setInterval(() => {
+  try {
+    run('DELETE FROM sessions WHERE expires_at != ? AND expires_at < ?', ['', nowText()]);
+    const deleted = numberValue(get('SELECT changes() AS count')?.count);
+    if (deleted > 0) saveDatabase();
+  } catch {}
+}, 30 * 60 * 1000);
+sessionCleanupTimer.unref?.();
+
 await ensureAdmin();
 try {
   const latestSession = get('SELECT * FROM difference_compare_sessions ORDER BY created_at DESC, rowid DESC LIMIT 1');

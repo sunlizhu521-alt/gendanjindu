@@ -87,7 +87,8 @@ function migrate() {
     CREATE TABLE IF NOT EXISTS sessions (
       token TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL DEFAULT ''
     );
     CREATE TABLE IF NOT EXISTS operation_logs (
       id TEXT PRIMARY KEY,
@@ -508,6 +509,11 @@ function migrate() {
   const noteColumns = all('PRAGMA table_info(demand_change_notes)').map((row) => row.name);
   if (!noteColumns.includes('oa_flow_no')) {
     run("ALTER TABLE demand_change_notes ADD COLUMN oa_flow_no TEXT NOT NULL DEFAULT ''");
+  }
+
+  const sessionColumns = all('PRAGMA table_info(sessions)').map((row) => row.name);
+  if (!sessionColumns.includes('expires_at')) {
+    run("ALTER TABLE sessions ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''");
   }
 
   migrateDemandKeysToCurrentShape();

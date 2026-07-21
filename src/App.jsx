@@ -1195,6 +1195,27 @@ function Login({ onLogin }) {
   );
 }
 
+function watermarkTime(value = new Date()) {
+  const pad = (number) => String(number).padStart(2, '0');
+  return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())} ${pad(value.getHours())}:${pad(value.getMinutes())}`;
+}
+
+function SecurityWatermark({ userName }) {
+  const [time, setTime] = useState(watermarkTime);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setTime(watermarkTime()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const text = `采购跟单&头程数据 · ${normalize(userName) || '已登录用户'} · ${time}`;
+  return (
+    <div className="security-watermark" aria-hidden="true">
+      {Array.from({ length: 120 }, (_, index) => <span key={index}>{text}</span>)}
+    </div>
+  );
+}
+
 function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', currentAppliedAt = '' }) {
   const usesOperationBoardLayout = filterKey === 'operationBoard';
   const activeRows = useMemo(() => rows.filter((row) => row.active && numberValue(row.remainingInboundQty) > 0), [rows]);
@@ -4408,6 +4429,7 @@ function App() {
 
   return (
     <main className="app-shell" onClick={() => setMessage('')}>
+      <SecurityWatermark userName={user.name} />
       <aside className="sidebar" onClick={(event) => event.stopPropagation()}>
         <h1>采购跟单&头程数据</h1>
         <span className="app-version-time">服务器共享数据</span>

@@ -755,6 +755,40 @@ function diffAgainstCurrent(summary) {
   return diffs;
 }
 
+function computeSessionDiffs(sourceRows, summary) {
+  const oldMap = new Map(sourceRows.map((row) => [row.demandKey, row.currentOrderQty]));
+  const newMap = new Map(summary.map((row) => [row.demandKey, row.currentOrderQty]));
+  const diffs = [];
+  summary.forEach((row) => {
+    if (!oldMap.has(row.demandKey)) {
+      diffs.push({ demandKey: row.demandKey, diffType: '新增', oldQty: 0, newQty: row.currentOrderQty });
+    } else {
+      const oldQty = numberValue(oldMap.get(row.demandKey));
+      if (oldQty !== row.currentOrderQty) {
+        diffs.push({ demandKey: row.demandKey, diffType: row.currentOrderQty > oldQty ? '数量增加' : '数量减少', oldQty, newQty: row.currentOrderQty });
+      }
+    }
+  });
+  sourceRows.forEach((row) => {
+    if (!newMap.has(row.demandKey)) {
+      diffs.push({ demandKey: row.demandKey, diffType: '消失', oldQty: row.currentOrderQty, newQty: 0 });
+    }
+  });
+  return diffs;
+}
+
+function sessionBaselineRows(sessionId, summary) {
+  const oldTotals = new Map(summary.map((row) => [row.demandKey, numberValue(row.currentOrderQty)]));
+  all(
+    'SELECT demand_key, old_qty, new_qty FROM difference_compare_rows WHERE session_id = ?',
+    [sessionId]
+  ).forEach((row) => {
+    const oldTotal = numberValue(oldTotals.get(row.demand_key));
+    oldTotals.set(row.demand_key, oldTotal + numberValue(row.old_qty) - numberValue(row.new_qty));
+  });
+  return [...oldTotals].map(([demandKey, currentOrderQty]) => ({ demandKey, currentOrderQty }));
+}
+
 function savedMapping(kind) {
   const row = get('SELECT * FROM import_mappings WHERE kind = ?', [kind]);
   return parseJson(row?.mapping_json, {});
@@ -3267,10 +3301,15 @@ app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'
   if (!canEditDemand(req.user, { ...demand, order_creator: orderCreator, purchase_owner: enriched.purchaseOwner })) {
     return res.status(403).json({ error: '没有该供应商物料的刷新权限' });
   }
+  const clientShipped = numberValue(req.body.shippedQty);
+  const dbShipped = numberValue(demand.tracking_inbound_qty);
+  if (Math.abs(clientShipped - dbShipped) > 0.000001) {
+    return res.status(409).json({ error: '采购订单已更新，请刷新页面后重新提交' });
+  }
   const values = {
     inProduction: numberValue(req.body.inProductionQty),
     finished: numberValue(req.body.finishedQty),
-    shipped: numberValue(demand.tracking_inbound_qty),
+    shipped: clientShipped,
     remark: normalize(req.body.remark)
   };
   const remainingInboundQty = Math.max(numberValue(demand.tracking_remaining_qty), 0);
@@ -3479,7 +3518,8 @@ app.post('/api/difference-allocations/:sessionId/apply', requireAuth, requirePag
   const summary = parseJson(session.summary_json, []);
   const sourceRows = parseJson(session.source_rows_json, []);
   const mapping = parseJson(session.mapping_json, {});
-  const diffs = diffAgainstCurrent(summary);
+  const baselineRows = sessionBaselineRows(req.params.sessionId, summary);
+  const diffs = computeSessionDiffs(baselineRows, summary);
   const now = nowText();
   let batchId = '';
   transaction(() => {

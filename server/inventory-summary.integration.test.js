@@ -180,6 +180,61 @@ test('inventory summary and domestic board use complete source models and enforc
     'INSERT INTO import_mappings (kind, mapping_json, updated_by, updated_at) VALUES (?, ?, ?, ?)',
     ['kingdee', JSON.stringify({ createDate: '自定义日期', supplier: '自定义供应商', materialCode: '自定义物料', quantity: '自定义数量' }), 'Test Admin', now]
   );
+  const sessionSummary = [{
+    demandKey: 'active-june',
+    month: '2026-06',
+    businessUnit: '国内事业部',
+    supplier: 'Supplier A',
+    materialCode: 'M1',
+    purchaseOrg: '',
+    oaFlowNo: '',
+    materialName: 'Material One',
+    currentOrderQty: 1300,
+    currentInboundQty: 200,
+    trackingOrderQty: 1300,
+    trackingInboundQty: 200,
+    trackingRemainingQty: 1100
+  }];
+  const sessionSourceRows = [{
+    demandKey: 'active-june',
+    month: '2026-06',
+    businessUnit: '国内事业部',
+    supplier: 'Supplier A',
+    materialCode: 'M1',
+    purchaseOrg: '',
+    creator: '',
+    oaFlowNo: '',
+    orderNo: 'PO-SESSION',
+    quantity: 1300,
+    inboundQty: 200,
+    remainingInboundQty: 1100,
+    purchaseDate: '2026-06-01',
+    materialName: 'Material One',
+    closeStatus: '未关闭',
+    raw: {}
+  }];
+  database.run(
+    `INSERT INTO difference_compare_sessions
+      (id, file_name, mapping_json, summary_json, source_rows_json, total_rows, valid_rows, skipped_rows, status, created_by, created_at)
+     VALUES (?, ?, ?, ?, ?, 1, 1, 0, 'pending', ?, ?)`,
+    [
+      'session-consistency',
+      'session-consistency.xlsx',
+      JSON.stringify({ createDate: '自定义日期', supplier: '自定义供应商', materialCode: '自定义物料', quantity: '自定义数量' }),
+      JSON.stringify(sessionSummary),
+      JSON.stringify(sessionSourceRows),
+      'Test Admin',
+      now
+    ]
+  );
+  database.run(
+    `INSERT INTO difference_compare_rows
+      (id, session_id, demand_key, month, business_unit, supplier, material_code, old_qty, new_qty,
+       delta_qty, diff_type, handling_type, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'auto_new', ?)`,
+    ['session-row', 'session-consistency', 'active-june', '2026-06', '国内事业部', 'Supplier A', 'M1', 1200, 1300, 100, '数量增加', now]
+  );
+  database.run('UPDATE order_demands SET current_order_qty = 9999 WHERE demand_key = ?', ['active-june']);
   database.saveDatabase();
 
   const port = await getAvailablePort();
@@ -315,9 +370,42 @@ test('inventory summary and domestic board use complete source models and enforc
     });
     assert.ok(dimensionMissing.sourceAnomalies.every((row) => row.targetTitle && row.targetSlotId && row.maintainPage));
     const demandRows = (await demandsResponse.json()).rows;
-    assert.equal(demandRows.find((row) => row.materialCode === 'M1')?.operatorName, '薛文乐');
+    const m1Demand = demandRows.find((row) => row.materialCode === 'M1');
+    assert.equal(m1Demand?.operatorName, '薛文乐');
     const firstMileRows = (await firstMileResponse.json()).rows;
     assert.equal(firstMileRows.find((row) => row.materialCode === 'M1')?.model, 'Model One');
+
+    const progressEndpoint = `http://127.0.0.1:${port}/api/progress/${encodeURIComponent(m1Demand.demandKey)}`;
+    const staleProgressResponse = await fetch(progressEndpoint, {
+      method: 'PATCH',
+      headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inProductionQty: 600, finishedQty: 400, shippedQty: 199, remark: 'stale' })
+    });
+    assert.equal(staleProgressResponse.status, 409);
+    assert.deepEqual(await staleProgressResponse.json(), { error: '采购订单已更新，请刷新页面后重新提交' });
+
+    const currentProgressResponse = await fetch(progressEndpoint, {
+      method: 'PATCH',
+      headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inProductionQty: 600, finishedQty: 400, shippedQty: 200, remark: 'current' })
+    });
+    assert.equal(currentProgressResponse.status, 200);
+
+    const sessionApplyResponse = await fetch(`http://127.0.0.1:${port}/api/difference-allocations/session-consistency/apply`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token' }
+    });
+    assert.equal(sessionApplyResponse.status, 200);
+    const sessionBatchId = (await sessionApplyResponse.json()).batchId;
+    const sessionDiffsResponse = await fetch(`http://127.0.0.1:${port}/api/diffs`, {
+      headers: { Authorization: 'Bearer admin-token' }
+    });
+    assert.equal(sessionDiffsResponse.status, 200);
+    const sessionDiff = (await sessionDiffsResponse.json()).rows.find((row) => row.batch_id === sessionBatchId && row.demand_key === m1Demand.demandKey);
+    assert.deepEqual(
+      { diffType: sessionDiff?.diff_type, oldQty: sessionDiff?.old_qty, newQty: sessionDiff?.new_qty },
+      { diffType: '数量增加', oldQty: 1200, newQty: 1300 }
+    );
 
     const loginResponse = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
       method: 'POST',

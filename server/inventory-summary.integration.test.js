@@ -172,11 +172,32 @@ test('inventory summary and domestic board use complete source models and enforc
       raw: { 销售产品分类: 'Unique Type' }
     }
   ]);
-  putDimension('purchaseAssignment', 'Purchase assignment', [{
-    materialCode: 'M1',
-    supplier: 'Supplier A',
-    purchaseOwner: '当前采购员'
-  }]);
+  putDimension('purchaseAssignment', 'Purchase assignment', [
+    {
+      materialCode: 'M1',
+      supplier: 'Unrelated Vendor One',
+      supplierShortName: '供应商甲',
+      purchaseOwner: '当前采购员'
+    },
+    {
+      materialCode: 'M1',
+      supplier: 'Unrelated Vendor Two',
+      supplierShortName: '供应商乙',
+      purchaseOwner: '当前采购员'
+    },
+    {
+      materialCode: 'M2',
+      supplier: 'Supplier B First',
+      supplierShortName: '供应商丙',
+      purchaseOwner: '采购员甲'
+    },
+    {
+      materialCode: 'M2',
+      supplier: 'Supplier B Second',
+      supplierShortName: '供应商丁',
+      purchaseOwner: '采购员乙'
+    }
+  ]);
   putDimension('lingxingWfsInventory', 'WFS inventory', [
     { storeName: 'Test Store', marketplace: 'US', warehouseName: 'Test Warehouse', sku: 'SKU-WFS', totalInventoryQty: '5,000' },
     { storeName: 'Test Store', marketplace: 'US', warehouseName: 'Test Warehouse', sku: 'SKU-EMPTY', totalInventoryQty: '' },
@@ -386,7 +407,9 @@ test('inventory summary and domestic board use complete source models and enforc
     const m1Demand = demandRows.find((row) => row.materialCode === 'M1');
     assert.equal(m1Demand?.operatorName, '薛文乐');
     assert.equal(m1Demand?.purchaseOwner, '当前采购员');
+    assert.equal(m1Demand?.supplierShortName, '供应商甲&供应商乙');
     assert.equal(demandRows.find((row) => row.materialCode === 'M2')?.purchaseOwner, '未分配采购下单人');
+    assert.equal(demandRows.find((row) => row.materialCode === 'M2')?.supplierShortName, '供应商丙&供应商丁');
     assert.ok(!demandRows.some((row) => row.purchaseOwner === '陈晨'));
     const firstMileRows = (await firstMileResponse.json()).rows;
     assert.equal(firstMileRows.find((row) => row.materialCode === 'M1')?.model, 'Model One');
@@ -398,7 +421,9 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(assignmentApplyResponse.status, 200);
     const appliedDemandRows = (await assignmentApplyResponse.json()).rows;
     assert.equal(appliedDemandRows.find((row) => row.materialCode === 'M1')?.purchaseOwner, '当前采购员');
+    assert.equal(appliedDemandRows.find((row) => row.materialCode === 'M1')?.supplierShortName, '供应商甲&供应商乙');
     assert.equal(appliedDemandRows.find((row) => row.materialCode === 'M2')?.purchaseOwner, '未分配采购下单人');
+    assert.equal(appliedDemandRows.find((row) => row.materialCode === 'M2')?.supplierShortName, '供应商丙&供应商丁');
 
     const allocationRowsResponse = await fetch(`http://127.0.0.1:${port}/api/difference-allocations?sessionId=session-consistency`, {
       headers: { Authorization: 'Bearer admin-token' }

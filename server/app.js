@@ -874,6 +874,20 @@ function selectUniqueAssignment(rows = []) {
   return rows.find((row) => assignmentOwner(row)) || rows[0] || {};
 }
 
+function assignmentRowsForMaterial(lookups, materialCode) {
+  return lookups.assignmentRowsByMaterial.get(normalizeMatchPart(materialCode)) || [];
+}
+
+function assignmentSupplierShortName(lookups, materialCode, fallbackRows = []) {
+  const materialRows = assignmentRowsForMaterial(lookups, materialCode);
+  const rows = materialRows.length ? materialRows : fallbackRows;
+  return [...new Set(
+    rows
+      .map((row) => rowAliasValue(row, ['supplierShortName', '供应商简称']))
+      .filter(Boolean)
+  )].join('&');
+}
+
 function buildAssignmentLookups(assignmentRows = []) {
   const assignmentRowsByKey = new Map();
   const assignmentRowsByMaterial = new Map();
@@ -902,11 +916,15 @@ function buildAssignmentLookups(assignmentRows = []) {
 
 function resolveAssignment(lookups, supplier, materialCode) {
   const exactRows = lookups.assignmentRowsByKey.get(assignmentKey(supplier, materialCode)) || [];
-  if (exactRows.length) return selectUniqueAssignment(exactRows);
+  const exactAssignment = selectUniqueAssignment(exactRows);
+  if (assignmentOwner(exactAssignment)) return exactAssignment;
 
-  const materialRows = lookups.assignmentRowsByMaterial.get(normalizeMatchPart(materialCode)) || [];
+  const materialRows = assignmentRowsForMaterial(lookups, materialCode);
   const fuzzyRows = materialRows.filter((row) => assignmentSupplierCandidates(row).some((candidate) => supplierNamesLikelySame(supplier, candidate)));
-  return selectUniqueAssignment(fuzzyRows);
+  const fuzzyAssignment = selectUniqueAssignment(fuzzyRows);
+  if (assignmentOwner(fuzzyAssignment)) return fuzzyAssignment;
+
+  return selectUniqueAssignment(materialRows);
 }
 
 function dimensionLookups() {
@@ -1888,7 +1906,7 @@ function enrichDemandFields(supplier, materialCode, orderCreator = '', lookups =
     materialName: normalize(product.materialName),
     productLine: normalize(product.productLine),
     productSeries: normalize(product.productSeries),
-    supplierShortName: rowAliasValue(assignment, ['supplierShortName', '供应商简称']) || rowAliasValue(supplierAssignment, ['supplierShortName', '供应商简称']),
+    supplierShortName: assignmentSupplierShortName(lookups, materialCode, [assignment, supplierAssignment]),
     purchaseGroup: assignmentGroup(assignment),
     purchaseOwner: realPurchaseOwner(assignmentOwner(assignment)) || UNASSIGNED_PURCHASE_OWNER,
     purchaseOrg: normalize(assignment.purchaseOrg)
@@ -1908,7 +1926,7 @@ function applyDimensionEnrichment() {
       normalize(product.materialName),
       normalize(product.productLine),
       normalize(product.productSeries),
-      rowAliasValue(assignment, ['supplierShortName', '供应商简称']) || rowAliasValue(supplierAssignment, ['supplierShortName', '供应商简称']),
+      assignmentSupplierShortName(lookups, demand.material_code, [assignment, supplierAssignment]),
       assignmentGroup(assignment),
       realPurchaseOwner(assignmentOwner(assignment)) || UNASSIGNED_PURCHASE_OWNER,
       normalize(assignment.purchaseOrg),
@@ -1922,7 +1940,7 @@ function applyDimensionEnrichment() {
          material_name = COALESCE(NULLIF(?, ''), material_name),
          product_line = COALESCE(NULLIF(?, ''), product_line),
          product_series = COALESCE(NULLIF(?, ''), product_series),
-         supplier_short_name = COALESCE(NULLIF(?, ''), supplier_short_name),
+         supplier_short_name = ?,
          purchase_group = COALESCE(NULLIF(?, ''), purchase_group),
          purchase_owner = ?,
          purchase_org = COALESCE(NULLIF(?, ''), purchase_org)
@@ -2058,7 +2076,7 @@ function demandRows(includeInactive = false, user = null) {
       businessUnit: demand.business_unit,
       operatorName,
       supplier: demand.supplier,
-      supplierShortName: demand.supplier_short_name || enriched.supplierShortName || '',
+      supplierShortName: enriched.supplierShortName || '',
       materialCode: demand.material_code,
       currentOrderQty: numberValue(demand.current_order_qty),
       totalPurchaseQty: numberValue(demand.current_order_qty),
@@ -2299,7 +2317,7 @@ function compareRowsFromSummary(summary, sourceRows, user, options = {}) {
       month,
       businessUnit,
       supplier,
-      supplierShortName: current?.supplierShortName || enriched.supplierShortName || '',
+      supplierShortName: enriched.supplierShortName || '',
       materialCode,
       sku: current?.sku || enriched.sku || '',
       logisticsCode: current?.logisticsCode || enriched.logisticsCode || '',
@@ -2445,7 +2463,7 @@ function allocationRows(sessionId = '') {
       month: row.month || demand?.month || '',
       businessUnit: row.business_unit || demand?.business_unit || '',
       supplier: row.supplier || demand?.supplier || '',
-      supplierShortName: row.supplier_short_name || demand?.supplier_short_name || enriched.supplierShortName || '',
+      supplierShortName: enriched.supplierShortName || '',
       materialCode,
       oaFlowNo: demand?.oa_flow_no || normalize(row.demand_key).split('|')[5] || '',
       sku: demand?.sku || enriched.sku || '',
@@ -2546,7 +2564,7 @@ function compareRowsForSession(sessionId, user) {
       month: row.month,
       businessUnit: row.business_unit,
       supplier: row.supplier,
-      supplierShortName: row.supplier_short_name || demand?.supplier_short_name || enriched.supplierShortName || '',
+      supplierShortName: enriched.supplierShortName || '',
       materialCode: row.material_code,
       oaFlowNo: demand?.oa_flow_no || '',
       sku: demand?.sku || enriched.sku || '',
@@ -3876,7 +3894,7 @@ function traceChangeRecords() {
       month: row.month || '',
       businessUnit: row.business_unit || '',
       supplier: row.supplier || '',
-      supplierShortName: demand?.supplier_short_name || enriched.supplierShortName || '',
+      supplierShortName: enriched.supplierShortName || '',
       productLine: demand?.product_line || enriched.productLine || '',
       productSeries: demand?.product_series || enriched.productSeries || '',
       materialCode: row.material_code || '',
@@ -3920,7 +3938,7 @@ function traceChangeRecords() {
       month: row.month || demand?.month || '',
       businessUnit: row.business_unit || demand?.business_unit || '',
       supplier: row.supplier || demand?.supplier || '',
-      supplierShortName: demand?.supplier_short_name || enriched.supplierShortName || '',
+      supplierShortName: enriched.supplierShortName || '',
       productLine: demand?.product_line || enriched.productLine || '',
       productSeries: demand?.product_series || enriched.productSeries || '',
       materialCode: row.material_code || demand?.material_code || '',

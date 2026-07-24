@@ -1910,7 +1910,7 @@ function applyDimensionEnrichment() {
       normalize(product.productSeries),
       rowAliasValue(assignment, ['supplierShortName', '供应商简称']) || rowAliasValue(supplierAssignment, ['supplierShortName', '供应商简称']),
       assignmentGroup(assignment),
-      realPurchaseOwner(assignmentOwner(assignment), demand.purchase_owner) || UNASSIGNED_PURCHASE_OWNER,
+      realPurchaseOwner(assignmentOwner(assignment)) || UNASSIGNED_PURCHASE_OWNER,
       normalize(assignment.purchaseOrg),
       demand.demand_key
     ];
@@ -1924,7 +1924,7 @@ function applyDimensionEnrichment() {
          product_series = COALESCE(NULLIF(?, ''), product_series),
          supplier_short_name = COALESCE(NULLIF(?, ''), supplier_short_name),
          purchase_group = COALESCE(NULLIF(?, ''), purchase_group),
-         purchase_owner = COALESCE(NULLIF(?, ''), purchase_owner),
+         purchase_owner = ?,
          purchase_org = COALESCE(NULLIF(?, ''), purchase_org)
      WHERE demand_key = ?`,
     params
@@ -2044,7 +2044,7 @@ function demandRows(includeInactive = false, user = null) {
     const orderDates = uniqueOrderDates(orderRows);
     const oaFlowNo = demand.oa_flow_no || orderedOaFlowNos(orderRows, rawOaFlowNo);
     const enriched = enrichDemandFields(demand.supplier, demand.material_code, orderCreator, context.lookups);
-    const purchaseOwner = realPurchaseOwner(enriched.purchaseOwner, demand.purchase_owner) || UNASSIGNED_PURCHASE_OWNER;
+    const purchaseOwner = realPurchaseOwner(enriched.purchaseOwner) || UNASSIGNED_PURCHASE_OWNER;
     const purchaseGroup = enriched.purchaseGroup || '';
     const shippedQty = numberValue(demand.tracking_inbound_qty);
     const remainingInboundQty = Math.max(numberValue(demand.tracking_remaining_qty), 0);
@@ -2453,7 +2453,7 @@ function allocationRows(sessionId = '') {
       materialName: demand?.material_name || enriched.materialName || '',
       productLine: demand?.product_line || enriched.productLine || '',
       productSeries: demand?.product_series || enriched.productSeries || '',
-      purchaseOwner: normalize(row.order_creator || demand?.order_creator),
+      purchaseOwner: realPurchaseOwner(enriched.purchaseOwner) || UNASSIGNED_PURCHASE_OWNER,
       orderCreator: normalize(row.order_creator || demand?.order_creator),
       actionType: row.action_type,
       allocatedQty: numberValue(row.allocated_qty),
@@ -2533,7 +2533,7 @@ function compareRowsForSession(sessionId, user) {
     const progress = progressMap.get(row.demand_key) || {};
     const orderCreator = row.order_creator || demand?.order_creator || '';
     const enriched = enrichDemandFields(row.supplier, row.material_code, orderCreator, lookups);
-    const purchaseOwner = realPurchaseOwner(enriched.purchaseOwner, demand?.purchase_owner) || UNASSIGNED_PURCHASE_OWNER;
+    const purchaseOwner = realPurchaseOwner(enriched.purchaseOwner) || UNASSIGNED_PURCHASE_OWNER;
     const permissionDemand = demand
       ? { ...demand, order_creator: orderCreator, purchase_owner: purchaseOwner }
       : { purchase_owner: purchaseOwner, order_creator: orderCreator, supplier: row.supplier, material_code: row.material_code };

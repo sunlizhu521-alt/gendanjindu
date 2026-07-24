@@ -82,6 +82,7 @@ test('inventory summary and domestic board use complete source models and enforc
     ['active-zero-april', '2026-04', '跨境事业部', 'Supplier D', 'M4', 0, 0, 0, 0, 0, 1, '', '', '', '', now],
     ['inactive', '2026-03', '国内事业部', 'Supplier E', 'M5', 9999, 0, 9999, 0, 9999, 0, '', '', '', '', now]
   ].forEach((params) => database.run(demandSql, params));
+  database.run("UPDATE order_demands SET purchase_owner = '陈晨' WHERE demand_key IN (?, ?)", ['active-june', 'active-july']);
 
   database.run(
     `INSERT INTO kingdee_orders
@@ -171,6 +172,11 @@ test('inventory summary and domestic board use complete source models and enforc
       raw: { 销售产品分类: 'Unique Type' }
     }
   ]);
+  putDimension('purchaseAssignment', 'Purchase assignment', [{
+    materialCode: 'M1',
+    supplier: 'Supplier A',
+    purchaseOwner: '当前采购员'
+  }]);
   putDimension('lingxingWfsInventory', 'WFS inventory', [
     { storeName: 'Test Store', marketplace: 'US', warehouseName: 'Test Warehouse', sku: 'SKU-WFS', totalInventoryQty: '5,000' },
     { storeName: 'Test Store', marketplace: 'US', warehouseName: 'Test Warehouse', sku: 'SKU-EMPTY', totalInventoryQty: '' },
@@ -229,10 +235,17 @@ test('inventory summary and domestic board use complete source models and enforc
   );
   database.run(
     `INSERT INTO difference_compare_rows
-      (id, session_id, demand_key, month, business_unit, supplier, material_code, old_qty, new_qty,
+      (id, session_id, demand_key, month, business_unit, supplier, material_code, order_creator, old_qty, new_qty,
        delta_qty, diff_type, handling_type, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'auto_new', ?)`,
-    ['session-row', 'session-consistency', 'active-june', '2026-06', '国内事业部', 'Supplier A', 'M1', 1200, 1300, 100, '数量增加', now]
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'auto_new', ?)`,
+    ['session-row', 'session-consistency', 'active-june', '2026-06', '国内事业部', 'Supplier A', 'M1', '陈晨', 1200, 1300, 100, '数量增加', now]
+  );
+  database.run(
+    `INSERT INTO difference_allocations
+      (id, session_id, row_id, demand_key, action_type, allocated_qty, reason, old_qty, new_qty,
+       delta_qty, automatic, created_by, created_at)
+     VALUES (?, ?, ?, ?, '新增订单', 100, '测试', 1200, 1300, 100, 1, ?, ?)`,
+    ['session-allocation', 'session-consistency', 'session-row', 'active-june', 'Test Admin', now]
   );
   database.run('UPDATE order_demands SET current_order_qty = 9999 WHERE demand_key = ?', ['active-june']);
   database.saveDatabase();
@@ -372,8 +385,28 @@ test('inventory summary and domestic board use complete source models and enforc
     const demandRows = (await demandsResponse.json()).rows;
     const m1Demand = demandRows.find((row) => row.materialCode === 'M1');
     assert.equal(m1Demand?.operatorName, '薛文乐');
+    assert.equal(m1Demand?.purchaseOwner, '当前采购员');
+    assert.equal(demandRows.find((row) => row.materialCode === 'M2')?.purchaseOwner, '未分配采购下单人');
+    assert.ok(!demandRows.some((row) => row.purchaseOwner === '陈晨'));
     const firstMileRows = (await firstMileResponse.json()).rows;
     assert.equal(firstMileRows.find((row) => row.materialCode === 'M1')?.model, 'Model One');
+
+    const assignmentApplyResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions/purchaseAssignment/apply`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token' }
+    });
+    assert.equal(assignmentApplyResponse.status, 200);
+    const appliedDemandRows = (await assignmentApplyResponse.json()).rows;
+    assert.equal(appliedDemandRows.find((row) => row.materialCode === 'M1')?.purchaseOwner, '当前采购员');
+    assert.equal(appliedDemandRows.find((row) => row.materialCode === 'M2')?.purchaseOwner, '未分配采购下单人');
+
+    const allocationRowsResponse = await fetch(`http://127.0.0.1:${port}/api/difference-allocations?sessionId=session-consistency`, {
+      headers: { Authorization: 'Bearer admin-token' }
+    });
+    assert.equal(allocationRowsResponse.status, 200);
+    const allocationRow = (await allocationRowsResponse.json()).rows.find((row) => row.id === 'session-allocation');
+    assert.equal(allocationRow?.purchaseOwner, '当前采购员');
+    assert.equal(allocationRow?.orderCreator, '陈晨');
 
     const progressEndpoint = `http://127.0.0.1:${port}/api/progress/${encodeURIComponent(m1Demand.demandKey)}`;
     const staleProgressResponse = await fetch(progressEndpoint, {

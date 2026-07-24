@@ -80,9 +80,11 @@ test('inventory summary and domestic board use complete source models and enforc
     ['active-july', '2026-07', '跨境事业部', 'Supplier B', 'M2', 500, 0, 500, 0, '500', 1, '', '', '', '', now],
     ['active-zero-may', '2026-05', '跨境事业部', 'Supplier C', 'M3', 0, 0, 0, 0, 0, 1, '', '', '', '', now],
     ['active-zero-april', '2026-04', '跨境事业部', 'Supplier D', 'M4', 0, 0, 0, 0, 0, 1, '', '', '', '', now],
+    ['|2026-08|测试事业部|Current Supplier|M6', '2026-08', '测试事业部', 'Current Supplier', 'M6', 0, 0, 0, 0, 0, 1, '', '', '', '', now],
     ['inactive', '2026-03', '国内事业部', 'Supplier E', 'M5', 9999, 0, 9999, 0, 9999, 0, '', '', '', '', now]
   ].forEach((params) => database.run(demandSql, params));
   database.run("UPDATE order_demands SET purchase_owner = '陈晨' WHERE demand_key IN (?, ?)", ['active-june', 'active-july']);
+  database.run("UPDATE order_demands SET supplier_short_name = '供应商庚' WHERE material_code = 'M6'");
 
   database.run(
     `INSERT INTO kingdee_orders
@@ -191,6 +193,12 @@ test('inventory summary and domestic board use complete source models and enforc
       supplier: 'Supplier B Second',
       supplierShortName: '供应商丁',
       purchaseOwner: '采购员乙'
+    },
+    {
+      materialCode: 'M6',
+      supplier: 'Different Vendor',
+      supplierShortName: '供应商己',
+      purchaseOwner: '采购员丙'
     }
   ]);
   putDimension('lingxingWfsInventory', 'WFS inventory', [
@@ -405,6 +413,8 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(m1Demand?.supplierShortName, '供应商甲&供应商乙');
     assert.equal(demandRows.find((row) => row.materialCode === 'M2')?.purchaseOwner, '未分配采购下单人');
     assert.equal(demandRows.find((row) => row.materialCode === 'M2')?.supplierShortName, '供应商丙&供应商丁');
+    assert.equal(demandRows.find((row) => row.materialCode === 'M6')?.supplierShortName, '供应商己&供应商庚');
+    assert.equal(demandRows.find((row) => row.materialCode === 'M6')?.purchaseOwner, '采购员丙');
     assert.ok(!demandRows.some((row) => row.purchaseOwner === '陈晨'));
     const firstMileRows = (await firstMileResponse.json()).rows;
     assert.equal(firstMileRows.find((row) => row.materialCode === 'M1')?.model, 'Model One');
@@ -419,6 +429,7 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(appliedDemandRows.find((row) => row.materialCode === 'M1')?.supplierShortName, '供应商甲&供应商乙');
     assert.equal(appliedDemandRows.find((row) => row.materialCode === 'M2')?.purchaseOwner, '未分配采购下单人');
     assert.equal(appliedDemandRows.find((row) => row.materialCode === 'M2')?.supplierShortName, '供应商丙&供应商丁');
+    assert.equal(appliedDemandRows.find((row) => row.materialCode === 'M6')?.supplierShortName, '供应商己&供应商庚');
 
     const allocationRowsResponse = await fetch(`http://127.0.0.1:${port}/api/difference-allocations?sessionId=session-consistency`, {
       headers: { Authorization: 'Bearer admin-token' }

@@ -892,6 +892,9 @@ function assignmentRowsForMaterial(lookups, materialCode) {
 }
 
 function assignmentSupplierShortName(lookups, materialCode, fallbackRows = []) {
+  const materialKey = normalizeMatchPart(materialCode);
+  const aggregatedNames = lookups.supplierShortNamesByMaterial?.get(materialKey) || [];
+  if (aggregatedNames.length) return aggregatedNames.join('&');
   const materialRows = assignmentRowsForMaterial(lookups, materialCode);
   const rows = materialRows.length ? materialRows : fallbackRows;
   return [...new Set(
@@ -926,7 +929,7 @@ function buildAssignmentLookups(assignmentRows = []) {
   return { assignmentRowsByKey, assignmentRowsByMaterial, supplierMap };
 }
 
-function resolveAssignment(lookups, supplier, materialCode) {
+function resolveSupplierAssignment(lookups, supplier, materialCode) {
   const exactRows = lookups.assignmentRowsByKey.get(assignmentKey(supplier, materialCode)) || [];
   const exactAssignment = selectUniqueAssignment(exactRows);
   if (assignmentOwner(exactAssignment)) return exactAssignment;
@@ -936,18 +939,42 @@ function resolveAssignment(lookups, supplier, materialCode) {
   const fuzzyAssignment = selectUniqueAssignment(fuzzyRows);
   if (assignmentOwner(fuzzyAssignment)) return fuzzyAssignment;
 
+  return {};
+}
+
+function resolveAssignment(lookups, supplier, materialCode) {
+  const supplierAssignment = resolveSupplierAssignment(lookups, supplier, materialCode);
+  if (assignmentOwner(supplierAssignment)) return supplierAssignment;
+  const materialRows = assignmentRowsForMaterial(lookups, materialCode);
   return selectUniqueAssignment(materialRows);
 }
 
 function dimensionLookups() {
   const productRows = getDimensionRows('productCategory');
   const assignmentRows = getDimensionRows('purchaseAssignment');
+  const assignmentLookups = buildAssignmentLookups(assignmentRows);
   const productMap = new Map();
+  const supplierShortNamesByMaterial = new Map();
+  const addSupplierNames = (materialCode, names) => {
+    const materialKey = normalizeMatchPart(materialCode);
+    if (!materialKey) return;
+    const values = supplierShortNamesByMaterial.get(materialKey) || [];
+    splitSupplierNames(names).forEach((name) => {
+      if (!values.includes(name)) values.push(name);
+    });
+    supplierShortNamesByMaterial.set(materialKey, values);
+  };
   productRows.forEach((row) => {
     const materialCode = normalize(row.materialCode);
     if (materialCode && !productMap.has(materialCode)) productMap.set(materialCode, row);
   });
-  return { productMap, ...buildAssignmentLookups(assignmentRows) };
+  assignmentRows.forEach((row) => {
+    assignmentSupplierDisplayNames(row).forEach((name) => addSupplierNames(assignmentMaterialCode(row), name));
+  });
+  all('SELECT material_code, supplier_short_name FROM order_demands WHERE active = 1').forEach((row) => {
+    addSupplierNames(row.material_code, row.supplier_short_name);
+  });
+  return { productMap, ...assignmentLookups, supplierShortNamesByMaterial };
 }
 
 const FIRST_MILE_SLOT_IDS = [
@@ -1931,14 +1958,17 @@ function applyDimensionEnrichment() {
   const params = all('SELECT * FROM order_demands').map((demand) => {
     const product = productMap.get(normalize(demand.material_code)) || {};
     const assignment = resolveAssignment(lookups, demand.supplier, demand.material_code);
+    const supplierSpecificAssignment = resolveSupplierAssignment(lookups, demand.supplier, demand.material_code);
     const supplierAssignment = supplierMap.get(normalizeMatchPart(demand.supplier)) || {};
+    const supplierSpecificShortName = assignmentSupplierDisplayNames(supplierSpecificAssignment).join('&')
+      || normalize(demand.supplier_short_name);
     return [
       normalize(product.sku),
       normalize(product.logisticsCode),
       normalize(product.materialName),
       normalize(product.productLine),
       normalize(product.productSeries),
-      assignmentSupplierShortName(lookups, demand.material_code, [assignment, supplierAssignment]),
+      supplierSpecificShortName,
       assignmentGroup(assignment),
       realPurchaseOwner(assignmentOwner(assignment)) || UNASSIGNED_PURCHASE_OWNER,
       normalize(assignment.purchaseOrg),

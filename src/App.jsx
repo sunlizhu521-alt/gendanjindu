@@ -244,6 +244,24 @@ function supplierName(row) {
   return normalize(row.supplierShortName) || normalize(row.supplier);
 }
 
+function orderSupplierName(row) {
+  return normalize(row.orderSupplierShortName) || '未匹配';
+}
+
+function supplierCountLabel(value) {
+  const count = Math.max(0, Math.trunc(numberValue(value)));
+  if (count === 0) return '未匹配';
+  const digits = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+  if (count < 10) return `${digits[count]}家供应`;
+  if (count === 10) return '十家供应';
+  if (count < 20) return `十${digits[count % 10]}家供应`;
+  if (count < 100) {
+    const ones = count % 10;
+    return `${digits[Math.floor(count / 10)]}十${ones ? digits[ones] : ''}家供应`;
+  }
+  return `${count}家供应`;
+}
+
 const FILTER_CACHE_PREFIX = 'gendanjindu:filters:';
 
 function useSessionFilters(cacheKey, initialFilters) {
@@ -1243,13 +1261,14 @@ function SecurityWatermark({ userName }) {
 function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', currentAppliedAt = '' }) {
   const usesOperationBoardLayout = filterKey === 'operationBoard';
   const activeRows = useMemo(() => rows.filter((row) => row.active && numberValue(row.remainingInboundQty) > 0), [rows]);
-  const [filters, setFilters] = useSessionFilters(filterKey, { month: '', businessUnit: '', operatorName: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
+  const [filters, setFilters] = useSessionFilters(filterKey, { month: '', businessUnit: '', operatorName: '', supplierCount: '', supplierShortName: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
   const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const matchesDashboardFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
-    const displaySupplier = supplierName(row);
+    const displaySupplier = orderSupplierName(row);
+    const supplyCount = supplierCountLabel(row.supplierCount);
     const text = [
       row.demandKey,
       row.month,
@@ -1270,7 +1289,8 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       && (omit === 'month' || !filters.month || row.month === filters.month)
       && (omit === 'businessUnit' || !filters.businessUnit || purchaseTrackingBusinessUnit(row.businessUnit) === filters.businessUnit)
       && (omit === 'operatorName' || !filters.operatorName || row.operatorName === filters.operatorName)
-      && (omit === 'supplier' || !filters.supplier || displaySupplier === filters.supplier)
+      && (omit === 'supplierCount' || !filters.supplierCount || supplyCount === filters.supplierCount)
+      && (omit === 'supplierShortName' || !filters.supplierShortName || displaySupplier === filters.supplierShortName)
       && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
       && (omit === 'series' || !filters.series || row.productSeries === filters.series)
       && (omit === 'sku' || !filters.sku || row.sku === filters.sku)
@@ -1282,7 +1302,10 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       months: unique(rowsFor('month').map((row) => row.month)),
       businessUnits: unique(rowsFor('businessUnit').map((row) => purchaseTrackingBusinessUnit(row.businessUnit))),
       operators: unique(rowsFor('operatorName').map((row) => row.operatorName)),
-      suppliers: unique(rowsFor('supplier').map((row) => supplierName(row))),
+      supplierCounts: [...new Set(rowsFor('supplierCount').map((row) => numberValue(row.supplierCount)))]
+        .sort((a, b) => a - b)
+        .map(supplierCountLabel),
+      supplierShortNames: unique(rowsFor('supplierShortName').map((row) => orderSupplierName(row))),
       productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
       series: unique(rowsFor('series').map((row) => row.productSeries)),
       skus: unique(rowsFor('sku').map((row) => row.sku)),
@@ -1294,7 +1317,8 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       month: options.months,
       businessUnit: options.businessUnits,
       operatorName: options.operators,
-      supplier: options.suppliers,
+      supplierCount: options.supplierCounts,
+      supplierShortName: options.supplierShortNames,
       productLine: options.productLines,
       series: options.series,
       sku: options.skus,
@@ -1308,7 +1332,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     () => filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize),
     [filteredRows, currentPage]
   );
-  const clearFilters = () => setFilters({ month: '', businessUnit: '', operatorName: '', supplier: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
+  const clearFilters = () => setFilters({ month: '', businessUnit: '', operatorName: '', supplierCount: '', supplierShortName: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
   const remainingLabel = usesOperationBoardLayout ? '备货剩余数量' : '未交付数量';
   const remainingShortLabel = usesOperationBoardLayout ? '备货剩余' : '未交付';
   const summary = filteredRows.reduce((acc, row) => {
@@ -1356,7 +1380,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
               row.businessUnit,
               row.operatorName,
               row.supplier,
-              supplierName(row),
+              orderSupplierName(row),
               row.purchaseOwner,
               row.productLine,
               row.productSeries,
@@ -1407,7 +1431,8 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
         <MonthCalendarFilter label="下单月份" value={filters.month} options={options.months} multiple={false} onChange={(value) => setFilters({ ...filters, month: value })} />
         <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
         {usesOperationBoardLayout && <SelectField label="运营" value={filters.operatorName} options={options.operators} onChange={(value) => setFilters({ ...filters, operatorName: value })} />}
-        <SelectField label="供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
+        <SelectField label="是否多家供应" value={filters.supplierCount} options={options.supplierCounts} onChange={(value) => setFilters({ ...filters, supplierCount: value })} />
+        <SelectField label="供应商简称" value={filters.supplierShortName} options={options.supplierShortNames} onChange={(value) => setFilters({ ...filters, supplierShortName: value })} />
         <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
         <SelectField label="系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
         <SelectField label="SKU" value={filters.sku} options={options.skus} onChange={(value) => setFilters({ ...filters, sku: value })} />
@@ -1429,7 +1454,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       </section>
       {usesOperationBoardLayout ? (
         <section className="progress-chart-grid operation-chart-grid">
-          <ProgressStackedChart title={`供应商${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => supplierName(row)} />
+          <ProgressStackedChart title={`供应商${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => orderSupplierName(row)} />
           <ProgressStackedChart title={`事业部${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => purchaseTrackingBusinessUnit(row.businessUnit)} />
           <ProgressStackedChart title={`系列${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => row.productSeries} />
           <ProgressStackedChart title={`SKU${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => row.sku} />
@@ -1457,7 +1482,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
                   row.businessUnit,
                   row.operatorName,
                   row.supplier,
-                  supplierName(row),
+                  orderSupplierName(row),
                   row.purchaseOwner,
                   <TightCell value={row.productLine} />,
                   <TightCell value={row.productSeries} />,

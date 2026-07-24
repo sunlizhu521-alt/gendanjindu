@@ -18,6 +18,7 @@ const port = Number(process.env.PORT || 4003);
 const ADMIN_NAME = process.env.ADMIN_NAME || '孙立柱';
 const ROLE_ADMIN = '管理员';
 const ROLE_USER = '普通用户';
+const UNMATCHED_SUPPLIER_SHORT_NAME = '未匹配';
 const ALL_PAGES = [
   'domesticBoard',
   'wangdianData',
@@ -865,9 +866,13 @@ function assignmentSupplierDisplayNames(row) {
   const detailNames = splitSupplierNames(
     rowAliasValue(row, ['productLineDetailSupplier', '产品线明细供应商', '产品线明细-供应商', '产品明细供应商', '产品明细-供应商'])
   );
-  const shortNames = splitSupplierNames(rowAliasValue(row, ['supplierShortName', '供应商简称']));
+  const shortNames = assignmentSupplierShortNames(row);
   if (detailNames.length > 1) return detailNames;
   return shortNames.length ? shortNames : detailNames;
+}
+
+function assignmentSupplierShortNames(row) {
+  return splitSupplierNames(rowAliasValue(row, ['supplierShortName', '供应商简称']));
 }
 
 function supplierNamesLikelySame(left, right) {
@@ -906,6 +911,7 @@ function assignmentSupplierShortName(lookups, materialCode, fallbackRows = []) {
 function buildAssignmentLookups(assignmentRows = []) {
   const assignmentRowsByKey = new Map();
   const assignmentRowsByMaterial = new Map();
+  const assignmentSupplierShortNamesByMaterial = new Map();
   const supplierMap = new Map();
   assignmentRows.forEach((row) => {
     const materialCode = assignmentMaterialCode(row);
@@ -915,6 +921,11 @@ function buildAssignmentLookups(assignmentRows = []) {
       const materialRows = assignmentRowsByMaterial.get(materialKey) || [];
       materialRows.push(row);
       assignmentRowsByMaterial.set(materialKey, materialRows);
+      const shortNames = assignmentSupplierShortNamesByMaterial.get(materialKey) || [];
+      assignmentSupplierShortNames(row).forEach((name) => {
+        if (!shortNames.includes(name)) shortNames.push(name);
+      });
+      assignmentSupplierShortNamesByMaterial.set(materialKey, shortNames);
     }
     supplierCandidates.forEach((candidate) => {
       const supplierKey = normalizeMatchPart(candidate);
@@ -926,7 +937,28 @@ function buildAssignmentLookups(assignmentRows = []) {
       assignmentRowsByKey.set(key, keyRows);
     });
   });
-  return { assignmentRowsByKey, assignmentRowsByMaterial, supplierMap };
+  return { assignmentRowsByKey, assignmentRowsByMaterial, assignmentSupplierShortNamesByMaterial, supplierMap };
+}
+
+function supplierAssignmentRowsForOrder(lookups, supplier, materialCode) {
+  const exactRows = lookups.assignmentRowsByKey.get(assignmentKey(supplier, materialCode)) || [];
+  if (exactRows.length) return exactRows;
+  return assignmentRowsForMaterial(lookups, materialCode)
+    .filter((row) => assignmentSupplierCandidates(row).some((candidate) => supplierNamesLikelySame(supplier, candidate)));
+}
+
+function orderSupplierShortName(lookups, supplier, materialCode) {
+  const names = [];
+  supplierAssignmentRowsForOrder(lookups, supplier, materialCode).forEach((row) => {
+    assignmentSupplierShortNames(row).forEach((name) => {
+      if (!names.includes(name)) names.push(name);
+    });
+  });
+  return names.join('&') || UNMATCHED_SUPPLIER_SHORT_NAME;
+}
+
+function assignmentSupplierCount(lookups, materialCode) {
+  return (lookups.assignmentSupplierShortNamesByMaterial.get(normalizeMatchPart(materialCode)) || []).length;
 }
 
 function resolveSupplierAssignment(lookups, supplier, materialCode) {
@@ -2104,6 +2136,7 @@ function demandRows(includeInactive = false, user = null) {
     const orderDates = uniqueOrderDates(orderRows);
     const oaFlowNo = demand.oa_flow_no || orderedOaFlowNos(orderRows, rawOaFlowNo);
     const enriched = enrichDemandFields(demand.supplier, demand.material_code, orderCreator, context.lookups);
+    const matchedSupplierShortName = orderSupplierShortName(context.lookups, demand.supplier, demand.material_code);
     const purchaseOwner = realPurchaseOwner(enriched.purchaseOwner) || UNASSIGNED_PURCHASE_OWNER;
     const purchaseGroup = enriched.purchaseGroup || '';
     const shippedQty = numberValue(demand.tracking_inbound_qty);
@@ -2119,6 +2152,8 @@ function demandRows(includeInactive = false, user = null) {
       operatorName,
       supplier: demand.supplier,
       supplierShortName: enriched.supplierShortName || '',
+      orderSupplierShortName: matchedSupplierShortName,
+      supplierCount: assignmentSupplierCount(context.lookups, demand.material_code),
       materialCode: demand.material_code,
       currentOrderQty: numberValue(demand.current_order_qty),
       totalPurchaseQty: numberValue(demand.current_order_qty),

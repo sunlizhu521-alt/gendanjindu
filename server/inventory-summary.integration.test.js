@@ -81,6 +81,8 @@ test('inventory summary and domestic board use complete source models and enforc
     ['active-zero-may', '2026-05', '跨境事业部', 'Supplier C', 'M3', 0, 0, 0, 0, 0, 1, '', '', '', '', now],
     ['active-zero-april', '2026-04', '跨境事业部', 'Supplier D', 'M4', 0, 0, 0, 0, 0, 1, '', '', '', '', now],
     ['|2026-08|测试事业部|Current Supplier|M6', '2026-08', '测试事业部', 'Current Supplier', 'M6', 0, 0, 0, 0, 0, 1, '', '', '', '', now],
+    ['|2026-08|测试事业部|Exact Supplier|M7', '2026-08', '测试事业部', 'Exact Supplier', 'M7', 0, 0, 0, 0, 0, 1, '', '', '', '', now],
+    ['|2026-08|测试事业部|Vendor 8 A|M8', '2026-08', '测试事业部', 'Vendor 8 A', 'M8', 0, 0, 0, 0, 0, 1, '', '', '', '', now],
     ['inactive', '2026-03', '国内事业部', 'Supplier E', 'M5', 9999, 0, 9999, 0, 9999, 0, '', '', '', '', now]
   ].forEach((params) => database.run(demandSql, params));
   database.run("UPDATE order_demands SET purchase_owner = '陈晨' WHERE demand_key IN (?, ?)", ['active-june', 'active-july']);
@@ -199,6 +201,36 @@ test('inventory summary and domestic board use complete source models and enforc
       supplier: 'Different Vendor',
       supplierShortName: '供应商己',
       purchaseOwner: '采购员丙'
+    },
+    {
+      materialCode: 'M7',
+      supplier: 'Exact Supplier',
+      supplierShortName: '供应商辛&供应商戊&供应商辛',
+      purchaseOwner: '采购员丁'
+    },
+    {
+      materialCode: 'M7',
+      supplier: 'Exact Supplier Extended',
+      supplierShortName: '供应商模糊',
+      purchaseOwner: '采购员戊'
+    },
+    {
+      materialCode: 'M8',
+      supplier: 'Vendor 8 A',
+      supplierShortName: '供应商壬',
+      purchaseOwner: '采购员己'
+    },
+    {
+      materialCode: 'M8',
+      supplier: 'Vendor 8 B',
+      supplierShortName: '供应商癸',
+      purchaseOwner: '采购员己'
+    },
+    {
+      materialCode: 'M8',
+      supplier: 'Vendor 8 C',
+      supplierShortName: '供应商子',
+      purchaseOwner: '采购员己'
     }
   ]);
   putDimension('lingxingWfsInventory', 'WFS inventory', [
@@ -411,10 +443,20 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(m1Demand?.operatorName, '薛文乐');
     assert.equal(m1Demand?.purchaseOwner, '当前采购员');
     assert.equal(m1Demand?.supplierShortName, '供应商甲&供应商乙');
+    assert.equal(m1Demand?.orderSupplierShortName, '未匹配');
+    assert.equal(m1Demand?.supplierCount, 1);
     assert.equal(demandRows.find((row) => row.materialCode === 'M2')?.purchaseOwner, '未分配采购下单人');
     assert.equal(demandRows.find((row) => row.materialCode === 'M2')?.supplierShortName, '供应商丙&供应商丁');
+    assert.equal(demandRows.find((row) => row.materialCode === 'M2')?.orderSupplierShortName, '供应商丙&供应商丁');
+    assert.equal(demandRows.find((row) => row.materialCode === 'M2')?.supplierCount, 2);
     assert.equal(demandRows.find((row) => row.materialCode === 'M6')?.supplierShortName, '供应商己&供应商庚');
     assert.equal(demandRows.find((row) => row.materialCode === 'M6')?.purchaseOwner, '采购员丙');
+    assert.equal(demandRows.find((row) => row.materialCode === 'M6')?.orderSupplierShortName, '未匹配');
+    assert.equal(demandRows.find((row) => row.materialCode === 'M6')?.supplierCount, 1);
+    assert.equal(demandRows.find((row) => row.materialCode === 'M7')?.orderSupplierShortName, '供应商辛&供应商戊');
+    assert.equal(demandRows.find((row) => row.materialCode === 'M7')?.supplierCount, 3);
+    assert.equal(demandRows.find((row) => row.materialCode === 'M8')?.orderSupplierShortName, '供应商壬');
+    assert.equal(demandRows.find((row) => row.materialCode === 'M8')?.supplierCount, 3);
     assert.ok(!demandRows.some((row) => row.purchaseOwner === '陈晨'));
     const firstMileRows = (await firstMileResponse.json()).rows;
     assert.equal(firstMileRows.find((row) => row.materialCode === 'M1')?.model, 'Model One');
@@ -430,6 +472,46 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(appliedDemandRows.find((row) => row.materialCode === 'M2')?.purchaseOwner, '未分配采购下单人');
     assert.equal(appliedDemandRows.find((row) => row.materialCode === 'M2')?.supplierShortName, '供应商丙&供应商丁');
     assert.equal(appliedDemandRows.find((row) => row.materialCode === 'M6')?.supplierShortName, '供应商己&供应商庚');
+    assert.equal(appliedDemandRows.find((row) => row.materialCode === 'M7')?.orderSupplierShortName, '供应商辛&供应商戊');
+
+    const replacementAssignmentWorkbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(replacementAssignmentWorkbook, xlsx.utils.json_to_sheet([
+      {
+        物料编码: 'M1',
+        供应商: 'Unrelated Vendor One',
+        供应商简称: '供应商甲',
+        产品线明细供应商: '供应商甲&供应商乙',
+        采购下单人: '当前采购员'
+      },
+      {
+        物料编码: 'M2',
+        供应商: 'Supplier B First',
+        供应商简称: '供应商丙',
+        采购下单人: '采购员甲'
+      }
+    ]), '产品线明细');
+    const replacementAssignmentForm = new FormData();
+    replacementAssignmentForm.append('mapping', JSON.stringify({
+      materialCode: '物料编码',
+      supplier: '供应商',
+      supplierShortName: '供应商简称',
+      productLineDetailSupplier: '产品线明细供应商',
+      purchaseOwner: '采购下单人'
+    }));
+    replacementAssignmentForm.append(
+      'file',
+      new Blob([xlsx.write(replacementAssignmentWorkbook, { type: 'buffer', bookType: 'xlsx' })]),
+      '采购分工替换测试.xlsx'
+    );
+    const replacementAssignmentResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions/purchaseAssignment/upload`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token' },
+      body: replacementAssignmentForm
+    });
+    assert.equal(replacementAssignmentResponse.status, 200);
+    const replacementDemandRows = (await replacementAssignmentResponse.json()).rows;
+    assert.equal(replacementDemandRows.find((row) => row.materialCode === 'M2')?.orderSupplierShortName, '供应商丙');
+    assert.equal(replacementDemandRows.find((row) => row.materialCode === 'M2')?.supplierCount, 1);
 
     const allocationRowsResponse = await fetch(`http://127.0.0.1:${port}/api/difference-allocations?sessionId=session-consistency`, {
       headers: { Authorization: 'Bearer admin-token' }

@@ -177,12 +177,7 @@ test('inventory summary and domestic board use complete source models and enforc
       materialCode: 'M1',
       supplier: 'Unrelated Vendor One',
       supplierShortName: '供应商甲',
-      purchaseOwner: '当前采购员'
-    },
-    {
-      materialCode: 'M1',
-      supplier: 'Unrelated Vendor Two',
-      supplierShortName: '供应商乙',
+      productLineDetailSupplier: '供应商甲&供应商乙',
       purchaseOwner: '当前采购员'
     },
     {

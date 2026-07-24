@@ -847,6 +847,10 @@ function assignmentMaterialCode(row) {
   return rowAliasValue(row, ['materialCode', '物料编码', '商品编码', '存货编码', '产品编码']);
 }
 
+function splitSupplierNames(value) {
+  return normalize(value).split(/[&+、,，;；]/).map(normalize).filter(Boolean);
+}
+
 function assignmentSupplierCandidates(row) {
   return [
     rowAliasValue(row, ['productLineDetailSupplier', '产品线明细供应商', '产品线明细-供应商', '产品明细供应商', '产品明细-供应商', '产品线明细供应商名称', '产品线明细-供应商名称']),
@@ -854,7 +858,16 @@ function assignmentSupplierCandidates(row) {
     rowAliasValue(row, ['供应商']),
     rowAliasValue(row, ['supplier']),
     rowAliasValue(row, ['supplierShortName', '供应商简称'])
-  ].map(normalize).filter(Boolean);
+  ].flatMap(splitSupplierNames);
+}
+
+function assignmentSupplierDisplayNames(row) {
+  const detailNames = splitSupplierNames(
+    rowAliasValue(row, ['productLineDetailSupplier', '产品线明细供应商', '产品线明细-供应商', '产品明细供应商', '产品明细-供应商'])
+  );
+  const shortNames = splitSupplierNames(rowAliasValue(row, ['supplierShortName', '供应商简称']));
+  if (detailNames.length > 1) return detailNames;
+  return shortNames.length ? shortNames : detailNames;
 }
 
 function supplierNamesLikelySame(left, right) {
@@ -883,8 +896,7 @@ function assignmentSupplierShortName(lookups, materialCode, fallbackRows = []) {
   const rows = materialRows.length ? materialRows : fallbackRows;
   return [...new Set(
     rows
-      .map((row) => rowAliasValue(row, ['supplierShortName', '供应商简称']))
-      .filter(Boolean)
+      .flatMap(assignmentSupplierDisplayNames)
   )].join('&');
 }
 

@@ -370,6 +370,132 @@ function MetricCard({ label, value, tone = '' }) {
   );
 }
 
+function inventorySummaryGroups(rows, keyOf) {
+  const groups = new Map();
+  rows.forEach((row) => {
+    const name = normalize(keyOf(row)) || '未匹配';
+    const target = groups.get(name) || {
+      id: name,
+      name,
+      materialCount: 0,
+      productionQty: 0,
+      transitQty: 0,
+      domesticInventoryQty: 0,
+      crossBorderInventoryQty: 0,
+      inventoryQty: 0
+    };
+    target.materialCount += 1;
+    target.productionQty += numberValue(row.productionQty);
+    target.transitQty += numberValue(row.transitQty);
+    target.domesticInventoryQty += numberValue(row.domesticInventoryQty);
+    target.crossBorderInventoryQty += numberValue(row.crossBorderInventoryQty);
+    target.inventoryQty += numberValue(row.inventoryQty);
+    groups.set(name, target);
+  });
+  return [...groups.values()].sort((left, right) => (
+    right.inventoryQty - left.inventoryQty
+    || right.transitQty - left.transitQty
+    || left.name.localeCompare(right.name, 'zh-Hans-CN')
+  ));
+}
+
+function InventorySummaryMetric({ label, value, note, tone }) {
+  return (
+    <article className={`inventory-kpi ${tone}`}>
+      <span>{label}</span>
+      <strong>{formatQuantity(value)}</strong>
+      <small>{note}</small>
+    </article>
+  );
+}
+
+function InventoryComparisonChart({ title, rows }) {
+  const chartRows = rows.slice(0, 8);
+  const maxValue = Math.max(...chartRows.flatMap((row) => [row.inventoryQty, row.transitQty]), 1);
+  return (
+    <article className="inventory-chart-panel">
+      <div className="inventory-chart-head">
+        <h3>{title}</h3>
+        <span className="inventory-chart-legend"><i className="stock" />在库量 <i className="transit" />在途量</span>
+      </div>
+      <div className="inventory-comparison-list">
+        {chartRows.length === 0 ? <p className="empty-chart">暂无数据</p> : chartRows.map((row) => (
+          <div key={row.id} className="inventory-comparison-row">
+            <span title={row.name}>{row.name}</span>
+            <div className="inventory-comparison-bars">
+              <div className="inventory-comparison-track" title={`在库量：${formatQuantity(row.inventoryQty)} 件`}>
+                <i className="stock" style={{ width: `${Math.max(row.inventoryQty / maxValue * 100, row.inventoryQty ? 2 : 0)}%` }} />
+              </div>
+              <div className="inventory-comparison-track" title={`在途量：${formatQuantity(row.transitQty)} 件`}>
+                <i className="transit" style={{ width: `${Math.max(row.transitQty / maxValue * 100, row.transitQty ? 2 : 0)}%` }} />
+              </div>
+            </div>
+            <strong>{formatQuantity(row.inventoryQty)} / {formatQuantity(row.transitQty)}</strong>
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function InventoryAbcChart({ rows }) {
+  const sortedRows = [...rows].sort((left, right) => numberValue(right.inventoryQty) - numberValue(left.inventoryQty));
+  const aEnd = Math.ceil(sortedRows.length * 0.2);
+  const bEnd = Math.ceil(sortedRows.length * 0.5);
+  const buckets = [
+    { name: 'A类（前20%）', value: sortedRows.slice(0, aEnd).reduce((sum, row) => sum + numberValue(row.inventoryQty), 0) },
+    { name: 'B类（中间30%）', value: sortedRows.slice(aEnd, bEnd).reduce((sum, row) => sum + numberValue(row.inventoryQty), 0) },
+    { name: 'C类（后50%）', value: sortedRows.slice(bEnd).reduce((sum, row) => sum + numberValue(row.inventoryQty), 0) }
+  ];
+  const total = buckets.reduce((sum, row) => sum + row.value, 0);
+  const maxValue = Math.max(...buckets.map((row) => row.value), 1);
+  return (
+    <article className="inventory-chart-panel">
+      <div className="inventory-chart-head">
+        <h3>库存ABC分布</h3>
+        <span className="inventory-chart-subtitle">按物料在库量排序</span>
+      </div>
+      <div className="inventory-abc-bars">
+        {buckets.map((row, index) => (
+          <div key={row.name} className={`inventory-abc-item abc-${index + 1}`}>
+            <div className="inventory-abc-value">{formatQuantity(row.value)}</div>
+            <div className="inventory-abc-track"><i style={{ height: `${Math.max(row.value / maxValue * 100, row.value ? 8 : 0)}%` }} /></div>
+            <strong>{row.name}</strong>
+            <span>{total ? `${(row.value / total * 100).toFixed(1)}%` : '0.0%'}</span>
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function InventoryStructureChart({ domestic, crossBorder }) {
+  const total = domestic + crossBorder;
+  const domesticPct = total ? domestic / total * 100 : 0;
+  const crossBorderPct = total ? 100 - domesticPct : 0;
+  return (
+    <article className="inventory-chart-panel">
+      <div className="inventory-chart-head">
+        <h3>在库结构分布</h3>
+        <span className="inventory-chart-subtitle">国内与跨境</span>
+      </div>
+      <div className="inventory-donut-layout">
+        <div
+          className="inventory-donut"
+          style={{ background: total ? `conic-gradient(#0f8f88 0 ${domesticPct}%, #1683e8 ${domesticPct}% 100%)` : '#e2e8f0' }}
+          aria-label={`国内在库占比 ${domesticPct.toFixed(1)}%，跨境在库占比 ${crossBorderPct.toFixed(1)}%`}
+        >
+          <div><span>合计</span><strong>{formatQuantity(total)}</strong></div>
+        </div>
+        <div className="inventory-donut-legend">
+          <div><span><i className="domestic" />国内在库</span><strong>{formatQuantity(domestic)} 件</strong><small>{total ? `${domesticPct.toFixed(1)}%` : '0.0%'}</small></div>
+          <div><span><i className="cross-border" />跨境在库</span><strong>{formatQuantity(crossBorder)} 件</strong><small>{crossBorderPct.toFixed(1)}%</small></div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 function InventorySummary({ token, active }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -377,7 +503,9 @@ function InventorySummary({ token, active }) {
   const [filters, setFilters] = useState({ businessUnits: [], productLines: [], productSeries: [], skus: [], keyword: '' });
   const [searchInput, setSearchInput] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 50;
+  const [tableView, setTableView] = useState('materials');
+  const [exporting, setExporting] = useState(false);
+  const pageSize = 20;
 
   useEffect(() => {
     if (!active) return undefined;
@@ -425,8 +553,12 @@ function InventorySummary({ token, active }) {
     crossBorderInventoryQty: summary.crossBorderInventoryQty + numberValue(row.crossBorderInventoryQty),
     inventoryQty: summary.inventoryQty + numberValue(row.inventoryQty)
   }), { productionQty: 0, transitQty: 0, domesticInventoryQty: 0, crossBorderInventoryQty: 0, inventoryQty: 0 }), [filteredRows]);
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
-  const pageRows = filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const businessUnitRows = useMemo(() => inventorySummaryGroups(filteredRows, (row) => row.businessUnit), [filteredRows]);
+  const productLineRows = useMemo(() => inventorySummaryGroups(filteredRows, (row) => row.productLine), [filteredRows]);
+  const materialCount = useMemo(() => new Set(filteredRows.map((row) => normalize(row.materialCode) || normalize(row.sku) || row.id)).size, [filteredRows]);
+  const tableRows = tableView === 'businessUnits' ? businessUnitRows : tableView === 'productLines' ? productLineRows : filteredRows;
+  const totalPages = Math.max(1, Math.ceil(tableRows.length / pageSize));
+  const pageRows = tableRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -434,7 +566,7 @@ function InventorySummary({ token, active }) {
     }, 300);
     return () => window.clearTimeout(timer);
   }, [searchInput]);
-  useEffect(() => { setCurrentPage(1); }, [filters]);
+  useEffect(() => { setCurrentPage(1); }, [filters, tableView]);
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
@@ -444,12 +576,59 @@ function InventorySummary({ token, active }) {
     setSearchInput('');
     setFilters({ businessUnits: [], productLines: [], productSeries: [], skus: [], keyword: '' });
   };
+  const tableConfig = tableView === 'materials'
+    ? {
+        columns: ['事业部', '产品线', '系列', 'SKU', '物料名称', '在制量', '在途量', '在库量'],
+        render: (row) => [
+          row.businessUnit,
+          row.productLine || '未匹配',
+          row.productSeries || '未匹配',
+          row.sku || '未匹配',
+          row.materialName || '未匹配',
+          formatQuantity(row.productionQty),
+          formatQuantity(row.transitQty),
+          formatQuantity(row.inventoryQty)
+        ]
+      }
+    : {
+        columns: [tableView === 'businessUnits' ? '事业部' : '产品线', '物料数', '在制量', '在途量', '国内在库', '跨境在库', '在库合计'],
+        render: (row) => [
+          row.name,
+          formatQuantity(row.materialCount),
+          formatQuantity(row.productionQty),
+          formatQuantity(row.transitQty),
+          formatQuantity(row.domesticInventoryQty),
+          formatQuantity(row.crossBorderInventoryQty),
+          formatQuantity(row.inventoryQty)
+        ]
+      };
+
+  async function exportCurrentView() {
+    if (!tableRows.length) return;
+    setExporting(true);
+    try {
+      const XLSX = await import('xlsx');
+      const aoa = [
+        tableConfig.columns,
+        ...tableRows.map((row) => tableConfig.render(row).map((value) => typeof value === 'string' ? value : String(value ?? '')))
+      ];
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+      XLSX.utils.book_append_sheet(workbook, worksheet, '库存汇总');
+      XLSX.writeFile(workbook, `库存汇总_${todayText()}.xlsx`);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
-    <>
-      <div className="section-heading-row">
-        <h2>库存汇总</h2>
-        <span className="section-count">采购、头程、国内与跨境库存全量汇总</span>
+    <section className="inventory-dashboard">
+      <div className="inventory-dashboard-heading">
+        <div>
+          <h2>库存汇总看板</h2>
+          <p>采购、头程、国内与跨境库存全量汇总</p>
+        </div>
+        <span>数据更新：{data?.updatedAt || '暂无'}</span>
       </div>
       {loading ? (
         <div className="inventory-summary-status" role="status">加载中</div>
@@ -470,69 +649,45 @@ function InventorySummary({ token, active }) {
             />
             <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
           </div>
-          <section className="inventory-summary-grid" aria-label="库存汇总指标">
-            <article className="inventory-summary-card production">
-              <div className="inventory-summary-card-heading">
-                <span>在制量</span>
-                <small>采购订单剩余入库</small>
-              </div>
-              <div className="inventory-summary-value">
-                <strong>{formatQuantity(totals.productionQty)}</strong>
-                <span>件</span>
-              </div>
-              <p>全部月份备货剩余数量</p>
-            </article>
-            <article className="inventory-summary-card transit">
-              <div className="inventory-summary-card-heading">
-                <span>在途量</span>
-                <small>头程数据看板</small>
-              </div>
-              <div className="inventory-summary-value">
-                <strong>{formatQuantity(totals.transitQty)}</strong>
-                <span>件</span>
-              </div>
-              <p>货物状态：海上在途</p>
-            </article>
-            <article className="inventory-summary-card stock">
-              <div className="inventory-summary-card-heading">
-                <span>在库量</span>
-                <small>国内与跨境合计</small>
-              </div>
-              <div className="inventory-summary-value">
-                <strong>{formatQuantity(totals.inventoryQty)}</strong>
-                <span>件</span>
-              </div>
-              <div className="inventory-summary-breakdown">
-                <span>国内 <strong>{formatQuantity(totals.domesticInventoryQty)}</strong> 件</span>
-                <span>跨境 <strong>{formatQuantity(totals.crossBorderInventoryQty)}</strong> 件</span>
-              </div>
-            </article>
+          <section className="inventory-kpi-grid" aria-label="库存汇总指标">
+            <InventorySummaryMetric label="在库合计" value={totals.inventoryQty} note="国内与跨境库存" tone="total" />
+            <InventorySummaryMetric label="在制量" value={totals.productionQty} note="采购订单剩余入库" tone="production" />
+            <InventorySummaryMetric label="在途量" value={totals.transitQty} note="货物状态：海上在途" tone="transit" />
+            <InventorySummaryMetric label="国内在库" value={totals.domesticInventoryQty} note="旺店通 + 京东现货" tone="domestic" />
+            <InventorySummaryMetric label="跨境在库" value={totals.crossBorderInventoryQty} note="领星库存数量" tone="cross-border" />
+            <InventorySummaryMetric label="库存物料数" value={materialCount} note={`当前筛选 ${filteredRows.length} 条`} tone="materials" />
           </section>
-          <div className="section-heading-row inventory-summary-table-heading">
-            <h3>库存明细</h3>
-            <span className="section-count">当前筛选 {filteredRows.length} / {rows.length} 条</span>
+
+          <section className="inventory-chart-grid">
+            <InventoryComparisonChart title="事业部库存与在途" rows={businessUnitRows} />
+            <InventoryComparisonChart title="产品线库存与在途" rows={productLineRows} />
+            <InventoryAbcChart rows={filteredRows} />
+            <InventoryStructureChart domestic={totals.domesticInventoryQty} crossBorder={totals.crossBorderInventoryQty} />
+          </section>
+
+          <div className="inventory-table-tabs">
+            <div role="tablist" aria-label="库存汇总表格视图">
+              <button type="button" role="tab" aria-selected={tableView === 'materials'} className={tableView === 'materials' ? 'active' : ''} onClick={() => setTableView('materials')}>物料汇总</button>
+              <button type="button" role="tab" aria-selected={tableView === 'businessUnits'} className={tableView === 'businessUnits' ? 'active' : ''} onClick={() => setTableView('businessUnits')}>事业部汇总</button>
+              <button type="button" role="tab" aria-selected={tableView === 'productLines'} className={tableView === 'productLines' ? 'active' : ''} onClick={() => setTableView('productLines')}>产品线汇总</button>
+            </div>
+            <div className="inventory-table-actions">
+              <span>当前筛选 {filteredRows.length} / {rows.length} 条</span>
+              <button type="button" className="ghost compact-button" disabled={exporting || !tableRows.length} onClick={exportCurrentView}>{exporting ? '导出中...' : '导出Excel'}</button>
+            </div>
           </div>
           <DataTable
             className="inventory-summary-table"
             rows={pageRows}
-            columns={['事业部', '产品线', '系列', 'SKU', '物料名称', '在制量', '在途量', '在库量']}
-            render={(row) => [
-              row.businessUnit,
-              row.productLine || '未匹配',
-              row.productSeries || '未匹配',
-              row.sku || '未匹配',
-              row.materialName || '未匹配',
-              formatQuantity(row.productionQty),
-              formatQuantity(row.transitQty),
-              formatQuantity(row.inventoryQty)
-            ]}
+            columns={tableConfig.columns}
+            render={tableConfig.render}
           />
-          {filteredRows.length > pageSize && (
+          {tableRows.length > pageSize && (
             <TablePagination label="库存汇总分页" currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} pageSize={pageSize} />
           )}
         </>
       )}
-    </>
+    </section>
   );
 }
 

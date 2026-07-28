@@ -2238,6 +2238,20 @@ function inventorySummaryData() {
   const transitRows = firstMileBoardModel().rows.filter((row) => row.cargoStatus === '海上在途');
   const domesticRows = domesticBoardRows(demands);
   const crossBorderRows = buildCrossBorderInventoryModel().rows;
+  const dimensionUpdatedAt = get(
+    `SELECT MAX(updated_at) AS updated_at
+     FROM dimension_files
+     WHERE slot_id IN (
+       'productCategory', 'spare1', 'warehouseMaterialMap', 'dimensionSpare', 'lingxingWarehouseMap',
+       'wangdianDataMain', 'wangdianSpare1', 'wangdianSpare2',
+       'lingxingFbaInventory', 'lingxingFbmInventory', 'lingxingWfsInventory',
+       'firstMileData1', 'firstMileData2', 'firstMileData3', 'firstMileData4', 'firstMileData5', 'firstMileSpare'
+     )`
+  );
+  const updatedAt = [currentAppliedAt(), normalize(dimensionUpdatedAt?.updated_at)]
+    .filter(Boolean)
+    .sort()
+    .at(-1) || '';
   const rowMap = new Map();
   let fallbackIndex = 0;
 
@@ -2318,6 +2332,7 @@ function inventorySummaryData() {
       跨境: crossBorderInventoryQty,
       合计: domesticInventoryQty + crossBorderInventoryQty
     },
+    updatedAt,
     rows
   };
 }

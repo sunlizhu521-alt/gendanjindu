@@ -594,7 +594,7 @@ h3 {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  height: 38px;
+  height: 34px;
   min-width: 0;
   padding: 0 10px;
   border: 1px solid #cbd5e1;
@@ -2290,6 +2290,12 @@ th {
   .filter-control,
   .search-input {
     width: 100%;
+  }
+
+  .filters-row .multi-filter {
+    flex-basis: 100%;
+    width: 100%;
+    min-width: 0;
   }
 
   .inventory-summary-filters {

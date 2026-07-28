@@ -920,7 +920,8 @@ function MultiSelectFilter({ label, allLabel, value = [], options = [], onChange
     () => [...new Set(options.map(normalize).filter(Boolean))],
     [options]
   );
-  const selected = value.filter((item) => availableOptions.includes(item));
+  const selectedValues = Array.isArray(value) ? value : (normalize(value) ? [normalize(value)] : []);
+  const selected = selectedValues.filter((item) => availableOptions.includes(item));
 
   useEffect(() => {
     if (!open) return undefined;
@@ -1261,10 +1262,15 @@ function SecurityWatermark({ userName }) {
 function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', currentAppliedAt = '' }) {
   const usesOperationBoardLayout = filterKey === 'operationBoard';
   const activeRows = useMemo(() => rows.filter((row) => row.active && numberValue(row.remainingInboundQty) > 0), [rows]);
-  const [filters, setFilters] = useSessionFilters(filterKey, { month: '', businessUnit: '', operatorName: '', supplierCount: '', supplierShortName: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
+  const [filters, setFilters] = useSessionFilters(filterKey, { month: [], businessUnit: [], operatorName: [], supplierCount: [], supplierShortName: [], productLine: [], series: [], sku: [], purchaseOwner: [], keyword: '' });
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
   const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+  const selectedValues = (value) => Array.isArray(value) ? value : (normalize(value) ? [normalize(value)] : []);
+  const matchesSelected = (value, candidate) => {
+    const selected = selectedValues(value);
+    return selected.length === 0 || selected.includes(candidate);
+  };
   const matchesDashboardFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
     const displaySupplier = orderSupplierName(row);
@@ -1286,15 +1292,15 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       row.purchaseOwner
     ].join(' ').toLowerCase();
     return (!keyword || text.includes(keyword))
-      && (omit === 'month' || !filters.month || row.month === filters.month)
-      && (omit === 'businessUnit' || !filters.businessUnit || purchaseTrackingBusinessUnit(row.businessUnit) === filters.businessUnit)
-      && (omit === 'operatorName' || !filters.operatorName || row.operatorName === filters.operatorName)
-      && (omit === 'supplierCount' || !filters.supplierCount || supplyCount === filters.supplierCount)
-      && (omit === 'supplierShortName' || !filters.supplierShortName || displaySupplier === filters.supplierShortName)
-      && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
-      && (omit === 'series' || !filters.series || row.productSeries === filters.series)
-      && (omit === 'sku' || !filters.sku || row.sku === filters.sku)
-      && (omit === 'purchaseOwner' || !filters.purchaseOwner || row.purchaseOwner === filters.purchaseOwner);
+      && (omit === 'month' || matchesSelected(filters.month, row.month))
+      && (omit === 'businessUnit' || matchesSelected(filters.businessUnit, purchaseTrackingBusinessUnit(row.businessUnit)))
+      && (omit === 'operatorName' || matchesSelected(filters.operatorName, row.operatorName))
+      && (omit === 'supplierCount' || matchesSelected(filters.supplierCount, supplyCount))
+      && (omit === 'supplierShortName' || matchesSelected(filters.supplierShortName, displaySupplier))
+      && (omit === 'productLine' || matchesSelected(filters.productLine, row.productLine))
+      && (omit === 'series' || matchesSelected(filters.series, row.productSeries))
+      && (omit === 'sku' || matchesSelected(filters.sku, row.sku))
+      && (omit === 'purchaseOwner' || matchesSelected(filters.purchaseOwner, row.purchaseOwner));
   };
   const options = useMemo(() => {
     const rowsFor = (field) => activeRows.filter((row) => matchesDashboardFilters(row, field));
@@ -1332,7 +1338,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     () => filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize),
     [filteredRows, currentPage]
   );
-  const clearFilters = () => setFilters({ month: '', businessUnit: '', operatorName: '', supplierCount: '', supplierShortName: '', productLine: '', series: '', sku: '', purchaseOwner: '', keyword: '' });
+  const clearFilters = () => setFilters({ month: [], businessUnit: [], operatorName: [], supplierCount: [], supplierShortName: [], productLine: [], series: [], sku: [], purchaseOwner: [], keyword: '' });
   const remainingLabel = usesOperationBoardLayout ? '备货剩余数量' : '未交付数量';
   const remainingShortLabel = usesOperationBoardLayout ? '备货剩余' : '未交付';
   const summary = filteredRows.reduce((acc, row) => {
@@ -1428,15 +1434,15 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
         <AppliedTimeNote value={currentAppliedAt} />
       )}
       <div className="toolbar filters-row">
-        <MonthCalendarFilter label="下单月份" value={filters.month} options={options.months} multiple={false} onChange={(value) => setFilters({ ...filters, month: value })} />
-        <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
-        {usesOperationBoardLayout && <SelectField label="运营" value={filters.operatorName} options={options.operators} onChange={(value) => setFilters({ ...filters, operatorName: value })} />}
-        <SelectField label="是否多家供应" value={filters.supplierCount} options={options.supplierCounts} onChange={(value) => setFilters({ ...filters, supplierCount: value })} />
-        <SelectField label="供应商简称" value={filters.supplierShortName} options={options.supplierShortNames} onChange={(value) => setFilters({ ...filters, supplierShortName: value })} />
-        <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
-        <SelectField label="系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
-        <SelectField label="SKU" value={filters.sku} options={options.skus} onChange={(value) => setFilters({ ...filters, sku: value })} />
-        <SelectField label="采购下单人" value={filters.purchaseOwner} options={options.purchaseOwners} onChange={(value) => setFilters({ ...filters, purchaseOwner: value })} />
+        <MultiSelectFilter label="下单月份" allLabel="全部月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
+        <MultiSelectFilter label="事业部" allLabel="全部事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
+        {usesOperationBoardLayout && <MultiSelectFilter label="运营" allLabel="全部运营" value={filters.operatorName} options={options.operators} onChange={(value) => setFilters({ ...filters, operatorName: value })} />}
+        <MultiSelectFilter label="是否多家供应" allLabel="全部供应家数" value={filters.supplierCount} options={options.supplierCounts} onChange={(value) => setFilters({ ...filters, supplierCount: value })} />
+        <MultiSelectFilter label="供应商简称" allLabel="全部供应商简称" value={filters.supplierShortName} options={options.supplierShortNames} onChange={(value) => setFilters({ ...filters, supplierShortName: value })} />
+        <MultiSelectFilter label="产品线" allLabel="全部产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
+        <MultiSelectFilter label="系列" allLabel="全部系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
+        <MultiSelectFilter label="SKU" allLabel="全部SKU" value={filters.sku} options={options.skus} onChange={(value) => setFilters({ ...filters, sku: value })} />
+        <MultiSelectFilter label="采购下单人" allLabel="全部采购下单人" value={filters.purchaseOwner} options={options.purchaseOwners} onChange={(value) => setFilters({ ...filters, purchaseOwner: value })} />
         <input
           className="search-input"
           placeholder="搜索运营、供应商、采购订单号、物料编码、OA备货流程号、SKU、物料名称、采购下单人"

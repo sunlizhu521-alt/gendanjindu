@@ -627,6 +627,36 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(statusAfterValid.current.fileName, '自动应用测试.xlsx');
     assert.equal(statusAfterValid.current.activeRows, 1);
 
+    async function uploadReplacementSnapshot(index) {
+      const workbook = xlsx.utils.book_new();
+      xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet([{
+        自定义日期: `2026-07-${22 + index}`,
+        自定义供应商: `Replacement Supplier ${index}`,
+        自定义物料: `AUTO-00${index}`,
+        自定义数量: 10 + index,
+        无关大字段: 'x'.repeat(10000)
+      }]), '采购订单列表');
+      const form = new FormData();
+      form.append('file', new Blob([xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' })]), `替换快照-${index}.xlsx`);
+      return fetch(`http://127.0.0.1:${port}/api/imports/kingdee/new-snapshot`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer admin-token' },
+        body: form
+      });
+    }
+
+    assert.equal((await uploadReplacementSnapshot(2)).status, 200);
+    assert.equal((await uploadReplacementSnapshot(3)).status, 200);
+
+    const persistedOrderDatabase = new SQL.Database(readFileSync(path.join(dataDir, 'gendanjindu.sqlite')));
+    const persistedOrderSummary = persistedOrderDatabase.exec(
+      'SELECT COUNT(*) AS row_count, COUNT(DISTINCT batch_id) AS batch_count, MAX(LENGTH(raw_json)) AS max_raw_length FROM kingdee_orders'
+    )[0];
+    assert.equal(persistedOrderSummary.values[0][0], 2);
+    assert.equal(persistedOrderSummary.values[0][1], 2);
+    assert.ok(persistedOrderSummary.values[0][2] < 500);
+    persistedOrderDatabase.close();
+
     const invalidWorkbook = xlsx.utils.book_new();
     xlsx.utils.book_append_sheet(invalidWorkbook, xlsx.utils.json_to_sheet([{ 无效字段: '无有效采购订单' }]), '错误数据');
     const invalidForm = new FormData();
@@ -641,7 +671,7 @@ test('inventory summary and domestic board use complete source models and enforc
     const statusAfterRejected = await fetch(`http://127.0.0.1:${port}/api/imports/kingdee/current-status`, {
       headers: { Authorization: 'Bearer admin-token' }
     }).then((response) => response.json());
-    assert.equal(statusAfterRejected.current.fileName, '自动应用测试.xlsx');
+    assert.equal(statusAfterRejected.current.fileName, '替换快照-3.xlsx');
     assert.equal(statusAfterRejected.current.activeRows, 1);
   } finally {
     child.kill();

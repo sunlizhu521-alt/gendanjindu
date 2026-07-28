@@ -32,7 +32,13 @@ export async function initDatabase() {
 
 export function saveDatabase() {
   if (!db) return;
-  fs.writeFileSync(dbPath, Buffer.from(db.export()));
+  const temporaryPath = `${dbPath}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(temporaryPath, Buffer.from(db.export()));
+    fs.renameSync(temporaryPath, dbPath);
+  } finally {
+    if (fs.existsSync(temporaryPath)) fs.rmSync(temporaryPath, { force: true });
+  }
 }
 
 function backupDatabaseOnStartup() {
@@ -833,13 +839,20 @@ export function get(sql, params = []) {
 
 export function transaction(callback) {
   run('BEGIN');
+  let committed = false;
   try {
     const result = callback();
     run('COMMIT');
+    committed = true;
     saveDatabase();
     return result;
   } catch (error) {
-    run('ROLLBACK');
+    if (!committed) {
+      run('ROLLBACK');
+    } else if (fs.existsSync(dbPath)) {
+      db.close();
+      db = new SQL.Database(fs.readFileSync(dbPath));
+    }
     throw error;
   }
 }

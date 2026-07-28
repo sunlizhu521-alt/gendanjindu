@@ -481,10 +481,15 @@ function sheetData(sheet) {
 
 function workbookRows(file, sheetName = null, options = {}) {
   if (!file?.buffer) throw new Error('未收到上传文件');
-  const workbook = xlsx.read(file.buffer, { type: 'buffer', cellDates: true });
+  const workbook = xlsx.read(file.buffer, { type: 'buffer', cellDates: true, dense: true });
+  const preferredSheet = !sheetName && options.preferredSheetPatterns?.length
+    ? workbook.SheetNames.find((name) => options.preferredSheetPatterns.some((pattern) => pattern.test(name)))
+    : '';
   const targetSheets = sheetName
     ? workbook.SheetNames.filter((name) => name === sheetName)
-    : workbook.SheetNames;
+    : preferredSheet
+      ? [preferredSheet]
+      : workbook.SheetNames;
   const parsedRows = new Map();
   const getSheetData = (name) => {
     if (!parsedRows.has(name)) {
@@ -2958,6 +2963,15 @@ function snapshotChangeEvents(summary, sourceRows) {
   return events;
 }
 
+function compactKingdeeRaw(row) {
+  return {
+    createDate: row.createDate || '',
+    purchaseDate: row.purchaseDate || '',
+    orderDate: row.purchaseDate || row.createDate || '',
+    oaFlowNo: row.oaFlowNo || ''
+  };
+}
+
 function applyKingdeeSnapshot({
   fileName,
   sourceRows,
@@ -2972,6 +2986,14 @@ function applyKingdeeSnapshot({
 }) {
   const batchId = randomUUID();
   const changeEvents = importMode === 'baseline' ? [] : snapshotChangeEvents(summary, sourceRows);
+  run(
+    `DELETE FROM kingdee_orders
+     WHERE batch_id NOT IN (
+       SELECT DISTINCT source_batch_id
+       FROM order_demands
+       WHERE active = 1 AND COALESCE(source_batch_id, '') <> ''
+     )`
+  );
   run(
     `INSERT INTO kingdee_import_batches
       (id, file_name, import_mode, imported_by, imported_at, applied_at, row_count, skipped_rows, skipped_json)
@@ -2990,7 +3012,7 @@ function applyKingdeeSnapshot({
       row.purchaseOrg || '', row.creator || '', row.oaFlowNo || '', row.orderNo || '', row.quantity,
       numberValue(row.inboundQty), numberValue(row.remainingInboundQty), row.purchaseDate || row.createDate || '',
       row.deliveryDate || '', row.materialName || '', row.operatorName || '', row.documentStatus || '',
-      row.closeStatus || '', row.isGift || '', row.businessClose || '', JSON.stringify(row.raw || row)
+      row.closeStatus || '', row.isGift || '', row.businessClose || '', JSON.stringify(compactKingdeeRaw(row))
     ])
   );
   const progressMap = new Map(all('SELECT * FROM supplier_progress').map((row) => [row.demand_key, row]));
@@ -3313,7 +3335,10 @@ app.delete('/api/imports/kingdee/test-cache', requireAuth, requirePage('kingdeeI
 app.post('/api/imports/kingdee/preview', requireAuth, requirePage('kingdeeImport'), upload.single('file'), (req, res) => {
   const mapping = kingdeeImportMapping(req.body);
   const sheetName = normalize(req.body.sheetName);
-  const parsed = workbookRows(req.file, sheetName || null, { includePreviews: false });
+  const parsed = workbookRows(req.file, sheetName || null, {
+    includePreviews: false,
+    preferredSheetPatterns: [/Fac\s*-\s*采购订单列表/i, /采购订单列表/i]
+  });
   const result = mappedKingdeeRows(parsed.rows, mapping);
   const summary = summarizeDemands(result.rows);
   const stats = kingdeeImportStats(result, summary);
@@ -3336,7 +3361,10 @@ app.post('/api/imports/kingdee/new-snapshot', requireAuth, requirePage('kingdeeI
   const startedAt = Date.now();
   const mapping = kingdeeImportMapping(req.body);
   const sheetName = normalize(req.body.sheetName);
-  const parsed = workbookRows(req.file, sheetName || null, { includePreviews: false });
+  const parsed = workbookRows(req.file, sheetName || null, {
+    includePreviews: false,
+    preferredSheetPatterns: [/Fac\s*-\s*采购订单列表/i, /采购订单列表/i]
+  });
   const result = mappedKingdeeRows(parsed.rows, mapping);
   if (!result.validRows) {
     return res.status(400).json({

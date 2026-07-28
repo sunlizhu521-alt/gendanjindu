@@ -5,6 +5,10 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import multer from 'multer';
+import { SaxesParser } from 'saxes';
+import unzipper from 'unzipper';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -95,6 +99,18 @@ const TRACKING_CLOSE_STATUS = '未关闭';
 const app = express();
 const UPLOAD_LIMIT_BYTES = 100 * 1024 * 1024;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: UPLOAD_LIMIT_BYTES } });
+const kingdeeUploadDir = path.join(os.tmpdir(), 'gendanjindu-kingdee-uploads');
+fs.mkdirSync(kingdeeUploadDir, { recursive: true });
+fs.readdirSync(kingdeeUploadDir, { withFileTypes: true }).forEach((entry) => {
+  if (entry.isFile()) fs.rmSync(path.join(kingdeeUploadDir, entry.name), { force: true });
+});
+const kingdeeUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, callback) => callback(null, kingdeeUploadDir),
+    filename: (_req, file, callback) => callback(null, `${Date.now()}-${randomUUID()}${path.extname(file.originalname || '')}`)
+  }),
+  limits: { fileSize: UPLOAD_LIMIT_BYTES }
+});
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
@@ -513,6 +529,326 @@ function workbookRows(file, sheetName = null, options = {}) {
   return { sheetNames: workbook.SheetNames, sheetPreviews, sheets, rows: sheets.flatMap((sheet) => sheet.rows) };
 }
 
+function rowObject(columns, values) {
+  const row = {};
+  columns.forEach((column, index) => {
+    const value = values[index] ?? '';
+    if (column && normalize(value)) row[column] = value;
+  });
+  return row;
+}
+
+function xmlName(name) {
+  return String(name || '').split(':').pop();
+}
+
+function xmlAttribute(node, name) {
+  const entry = Object.entries(node?.attributes || {}).find(([key]) => key === name || xmlName(key) === name);
+  return entry?.[1] ?? '';
+}
+
+function parseXmlStream(stream, handlers = {}) {
+  return new Promise((resolve, reject) => {
+    const parser = new SaxesParser({ xmlns: false, position: false });
+    let settled = false;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      stream.destroy?.();
+      reject(error);
+    };
+    parser.on('opentag', (node) => handlers.open?.(node));
+    parser.on('text', (text) => handlers.text?.(text));
+    parser.on('closetag', (node) => handlers.close?.(node));
+    parser.on('error', fail);
+    stream.on('error', fail);
+    stream.on('data', (chunk) => {
+      if (settled) return;
+      try {
+        parser.write(chunk.toString('utf8'));
+      } catch (error) {
+        fail(error);
+      }
+    });
+    stream.on('end', () => {
+      if (settled) return;
+      try {
+        parser.close();
+        settled = true;
+        resolve();
+      } catch (error) {
+        fail(error);
+      }
+    });
+  });
+}
+
+async function workbookSheetDefinitions(directory) {
+  const workbookEntry = directory.files.find((entry) => entry.path === 'xl/workbook.xml');
+  const relationshipsEntry = directory.files.find((entry) => entry.path === 'xl/_rels/workbook.xml.rels');
+  const sheets = [];
+  const relationships = new Map();
+  if (workbookEntry) {
+    await parseXmlStream(workbookEntry.stream(), {
+      open(node) {
+        if (xmlName(node.name) !== 'sheet') return;
+        sheets.push({
+          name: String(xmlAttribute(node, 'name') || ''),
+          relationshipId: String(xmlAttribute(node, 'id') || '')
+        });
+      }
+    });
+  }
+  if (relationshipsEntry) {
+    await parseXmlStream(relationshipsEntry.stream(), {
+      open(node) {
+        if (xmlName(node.name) !== 'Relationship') return;
+        relationships.set(String(xmlAttribute(node, 'Id') || ''), String(xmlAttribute(node, 'Target') || ''));
+      }
+    });
+  }
+  return sheets.map((sheet, index) => {
+    const rawTarget = relationships.get(sheet.relationshipId) || `worksheets/sheet${index + 1}.xml`;
+    const target = rawTarget.replace(/^\/+/, '').replace(/^\.\//, '');
+    return {
+      name: sheet.name || `Sheet${index + 1}`,
+      path: target.startsWith('xl/') ? target : `xl/${target}`
+    };
+  });
+}
+
+async function readSharedStrings(directory) {
+  const entry = directory.files.find((item) => item.path === 'xl/sharedStrings.xml');
+  if (!entry) return [];
+  const values = [];
+  let inText = false;
+  let current = '';
+  await parseXmlStream(entry.stream(), {
+    open(node) {
+      const name = xmlName(node.name);
+      if (name === 'si') current = '';
+      if (name === 't') inText = true;
+    },
+    text(text) {
+      if (inText) current += text;
+    },
+    close(node) {
+      const name = xmlName(node.name);
+      if (name === 't') inText = false;
+      if (name === 'si') values.push(current);
+    }
+  });
+  return values;
+}
+
+function dateNumberFormat(numFmtId, customFormats) {
+  const builtInDateIds = new Set([
+    14, 15, 16, 17, 18, 19, 20, 21, 22,
+    27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+    45, 46, 47, 50, 51, 52, 53, 54, 55, 56, 57, 58
+  ]);
+  if (builtInDateIds.has(numFmtId)) return true;
+  const format = customFormats.get(numFmtId) || '';
+  return /(^|[^\\])[ymdhis]/i.test(format.replace(/"[^"]*"/g, ''));
+}
+
+async function readDateStyleIndexes(directory) {
+  const entry = directory.files.find((item) => item.path === 'xl/styles.xml');
+  if (!entry) return new Set();
+  const customFormats = new Map();
+  const styleFormats = [];
+  let inCellFormats = false;
+  await parseXmlStream(entry.stream(), {
+    open(node) {
+      const name = xmlName(node.name);
+      if (name === 'numFmt') {
+        customFormats.set(Number(xmlAttribute(node, 'numFmtId')), String(xmlAttribute(node, 'formatCode') || ''));
+      } else if (name === 'cellXfs') {
+        inCellFormats = true;
+      } else if (name === 'xf' && inCellFormats) {
+        styleFormats.push(Number(xmlAttribute(node, 'numFmtId')));
+      }
+    },
+    close(node) {
+      if (xmlName(node.name) === 'cellXfs') inCellFormats = false;
+    }
+  });
+  return new Set(
+    styleFormats
+      .map((numFmtId, index) => dateNumberFormat(numFmtId, customFormats) ? index : -1)
+      .filter((index) => index >= 0)
+  );
+}
+
+function worksheetColumnIndex(reference, fallback) {
+  const letters = String(reference || '').match(/^[A-Z]+/i)?.[0]?.toUpperCase();
+  if (!letters) return fallback;
+  return letters.split('').reduce((value, letter) => value * 26 + letter.charCodeAt(0) - 64, 0) - 1;
+}
+
+function worksheetCellValue(cell, sharedStrings, dateStyleIndexes) {
+  const raw = cell.text;
+  if (cell.type === 's') return sharedStrings[Number(raw)] ?? '';
+  if (cell.type === 'inlineStr' || cell.type === 'str') return raw;
+  if (cell.type === 'b') return raw === '1';
+  if (cell.type === 'e' || raw === '') return '';
+  const number = Number(raw);
+  if (!Number.isFinite(number)) return raw;
+  if (dateStyleIndexes.has(cell.styleIndex)) {
+    const parsed = xlsx.SSF.parse_date_code(number);
+    if (parsed) {
+      return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+    }
+  }
+  return number;
+}
+
+async function streamWorksheetData(entry, sheetName, sharedStrings, dateStyleIndexes) {
+  const prefixRows = [];
+  const rows = [];
+  let columns = [];
+  let headerRow = 0;
+  let detectedHeaderScore = 0;
+  const initializeHeader = () => {
+    if (columns.length || !prefixRows.length) return;
+    const best = prefixRows
+      .map((values, index) => ({ index, score: headerScore(values) }))
+      .sort((left, right) => right.score - left.score || left.index - right.index)[0];
+    const headerIndex = best && best.score > 0 ? best.index : 0;
+    detectedHeaderScore = best?.score || 0;
+    columns = uniqueColumns(prefixRows[headerIndex] || []);
+    headerRow = headerIndex + 1;
+    prefixRows.slice(headerIndex + 1).forEach((values) => {
+      const row = rowObject(columns, values);
+      if (Object.values(row).some((value) => normalize(value))) rows.push(row);
+    });
+  };
+
+  const addValues = (values) => {
+    if (prefixRows.length < 10) {
+      prefixRows.push(values);
+      if (prefixRows.length === 10) initializeHeader();
+      return;
+    }
+    const row = rowObject(columns, values);
+    if (Object.values(row).some((value) => normalize(value))) rows.push(row);
+    if (rows.length > 200000) {
+      const error = new Error('采购订单超过20万行，请拆分或清理无效行后重试');
+      error.status = 400;
+      error.publicMessage = error.message;
+      throw error;
+    }
+  };
+
+  let currentRow = null;
+  let currentCell = null;
+  let captureValue = false;
+  await parseXmlStream(entry.stream(), {
+    open(node) {
+      const name = xmlName(node.name);
+      if (name === 'row') {
+        currentRow = [];
+      } else if (name === 'c' && currentRow) {
+        currentCell = {
+          columnIndex: worksheetColumnIndex(xmlAttribute(node, 'r'), currentRow.length),
+          type: String(xmlAttribute(node, 't') || ''),
+          styleIndex: Number(xmlAttribute(node, 's') || 0),
+          text: ''
+        };
+      } else if ((name === 'v' || name === 't') && currentCell) {
+        captureValue = true;
+      }
+    },
+    text(text) {
+      if (captureValue && currentCell) currentCell.text += text;
+    },
+    close(node) {
+      const name = xmlName(node.name);
+      if (name === 'v' || name === 't') {
+        captureValue = false;
+      } else if (name === 'c' && currentCell && currentRow) {
+        if (currentCell.columnIndex < 160) {
+          currentRow[currentCell.columnIndex] = worksheetCellValue(currentCell, sharedStrings, dateStyleIndexes);
+        }
+        currentCell = null;
+      } else if (name === 'row' && currentRow) {
+        addValues(currentRow);
+        currentRow = null;
+      }
+    }
+  });
+  initializeHeader();
+  return {
+    sheetName,
+    rows,
+    columns: columns.filter(Boolean),
+    headerRow,
+    detectedHeaderScore
+  };
+}
+
+async function streamingKingdeeWorkbookRows(file, sheetName = null, options = {}) {
+  const extension = path.extname(file?.originalname || file?.path || '').toLowerCase();
+  if (extension !== '.xlsx') {
+    const buffer = file?.buffer || fs.readFileSync(file.path);
+    return workbookRows({ ...file, buffer }, sheetName, options);
+  }
+
+  const directory = await unzipper.Open.file(file.path);
+  const definedSheets = await workbookSheetDefinitions(directory);
+  const worksheetEntries = directory.files
+    .filter((entry) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(entry.path))
+    .map((entry, index) => ({
+      name: definedSheets.find((sheet) => sheet.path === entry.path)?.name || `Sheet${index + 1}`,
+      path: entry.path,
+      entry
+    }));
+  const sharedStrings = await readSharedStrings(directory);
+  const dateStyleIndexes = await readDateStyleIndexes(directory);
+  const sheetNames = worksheetEntries.map((sheet) => sheet.name);
+  const explicitSheet = sheetName ? worksheetEntries.find((sheet) => sheet.name === sheetName) : null;
+  const preferredSheet = !sheetName
+    ? worksheetEntries.find((sheet) => options.preferredSheetPatterns?.some((pattern) => pattern.test(sheet.name)))
+    : null;
+  const candidates = explicitSheet
+    ? [explicitSheet]
+    : preferredSheet
+      ? [preferredSheet]
+      : worksheetEntries;
+  let fallbackSheet = null;
+  for (const worksheet of candidates) {
+    const data = await streamWorksheetData(worksheet.entry, worksheet.name, sharedStrings, dateStyleIndexes);
+    data.mappingMatchCount = Object.values(options.mapping || {})
+      .filter((column) => column && data.columns.includes(column))
+      .length;
+    const candidateScore = data.mappingMatchCount * 1000 + data.detectedHeaderScore;
+    const fallbackScore = (fallbackSheet?.mappingMatchCount || 0) * 1000 + (fallbackSheet?.detectedHeaderScore || 0);
+    if (!fallbackSheet || candidateScore > fallbackScore) {
+      fallbackSheet = data;
+    }
+  }
+  const target = fallbackSheet;
+  if (!target) return { sheetNames, sheetPreviews: [], sheets: [], rows: [] };
+  return { sheetNames, sheetPreviews: [], sheets: [target], rows: target.rows };
+}
+
+async function removeUploadedFile(file) {
+  if (!file?.path) return;
+  await fs.promises.rm(file.path, { force: true }).catch(() => {});
+}
+
+function cleanupKingdeeUpload(req, res, next) {
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    void removeUploadedFile(req.file);
+  };
+  res.once('finish', cleanup);
+  res.once('close', cleanup);
+  next();
+}
+
 function workbookInspect(file, sheetName = null) {
   if (!file?.buffer) throw new Error('未收到上传文件');
   const workbook = xlsx.read(file.buffer, { type: 'buffer', cellDates: true });
@@ -604,7 +940,7 @@ function orderedOaFlowNos(rows, valuePicker = (row) => row.oaFlowNo || row.oa_fl
   return uniqueDelimitedValues([...rows].sort(compareOaRows).map(valuePicker));
 }
 
-function mappedKingdeeRows(rows, mapping) {
+function mappedKingdeeRows(rows, mapping, options = {}) {
   const valid = [];
   const skipped = [];
   const summary = [];
@@ -669,7 +1005,7 @@ function mappedKingdeeRows(rows, mapping) {
       quantity,
       inboundQty,
       remainingInboundQty,
-      raw: row,
+      raw: options.retainRaw === false ? {} : row,
       demandKey: demandKey(purchaseOrg, month, businessUnit, supplier, materialCode)
     });
   });
@@ -2504,7 +2840,7 @@ function persistDifferenceCompare({
         JSON.stringify(mapping),
         storeSnapshotPayload ? JSON.stringify(summary) : '[]',
         storeSnapshotPayload ? JSON.stringify(result.rows) : '[]',
-        parsed.rows.length,
+        parsed.rowCount ?? parsed.rows.length,
         result.validRows,
         result.skippedRows,
         oldAppliedAt,
@@ -3332,14 +3668,17 @@ app.delete('/api/imports/kingdee/test-cache', requireAuth, requirePage('kingdeeI
   clearKingdeeCache(req, res);
 });
 
-app.post('/api/imports/kingdee/preview', requireAuth, requirePage('kingdeeImport'), upload.single('file'), (req, res) => {
+app.post('/api/imports/kingdee/preview', requireAuth, requirePage('kingdeeImport'), kingdeeUpload.single('file'), cleanupKingdeeUpload, async (req, res) => {
   const mapping = kingdeeImportMapping(req.body);
   const sheetName = normalize(req.body.sheetName);
-  const parsed = workbookRows(req.file, sheetName || null, {
+  const parsed = await streamingKingdeeWorkbookRows(req.file, sheetName || null, {
     includePreviews: false,
+    mapping,
     preferredSheetPatterns: [/Fac\s*-\s*采购订单列表/i, /采购订单列表/i]
   });
-  const result = mappedKingdeeRows(parsed.rows, mapping);
+  const result = mappedKingdeeRows(parsed.rows, mapping, { retainRaw: false });
+  parsed.rowCount = parsed.rows.length;
+  parsed.rows = [];
   const summary = summarizeDemands(result.rows);
   const stats = kingdeeImportStats(result, summary);
   res.json({
@@ -3357,15 +3696,18 @@ app.post('/api/imports/kingdee/apply', requireAuth, requirePage('kingdeeImport')
   res.status(410).json({ error: '当前应用采购订单已改为只读，请通过“新采购订单上传”自动解析并应用。' });
 });
 
-app.post('/api/imports/kingdee/new-snapshot', requireAuth, requirePage('kingdeeImport'), upload.single('file'), (req, res) => {
+app.post('/api/imports/kingdee/new-snapshot', requireAuth, requirePage('kingdeeImport'), kingdeeUpload.single('file'), cleanupKingdeeUpload, async (req, res) => {
   const startedAt = Date.now();
   const mapping = kingdeeImportMapping(req.body);
   const sheetName = normalize(req.body.sheetName);
-  const parsed = workbookRows(req.file, sheetName || null, {
+  const parsed = await streamingKingdeeWorkbookRows(req.file, sheetName || null, {
     includePreviews: false,
+    mapping,
     preferredSheetPatterns: [/Fac\s*-\s*采购订单列表/i, /采购订单列表/i]
   });
-  const result = mappedKingdeeRows(parsed.rows, mapping);
+  const result = mappedKingdeeRows(parsed.rows, mapping, { retainRaw: false });
+  parsed.rowCount = parsed.rows.length;
+  parsed.rows = [];
   if (!result.validRows) {
     return res.status(400).json({
       error: `未解析到有效采购订单，已停止应用。共读取 ${result.totalRows} 行，跳过 ${result.skippedRows} 行，请检查文件格式和必填字段。`
@@ -3400,7 +3742,7 @@ app.post('/api/imports/kingdee/new-snapshot', requireAuth, requirePage('kingdeeI
     importedAt: now,
     appliedAt: now,
     rowCount: result.rows.length,
-    totalRows: parsed.rows.length,
+    totalRows: parsed.rowCount,
     ...stats,
     skipped: result.skipped.slice(0, 10),
     diffRows: compareRowsForSession(compare.sessionId, req.user),
@@ -4241,9 +4583,16 @@ app.use((err, req, res, next) => {
   if (!req.path.startsWith('/api/')) return next(err);
   const isMulterError = err instanceof multer.MulterError;
   const status = isMulterError ? 400 : Number(err.status || err.statusCode || 500);
-  const error = isMulterError && err.code === 'LIMIT_FILE_SIZE'
-    ? '文件过大，请压缩到100MB以内再上传'
-    : '服务器处理失败，请稍后重试';
+  const isKingdeeMemoryError = req.path.startsWith('/api/imports/kingdee/')
+    && /array buffer allocation|heap out of memory|out of memory/i.test(String(err?.message || ''));
+  let error = '服务器处理失败，请稍后重试';
+  if (isMulterError && err.code === 'LIMIT_FILE_SIZE') {
+    error = '文件过大，请压缩到100MB以内再上传';
+  } else if (err.publicMessage) {
+    error = String(err.publicMessage);
+  } else if (isKingdeeMemoryError) {
+    error = '采购订单文件解压体积过大，流式解析仍未完成，请将文件另存为CSV后重新上传';
+  }
   console.error(`[${nowText()}] API error ${req.method} ${req.path}:`, err);
   return res.status(status).json({ error });
 });

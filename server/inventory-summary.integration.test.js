@@ -605,8 +605,12 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(legacyApplyResponse.status, 410);
 
     const validWorkbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(validWorkbook, xlsx.utils.json_to_sheet([
+      { 说明: '采购订单导出说明页' },
+      { 说明: '该页不应被识别为采购订单数据' }
+    ]), '说明');
     xlsx.utils.book_append_sheet(validWorkbook, xlsx.utils.json_to_sheet([{
-      自定义日期: '2026-07-22',
+      自定义日期: new Date('2026-07-22T00:00:00Z'),
       自定义供应商: 'Auto Supplier',
       自定义物料: 'AUTO-001',
       自定义数量: 12
@@ -618,8 +622,9 @@ test('inventory summary and domestic board use complete source models and enforc
       headers: { Authorization: 'Bearer admin-token' },
       body: validForm
     });
-    assert.equal(autoApplyResponse.status, 200);
-    assert.equal((await autoApplyResponse.json()).rowCount, 1);
+    const autoApplyPayload = await autoApplyResponse.json();
+    assert.equal(autoApplyResponse.status, 200, `${JSON.stringify(autoApplyPayload)}\n${logs.join('')}`);
+    assert.equal(autoApplyPayload.rowCount, 1);
 
     const statusAfterValid = await fetch(`http://127.0.0.1:${port}/api/imports/kingdee/current-status`, {
       headers: { Authorization: 'Bearer admin-token' }
@@ -629,15 +634,20 @@ test('inventory summary and domestic board use complete source models and enforc
 
     async function uploadReplacementSnapshot(index) {
       const workbook = xlsx.utils.book_new();
-      xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet([{
+      const rowCount = index === 2 ? 25000 : 1;
+      const rows = Array.from({ length: rowCount }, (_unused, rowIndex) => ({
         自定义日期: `2026-07-${22 + index}`,
         自定义供应商: `Replacement Supplier ${index}`,
         自定义物料: `AUTO-00${index}`,
         自定义数量: 10 + index,
-        无关大字段: 'x'.repeat(10000)
-      }]), '采购订单列表');
+        ...Object.fromEntries(Array.from(
+          { length: 12 },
+          (_empty, columnIndex) => [`无关字段${columnIndex + 1}`, `extra-${rowIndex}-${columnIndex}`]
+        ))
+      }));
+      xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(rows), '采购订单列表');
       const form = new FormData();
-      form.append('file', new Blob([xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' })]), `替换快照-${index}.xlsx`);
+      form.append('file', new Blob([xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx', bookSST: true })]), `替换快照-${index}.xlsx`);
       return fetch(`http://127.0.0.1:${port}/api/imports/kingdee/new-snapshot`, {
         method: 'POST',
         headers: { Authorization: 'Bearer admin-token' },
@@ -652,7 +662,7 @@ test('inventory summary and domestic board use complete source models and enforc
     const persistedOrderSummary = persistedOrderDatabase.exec(
       'SELECT COUNT(*) AS row_count, COUNT(DISTINCT batch_id) AS batch_count, MAX(LENGTH(raw_json)) AS max_raw_length FROM kingdee_orders'
     )[0];
-    assert.equal(persistedOrderSummary.values[0][0], 2);
+    assert.equal(persistedOrderSummary.values[0][0], 25001);
     assert.equal(persistedOrderSummary.values[0][1], 2);
     assert.ok(persistedOrderSummary.values[0][2] < 500);
     persistedOrderDatabase.close();

@@ -11,6 +11,7 @@ const PAGE_ORDER = [
   'crossBorderInventory',
   'lingxingInventory',
   'inventorySummary',
+  'inventorySummaryLibrary',
   'operationBoard',
   'progressRefresh',
   'differenceAllocation',
@@ -28,6 +29,7 @@ const PAGE_ORDER = [
 const PAGE_LABELS = {
   domesticBoard: '国内事业部看板',
   inventorySummary: '库存汇总',
+  inventorySummaryLibrary: '库存汇总文件库',
   operationBoard: '运营看板-未交付',
   purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',
@@ -48,7 +50,7 @@ const PAGE_LABELS = {
 const NAV_GROUPS = [
   { title: '国内数据', pages: ['domesticBoard', 'wangdianData'] },
   { title: '跨境数据', pages: ['crossBorderInventory', 'lingxingInventory'] },
-  { title: '库存数据', pages: ['inventorySummary'] },
+  { title: '库存数据', pages: ['inventorySummary', 'inventorySummaryLibrary'] },
   { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'differenceAllocation', 'trace', 'purchaseBoard'] },
   { title: '头程数据', pages: ['firstMileBoard', 'firstMileDatabase'] },
   { title: '维护数据', pages: ['dimensionMissing', 'dimensionLibrary', 'kingdeeImport'] },
@@ -189,6 +191,12 @@ const LINGXING_INVENTORY_SLOTS = [
   ] },
   { id: 'lingxingSpare', title: '备用', fields: [] }
 ];
+
+const INVENTORY_SUMMARY_LIBRARY_SLOTS = Array.from({ length: 12 }, (_, index) => ({
+  id: `inventorySummaryFile${index + 1}`,
+  title: `库存槽位 ${index + 1}`,
+  fields: []
+}));
 
 const FIRST_MILE_DATABASE_SLOTS = [
   { id: 'firstMileData1', title: '张婷婷头程数据', fields: [], firstMile: true },
@@ -3845,7 +3853,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
   return (
     <>
       <div className="section-heading-row"><h2>{title}</h2><span className="section-count">{slots.length} 个槽位，字段映射后应用</span></div>
-      <section className={`library-grid ${gridColumns === 3 ? 'library-grid-three' : ''}`}>
+      <section className={`library-grid ${gridColumns === 3 ? 'library-grid-three' : ''} ${gridColumns === 4 ? 'library-grid-four' : ''}`}>
         {slots.map((slot, index) => {
           const record = records.find((item) => item.slot_id === slot.id);
           const state = local[slot.id] || {};
@@ -4408,6 +4416,7 @@ function App() {
         {demandsLoading && DEMAND_DATA_PAGES.has(activeTab) && <p className="section-count">正在加载采购订单数据...</p>}
         {shouldMount('domesticBoard') && <PagePane page="domesticBoard" activeTab={activeTab}><DomesticBoard token={token} setMessage={setMessage} /></PagePane>}
         {shouldMount('inventorySummary') && <PagePane page="inventorySummary" activeTab={activeTab}><InventorySummary token={token} active={activeTab === 'inventorySummary'} /></PagePane>}
+        {shouldMount('inventorySummaryLibrary') && <PagePane page="inventorySummaryLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="库存汇总文件库" slots={INVENTORY_SUMMARY_LIBRARY_SLOTS} gridColumns={4} /></PagePane>}
         {shouldMount('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><Dashboard rows={demands} title="运营看板-未交付" filterKey="operationBoard" currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
         {shouldMount('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}

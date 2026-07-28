@@ -29,6 +29,7 @@ const ALL_PAGES = [
   'crossBorderInventory',
   'lingxingInventory',
   'inventorySummary',
+  'inventorySummaryLibrary',
   'operationBoard',
   'progressRefresh',
   'differenceAllocation',
@@ -45,6 +46,7 @@ const ALL_PAGES = [
 const PAGE_LABELS = {
   domesticBoard: '国内事业部看板',
   inventorySummary: '库存汇总',
+  inventorySummaryLibrary: '库存汇总文件库',
   operationBoard: '运营看板-未交付',
   purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',
@@ -79,6 +81,18 @@ const DIMENSION_SLOTS = {
   lingxingFbmInventory: 'FBM库存',
   lingxingWfsInventory: 'WFS库存',
   lingxingSpare: '备用',
+  inventorySummaryFile1: '库存槽位 1',
+  inventorySummaryFile2: '库存槽位 2',
+  inventorySummaryFile3: '库存槽位 3',
+  inventorySummaryFile4: '库存槽位 4',
+  inventorySummaryFile5: '库存槽位 5',
+  inventorySummaryFile6: '库存槽位 6',
+  inventorySummaryFile7: '库存槽位 7',
+  inventorySummaryFile8: '库存槽位 8',
+  inventorySummaryFile9: '库存槽位 9',
+  inventorySummaryFile10: '库存槽位 10',
+  inventorySummaryFile11: '库存槽位 11',
+  inventorySummaryFile12: '库存槽位 12',
   firstMileData1: '张婷婷头程数据',
   firstMileData2: '扈翠芸头程数据',
   firstMileData3: '魏静头程数据',
@@ -333,6 +347,7 @@ function auditPageForRequest(req) {
     if (slotId.startsWith('firstMile')) return { key: 'firstMileDatabase', label: PAGE_LABELS.firstMileDatabase };
     if (slotId.startsWith('wangdian')) return { key: 'wangdianData', label: PAGE_LABELS.wangdianData };
     if (slotId.startsWith('lingxingF')) return { key: 'lingxingInventory', label: PAGE_LABELS.lingxingInventory };
+    if (slotId.startsWith('inventorySummaryFile')) return { key: 'inventorySummaryLibrary', label: PAGE_LABELS.inventorySummaryLibrary };
     return { key: 'dimensionLibrary', label: PAGE_LABELS.dimensionLibrary };
   }
   return { key: 'system', label: '系统操作' };
@@ -3994,7 +4009,7 @@ app.post('/api/difference-allocations/:sessionId/apply', requireAuth, requirePag
   res.json({ batchId, status: { ...allocationStatus(req.params.sessionId), applied: true }, demands: demandRows(false, req.user) });
 });
 
-app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'firstMileDatabase']), (req, res) => {
+app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'firstMileDatabase']), (req, res) => {
   const rows = all('SELECT slot_id, title, file_name, sheet_name, sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at FROM dimension_files');
   res.json({
     rows: rows.map((row) => {
@@ -4016,7 +4031,7 @@ app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'wan
   });
 });
 
-app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'firstMileDatabase']), upload.single('file'), (req, res) => {
+app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'firstMileDatabase']), upload.single('file'), (req, res) => {
   const slotId = req.params.slotId;
   const mapping = parseJson(req.body.mapping, {});
   const sheetName = normalize(req.body.sheetName);
@@ -4183,7 +4198,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   });
 });
 
-app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'firstMileDatabase']), (req, res) => {
+app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'firstMileDatabase']), (req, res) => {
   const beforeOrderCounts = orderDataCounts();
   transaction(() => {
     run('UPDATE dimension_files SET applied = 1, updated_at = ? WHERE slot_id = ?', [nowText(), req.params.slotId]);
@@ -4193,7 +4208,7 @@ app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensio
   res.json({ rows: demandRows(false, req.user) });
 });
 
-app.delete('/api/dimensions/:slotId', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'firstMileDatabase']), (req, res) => {
+app.delete('/api/dimensions/:slotId', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'firstMileDatabase']), (req, res) => {
   run('DELETE FROM dimension_files WHERE slot_id = ?', [req.params.slotId]);
   saveDatabase();
   res.json({ ok: true });

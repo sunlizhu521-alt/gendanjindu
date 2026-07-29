@@ -595,14 +595,49 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(inventoryUploadPayload.rowCount, 1);
     assert.equal(Object.hasOwn(inventoryUploadPayload, 'rows'), false);
 
+    const transitWarehouseWorkbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(transitWarehouseWorkbook, xlsx.utils.json_to_sheet([{
+      领星FBA在途仓库: 'US-FBA-TRANSIT',
+      金蝶仓库编码: 'KD-001',
+      金蝶仓库名称: '美国FBA在途仓',
+      备注: 'test',
+      无关字段: 'do-not-store'
+    }]), '仓库对照');
+    const transitWarehouseForm = new FormData();
+    transitWarehouseForm.append(
+      'file',
+      new Blob([xlsx.write(transitWarehouseWorkbook, { type: 'buffer', bookType: 'xlsx' })]),
+      'FBA在途仓库对照.xlsx'
+    );
+    transitWarehouseForm.append('mapping', JSON.stringify({
+      lingxingWarehouseName: '领星FBA在途仓库',
+      kingdeeWarehouseCode: '金蝶仓库编码',
+      kingdeeWarehouseName: '金蝶仓库名称',
+      remark: '备注'
+    }));
+    const transitWarehouseUploadResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions/inventorySummaryFile13/upload`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token' },
+      body: transitWarehouseForm
+    });
+    const transitWarehouseUploadPayload = await transitWarehouseUploadResponse.json();
+    assert.equal(transitWarehouseUploadResponse.status, 200, `${JSON.stringify(transitWarehouseUploadPayload)}\n${logs.join('')}`);
+    assert.equal(transitWarehouseUploadPayload.rowCount, 1);
+
     const inventoryDimensionsResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions`, {
       headers: { Authorization: 'Bearer admin-token' }
     });
     assert.equal(inventoryDimensionsResponse.status, 200);
-    const inventoryRecord = (await inventoryDimensionsResponse.json()).rows.find((row) => row.slot_id === 'inventorySummaryFile1');
+    const inventoryDimensionRows = (await inventoryDimensionsResponse.json()).rows;
+    const inventoryRecord = inventoryDimensionRows.find((row) => row.slot_id === 'inventorySummaryFile1');
     assert.deepEqual(
       { title: inventoryRecord?.title, rowCount: inventoryRecord?.rowCount, fileName: inventoryRecord?.file_name },
       { title: 'FBA库存报表', rowCount: 1, fileName: 'FBA库存报表.xlsx' }
+    );
+    const transitWarehouseRecord = inventoryDimensionRows.find((row) => row.slot_id === 'inventorySummaryFile13');
+    assert.deepEqual(
+      { title: transitWarehouseRecord?.title, rowCount: transitWarehouseRecord?.rowCount },
+      { title: 'Dim-领星FBA在途&金蝶仓库', rowCount: 1 }
     );
 
     const inventoryDatabase = new SQL.Database(readFileSync(path.join(dataDir, 'gendanjindu.sqlite')));
@@ -611,6 +646,16 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(inventoryStatement.step(), true);
     const storedInventoryRows = JSON.parse(inventoryStatement.getAsObject().rows_json);
     inventoryStatement.free();
+    const transitWarehouseStatement = inventoryDatabase.prepare('SELECT rows_json FROM dimension_files WHERE slot_id = ?');
+    transitWarehouseStatement.bind(['inventorySummaryFile13']);
+    assert.equal(transitWarehouseStatement.step(), true);
+    assert.deepEqual(JSON.parse(transitWarehouseStatement.getAsObject().rows_json), [{
+      lingxingWarehouseName: 'US-FBA-TRANSIT',
+      kingdeeWarehouseCode: 'KD-001',
+      kingdeeWarehouseName: '美国FBA在途仓',
+      remark: 'test'
+    }]);
+    transitWarehouseStatement.free();
     inventoryDatabase.close();
     assert.deepEqual(storedInventoryRows, [{
       storeName: 'US Store',
@@ -643,6 +688,8 @@ test('inventory summary and domestic board use complete source models and enforc
     const loggedInBootstrapPayload = await loggedInBootstrap.json();
     assert.equal(loggedInBootstrapPayload.pages.inventoryPurchase, '采购未交付');
     assert.ok(loggedInBootstrapPayload.user.pageAccess.includes('inventoryPurchase'));
+    assert.equal(loggedInBootstrapPayload.dimensionSlots.inventorySummaryFile13, 'Dim-领星FBA在途&金蝶仓库');
+    assert.equal(loggedInBootstrapPayload.dimensionSlots.inventorySummaryFile16, '库存槽位 16');
 
     const persistedDatabase = new SQL.Database(readFileSync(path.join(dataDir, 'gendanjindu.sqlite')));
     const sessionStatement = persistedDatabase.prepare('SELECT created_at, expires_at FROM sessions WHERE token = ?');

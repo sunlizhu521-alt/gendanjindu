@@ -233,7 +233,14 @@ const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
   { id: 'inventorySummaryFile11', title: 'Dim-京东ID与品号匹配', fields: [
     ['jdId', '京东ID'], ['materialCode', '品号']
   ] },
-  { id: 'inventorySummaryFile12', title: '采购跟单情况', fields: [] }
+  { id: 'inventorySummaryFile12', title: '采购跟单情况', fields: [] },
+  { id: 'inventorySummaryFile13', title: 'Dim-领星FBA在途&金蝶仓库', fields: [
+    ['lingxingWarehouseName', '领星FBA在途仓库'], ['kingdeeWarehouseCode', '金蝶仓库编码'],
+    ['kingdeeWarehouseName', '金蝶仓库名称'], ['remark', '备注']
+  ] },
+  { id: 'inventorySummaryFile14', title: '库存槽位 14', fields: [] },
+  { id: 'inventorySummaryFile15', title: '库存槽位 15', fields: [] },
+  { id: 'inventorySummaryFile16', title: '库存槽位 16', fields: [] }
 ];
 
 const FIRST_MILE_DATABASE_SLOTS = [

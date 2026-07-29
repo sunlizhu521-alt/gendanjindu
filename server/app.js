@@ -95,6 +95,10 @@ const DIMENSION_SLOTS = {
   inventorySummaryFile10: 'Dim-领星MSKU&物料编码',
   inventorySummaryFile11: 'Dim-京东ID与品号匹配',
   inventorySummaryFile12: '采购跟单情况',
+  inventorySummaryFile13: 'Dim-领星FBA在途&金蝶仓库',
+  inventorySummaryFile14: '库存槽位 14',
+  inventorySummaryFile15: '库存槽位 15',
+  inventorySummaryFile16: '库存槽位 16',
   firstMileData1: '张婷婷头程数据',
   firstMileData2: '扈翠芸头程数据',
   firstMileData3: '魏静头程数据',
@@ -4167,7 +4171,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         materialCode: pick(row, mapping.materialCode) || pickAny(row, ['品号', '物料编码', '商品编码', '货品编号', '存货编码'])
       };
     }
-    if (['lingxingWarehouseMap', 'inventorySummaryFile9'].includes(slotId)) {
+    if (['lingxingWarehouseMap', 'inventorySummaryFile9', 'inventorySummaryFile13'].includes(slotId)) {
       return {
         raw: row,
         lingxingWarehouseName: pick(row, mapping.lingxingWarehouseName) || pickAny(row, ['领星仓库名称', '领星仓库', '仓库名称', '仓库']),

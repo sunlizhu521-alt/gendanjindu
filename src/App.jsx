@@ -11,6 +11,7 @@ const PAGE_ORDER = [
   'crossBorderInventory',
   'lingxingInventory',
   'inventorySummary',
+  'inventoryPurchase',
   'inventorySummaryLibrary',
   'operationBoard',
   'progressRefresh',
@@ -29,6 +30,7 @@ const PAGE_ORDER = [
 const PAGE_LABELS = {
   domesticBoard: '国内事业部看板',
   inventorySummary: '库存汇总',
+  inventoryPurchase: '采购未交付',
   inventorySummaryLibrary: '库存汇总文件库',
   operationBoard: '运营看板-未交付',
   purchaseBoard: '采购看板',
@@ -50,14 +52,14 @@ const PAGE_LABELS = {
 const NAV_GROUPS = [
   { title: '国内数据', pages: ['domesticBoard', 'wangdianData'] },
   { title: '跨境数据', pages: ['crossBorderInventory', 'lingxingInventory'] },
-  { title: '库存数据', pages: ['inventorySummary', 'inventorySummaryLibrary'] },
+  { title: '库存数据', pages: ['inventorySummary', 'inventoryPurchase', 'inventorySummaryLibrary'] },
   { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'differenceAllocation', 'trace', 'purchaseBoard'] },
   { title: '头程数据', pages: ['firstMileBoard', 'firstMileDatabase'] },
   { title: '维护数据', pages: ['dimensionMissing', 'dimensionLibrary', 'kingdeeImport'] },
   { title: '系统操作', pages: ['permissions', 'operationLogs'] }
 ];
 
-const DEMAND_DATA_PAGES = new Set(['inventorySummary', 'operationBoard', 'purchaseBoard', 'progressRefresh']);
+const DEMAND_DATA_PAGES = new Set(['inventoryPurchase', 'operationBoard', 'purchaseBoard', 'progressRefresh']);
 
 function visiblePagesForUser(user) {
   return PAGE_ORDER.filter((page) => user?.role === '管理员' || user?.pageAccess?.includes(page));
@@ -220,7 +222,7 @@ const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
   { id: 'inventorySummaryFile7', title: '京东在库报表', fields: [
     ['jdId', '京东ID'], ['jdStockQty', '京东现货库存']
   ] },
-  { id: 'inventorySummaryFile8', title: '库存槽位 8', fields: [] },
+  { id: 'inventorySummaryFile8', title: '销售数据报表', fields: [] },
   { id: 'inventorySummaryFile9', title: 'Dim-领星FBA仓库&金蝶仓库', fields: [
     ['lingxingWarehouseName', '领星FBA仓库'], ['kingdeeWarehouseCode', '金蝶仓库编码'],
     ['kingdeeWarehouseName', '金蝶仓库名称'], ['remark', '备注']
@@ -231,7 +233,7 @@ const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
   { id: 'inventorySummaryFile11', title: 'Dim-京东ID与品号匹配', fields: [
     ['jdId', '京东ID'], ['materialCode', '品号']
   ] },
-  { id: 'inventorySummaryFile12', title: '库存槽位 12', fields: [] }
+  { id: 'inventorySummaryFile12', title: '采购跟单情况', fields: [] }
 ];
 
 const FIRST_MILE_DATABASE_SLOTS = [
@@ -589,6 +591,8 @@ function inventoryPurchaseGroups(rows, keyOf) {
       remainingQty: 0,
       orderQty: 0,
       inboundQty: 0,
+      unpreparedQty: 0,
+      preparedNotStartedQty: 0,
       inProductionQty: 0,
       finishedQty: 0,
       pendingQty: 0
@@ -598,6 +602,8 @@ function inventoryPurchaseGroups(rows, keyOf) {
     target.remainingQty += remainingQty;
     target.orderQty += numberValue(row.currentOrderQty);
     target.inboundQty += numberValue(row.trackingInboundQty);
+    target.unpreparedQty += numberValue(row.unpreparedQty);
+    target.preparedNotStartedQty += numberValue(row.preparedNotStartedQty);
     target.inProductionQty += numberValue(row.inProductionQty);
     target.finishedQty += numberValue(row.finishedQty);
     target.pendingQty += Math.max(remainingQty - numberValue(row.inProductionQty) - numberValue(row.finishedQty), 0);
@@ -609,16 +615,33 @@ function inventoryPurchaseGroups(rows, keyOf) {
   ));
 }
 
+function InventoryMetricToggle({ metric, onChange, label }) {
+  return (
+    <div className="inventory-metric-toggle" role="group" aria-label={`${label}指标切换`}>
+      <button type="button" className={metric === 'qty' ? 'active' : ''} onClick={() => onChange('qty')}>数量</button>
+      <button type="button" className={metric === 'value' ? 'active' : ''} onClick={() => onChange('value')}>货值</button>
+    </div>
+  );
+}
+
+function InventoryChartPending({ children = '数据待接入' }) {
+  return <div className="inventory-chart-pending"><strong>{children}</strong><span>字段接入后自动按当前筛选统计</span></div>;
+}
+
 function InventoryRankChart({ title, rows, note = '前10名' }) {
+  const [metric, setMetric] = useState('qty');
   const chartRows = rows.slice(0, 10);
   const maxValue = Math.max(...chartRows.map((row) => row.remainingQty), 1);
   return (
     <article className="inventory-chart-panel inventory-purchase-chart">
       <div className="inventory-chart-head">
         <h3>{title}</h3>
-        <span className="inventory-chart-subtitle">{note}</span>
+        <div className="inventory-chart-controls">
+          <span className="inventory-chart-subtitle">{note}</span>
+          <InventoryMetricToggle metric={metric} onChange={setMetric} label={title} />
+        </div>
       </div>
-      <div className="inventory-rank-list">
+      {metric === 'value' ? <InventoryChartPending>货值数据待接入</InventoryChartPending> : <div className="inventory-rank-list">
         {chartRows.length === 0 ? <p className="empty-chart">暂无数据</p> : chartRows.map((row) => (
           <div key={row.id} className="inventory-rank-row">
             <span title={row.name}>{row.name}</span>
@@ -628,21 +651,25 @@ function InventoryRankChart({ title, rows, note = '前10名' }) {
             <strong>{formatQuantity(row.remainingQty)}</strong>
           </div>
         ))}
-      </div>
+      </div>}
     </article>
   );
 }
 
 function InventoryMonthChart({ rows }) {
+  const [metric, setMetric] = useState('qty');
   const chartRows = [...rows].sort((left, right) => left.name.localeCompare(right.name, 'zh-Hans-CN')).slice(-12);
   const maxValue = Math.max(...chartRows.map((row) => row.remainingQty), 1);
   return (
     <article className="inventory-chart-panel inventory-purchase-chart">
       <div className="inventory-chart-head">
         <h3>下单月份未交付趋势</h3>
-        <span className="inventory-chart-subtitle">未交付数量</span>
+        <div className="inventory-chart-controls">
+          <span className="inventory-chart-subtitle">{metric === 'qty' ? '未交付数量' : '未交付货值'}</span>
+          <InventoryMetricToggle metric={metric} onChange={setMetric} label="下单月份未交付趋势" />
+        </div>
       </div>
-      <div className="inventory-month-chart">
+      {metric === 'value' ? <InventoryChartPending>货值数据待接入</InventoryChartPending> : <div className="inventory-month-chart">
         {chartRows.length === 0 ? <p className="empty-chart">暂无数据</p> : chartRows.map((row) => (
           <div key={row.id} className="inventory-month-column">
             <strong>{formatQuantity(row.remainingQty)}</strong>
@@ -650,25 +677,27 @@ function InventoryMonthChart({ rows }) {
             <span title={row.name}>{row.name}</span>
           </div>
         ))}
-      </div>
+      </div>}
     </article>
   );
 }
 
 function InventoryStageChart({ totals }) {
+  const [metric, setMetric] = useState('qty');
   const stages = [
+    { name: '已下单未备料', value: totals.unpreparedQty, tone: 'unprepared' },
+    { name: '已备料未生产', value: totals.preparedNotStartedQty, tone: 'prepared' },
     { name: '生产中', value: totals.inProductionQty, tone: 'production' },
-    { name: '完工未发', value: totals.finishedQty, tone: 'finished' },
-    { name: '待更新', value: totals.pendingQty, tone: 'pending' }
+    { name: '完工未发', value: totals.finishedQty, tone: 'finished' }
   ];
   const maxValue = Math.max(...stages.map((row) => row.value), 1);
   return (
     <article className="inventory-chart-panel inventory-purchase-chart">
       <div className="inventory-chart-head">
         <h3>生产进度构成</h3>
-        <span className="inventory-chart-subtitle">未交付进度</span>
+        <InventoryMetricToggle metric={metric} onChange={setMetric} label="生产进度构成" />
       </div>
-      <div className="inventory-stage-list">
+      {metric === 'value' ? <InventoryChartPending>货值数据待接入</InventoryChartPending> : <div className="inventory-stage-list">
         {stages.map((row) => (
           <div key={row.name} className="inventory-stage-row">
             <span>{row.name}</span>
@@ -676,7 +705,68 @@ function InventoryStageChart({ totals }) {
             <strong>{formatQuantity(row.value)}</strong>
           </div>
         ))}
+      </div>}
+    </article>
+  );
+}
+
+function InventoryPieChart({ title, rows, pendingText = '数据字段待接入' }) {
+  const [metric, setMetric] = useState('qty');
+  const palette = ['#0f8f88', '#1683e8', '#d98619', '#7c3aed', '#6b8e23', '#94a3b8'];
+  const sourceRows = rows.filter((row) => numberValue(row.remainingQty) > 0);
+  const total = sourceRows.reduce((sum, row) => sum + numberValue(row.remainingQty), 0);
+  const visibleRows = sourceRows.slice(0, 5);
+  if (sourceRows.length > 5) {
+    visibleRows.push({
+      id: 'other',
+      name: `其他${sourceRows.length - 5}项`,
+      remainingQty: sourceRows.slice(5).reduce((sum, row) => sum + numberValue(row.remainingQty), 0)
+    });
+  }
+  let offset = 0;
+  const gradient = total ? visibleRows.map((row, index) => {
+    const start = offset;
+    offset += numberValue(row.remainingQty) / total * 100;
+    return `${palette[index % palette.length]} ${start}% ${offset}%`;
+  }).join(', ') : '#e2e8f0 0 100%';
+  return (
+    <article className="inventory-chart-panel inventory-purchase-chart inventory-pie-panel">
+      <div className="inventory-chart-head">
+        <h3>{title}</h3>
+        <div className="inventory-chart-controls">
+          <span className="inventory-chart-subtitle">{sourceRows.length ? `共${sourceRows.length}项` : '待接入'}</span>
+          <InventoryMetricToggle metric={metric} onChange={setMetric} label={title} />
+        </div>
       </div>
+      {metric === 'value' ? <InventoryChartPending>货值数据待接入</InventoryChartPending> : !total ? (
+        <InventoryChartPending>{pendingText}</InventoryChartPending>
+      ) : (
+        <div className="inventory-pie-layout">
+          <div className="inventory-pie" style={{ background: `conic-gradient(${gradient})` }}>
+            <div><span>数量</span><strong>{formatQuantity(total)}</strong></div>
+          </div>
+          <div className="inventory-pie-legend">
+            {visibleRows.map((row, index) => (
+              <div key={row.id || row.name}>
+                <span><i style={{ background: palette[index % palette.length] }} />{row.name}</span>
+                <strong>{formatQuantity(row.remainingQty)}</strong>
+                <small>{total ? `${(numberValue(row.remainingQty) / total * 100).toFixed(1)}%` : '0.0%'}</small>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function InventoryPurchaseMetric({ label, quantity, value, note, share, tone }) {
+  return (
+    <article className={`inventory-kpi inventory-purchase-kpi ${tone}`}>
+      <span>{label}</span>
+      <div className="inventory-purchase-kpi-row"><small>数量</small><strong>{formatQuantity(quantity)}</strong></div>
+      <div className="inventory-purchase-kpi-row value"><small>货值</small><strong>{value === null ? '待接入' : value}</strong></div>
+      <small>{share === null ? note : `${note} · 占比 ${share.toFixed(1)}%`}</small>
     </article>
   );
 }
@@ -714,7 +804,8 @@ function InventoryPurchaseDashboard({ rows, loading }) {
       && selected(filters.suppliers, row.orderSupplierShortName || row.supplierShortName || row.supplier)
       && (!keyword || [
         row.materialCode, row.sku, row.materialName, row.orderNo, row.supplier,
-        row.orderSupplierShortName, row.supplierShortName, row.operatorName
+        row.orderSupplierShortName, row.supplierShortName, row.operatorName,
+        row.unfulfilledReason, row.reasonDetail, row.remark
       ].join(' ').toLowerCase().includes(keyword))
     ));
   }, [sourceRows, filters]);
@@ -723,6 +814,8 @@ function InventoryPurchaseDashboard({ rows, loading }) {
     summary.orderQty += numberValue(row.currentOrderQty);
     summary.inboundQty += numberValue(row.trackingInboundQty);
     summary.remainingQty += remainingQty;
+    summary.unpreparedQty += numberValue(row.unpreparedQty);
+    summary.preparedNotStartedQty += numberValue(row.preparedNotStartedQty);
     summary.inProductionQty += numberValue(row.inProductionQty);
     summary.finishedQty += numberValue(row.finishedQty);
     summary.pendingQty += Math.max(remainingQty - numberValue(row.inProductionQty) - numberValue(row.finishedQty), 0);
@@ -731,6 +824,8 @@ function InventoryPurchaseDashboard({ rows, loading }) {
     orderQty: 0,
     inboundQty: 0,
     remainingQty: 0,
+    unpreparedQty: 0,
+    preparedNotStartedQty: 0,
     inProductionQty: 0,
     finishedQty: 0,
     pendingQty: 0
@@ -739,7 +834,18 @@ function InventoryPurchaseDashboard({ rows, loading }) {
   const supplierRows = useMemo(() => inventoryPurchaseGroups(filteredRows, (row) => row.orderSupplierShortName || row.supplierShortName || row.supplier), [filteredRows]);
   const productLineRows = useMemo(() => inventoryPurchaseGroups(filteredRows, (row) => row.productLine), [filteredRows]);
   const businessUnitRows = useMemo(() => inventoryPurchaseGroups(filteredRows, (row) => row.businessUnit), [filteredRows]);
-  const purchaseOwnerRows = useMemo(() => inventoryPurchaseGroups(filteredRows, (row) => row.purchaseOwner), [filteredRows]);
+  const reasonSourceRows = useMemo(() => filteredRows.filter((row) => normalize(row.unfulfilledReason)), [filteredRows]);
+  const reasonRows = useMemo(() => inventoryPurchaseGroups(reasonSourceRows, (row) => row.unfulfilledReason), [reasonSourceRows]);
+  const reasonDetailRows = useMemo(
+    () => inventoryPurchaseGroups(filteredRows.filter((row) => normalize(row.reasonDetail)), (row) => row.reasonDetail),
+    [filteredRows]
+  );
+  const remarkRows = useMemo(
+    () => inventoryPurchaseGroups(filteredRows.filter((row) => normalize(row.remark)), (row) => row.remark),
+    [filteredRows]
+  );
+  const reasonQty = reasonRows.reduce((sum, row) => sum + numberValue(row.remainingQty), 0);
+  const shareOfRemaining = (value) => totals.remainingQty ? numberValue(value) / totals.remainingQty * 100 : 0;
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const pageRows = filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
@@ -810,12 +916,12 @@ function InventoryPurchaseDashboard({ rows, loading }) {
         <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
       </div>
       <section className="inventory-kpi-grid inventory-purchase-kpis" aria-label="采购未交付指标">
-        <InventorySummaryMetric label="未交付数量" value={totals.remainingQty} note="全部有效采购订单" tone="materials" />
-        <InventorySummaryMetric label="采购下单量" value={totals.orderQty} note="当前订单数量" tone="total" />
-        <InventorySummaryMetric label="已入库量" value={totals.inboundQty} note="采购订单累计入库" tone="domestic" />
-        <InventorySummaryMetric label="生产中" value={totals.inProductionQty} note="生产跟进填写" tone="production" />
-        <InventorySummaryMetric label="完工未发" value={totals.finishedQty} note="生产跟进填写" tone="transit" />
-        <InventorySummaryMetric label="未交付订单数" value={filteredRows.length} note={`涉及 ${new Set(filteredRows.map((row) => row.materialCode || row.sku)).size} 个物料`} tone="cross-border" />
+        <InventoryPurchaseMetric label="未交付" quantity={totals.remainingQty} value={null} note={`${filteredRows.length} 条订单记录`} share={totals.remainingQty ? 100 : 0} tone="materials" />
+        <InventoryPurchaseMetric label="存在未履约原因" quantity={reasonQty} value={null} note={`${reasonSourceRows.length} 条已填写原因`} share={shareOfRemaining(reasonQty)} tone="total" />
+        <InventoryPurchaseMetric label="已生产未发货" quantity={totals.finishedQty} value={null} note="占未交付" share={shareOfRemaining(totals.finishedQty)} tone="transit" />
+        <InventoryPurchaseMetric label="已下单未备料未生产" quantity={totals.unpreparedQty} value={null} note="占未交付" share={shareOfRemaining(totals.unpreparedQty)} tone="domestic" />
+        <InventoryPurchaseMetric label="已备料未生产" quantity={totals.preparedNotStartedQty} value={null} note="占未交付" share={shareOfRemaining(totals.preparedNotStartedQty)} tone="cross-border" />
+        <InventoryPurchaseMetric label="生产中产品" quantity={totals.inProductionQty} value={null} note="占未交付" share={shareOfRemaining(totals.inProductionQty)} tone="production" />
       </section>
       <section className="inventory-purchase-chart-grid">
         <InventoryMonthChart rows={monthRows} />
@@ -823,7 +929,9 @@ function InventoryPurchaseDashboard({ rows, loading }) {
         <InventoryRankChart title="供应商未交付排名" rows={supplierRows} />
         <InventoryRankChart title="产品线未交付分布" rows={productLineRows} note="全部产品线" />
         <InventoryRankChart title="事业部未交付分布" rows={businessUnitRows} note="全部事业部" />
-        <InventoryRankChart title="采购下单人未交付分布" rows={purchaseOwnerRows} note="全部采购下单人" />
+        <InventoryPieChart title="未履约原因分布" rows={reasonRows} pendingText="未履约原因字段待接入" />
+        <InventoryPieChart title="原因详情排名" rows={reasonDetailRows} pendingText="原因详情字段待接入" />
+        <InventoryPieChart title="备注分布" rows={remarkRows} pendingText="暂无备注数据" />
       </section>
       <div className="inventory-table-tabs inventory-purchase-table-head">
         <div role="tablist" aria-label="采购未交付明细"><button type="button" role="tab" aria-selected="true" className="active">采购未交付订单明细</button></div>
@@ -840,11 +948,25 @@ function InventoryPurchaseDashboard({ rows, loading }) {
   );
 }
 
-function InventorySummary({ token, active, demands = [], demandsLoading = false }) {
+function InventoryPurchasePage({ rows, loading }) {
+  return (
+    <section className="inventory-dashboard">
+      <div className="inventory-dashboard-heading">
+        <div>
+          <h2>采购未交付</h2>
+          <p>采购未交付订单、生产进度与供应商分布</p>
+        </div>
+        <span>全部有效采购订单</span>
+      </div>
+      <InventoryPurchaseDashboard rows={rows} loading={loading} />
+    </section>
+  );
+}
+
+function InventorySummary({ token, active }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [dashboardView, setDashboardView] = useState('inventory');
   const [filters, setFilters] = useState({ businessUnits: [], productLines: [], productSeries: [], skus: [], keyword: '' });
   const [searchInput, setSearchInput] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -970,20 +1092,12 @@ function InventorySummary({ token, active, demands = [], demandsLoading = false 
     <section className="inventory-dashboard">
       <div className="inventory-dashboard-heading">
         <div>
-          <div className="inventory-dashboard-title-line">
-            <h2>库存数据看板</h2>
-            <div className="inventory-dashboard-switch" role="tablist" aria-label="库存数据看板切换">
-              <button type="button" role="tab" aria-selected={dashboardView === 'inventory'} className={dashboardView === 'inventory' ? 'active' : ''} onClick={() => setDashboardView('inventory')}>库存综合</button>
-              <button type="button" role="tab" aria-selected={dashboardView === 'purchase'} className={dashboardView === 'purchase' ? 'active' : ''} onClick={() => setDashboardView('purchase')}>采购未交付</button>
-            </div>
-          </div>
-          <p>{dashboardView === 'inventory' ? '采购、头程、国内与跨境库存全量汇总' : '采购未交付订单、生产进度与供应商分布'}</p>
+          <h2>库存数据看板</h2>
+          <p>采购、头程、国内与跨境库存全量汇总</p>
         </div>
         <span>数据更新：{data?.updatedAt || '暂无'}</span>
       </div>
-      {dashboardView === 'purchase' ? (
-        <InventoryPurchaseDashboard rows={demands} loading={demandsLoading} />
-      ) : loading ? (
+      {loading ? (
         <div className="inventory-summary-status" role="status">加载中</div>
       ) : error ? (
         <div className="inventory-summary-status error" role="alert">库存汇总加载失败：{error}</div>
@@ -4923,7 +5037,8 @@ function App() {
         {message && <p className="message">{message}</p>}
         {demandsLoading && DEMAND_DATA_PAGES.has(activeTab) && <p className="section-count">正在加载采购订单数据...</p>}
         {shouldMount('domesticBoard') && <PagePane page="domesticBoard" activeTab={activeTab}><DomesticBoard token={token} setMessage={setMessage} /></PagePane>}
-        {shouldMount('inventorySummary') && <PagePane page="inventorySummary" activeTab={activeTab}><InventorySummary token={token} active={activeTab === 'inventorySummary'} demands={demands} demandsLoading={demandsLoading} /></PagePane>}
+        {shouldMount('inventorySummary') && <PagePane page="inventorySummary" activeTab={activeTab}><InventorySummary token={token} active={activeTab === 'inventorySummary'} /></PagePane>}
+        {shouldMount('inventoryPurchase') && <PagePane page="inventoryPurchase" activeTab={activeTab}><InventoryPurchasePage rows={demands} loading={demandsLoading} /></PagePane>}
         {shouldMount('inventorySummaryLibrary') && <PagePane page="inventorySummaryLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="库存汇总文件库" slots={INVENTORY_SUMMARY_LIBRARY_SLOTS} gridColumns={4} /></PagePane>}
         {shouldMount('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><Dashboard rows={demands} title="运营看板-未交付" filterKey="operationBoard" currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}

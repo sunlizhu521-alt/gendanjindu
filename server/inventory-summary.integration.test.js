@@ -445,6 +445,8 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(m1Demand?.supplierShortName, '供应商甲&供应商乙');
     assert.equal(m1Demand?.orderSupplierShortName, '未匹配');
     assert.equal(m1Demand?.supplierCount, 1);
+    assert.equal(m1Demand?.unpreparedQty, 0);
+    assert.equal(m1Demand?.preparedNotStartedQty, 0);
     assert.equal(demandRows.find((row) => row.materialCode === 'M2')?.purchaseOwner, '未分配采购下单人');
     assert.equal(demandRows.find((row) => row.materialCode === 'M2')?.supplierShortName, '供应商丙&供应商丁');
     assert.equal(demandRows.find((row) => row.materialCode === 'M2')?.orderSupplierShortName, '供应商丙&供应商丁');
@@ -638,6 +640,9 @@ test('inventory summary and domestic board use complete source models and enforc
       headers: { Authorization: `Bearer ${loginPayload.token}` }
     });
     assert.equal(loggedInBootstrap.status, 200);
+    const loggedInBootstrapPayload = await loggedInBootstrap.json();
+    assert.equal(loggedInBootstrapPayload.pages.inventoryPurchase, '采购未交付');
+    assert.ok(loggedInBootstrapPayload.user.pageAccess.includes('inventoryPurchase'));
 
     const persistedDatabase = new SQL.Database(readFileSync(path.join(dataDir, 'gendanjindu.sqlite')));
     const sessionStatement = persistedDatabase.prepare('SELECT created_at, expires_at FROM sessions WHERE token = ?');

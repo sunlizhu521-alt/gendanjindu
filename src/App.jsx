@@ -444,19 +444,10 @@ function inventorySummaryGroups(rows, keyOf) {
   ));
 }
 
-function InventorySummaryMetric({ label, value, note, tone }) {
-  return (
-    <article className={`inventory-kpi ${tone}`}>
-      <span>{label}</span>
-      <strong>{formatQuantity(value)}</strong>
-      <small>{note}</small>
-    </article>
-  );
-}
-
 function InventoryLineChart({ title, rows }) {
+  const [metric, setMetric] = useState('qty');
   const chartRows = rows.slice(0, 8);
-  const maxValue = Math.max(...chartRows.flatMap((row) => [row.inventoryQty, row.transitQty]), 1);
+  const maxValue = Math.max(...chartRows.flatMap((row) => [row.inventoryQty, row.transitQty, row.productionQty]), 1);
   const width = 720;
   const height = 205;
   const left = 42;
@@ -477,9 +468,12 @@ function InventoryLineChart({ title, rows }) {
     <article className="inventory-chart-panel inventory-line-panel">
       <div className="inventory-chart-head">
         <h3>{title}</h3>
-        <span className="inventory-chart-legend"><i className="stock" />在库量 <i className="transit" />在途量</span>
+        <div className="inventory-chart-controls">
+          <span className="inventory-chart-legend"><i className="stock" />在库量 <i className="transit" />在途量 <i className="production" />在制量</span>
+          <InventoryMetricToggle metric={metric} onChange={setMetric} label={title} />
+        </div>
       </div>
-      {chartRows.length === 0 ? <p className="empty-chart">暂无数据</p> : (
+      {metric === 'value' ? <InventoryChartPending>货值数据待接入</InventoryChartPending> : chartRows.length === 0 ? <p className="empty-chart">暂无数据</p> : (
         <div className="inventory-line-chart">
           <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${title}折线图`}>
             {[0, 0.5, 1].map((ratio) => (
@@ -487,13 +481,16 @@ function InventoryLineChart({ title, rows }) {
             ))}
             <polyline className="stock-line" points={points('inventoryQty')} />
             <polyline className="transit-line" points={points('transitQty')} />
+            <polyline className="production-line" points={points('productionQty')} />
             {chartRows.map((row, index) => {
               const stock = point(row, index, 'inventoryQty');
               const transit = point(row, index, 'transitQty');
+              const production = point(row, index, 'productionQty');
               return (
                 <g key={row.id}>
                   <circle className="stock-point" cx={stock.x} cy={stock.y} r="4"><title>{`${row.name} 在库量：${formatQuantity(row.inventoryQty)} 件`}</title></circle>
                   <circle className="transit-point" cx={transit.x} cy={transit.y} r="4"><title>{`${row.name} 在途量：${formatQuantity(row.transitQty)} 件`}</title></circle>
+                  <circle className="production-point" cx={production.x} cy={production.y} r="4"><title>{`${row.name} 在制量：${formatQuantity(row.productionQty)} 件`}</title></circle>
                   <text className="axis-label" x={stock.x} y={height - 12} textAnchor="middle">{row.name.length > 7 ? `${row.name.slice(0, 7)}…` : row.name}</text>
                 </g>
               );
@@ -506,30 +503,36 @@ function InventoryLineChart({ title, rows }) {
 }
 
 function InventoryColumnChart({ title, rows }) {
+  const [metric, setMetric] = useState('qty');
   const chartRows = rows.slice(0, 8);
-  const maxValue = Math.max(...chartRows.flatMap((row) => [row.inventoryQty, row.transitQty]), 1);
+  const maxValue = Math.max(...chartRows.flatMap((row) => [row.inventoryQty, row.transitQty, row.productionQty]), 1);
   return (
     <article className="inventory-chart-panel inventory-column-panel">
       <div className="inventory-chart-head">
         <h3>{title}</h3>
-        <span className="inventory-chart-legend"><i className="stock" />在库量 <i className="transit" />在途量</span>
+        <div className="inventory-chart-controls">
+          <span className="inventory-chart-legend"><i className="stock" />在库量 <i className="transit" />在途量 <i className="production" />在制量</span>
+          <InventoryMetricToggle metric={metric} onChange={setMetric} label={title} />
+        </div>
       </div>
-      <div className="inventory-column-chart">
+      {metric === 'value' ? <InventoryChartPending>货值数据待接入</InventoryChartPending> : <div className="inventory-column-chart">
         {chartRows.length === 0 ? <p className="empty-chart">暂无数据</p> : chartRows.map((row) => (
           <div key={row.id} className="inventory-column-group">
             <div className="inventory-column-bars">
               <i className="stock" style={{ height: `${Math.max(row.inventoryQty / maxValue * 100, row.inventoryQty ? 3 : 0)}%` }} title={`在库量：${formatQuantity(row.inventoryQty)} 件`} />
               <i className="transit" style={{ height: `${Math.max(row.transitQty / maxValue * 100, row.transitQty ? 3 : 0)}%` }} title={`在途量：${formatQuantity(row.transitQty)} 件`} />
+              <i className="production" style={{ height: `${Math.max(row.productionQty / maxValue * 100, row.productionQty ? 3 : 0)}%` }} title={`在制量：${formatQuantity(row.productionQty)} 件`} />
             </div>
             <span title={row.name}>{row.name}</span>
           </div>
         ))}
-      </div>
+      </div>}
     </article>
   );
 }
 
 function InventoryAbcChart({ rows }) {
+  const [metric, setMetric] = useState('qty');
   const sortedRows = [...rows].sort((left, right) => numberValue(right.inventoryQty) - numberValue(left.inventoryQty));
   const aEnd = Math.ceil(sortedRows.length * 0.2);
   const bEnd = Math.ceil(sortedRows.length * 0.5);
@@ -544,9 +547,12 @@ function InventoryAbcChart({ rows }) {
     <article className="inventory-chart-panel">
       <div className="inventory-chart-head">
         <h3>库存ABC分布</h3>
-        <span className="inventory-chart-subtitle">按物料在库量排序</span>
+        <div className="inventory-chart-controls">
+          <span className="inventory-chart-subtitle">按物料在库量排序</span>
+          <InventoryMetricToggle metric={metric} onChange={setMetric} label="库存ABC分布" />
+        </div>
       </div>
-      <div className="inventory-abc-bars">
+      {metric === 'value' ? <InventoryChartPending>货值数据待接入</InventoryChartPending> : <div className="inventory-abc-bars">
         {buckets.map((row, index) => (
           <div key={row.name} className={`inventory-abc-item abc-${index + 1}`}>
             <div className="inventory-abc-value">{formatQuantity(row.value)}</div>
@@ -555,12 +561,13 @@ function InventoryAbcChart({ rows }) {
             <span>{total ? `${(row.value / total * 100).toFixed(1)}%` : '0.0%'}</span>
           </div>
         ))}
-      </div>
+      </div>}
     </article>
   );
 }
 
 function InventoryStructureChart({ domestic, crossBorder }) {
+  const [metric, setMetric] = useState('qty');
   const total = domestic + crossBorder;
   const domesticPct = total ? domestic / total * 100 : 0;
   const crossBorderPct = total ? 100 - domesticPct : 0;
@@ -568,9 +575,12 @@ function InventoryStructureChart({ domestic, crossBorder }) {
     <article className="inventory-chart-panel">
       <div className="inventory-chart-head">
         <h3>在库结构分布</h3>
-        <span className="inventory-chart-subtitle">国内与跨境</span>
+        <div className="inventory-chart-controls">
+          <span className="inventory-chart-subtitle">国内与跨境</span>
+          <InventoryMetricToggle metric={metric} onChange={setMetric} label="在库结构分布" />
+        </div>
       </div>
-      <div className="inventory-donut-layout">
+      {metric === 'value' ? <InventoryChartPending>货值数据待接入</InventoryChartPending> : <div className="inventory-donut-layout">
         <div
           className="inventory-donut"
           style={{ background: total ? `conic-gradient(#0f8f88 0 ${domesticPct}%, #1683e8 ${domesticPct}% 100%)` : '#e2e8f0' }}
@@ -582,7 +592,7 @@ function InventoryStructureChart({ domestic, crossBorder }) {
           <div><span><i className="domestic" />国内在库</span><strong>{formatQuantity(domestic)} 件</strong><small>{total ? `${domesticPct.toFixed(1)}%` : '0.0%'}</small></div>
           <div><span><i className="cross-border" />跨境在库</span><strong>{formatQuantity(crossBorder)} 件</strong><small>{crossBorderPct.toFixed(1)}%</small></div>
         </div>
-      </div>
+      </div>}
     </article>
   );
 }
@@ -717,7 +727,7 @@ function InventoryStageChart({ totals }) {
   );
 }
 
-function InventoryPieChart({ title, rows, pendingText = '数据字段待接入' }) {
+function InventoryPieChart({ title, rows, pendingText = '数据字段待接入', wide = false }) {
   const [metric, setMetric] = useState('qty');
   const palette = ['#0f8f88', '#1683e8', '#d98619', '#7c3aed', '#6b8e23', '#94a3b8'];
   const sourceRows = rows.filter((row) => numberValue(row.remainingQty) > 0);
@@ -737,7 +747,7 @@ function InventoryPieChart({ title, rows, pendingText = '数据字段待接入' 
     return `${palette[index % palette.length]} ${start}% ${offset}%`;
   }).join(', ') : '#e2e8f0 0 100%';
   return (
-    <article className="inventory-chart-panel inventory-purchase-chart inventory-pie-panel">
+    <article className={`inventory-chart-panel inventory-purchase-chart inventory-pie-panel${wide ? ' inventory-purchase-wide-chart' : ''}`}>
       <div className="inventory-chart-head">
         <h3>{title}</h3>
         <div className="inventory-chart-controls">
@@ -790,7 +800,7 @@ function InventoryPurchaseDashboard({ rows, loading }) {
   const [searchInput, setSearchInput] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [exporting, setExporting] = useState(false);
-  const pageSize = 20;
+  const [pageSize, setPageSize] = useState(10);
   const sourceRows = useMemo(() => rows.filter((row) => numberValue(row.remainingInboundQty) > 0), [rows]);
   const unique = (values) => [...new Set(values.map(normalize).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const options = useMemo(() => ({
@@ -862,7 +872,7 @@ function InventoryPurchaseDashboard({ rows, loading }) {
     }, 300);
     return () => window.clearTimeout(timer);
   }, [searchInput]);
-  useEffect(() => { setCurrentPage(1); }, [filters]);
+  useEffect(() => { setCurrentPage(1); }, [filters, pageSize]);
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
@@ -937,14 +947,21 @@ function InventoryPurchaseDashboard({ rows, loading }) {
         <InventoryRankChart title="产品线未交付分布" rows={productLineRows} note="全部产品线" />
         <InventoryRankChart title="事业部未交付分布" rows={businessUnitRows} note="全部事业部" />
         <InventoryPieChart title="未履约原因分布" rows={reasonRows} pendingText="未履约原因字段待接入" />
-        <InventoryPieChart title="原因详情排名" rows={reasonDetailRows} pendingText="原因详情字段待接入" />
-        <InventoryPieChart title="备注分布" rows={remarkRows} pendingText="暂无备注数据" />
+        <InventoryPieChart title="原因详情排名" rows={reasonDetailRows} pendingText="原因详情字段待接入" wide />
+        <InventoryPieChart title="备注分布" rows={remarkRows} pendingText="暂无备注数据" wide />
       </section>
       <div className="inventory-table-tabs inventory-purchase-table-head">
         <div role="tablist" aria-label="采购未交付明细"><button type="button" role="tab" aria-selected="true" className="active">采购未交付订单明细</button></div>
         <div className="inventory-table-actions">
           <span>当前筛选 {filteredRows.length} / {sourceRows.length} 条</span>
           <button type="button" className="ghost compact-button" disabled={exporting || !filteredRows.length} onClick={exportRows}>{exporting ? '导出中...' : '导出Excel'}</button>
+          <label className="inventory-page-size">每页
+            <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+              <option value="10">10 条</option>
+              <option value="25">25 条</option>
+              <option value="50">50 条</option>
+            </select>
+          </label>
         </div>
       </div>
       <DataTable className="inventory-summary-table inventory-purchase-table" rows={pageRows} columns={columns} render={renderRow} />
@@ -979,7 +996,7 @@ function InventorySummary({ token, active }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [tableView, setTableView] = useState('materials');
   const [exporting, setExporting] = useState(false);
-  const pageSize = 20;
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     if (!active) return undefined;
@@ -1040,7 +1057,7 @@ function InventorySummary({ token, active }) {
     }, 300);
     return () => window.clearTimeout(timer);
   }, [searchInput]);
-  useEffect(() => { setCurrentPage(1); }, [filters, tableView]);
+  useEffect(() => { setCurrentPage(1); }, [filters, tableView, pageSize]);
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
@@ -1124,17 +1141,17 @@ function InventorySummary({ token, active }) {
             <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
           </div>
           <section className="inventory-kpi-grid" aria-label="库存汇总指标">
-            <InventorySummaryMetric label="在库合计" value={totals.inventoryQty} note="国内与跨境库存" tone="total" />
-            <InventorySummaryMetric label="在制量" value={totals.productionQty} note="采购订单剩余入库" tone="production" />
-            <InventorySummaryMetric label="在途量" value={totals.transitQty} note="货物状态：海上在途" tone="transit" />
-            <InventorySummaryMetric label="国内在库" value={totals.domesticInventoryQty} note="旺店通 + 京东现货" tone="domestic" />
-            <InventorySummaryMetric label="跨境在库" value={totals.crossBorderInventoryQty} note="领星库存数量" tone="cross-border" />
-            <InventorySummaryMetric label="库存物料数" value={materialCount} note={`当前筛选 ${filteredRows.length} 条`} tone="materials" />
+            <InventoryPurchaseMetric label="在库合计" quantity={totals.inventoryQty} value={null} note={`${materialCount} 个库存物料`} share={totals.inventoryQty ? 100 : 0} tone="total" />
+            <InventoryPurchaseMetric label="在制量" quantity={totals.productionQty} value={null} note="占总数量" share={(totals.inventoryQty + totals.transitQty + totals.productionQty) ? totals.productionQty / (totals.inventoryQty + totals.transitQty + totals.productionQty) * 100 : 0} tone="production" />
+            <InventoryPurchaseMetric label="在途量" quantity={totals.transitQty} value={null} note="占总数量" share={(totals.inventoryQty + totals.transitQty + totals.productionQty) ? totals.transitQty / (totals.inventoryQty + totals.transitQty + totals.productionQty) * 100 : 0} tone="transit" />
+            <InventoryPurchaseMetric label="国内在库" quantity={totals.domesticInventoryQty} value={null} note="占在库合计" share={totals.inventoryQty ? totals.domesticInventoryQty / totals.inventoryQty * 100 : 0} tone="domestic" />
+            <InventoryPurchaseMetric label="跨境在库" quantity={totals.crossBorderInventoryQty} value={null} note="占在库合计" share={totals.inventoryQty ? totals.crossBorderInventoryQty / totals.inventoryQty * 100 : 0} tone="cross-border" />
+            <InventoryPurchaseMetric label="在库＋在途＋在制" quantity={totals.inventoryQty + totals.transitQty + totals.productionQty} value={null} note={`当前筛选 ${filteredRows.length} 条`} share={(totals.inventoryQty + totals.transitQty + totals.productionQty) ? 100 : 0} tone="materials" />
           </section>
 
           <section className="inventory-chart-grid">
-            <InventoryLineChart title="事业部库存与在途" rows={businessUnitRows} />
-            <InventoryColumnChart title="产品线库存与在途" rows={productLineRows} />
+            <InventoryLineChart title="事业部库存、在途与在制" rows={businessUnitRows} />
+            <InventoryColumnChart title="产品线库存、在途与在制" rows={productLineRows} />
             <InventoryAbcChart rows={filteredRows} />
             <InventoryStructureChart domestic={totals.domesticInventoryQty} crossBorder={totals.crossBorderInventoryQty} />
           </section>
@@ -1148,6 +1165,13 @@ function InventorySummary({ token, active }) {
             <div className="inventory-table-actions">
               <span>当前筛选 {filteredRows.length} / {rows.length} 条</span>
               <button type="button" className="ghost compact-button" disabled={exporting || !tableRows.length} onClick={exportCurrentView}>{exporting ? '导出中...' : '导出Excel'}</button>
+              <label className="inventory-page-size">每页
+                <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+                  <option value="10">10 条</option>
+                  <option value="25">25 条</option>
+                  <option value="50">50 条</option>
+                </select>
+              </label>
             </div>
           </div>
           <DataTable

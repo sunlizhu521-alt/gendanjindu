@@ -939,6 +939,11 @@ h3 {
   background: #1683e8;
 }
 
+.inventory-chart-legend i.production {
+  margin-left: 6px;
+  background: #f59e0b;
+}
+
 .inventory-line-chart {
   width: 100%;
   min-height: 215px;
@@ -971,6 +976,10 @@ h3 {
   stroke: #1683e8;
 }
 
+.inventory-line-chart .production-line {
+  stroke: #f59e0b;
+}
+
 .inventory-line-chart circle {
   stroke: #fff;
   stroke-width: 2;
@@ -982,6 +991,10 @@ h3 {
 
 .inventory-line-chart .transit-point {
   fill: #1683e8;
+}
+
+.inventory-line-chart .production-point {
+  fill: #f59e0b;
 }
 
 .inventory-line-chart .axis-label {
@@ -1024,6 +1037,10 @@ h3 {
 
 .inventory-column-bars i.transit {
   background: #1683e8;
+}
+
+.inventory-column-bars i.production {
+  background: #f59e0b;
 }
 
 .inventory-column-group > span {
@@ -1223,6 +1240,23 @@ h3 {
   font-size: 12px;
 }
 
+.inventory-page-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.inventory-page-size select {
+  height: 30px;
+  padding: 0 24px 0 8px;
+  border: 1px solid #d7e0e9;
+  border-radius: 4px;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+}
+
 .inventory-dashboard .inventory-summary-table {
   border-radius: 6px;
 }
@@ -1247,12 +1281,17 @@ h3 {
 
 .inventory-purchase-chart-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
 }
 
 .inventory-purchase-chart {
+  grid-column: span 2;
   min-height: 260px;
+}
+
+.inventory-purchase-wide-chart {
+  grid-column: span 3;
 }
 
 .inventory-chart-controls {
@@ -1263,17 +1302,17 @@ h3 {
 
 .inventory-metric-toggle {
   display: inline-flex;
-  overflow: hidden;
-  border: 1px solid #cfd9e3;
+  gap: 2px;
+  padding: 2px;
   border-radius: 5px;
-  background: #f4f7f9;
+  background: #edf2f6;
 }
 
 .inventory-metric-toggle button {
   min-width: 44px;
   height: 25px;
   padding: 0 8px;
-  border-radius: 0;
+  border-radius: 4px;
   background: transparent;
   color: #64748b;
   font-size: 11px;
@@ -1281,14 +1320,14 @@ h3 {
 }
 
 .inventory-metric-toggle button + button {
-  border-left: 1px solid #cfd9e3;
+  border-left: 0;
 }
 
 .inventory-metric-toggle button:hover,
 .inventory-metric-toggle button.active {
-  background: #0f8f88;
-  color: #fff;
-  box-shadow: none;
+  background: #fff;
+  color: #0f8f88;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .12);
 }
 
 .inventory-chart-pending {
@@ -1582,6 +1621,11 @@ h3 {
 
   .inventory-purchase-chart-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-purchase-chart,
+  .inventory-purchase-wide-chart {
+    grid-column: span 1;
   }
 
   .inventory-purchase-filters {
@@ -3155,6 +3199,11 @@ th {
 
   .inventory-purchase-chart-grid {
     grid-template-columns: 1fr;
+  }
+
+  .inventory-purchase-chart,
+  .inventory-purchase-wide-chart {
+    grid-column: span 1;
   }
 
   .inventory-chart-head,

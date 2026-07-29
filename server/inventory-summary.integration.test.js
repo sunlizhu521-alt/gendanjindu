@@ -553,6 +553,80 @@ test('inventory summary and domestic board use complete source models and enforc
       { diffType: '数量增加', oldQty: 1200, newQty: 1300 }
     );
 
+    const inventoryWorkbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(inventoryWorkbook, xlsx.utils.json_to_sheet([
+      {
+        店铺: 'US Store',
+        站点: 'US',
+        SKU: 'SKU-FBA-1',
+        FNSKU: 'FNSKU-1',
+        ASIN: 'ASIN-1',
+        仓库名称: 'FBA Warehouse',
+        库存属性: '可售',
+        期末库存数量: '1,036',
+        不应持久化字段: 'large-unused-value'
+      }
+    ]), 'FBA库存');
+    const inventoryForm = new FormData();
+    inventoryForm.append(
+      'file',
+      new Blob([xlsx.write(inventoryWorkbook, { type: 'buffer', bookType: 'xlsx' })]),
+      'FBA库存报表.xlsx'
+    );
+    inventoryForm.append('mapping', JSON.stringify({
+      storeName: '店铺',
+      marketplace: '站点',
+      sku: 'SKU',
+      fnsku: 'FNSKU',
+      asin: 'ASIN',
+      warehouseName: '仓库名称',
+      inventoryAttribute: '库存属性',
+      endingInventoryQty: '期末库存数量'
+    }));
+    const inventoryUploadResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions/inventorySummaryFile1/upload`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token' },
+      body: inventoryForm
+    });
+    const inventoryUploadPayload = await inventoryUploadResponse.json();
+    assert.equal(inventoryUploadResponse.status, 200, `${JSON.stringify(inventoryUploadPayload)}\n${logs.join('')}`);
+    assert.equal(inventoryUploadPayload.rowCount, 1);
+    assert.equal(Object.hasOwn(inventoryUploadPayload, 'rows'), false);
+
+    const inventoryDimensionsResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions`, {
+      headers: { Authorization: 'Bearer admin-token' }
+    });
+    assert.equal(inventoryDimensionsResponse.status, 200);
+    const inventoryRecord = (await inventoryDimensionsResponse.json()).rows.find((row) => row.slot_id === 'inventorySummaryFile1');
+    assert.deepEqual(
+      { title: inventoryRecord?.title, rowCount: inventoryRecord?.rowCount, fileName: inventoryRecord?.file_name },
+      { title: 'FBA库存报表', rowCount: 1, fileName: 'FBA库存报表.xlsx' }
+    );
+
+    const inventoryDatabase = new SQL.Database(readFileSync(path.join(dataDir, 'gendanjindu.sqlite')));
+    const inventoryStatement = inventoryDatabase.prepare('SELECT rows_json FROM dimension_files WHERE slot_id = ?');
+    inventoryStatement.bind(['inventorySummaryFile1']);
+    assert.equal(inventoryStatement.step(), true);
+    const storedInventoryRows = JSON.parse(inventoryStatement.getAsObject().rows_json);
+    inventoryStatement.free();
+    inventoryDatabase.close();
+    assert.deepEqual(storedInventoryRows, [{
+      storeName: 'US Store',
+      marketplace: 'US',
+      sku: 'SKU-FBA-1',
+      fnsku: 'FNSKU-1',
+      asin: 'ASIN-1',
+      itemId: '',
+      warehouseName: 'FBA Warehouse',
+      inventoryAttribute: '可售',
+      endingInventoryQty: '1,036',
+      identifier: '',
+      actualTotalQty: '',
+      totalInventoryQty: '',
+      availableQty: '',
+      totalQty: ''
+    }]);
+
     const loginResponse = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

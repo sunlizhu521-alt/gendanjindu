@@ -81,17 +81,17 @@ const DIMENSION_SLOTS = {
   lingxingFbmInventory: 'FBM库存',
   lingxingWfsInventory: 'WFS库存',
   lingxingSpare: '备用',
-  inventorySummaryFile1: '库存槽位 1',
-  inventorySummaryFile2: '库存槽位 2',
-  inventorySummaryFile3: '库存槽位 3',
-  inventorySummaryFile4: '库存槽位 4',
-  inventorySummaryFile5: '库存槽位 5',
-  inventorySummaryFile6: '库存槽位 6',
-  inventorySummaryFile7: '库存槽位 7',
+  inventorySummaryFile1: 'FBA库存报表',
+  inventorySummaryFile2: 'FBM库存报表',
+  inventorySummaryFile3: 'WFS库存报表',
+  inventorySummaryFile4: 'FBA在途报表',
+  inventorySummaryFile5: 'FBM在途报表',
+  inventorySummaryFile6: '国内在库报表',
+  inventorySummaryFile7: '京东在库报表',
   inventorySummaryFile8: '库存槽位 8',
-  inventorySummaryFile9: '库存槽位 9',
-  inventorySummaryFile10: '库存槽位 10',
-  inventorySummaryFile11: '库存槽位 11',
+  inventorySummaryFile9: 'Dim-领星FBA仓库&金蝶仓库',
+  inventorySummaryFile10: 'Dim-领星MSKU&物料编码',
+  inventorySummaryFile11: 'Dim-京东ID与品号匹配',
   inventorySummaryFile12: '库存槽位 12',
   firstMileData1: '张婷婷头程数据',
   firstMileData2: '扈翠芸头程数据',
@@ -4054,7 +4054,19 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     ? parseFirstMileWorkbook(req.file, { slotId, fileName: safeFilename(req.file) })
     : null;
   const parsed = firstMileParsed || workbookRows(req.file, sheetName || null, { includePreviews: false });
-  const rows = firstMileParsed ? firstMileParsed.rows : parsed.rows.map((row) => {
+  const parsedRows = firstMileParsed ? firstMileParsed.rows : parsed.rows.map((row) => {
+    if (['inventorySummaryFile4', 'inventorySummaryFile5'].includes(slotId)) {
+      return {
+        storeName: pick(row, mapping.storeName) || pickAny(row, ['店铺', '店铺名称', '账号', '账号名称']),
+        marketplace: pick(row, mapping.marketplace) || pickAny(row, ['站点', '国家', '国家/地区', '销售平台']),
+        sku: pick(row, mapping.sku) || pickAny(row, ['SKU', 'MSKU', 'Seller SKU', '卖家SKU', '商品SKU']),
+        fnsku: pick(row, mapping.fnsku) || pickAny(row, ['FNSKU']),
+        asin: pick(row, mapping.asin) || pickAny(row, ['ASIN']),
+        identifier: pick(row, mapping.identifier) || pickAny(row, ['识别码']),
+        warehouseName: pick(row, mapping.warehouseName) || pickAny(row, ['仓库名称', '仓库名', '仓库']),
+        inTransitQty: pick(row, mapping.inTransitQty) || pickAny(row, ['在途数量', '在途量', '运输中数量', '入库中数量', '数量'])
+      };
+    }
     if (slotId === 'productCategory') {
       return {
         raw: row,
@@ -4104,7 +4116,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         remark: pick(row, mapping.remark) || pickAny(row, ['备注', '说明'])
       };
     }
-    if (slotId === 'dimensionSpare') {
+    if (['dimensionSpare', 'inventorySummaryFile10'].includes(slotId)) {
       return {
         raw: row,
         lingxingSku: pick(row, mapping.lingxingSku) || pickAny(row, ['领星SKU', 'SKU', 'MSKU', 'Seller SKU']),
@@ -4122,7 +4134,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         systemSku: pick(row, mapping.systemSku) || pickAny(row, ['系统SKU-必填', '系统SKU', 'SKU'])
       };
     }
-    if (slotId === 'wangdianDataMain') {
+    if (['wangdianDataMain', 'inventorySummaryFile6'].includes(slotId)) {
       return {
         raw: row,
         stockupStatus: pick(row, mapping.stockupStatus) || pickAny(row, ['是否正常备货', '备货状态']),
@@ -4135,7 +4147,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         nonSelf30dOutQty: pick(row, mapping.nonSelf30dOutQty) || pickAny(row, ['非自营近30天出库', '非自营30天出库', '非自营近30日出库', '近30天出库', '近30日出库'])
       };
     }
-    if (slotId === 'wangdianSpare1') {
+    if (['wangdianSpare1', 'inventorySummaryFile7'].includes(slotId)) {
       return {
         raw: row,
         jdId: pick(row, mapping.jdId) || pickAny(row, ['SKU', 'sku', '京东SKU', '京东sku', '京东商品SKU', '商品SKU', '系统SKU', '京东编码', '京东商品编码', '京东货号', 'ID', 'id', '京东ID', '京东id']),
@@ -4144,14 +4156,14 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         self30dOutQty: pick(row, mapping.self30dOutQty) || pickAny(row, ['全国近30日出库商品件数', '近30日出库商品件数', '全国近30天出库商品件数', '自营近30天出库'])
       };
     }
-    if (slotId === 'wangdianSpare2') {
+    if (['wangdianSpare2', 'inventorySummaryFile11'].includes(slotId)) {
       return {
         raw: row,
         jdId: pick(row, mapping.jdId) || pickAny(row, ['SKU', 'sku', '京东SKU', '京东sku', '京东商品SKU', '商品SKU', '系统SKU', '京东编码', '京东商品编码', '京东货号', 'ID', 'id', '京东ID', '京东id']),
         materialCode: pick(row, mapping.materialCode) || pickAny(row, ['品号', '物料编码', '商品编码', '货品编号', '存货编码'])
       };
     }
-    if (slotId === 'lingxingWarehouseMap') {
+    if (['lingxingWarehouseMap', 'inventorySummaryFile9'].includes(slotId)) {
       return {
         raw: row,
         lingxingWarehouseName: pick(row, mapping.lingxingWarehouseName) || pickAny(row, ['领星仓库名称', '领星仓库', '仓库名称', '仓库']),
@@ -4160,7 +4172,10 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         remark: pick(row, mapping.remark) || pickAny(row, ['备注', '说明'])
       };
     }
-    if (['lingxingFbaInventory', 'lingxingFbmInventory', 'lingxingWfsInventory'].includes(slotId)) {
+    if ([
+      'lingxingFbaInventory', 'lingxingFbmInventory', 'lingxingWfsInventory',
+      'inventorySummaryFile1', 'inventorySummaryFile2', 'inventorySummaryFile3'
+    ].includes(slotId)) {
       return {
         raw: row,
         storeName: pick(row, mapping.storeName) || pickAny(row, ['店铺', '店铺名称', '账号', '账号名称']),
@@ -4187,6 +4202,9 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     }
     return row;
   });
+  const rows = slotId.startsWith('inventorySummaryFile')
+    ? parsedRows.map(({ raw: _raw, ...row }) => row)
+    : parsedRows;
   const storedMapping = firstMileParsed
     ? { ...mapping, __firstMileSummary: firstMileParsed.summary }
     : mapping;
@@ -4209,7 +4227,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     applied: true,
     diagnostics: dimensionDiagnostics(slotId, rows),
     parseSummary: firstMileParsed?.summary || null,
-    rows: demandRows(false, req.user)
+    ...(slotId.startsWith('inventorySummaryFile') ? {} : { rows: demandRows(false, req.user) })
   });
 });
 
@@ -4220,7 +4238,7 @@ app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensio
     if (req.params.slotId === 'productCategory' || req.params.slotId === 'purchaseAssignment') applyDimensionEnrichment();
     assertOrderDataUnchanged(beforeOrderCounts);
   });
-  res.json({ rows: demandRows(false, req.user) });
+  res.json(req.params.slotId.startsWith('inventorySummaryFile') ? { applied: true } : { rows: demandRows(false, req.user) });
 });
 
 app.delete('/api/dimensions/:slotId', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'firstMileDatabase']), (req, res) => {

@@ -192,11 +192,47 @@ const LINGXING_INVENTORY_SLOTS = [
   { id: 'lingxingSpare', title: '备用', fields: [] }
 ];
 
-const INVENTORY_SUMMARY_LIBRARY_SLOTS = Array.from({ length: 12 }, (_, index) => ({
-  id: `inventorySummaryFile${index + 1}`,
-  title: `库存槽位 ${index + 1}`,
-  fields: []
-}));
+const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
+  { id: 'inventorySummaryFile1', title: 'FBA库存报表', fields: [
+    ['storeName', '店铺'], ['marketplace', '站点'], ['sku', 'SKU'], ['fnsku', 'FNSKU'],
+    ['asin', 'ASIN'], ['warehouseName', '仓库名称'], ['inventoryAttribute', '库存属性'], ['endingInventoryQty', '期末库存数量']
+  ] },
+  { id: 'inventorySummaryFile2', title: 'FBM库存报表', fields: [
+    ['storeName', '店铺'], ['marketplace', '站点'], ['identifier', '识别码'],
+    ['warehouseName', '仓库名称'], ['actualTotalQty', '实际总量']
+  ] },
+  { id: 'inventorySummaryFile3', title: 'WFS库存报表', fields: [
+    ['storeName', '店铺'], ['marketplace', '站点'], ['sku', 'SKU'], ['itemId', 'Item ID'],
+    ['warehouseName', '仓库名称'], ['totalInventoryQty', '总库存数量']
+  ] },
+  { id: 'inventorySummaryFile4', title: 'FBA在途报表', fields: [
+    ['storeName', '店铺'], ['marketplace', '站点'], ['sku', 'SKU'], ['fnsku', 'FNSKU'],
+    ['asin', 'ASIN'], ['warehouseName', '仓库名称'], ['inTransitQty', '在途数量']
+  ] },
+  { id: 'inventorySummaryFile5', title: 'FBM在途报表', fields: [
+    ['storeName', '店铺'], ['marketplace', '站点'], ['sku', 'SKU'], ['identifier', '识别码'],
+    ['warehouseName', '仓库名称'], ['inTransitQty', '在途数量']
+  ] },
+  { id: 'inventorySummaryFile6', title: '国内在库报表', fields: [
+    ['stockupStatus', '是否正常备货'], ['brand', '品牌'], ['productType', '产品类型'],
+    ['merchantCode', '商家编码'], ['systemSku', '系统SKU'], ['wdtStockQty', '旺店通在库量']
+  ] },
+  { id: 'inventorySummaryFile7', title: '京东在库报表', fields: [
+    ['jdId', '京东ID'], ['jdStockQty', '京东现货库存']
+  ] },
+  { id: 'inventorySummaryFile8', title: '库存槽位 8', fields: [] },
+  { id: 'inventorySummaryFile9', title: 'Dim-领星FBA仓库&金蝶仓库', fields: [
+    ['lingxingWarehouseName', '领星FBA仓库'], ['kingdeeWarehouseCode', '金蝶仓库编码'],
+    ['kingdeeWarehouseName', '金蝶仓库名称'], ['remark', '备注']
+  ] },
+  { id: 'inventorySummaryFile10', title: 'Dim-领星MSKU&物料编码', fields: [
+    ['lingxingSku', '领星MSKU'], ['materialCode', '物料编码'], ['remark', '备注']
+  ] },
+  { id: 'inventorySummaryFile11', title: 'Dim-京东ID与品号匹配', fields: [
+    ['jdId', '京东ID'], ['materialCode', '品号']
+  ] },
+  { id: 'inventorySummaryFile12', title: '库存槽位 12', fields: [] }
+];
 
 const FIRST_MILE_DATABASE_SLOTS = [
   { id: 'firstMileData1', title: '张婷婷头程数据', fields: [], firstMile: true },
@@ -409,28 +445,74 @@ function InventorySummaryMetric({ label, value, note, tone }) {
   );
 }
 
-function InventoryComparisonChart({ title, rows }) {
+function InventoryLineChart({ title, rows }) {
   const chartRows = rows.slice(0, 8);
   const maxValue = Math.max(...chartRows.flatMap((row) => [row.inventoryQty, row.transitQty]), 1);
+  const width = 720;
+  const height = 205;
+  const left = 42;
+  const right = 18;
+  const top = 18;
+  const bottom = 42;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+  const point = (row, index, key) => ({
+    x: chartRows.length === 1 ? left + plotWidth / 2 : left + index * plotWidth / Math.max(chartRows.length - 1, 1),
+    y: top + plotHeight - numberValue(row[key]) / maxValue * plotHeight
+  });
+  const points = (key) => chartRows.map((row, index) => {
+    const value = point(row, index, key);
+    return `${value.x},${value.y}`;
+  }).join(' ');
   return (
-    <article className="inventory-chart-panel">
+    <article className="inventory-chart-panel inventory-line-panel">
       <div className="inventory-chart-head">
         <h3>{title}</h3>
         <span className="inventory-chart-legend"><i className="stock" />在库量 <i className="transit" />在途量</span>
       </div>
-      <div className="inventory-comparison-list">
+      {chartRows.length === 0 ? <p className="empty-chart">暂无数据</p> : (
+        <div className="inventory-line-chart">
+          <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${title}折线图`}>
+            {[0, 0.5, 1].map((ratio) => (
+              <line key={ratio} className="grid-line" x1={left} x2={width - right} y1={top + plotHeight * ratio} y2={top + plotHeight * ratio} />
+            ))}
+            <polyline className="stock-line" points={points('inventoryQty')} />
+            <polyline className="transit-line" points={points('transitQty')} />
+            {chartRows.map((row, index) => {
+              const stock = point(row, index, 'inventoryQty');
+              const transit = point(row, index, 'transitQty');
+              return (
+                <g key={row.id}>
+                  <circle className="stock-point" cx={stock.x} cy={stock.y} r="4"><title>{`${row.name} 在库量：${formatQuantity(row.inventoryQty)} 件`}</title></circle>
+                  <circle className="transit-point" cx={transit.x} cy={transit.y} r="4"><title>{`${row.name} 在途量：${formatQuantity(row.transitQty)} 件`}</title></circle>
+                  <text className="axis-label" x={stock.x} y={height - 12} textAnchor="middle">{row.name.length > 7 ? `${row.name.slice(0, 7)}…` : row.name}</text>
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function InventoryColumnChart({ title, rows }) {
+  const chartRows = rows.slice(0, 8);
+  const maxValue = Math.max(...chartRows.flatMap((row) => [row.inventoryQty, row.transitQty]), 1);
+  return (
+    <article className="inventory-chart-panel inventory-column-panel">
+      <div className="inventory-chart-head">
+        <h3>{title}</h3>
+        <span className="inventory-chart-legend"><i className="stock" />在库量 <i className="transit" />在途量</span>
+      </div>
+      <div className="inventory-column-chart">
         {chartRows.length === 0 ? <p className="empty-chart">暂无数据</p> : chartRows.map((row) => (
-          <div key={row.id} className="inventory-comparison-row">
-            <span title={row.name}>{row.name}</span>
-            <div className="inventory-comparison-bars">
-              <div className="inventory-comparison-track" title={`在库量：${formatQuantity(row.inventoryQty)} 件`}>
-                <i className="stock" style={{ width: `${Math.max(row.inventoryQty / maxValue * 100, row.inventoryQty ? 2 : 0)}%` }} />
-              </div>
-              <div className="inventory-comparison-track" title={`在途量：${formatQuantity(row.transitQty)} 件`}>
-                <i className="transit" style={{ width: `${Math.max(row.transitQty / maxValue * 100, row.transitQty ? 2 : 0)}%` }} />
-              </div>
+          <div key={row.id} className="inventory-column-group">
+            <div className="inventory-column-bars">
+              <i className="stock" style={{ height: `${Math.max(row.inventoryQty / maxValue * 100, row.inventoryQty ? 3 : 0)}%` }} title={`在库量：${formatQuantity(row.inventoryQty)} 件`} />
+              <i className="transit" style={{ height: `${Math.max(row.transitQty / maxValue * 100, row.transitQty ? 3 : 0)}%` }} title={`在途量：${formatQuantity(row.transitQty)} 件`} />
             </div>
-            <strong>{formatQuantity(row.inventoryQty)} / {formatQuantity(row.transitQty)}</strong>
+            <span title={row.name}>{row.name}</span>
           </div>
         ))}
       </div>
@@ -930,8 +1012,8 @@ function InventorySummary({ token, active, demands = [], demandsLoading = false 
           </section>
 
           <section className="inventory-chart-grid">
-            <InventoryComparisonChart title="事业部库存与在途" rows={businessUnitRows} />
-            <InventoryComparisonChart title="产品线库存与在途" rows={productLineRows} />
+            <InventoryLineChart title="事业部库存与在途" rows={businessUnitRows} />
+            <InventoryColumnChart title="产品线库存与在途" rows={productLineRows} />
             <InventoryAbcChart rows={filteredRows} />
             <InventoryStructureChart domestic={totals.domesticInventoryQty} crossBorder={totals.crossBorderInventoryQty} />
           </section>
@@ -4018,7 +4100,7 @@ function FirstMileBoard({ token, setMessage, refreshVersion = 0 }) {
   );
 }
 
-function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表库', slots = DIMENSION_SLOTS, gridColumns = 2, onDataApplied = () => {}, highlightSlotId = '' }) {
+function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMessage, title = '维度表库', slots = DIMENSION_SLOTS, gridColumns = 2, onDataApplied = () => {}, highlightSlotId = '' }) {
   const [records, setRecords] = useState([]);
   const [local, setLocal] = useState({});
   const [issuePage, setIssuePage] = useState(1);
@@ -4182,7 +4264,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
         ? `${slot.title} 已自动解析并应用 ${payload.rowCount} 行，异常 ${parseSummary.issueRows || 0} 行。`
         : `${slot.title} 已上传 ${payload.rowCount} 行，并已自动应用刷新。`);
       await load();
-      await reloadDemands();
+      if (reloadDemandData) await reloadDemands();
       onDataApplied(slot.id);
       setSlotState(slot.id, {
         progress: 100,
@@ -4212,7 +4294,7 @@ function DimensionLibrary({ token, reloadDemands, setMessage, title = '维度表
       await request(`/api/dimensions/${slot.id}/apply`, { token, method: 'POST' });
       setMessage(`${slot.title} 已应用。`);
       await load();
-      await reloadDemands();
+      if (reloadDemandData) await reloadDemands();
       onDataApplied(slot.id);
       setSlotState(slot.id, {
         progress: 100,
@@ -4842,7 +4924,7 @@ function App() {
         {demandsLoading && DEMAND_DATA_PAGES.has(activeTab) && <p className="section-count">正在加载采购订单数据...</p>}
         {shouldMount('domesticBoard') && <PagePane page="domesticBoard" activeTab={activeTab}><DomesticBoard token={token} setMessage={setMessage} /></PagePane>}
         {shouldMount('inventorySummary') && <PagePane page="inventorySummary" activeTab={activeTab}><InventorySummary token={token} active={activeTab === 'inventorySummary'} demands={demands} demandsLoading={demandsLoading} /></PagePane>}
-        {shouldMount('inventorySummaryLibrary') && <PagePane page="inventorySummaryLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="库存汇总文件库" slots={INVENTORY_SUMMARY_LIBRARY_SLOTS} gridColumns={4} /></PagePane>}
+        {shouldMount('inventorySummaryLibrary') && <PagePane page="inventorySummaryLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="库存汇总文件库" slots={INVENTORY_SUMMARY_LIBRARY_SLOTS} gridColumns={4} /></PagePane>}
         {shouldMount('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><Dashboard rows={demands} title="运营看板-未交付" filterKey="operationBoard" currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
         {shouldMount('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}

@@ -3317,7 +3317,7 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
     const text = [
       row.targetTitle, row.issueCode, row.missingKey, row.sourceType, row.sourceKey, row.subject,
       row.sourceWarehouseName, row.kingdeeWarehouseName, row.storeName, row.sourceSku,
-      row.materialCode, row.businessUnit, row.maintenanceHint
+      row.materialCode, row.materialName, row.productLine, row.productSeries, row.businessUnit, row.maintenanceHint
     ].join(' ').toLowerCase();
     return includesSelected(selectedTargets, row.targetTitle)
       && includesSelected(selectedTypes, row.sourceType)
@@ -3355,6 +3355,9 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
         金蝶仓库: row.kingdeeWarehouseName,
         SKU或识别码: row.sourceSku,
         物料编码: row.materialCode,
+        产品名称: row.materialName,
+        销售产品线: row.productLine,
+        销售系列: row.productSeries,
         事业部: row.businessUnit,
         数量: row.qty,
         货值元: row.value,
@@ -3453,10 +3456,11 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
       <section className="panel diagnostic-section inventory-diagnostic-section">
         <div className="section-heading-row"><h3>库存数据待维护明细</h3><span className="section-count">筛选后 {inventorySummaryIssues.length} / {payload.inventorySummaryIssues?.length || 0} 条</span></div>
         <DataTable className="compact-table diagnostic-table inventory-diagnostic-table" rows={inventoryIssuePagination.pageRows}
-          columns={['需要维护的维表', '问题', '数据来源', '主体', '源仓库/店铺', '金蝶仓库', 'SKU/识别码', '物料编码', '事业部', '数量', '货值（元）', '缺失键', '待补字段', '操作']}
+          columns={['需要维护的维表', '问题', '数据来源', '主体', '源仓库/店铺', '金蝶仓库', 'SKU/识别码', '物料编码', '产品名称', '销售产品线', '销售系列', '事业部', '数量', '货值（元）', '缺失键', '待补字段', '操作']}
           render={(row) => [
             row.targetTitle, row.issueCode, row.sourceType, row.subject || '-', row.sourceWarehouseName || row.storeName || '-',
-            row.kingdeeWarehouseName || '-', row.sourceSku || '-', row.materialCode || '-', row.businessUnit,
+            row.kingdeeWarehouseName || '-', row.sourceSku || '-', row.materialCode || '-',
+            row.materialName || '未匹配', row.productLine || '未匹配', row.productSeries || '未匹配', row.businessUnit,
             numberValue(row.qty).toLocaleString(undefined, { maximumFractionDigits: 1 }),
             numberValue(row.value).toLocaleString(undefined, { maximumFractionDigits: 1 }),
             row.missingKey || '-', row.requiredFields?.join('、'), maintainButton(row)

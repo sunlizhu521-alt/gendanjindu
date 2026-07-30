@@ -572,8 +572,25 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   let sourceIndex = 0;
   let factIndex = 0;
 
+  const diagnosticProduct = (materialCode) => {
+    const result = productLookup.resolve(text(materialCode).replace(/\.0$/, ''));
+    if (result.status !== 'ok') {
+      return {
+        materialName: '未匹配',
+        productLine: '未匹配',
+        productSeries: '未匹配'
+      };
+    }
+    return {
+      materialName: text(result.value.materialName) || '未匹配',
+      productLine: text(result.value.productLine) || '未匹配',
+      productSeries: text(result.value.productSeries) || '未匹配'
+    };
+  };
+
   const addAnomaly = (sourceType, sourceKey, issue, qty = 0, value = 0, context = {}) => {
     anomalies.push({
+      ...diagnosticProduct(context.materialCode),
       ...context,
       id: `${sourceType}-${sourceIndex += 1}`,
       sourceType,
@@ -1192,6 +1209,9 @@ export function buildInventoryDimensionDiagnostics(model = {}) {
       storeName: text(anomaly.storeName),
       sourceSku: text(anomaly.sourceSku || anomaly.jdId || anomaly.sourceKey),
       materialCode: text(anomaly.materialCode),
+      materialName: text(anomaly.materialName) || '未匹配',
+      productLine: text(anomaly.productLine) || '未匹配',
+      productSeries: text(anomaly.productSeries) || '未匹配',
       businessUnit: text(anomaly.businessUnit) || '未匹配',
       qty: Number(anomaly.qty || 0),
       value: Number(anomaly.value || 0)

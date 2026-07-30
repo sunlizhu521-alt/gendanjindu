@@ -500,6 +500,9 @@ test('inventory dimension diagnostics identifies the exact maintenance table and
     subject: diagnostics.issues[0].subject,
     warehouse: diagnostics.issues[0].kingdeeWarehouseName,
     materialCode: diagnostics.issues[0].materialCode,
+    materialName: diagnostics.issues[0].materialName,
+    productLine: diagnostics.issues[0].productLine,
+    productSeries: diagnostics.issues[0].productSeries,
     qty: diagnostics.issues[0].qty,
     value: diagnostics.issues[0].value
   }, {
@@ -509,6 +512,9 @@ test('inventory dimension diagnostics identifies the exact maintenance table and
     subject: '主体一',
     warehouse: '缺失事业部仓',
     materialCode: 'M1',
+    materialName: 'Material One',
+    productLine: 'Line A',
+    productSeries: 'Series A',
     qty: 5,
     value: 50
   });

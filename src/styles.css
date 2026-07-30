@@ -1580,19 +1580,37 @@ h3 {
   display: flex;
   height: 220px;
   align-items: end;
-  gap: 8px;
+  gap: 10px;
   padding: 2px 8px 8px;
 }
 
-.inventory-monthly-bar {
+.inventory-monthly-group {
   display: grid;
-  flex: 0 0 74px;
-  grid-template-rows: 28px 154px 28px;
+  flex: 1 0 96px;
+  grid-template-rows: 184px 28px;
   min-width: 0;
 }
 
-.inventory-monthly-bar > small {
-  align-self: end;
+.inventory-monthly-series {
+  display: grid;
+  grid-template-columns: repeat(var(--inventory-year-count), minmax(0, 1fr));
+  align-items: end;
+  gap: 5px;
+  border-bottom: 1px solid #cbd5e1;
+}
+
+.inventory-monthly-series > span {
+  display: flex;
+  height: 178px;
+  min-width: 0;
+  align-items: center;
+  flex-direction: column;
+  justify-content: end;
+}
+
+.inventory-monthly-series small {
+  width: 100%;
+  margin-bottom: 4px;
   overflow: hidden;
   color: #334155;
   font-size: 9px;
@@ -1602,26 +1620,19 @@ h3 {
   white-space: nowrap;
 }
 
-.inventory-monthly-bar > div {
-  display: flex;
-  align-items: end;
-  justify-content: center;
-  border-bottom: 1px solid #cbd5e1;
-}
-
-.inventory-monthly-bar i {
+.inventory-monthly-series i {
   display: block;
-  width: 42px;
+  width: min(32px, 82%);
   min-height: 0;
   border-radius: 3px 3px 0 0;
 }
 
-.inventory-monthly-bar > strong {
+.inventory-monthly-group > strong {
   align-self: start;
   overflow: hidden;
   padding-top: 6px;
   color: #64748b;
-  font-size: 9px;
+  font-size: 10px;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;

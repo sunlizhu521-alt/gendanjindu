@@ -1260,10 +1260,33 @@ function InventorySummaryMonthlyBars({ title, rows, baseLabel = '销售' }) {
   const [metric, setMetric] = useState('qty');
   const chartRows = [...rows].sort((left, right) => String(left.id).localeCompare(String(right.id)));
   const valueKey = metric === 'qty' ? 'salesQty' : 'salesAmount';
-  const years = [...new Set(chartRows.map((row) => String(row.id || row.name).slice(0, 4)).filter(Boolean))];
+  const years = [...new Set([
+    '2025',
+    '2026',
+    ...chartRows.map((row) => String(row.id || row.name).slice(0, 4)).filter((year) => /^\d{4}$/.test(year))
+  ])].sort();
   const palette = ['#0f8f88', '#1683e8', '#d98619', '#7c5ce7', '#ef5b45'];
   const colorByYear = new Map(years.map((year, index) => [year, palette[index % palette.length]]));
-  const maxValue = Math.max(...chartRows.map((row) => Math.abs(numberValue(row[valueKey]))), 1);
+  const rowByMonth = new Map(chartRows.map((row) => [String(row.id || row.name).slice(0, 7), row]));
+  const monthGroups = Array.from({ length: 12 }, (_, index) => {
+    const month = String(index + 1).padStart(2, '0');
+    return {
+      id: month,
+      name: `${index + 1}月`,
+      series: years.map((year) => {
+        const row = rowByMonth.get(`${year}-${month}`);
+        return {
+          id: `${year}-${month}`,
+          year,
+          name: `${year}年${index + 1}月`,
+          salesQty: numberValue(row?.salesQty),
+          salesAmount: numberValue(row?.salesAmount)
+        };
+      })
+    };
+  });
+  const maxValue = Math.max(...monthGroups.flatMap((group) => group.series.map((row) => Math.abs(numberValue(row[valueKey])))), 1);
+  const hasData = chartRows.length > 0;
   return (
     <article className="inventory-chart-panel">
       <div className="inventory-chart-head">
@@ -1275,28 +1298,32 @@ function InventorySummaryMonthlyBars({ title, rows, baseLabel = '销售' }) {
           <InventoryMetricToggle metric={metric} onChange={setMetric} label={title} valueLabel="金额" />
         </div>
       </div>
-      {chartRows.length === 0 ? <p className="empty-chart">暂无数据</p> : (
+      {!hasData ? <p className="empty-chart">暂无数据</p> : (
         <div className="inventory-vertical-chart-scroll">
-          <div className="inventory-monthly-bars" style={{ minWidth: `${Math.max(720, chartRows.length * 82)}px` }}>
-            {chartRows.map((row) => {
-              const value = numberValue(row[valueKey]);
-              const year = String(row.id || row.name).slice(0, 4);
-              const display = metric === 'qty' ? formatDashboardNumber(value) : formatDashboardWan(value);
-              return (
-                <div className="inventory-monthly-bar" key={row.id || row.name}>
-                  <small title={`${row.name}${baseLabel}${metric === 'qty' ? '数量' : '金额'}：${display}`}>{display}</small>
-                  <div>
-                    <i
-                      style={{
-                        height: `${Math.max(Math.abs(value) / maxValue * 100, value ? 3 : 0)}%`,
-                        background: colorByYear.get(year) || palette[0]
-                      }}
-                    />
-                  </div>
-                  <strong title={row.name}>{row.name}</strong>
+          <div className="inventory-monthly-bars" style={{ minWidth: `${Math.max(960, monthGroups.length * Math.max(106, years.length * 48))}px` }}>
+            {monthGroups.map((group) => (
+              <div className="inventory-monthly-group" key={group.id}>
+                <div className="inventory-monthly-series" style={{ '--inventory-year-count': years.length }}>
+                  {group.series.map((row) => {
+                    const value = numberValue(row[valueKey]);
+                    const display = metric === 'qty' ? formatDashboardNumber(value) : formatDashboardWan(value);
+                    return (
+                      <span key={row.id}>
+                        <small title={`${row.name}${baseLabel}${metric === 'qty' ? '数量' : '金额'}：${display}`}>{display}</small>
+                        <i
+                          title={`${row.name}${baseLabel}${metric === 'qty' ? '数量' : '金额'}：${display}`}
+                          style={{
+                            height: `${Math.max(Math.abs(value) / maxValue * 150, value ? 4 : 0)}px`,
+                            background: colorByYear.get(row.year) || palette[0]
+                          }}
+                        />
+                      </span>
+                    );
+                  })}
                 </div>
-              );
-            })}
+                <strong>{group.name}</strong>
+              </div>
+            ))}
           </div>
         </div>
       )}

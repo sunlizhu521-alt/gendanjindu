@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import bcrypt from 'bcryptjs';
 import initSqlJs from 'sql.js';
 import xlsx from 'xlsx';
+import { buildInventorySummaryModel, parseInventorySummaryWorkbook } from './inventory-summary.js';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const now = '2026-07-20 15:00:00';
@@ -37,6 +38,148 @@ async function waitForServer(url, child, logs) {
   }
   throw new Error(`Server did not become ready.\n${logs.join('')}`);
 }
+
+test('inventory summary model uses inventory library facts, layered totals and stable ABC classes', () => {
+  const rowsBySlot = new Map([
+    ['productCategory', [
+      { materialCode: 'M1', sku: 'SKU-1', materialName: 'Material One', productLine: 'Line A', productSeries: 'Series A', pretaxPrice: '10' },
+      { materialCode: 'M2', sku: 'SKU-2', materialName: 'Material Two', productLine: 'Line B', productSeries: 'Series B', pretaxPrice: '20' },
+      { materialCode: 'M3', sku: 'SKU-3', materialName: 'Material Three', productLine: 'Line A', productSeries: 'Series C', pretaxPrice: '15' },
+      { materialCode: 'M4', sku: 'SKU-4', materialName: 'Material Four', productLine: 'Line A', productSeries: 'Series C', pretaxPrice: '15' }
+    ]],
+    ['spare1', [
+      { subject: '主体一', warehouseName: 'FBM仓' },
+      { subject: '主体一', warehouseName: 'WFS仓' },
+      { subject: '主体一', warehouseName: '收货仓' }
+    ]],
+    ['warehouseMaterialMap', [
+      { subject: '主体一', warehouseName: 'FBA金蝶仓', materialCode: 'M1', businessUnit: '跨境事业部' },
+      { subject: '主体一', warehouseName: 'FBM仓', materialCode: 'M1', businessUnit: '跨境事业部' },
+      { subject: '主体一', warehouseName: 'WFS仓', materialCode: 'M1', businessUnit: '跨境事业部' },
+      { subject: '主体一', warehouseName: 'FBA在途金蝶仓', materialCode: 'M1', businessUnit: '跨境事业部' },
+      { subject: '主体一', warehouseName: '收货仓', materialCode: 'M1', businessUnit: '跨境事业部' },
+      { subject: '国内主体', warehouseName: '国内仓', materialCode: 'M2', businessUnit: '国内事业部' }
+    ]],
+    ['inventorySummaryFile1', [
+      { sku: 'SKU-1', warehouseName: 'FBA源仓', inventoryAttribute: '全部', endingInventoryQty: '1,000' },
+      { sku: 'SKU-1', warehouseName: 'FBA源仓', inventoryAttribute: '可售', endingInventoryQty: '9,999' }
+    ]],
+    ['inventorySummaryFile2', [{ identifier: 'M1', warehouseName: 'FBM仓', actualTotalQty: '200' }]],
+    ['inventorySummaryFile3', [{ sku: 'SKU-1', warehouseName: 'WFS仓', totalInventoryQty: '300' }]],
+    ['inventorySummaryFile4', [
+      { storeName: '店铺一', sku: 'SKU-1', shipmentStatus: 'SHIPPED', dispatchQty: '600', shippedQty: '500', signedQty: '100' },
+      { storeName: '店铺一', sku: 'SKU-1', shipmentStatus: 'SHIPPED', dispatchQty: '0', shippedQty: '900', signedQty: '0' },
+      { storeName: '店铺一', sku: 'SKU-1', shipmentStatus: 'CANCELLED', dispatchQty: '100', shippedQty: '100', signedQty: '0' }
+    ]],
+    ['inventorySummaryFile5', [{ sku: 'SKU-1', warehouseName: '收货仓', stockupQty: '200', receivedQty: '50' }]],
+    ['inventorySummaryFile6', [
+      { subject: '国内主体', warehouseName: '国内仓', materialCode: 'M2', domesticStockQty: '50' },
+      { subject: '主体一', warehouseName: 'FBM仓', materialCode: 'M1', domesticStockQty: '700' }
+    ]],
+    ['inventorySummaryFile7', [{ jdId: 'JD-1', jdStockQty: '30' }]],
+    ['inventorySummaryFile8', [
+      { date: '2026-01-15', businessUnit: '跨境事业部', materialCode: 'M1', salesQty: '80', salesAmount: '8,000' },
+      { date: '2026/02/15', businessUnit: '跨境事业部', materialCode: 'M1', salesQty: '20', salesAmount: '2,000' },
+      { date: '2026-02-16', businessUnit: '跨境事业部', materialCode: 'M3', salesQty: '10', salesAmount: '1,000' },
+      { date: '2026-02-17', businessUnit: '跨境事业部', materialCode: 'M4', salesQty: '10', salesAmount: '1,000' }
+    ]],
+    ['inventorySummaryFile9', [{ subject: '主体一', lingxingWarehouseName: 'FBA源仓', kingdeeWarehouseName: 'FBA金蝶仓' }]],
+    ['inventorySummaryFile10', [
+      { lingxingSku: 'SKU-1', identifier: 'M1' },
+      { lingxingSku: 'SKU-3', identifier: 'M3' },
+      { lingxingSku: 'SKU-4', identifier: 'M4' }
+    ]],
+    ['inventorySummaryFile11', [{ jdId: 'JD-1', materialCode: 'M2' }]],
+    ['inventorySummaryFile12', [
+      {
+        month: '2026年2月', businessUnit: '跨境事业部', materialCode: 'M1', remainingQty: '50',
+        finishedQty: '10', unpreparedQty: '15', preparedNotStartedQty: '5', inProductionQty: '20',
+        deliveryStatus: '是', unfulfilledReason: '', reasonDetail: '材料延迟', remark: ''
+      },
+      {
+        month: '2026-02', businessUnit: '国内事业部', materialCode: 'M2', remainingQty: '20',
+        finishedQty: '2', unpreparedQty: '3', preparedNotStartedQty: '4', inProductionQty: '11',
+        deliveryStatus: '否', unfulfilledReason: '供应商延期', reasonDetail: '', remark: '重点跟进'
+      }
+    ]],
+    ['inventorySummaryFile13', [{ subject: '主体一', storeName: '店铺一', kingdeeWarehouseName: 'FBA在途金蝶仓' }]]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: '2026-07-30 12:00:00' })
+  });
+  assert.deepEqual(result.在库量, { 国内: 80, 跨境: 1500, 合计: 1580 });
+  assert.equal(result.在途量, 550);
+  assert.equal(result.在制量, 70);
+  assert.equal(result.totals.inventoryValue, 16600);
+  assert.equal(result.totals.transitValue, 5500);
+  assert.equal(result.totals.unfulfilledValue, 900);
+  assert.equal(result.totals.scaleQty, 2200);
+  assert.deepEqual(result.months, ['2026-01', '2026-02']);
+  const crossBorderM1 = result.rows.find((row) => row.matchKey === '跨境事业部+M1');
+  assert.deepEqual({
+    fba: crossBorderM1?.fbaInventoryQty,
+    fbm: crossBorderM1?.fbmInventoryQty,
+    wfs: crossBorderM1?.wfsInventoryQty,
+    fbaTransit: crossBorderM1?.fbaTransitQty,
+    fbmTransit: crossBorderM1?.fbmTransitQty,
+    salesQty: crossBorderM1?.salesQty,
+    salesAmount: crossBorderM1?.salesAmount,
+    january: crossBorderM1?.salesByMonth['2026-01'],
+    february: crossBorderM1?.salesByMonth['2026-02'],
+    quantityAbc: crossBorderM1?.quantityAbc,
+    amountAbc: crossBorderM1?.amountAbc,
+    deliveryStatus: crossBorderM1?.deliveryStatus
+  }, {
+    fba: 1000,
+    fbm: 200,
+    wfs: 300,
+    fbaTransit: 400,
+    fbmTransit: 150,
+    salesQty: 100,
+    salesAmount: 10000,
+    january: 80,
+    february: 20,
+    quantityAbc: 'B',
+    amountAbc: 'B',
+    deliveryStatus: '是'
+  });
+  assert.equal(
+    result.rows.filter((row) => ['M3', 'M4'].includes(row.materialCode)).every((row) => row.quantityAbc === 'C'),
+    true
+  );
+  assert.deepEqual(crossBorderM1?.unfulfilledReasons, [{ name: '未填写', qty: 50, value: 500 }]);
+});
+
+test('inventory workbook parser expands merged FBA transit cells and rejects ambiguous workbooks', () => {
+  const workbook = xlsx.utils.book_new();
+  const worksheet = xlsx.utils.aoa_to_sheet([
+    ['店铺', 'SKU', '货件状态', '发货数量', '已发货', '签收量'],
+    ['店铺一', 'SKU-1', 'SHIPPED', 10, 8, 2],
+    ['', '', 'RECEIVING', 5, 5, 0]
+  ]);
+  worksheet['!merges'] = [
+    xlsx.utils.decode_range('A2:A3'),
+    xlsx.utils.decode_range('B2:B3')
+  ];
+  xlsx.utils.book_append_sheet(workbook, worksheet, '任意名称');
+  const parsed = parseInventorySummaryWorkbook(
+    { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) },
+    'inventorySummaryFile4'
+  );
+  assert.equal(parsed.rows.length, 2);
+  assert.equal(parsed.rows[1].storeName, '店铺一');
+  assert.equal(parsed.rows[1].sku, 'SKU-1');
+
+  xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet([['其他'], ['数据']]), '多余工作表');
+  assert.throws(
+    () => parseInventorySummaryWorkbook(
+      { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) },
+      'inventorySummaryFile4'
+    ),
+    /应只包含一个工作表/
+  );
+});
 
 test('inventory summary and domestic board use complete source models and enforce page access', async () => {
   const dataDir = mkdtempSync(path.join(os.tmpdir(), 'gendanjindu-inventory-summary-'));
@@ -320,8 +463,9 @@ test('inventory summary and domestic board use complete source models and enforc
   try {
     await waitForServer(`http://127.0.0.1:${port}/gendanjindu/`, child, logs);
     const endpoint = `http://127.0.0.1:${port}/api/inventory-summary`;
-    const [adminResponse, domesticResponse, dimensionMissingResponse, demandsResponse, firstMileResponse, anonymousResponse, limitedResponse, expiredResponse] = await Promise.all([
+    const [adminResponse, purchaseSummaryResponse, domesticResponse, dimensionMissingResponse, demandsResponse, firstMileResponse, anonymousResponse, limitedResponse, expiredResponse] = await Promise.all([
       fetch(endpoint, { headers: { Authorization: 'Bearer admin-token' } }),
+      fetch(`http://127.0.0.1:${port}/api/inventory-purchase-summary`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/domestic-board`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/dimension-missing/cross-border`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/demands`, { headers: { Authorization: 'Bearer admin-token' } }),
@@ -332,6 +476,7 @@ test('inventory summary and domestic board use complete source models and enforc
     ]);
 
     assert.equal(adminResponse.status, 200);
+    assert.equal(purchaseSummaryResponse.status, 200);
     assert.equal(domesticResponse.status, 200);
     assert.equal(dimensionMissingResponse.status, 200);
     assert.equal(demandsResponse.status, 200);
@@ -363,38 +508,13 @@ test('inventory summary and domestic board use complete source models and enforc
       在途量: summary.在途量,
       在库量: summary.在库量
     }, {
-      在制量: 1500,
-      在途量: 2000,
-      在库量: { 国内: 3700, 跨境: 5000, 合计: 8700 }
+      在制量: 0,
+      在途量: 0,
+      在库量: { 国内: 0, 跨境: 0, 合计: 0 }
     });
     assert.ok(Array.isArray(summary.rows));
-    assert.deepEqual(
-      summary.rows
-        .filter((row) => row.materialCode === 'M1')
-        .map((row) => ({
-          businessUnit: row.businessUnit,
-          productLine: row.productLine,
-          productSeries: row.productSeries,
-          sku: row.sku,
-          materialName: row.materialName,
-          productionQty: row.productionQty,
-          transitQty: row.transitQty,
-          inventoryQty: row.inventoryQty
-        })),
-      [{
-        businessUnit: '国内事业部',
-        productLine: 'Line A',
-        productSeries: 'Series A',
-        sku: 'SKU-1',
-        materialName: 'Material One',
-        productionQty: 1000,
-        transitQty: 2000,
-        inventoryQty: 3400
-      }]
-    );
-    assert.equal(summary.rows.reduce((sum, row) => sum + row.productionQty, 0), summary.在制量);
-    assert.equal(summary.rows.reduce((sum, row) => sum + row.transitQty, 0), summary.在途量);
-    assert.equal(summary.rows.reduce((sum, row) => sum + row.inventoryQty, 0), summary.在库量.合计);
+    assert.equal(summary.rows.length, 0);
+    assert.deepEqual((await purchaseSummaryResponse.json()).rows, []);
     const domesticRows = (await domesticResponse.json()).rows;
     assert.equal(domesticRows.length, 4);
     assert.deepEqual(domesticRows.map((row) => row.merchantCode), ['M1', 'M2', 'WDT-X', 'M0']);
@@ -595,12 +715,31 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(inventoryUploadPayload.rowCount, 1);
     assert.equal(Object.hasOwn(inventoryUploadPayload, 'rows'), false);
 
+    const invalidInventoryWorkbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(invalidInventoryWorkbook, xlsx.utils.aoa_to_sheet([
+      ['SKU', '仓库名称', '库存属性', '期末库存数量'],
+      ['SKU-BAD', '仓库', '全部', 999]
+    ]), '工作表1');
+    xlsx.utils.book_append_sheet(invalidInventoryWorkbook, xlsx.utils.aoa_to_sheet([['多余工作表']]), '工作表2');
+    const invalidInventoryForm = new FormData();
+    invalidInventoryForm.append(
+      'file',
+      new Blob([xlsx.write(invalidInventoryWorkbook, { type: 'buffer', bookType: 'xlsx' })]),
+      '不应替换旧数据.xlsx'
+    );
+    const invalidInventoryResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions/inventorySummaryFile1/upload`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token' },
+      body: invalidInventoryForm
+    });
+    assert.equal(invalidInventoryResponse.status, 400);
+    assert.match((await invalidInventoryResponse.json()).error, /只包含一个工作表/);
+
     const transitWarehouseWorkbook = xlsx.utils.book_new();
     xlsx.utils.book_append_sheet(transitWarehouseWorkbook, xlsx.utils.json_to_sheet([{
-      领星FBA在途仓库: 'US-FBA-TRANSIT',
-      金蝶仓库编码: 'KD-001',
+      主体: '美国主体',
+      店铺: 'US-FBA-TRANSIT',
       金蝶仓库名称: '美国FBA在途仓',
-      备注: 'test',
       无关字段: 'do-not-store'
     }]), '仓库对照');
     const transitWarehouseForm = new FormData();
@@ -610,10 +749,9 @@ test('inventory summary and domestic board use complete source models and enforc
       'FBA在途仓库对照.xlsx'
     );
     transitWarehouseForm.append('mapping', JSON.stringify({
-      lingxingWarehouseName: '领星FBA在途仓库',
-      kingdeeWarehouseCode: '金蝶仓库编码',
-      kingdeeWarehouseName: '金蝶仓库名称',
-      remark: '备注'
+      subject: '主体',
+      storeName: '店铺',
+      kingdeeWarehouseName: '金蝶仓库名称'
     }));
     const transitWarehouseUploadResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions/inventorySummaryFile13/upload`, {
       method: 'POST',
@@ -650,10 +788,9 @@ test('inventory summary and domestic board use complete source models and enforc
     transitWarehouseStatement.bind(['inventorySummaryFile13']);
     assert.equal(transitWarehouseStatement.step(), true);
     assert.deepEqual(JSON.parse(transitWarehouseStatement.getAsObject().rows_json), [{
-      lingxingWarehouseName: 'US-FBA-TRANSIT',
-      kingdeeWarehouseCode: 'KD-001',
-      kingdeeWarehouseName: '美国FBA在途仓',
-      remark: 'test'
+      subject: '美国主体',
+      storeName: 'US-FBA-TRANSIT',
+      kingdeeWarehouseName: '美国FBA在途仓'
     }]);
     transitWarehouseStatement.free();
     inventoryDatabase.close();
@@ -661,17 +798,9 @@ test('inventory summary and domestic board use complete source models and enforc
       storeName: 'US Store',
       marketplace: 'US',
       sku: 'SKU-FBA-1',
-      fnsku: 'FNSKU-1',
-      asin: 'ASIN-1',
-      itemId: '',
       warehouseName: 'FBA Warehouse',
       inventoryAttribute: '可售',
-      endingInventoryQty: '1,036',
-      identifier: '',
-      actualTotalQty: '',
-      totalInventoryQty: '',
-      availableQty: '',
-      totalQty: ''
+      endingInventoryQty: '1,036'
     }]);
 
     const loginResponse = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
@@ -689,6 +818,7 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(loggedInBootstrapPayload.pages.inventoryPurchase, '采购未交付');
     assert.ok(loggedInBootstrapPayload.user.pageAccess.includes('inventoryPurchase'));
     assert.equal(loggedInBootstrapPayload.dimensionSlots.inventorySummaryFile13, 'Dim-领星FBA在途&金蝶仓库');
+    assert.equal(loggedInBootstrapPayload.dimensionSlots.inventorySummaryFile10, 'Dim-领星SKU对应物料编码-产品管理');
     assert.equal(loggedInBootstrapPayload.dimensionSlots.inventorySummaryFile16, '库存槽位 16');
 
     const persistedDatabase = new SQL.Database(readFileSync(path.join(dataDir, 'gendanjindu.sqlite')));

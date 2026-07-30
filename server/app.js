@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import xlsx from 'xlsx';
 import { all, get, initDatabase, run, runMany, saveDatabase, transaction } from './database.js';
 import { dedupeFirstMileRows, firstMileOwner, inspectFirstMileWorkbook, isFirstMileSlot, parseFirstMileWorkbook } from './first-mile.js';
+import { buildInventorySummaryModel, isInventorySummarySlot, parseInventorySummaryWorkbook } from './inventory-summary.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -92,7 +93,7 @@ const DIMENSION_SLOTS = {
   inventorySummaryFile7: '京东在库报表',
   inventorySummaryFile8: '销售数据报表',
   inventorySummaryFile9: 'Dim-领星FBA仓库&金蝶仓库',
-  inventorySummaryFile10: 'Dim-领星MSKU&物料编码',
+  inventorySummaryFile10: 'Dim-领星SKU对应物料编码-产品管理',
   inventorySummaryFile11: 'Dim-京东ID与品号匹配',
   inventorySummaryFile12: '采购跟单情况',
   inventorySummaryFile13: 'Dim-领星FBA在途&金蝶仓库',
@@ -2240,107 +2241,19 @@ function buildCrossBorderInventoryModel() {
 }
 
 function inventorySummaryData() {
-  const demands = demandRows(false);
-  const transitRows = firstMileBoardModel().rows.filter((row) => row.cargoStatus === '海上在途');
-  const domesticRows = domesticBoardRows(demands);
-  const crossBorderRows = buildCrossBorderInventoryModel().rows;
-  const dimensionUpdatedAt = get(
-    `SELECT MAX(updated_at) AS updated_at
-     FROM dimension_files
-     WHERE slot_id IN (
-       'productCategory', 'spare1', 'warehouseMaterialMap', 'dimensionSpare', 'lingxingWarehouseMap',
-       'wangdianDataMain', 'wangdianSpare1', 'wangdianSpare2',
-       'lingxingFbaInventory', 'lingxingFbmInventory', 'lingxingWfsInventory',
-       'firstMileData1', 'firstMileData2', 'firstMileData3', 'firstMileData4', 'firstMileData5', 'firstMileSpare'
-     )`
-  );
-  const updatedAt = [currentAppliedAt(), normalize(dimensionUpdatedAt?.updated_at)]
-    .filter(Boolean)
-    .sort()
-    .at(-1) || '';
-  const rowMap = new Map();
-  let fallbackIndex = 0;
-
-  const usableText = (...values) => {
-    for (const value of values) {
-      const text = normalize(value);
-      if (text && !['未映射', '未填写', '未匹配'].includes(text)) return text;
+  return buildInventorySummaryModel({
+    getRows: getDimensionRows,
+    getRecord(slotId) {
+      const record = get(
+        'SELECT rows_json, updated_at FROM dimension_files WHERE slot_id = ? AND applied = 1',
+        [slotId]
+      );
+      return {
+        rows: parseJson(record?.rows_json, []),
+        updatedAt: record?.updated_at || ''
+      };
     }
-    return '';
-  };
-  const businessUnitText = (value) => {
-    const text = usableText(value);
-    if (text.includes('国内事业部') || text.includes('国内业务部')) return '国内事业部';
-    return text || '未匹配';
-  };
-  const addSummaryRow = (source, quantities) => {
-    const businessUnit = businessUnitText(source.businessUnit);
-    const materialCode = usableText(source.materialCode, source.merchantCode);
-    const sku = usableText(source.sku, source.systemSku, source.sourceSku);
-    const materialName = usableText(source.materialName, source.itemName);
-    const itemKey = materialCode || sku || materialName || usableText(source.id) || `未识别-${fallbackIndex += 1}`;
-    const key = [businessUnit, itemKey].map(normalizeMatchPart).join('|');
-    const target = rowMap.get(key) || {
-      id: key,
-      businessUnit,
-      productLine: '',
-      productSeries: '',
-      sku: '',
-      materialCode: '',
-      materialName: '',
-      productionQty: 0,
-      transitQty: 0,
-      inventoryQty: 0,
-      domesticInventoryQty: 0,
-      crossBorderInventoryQty: 0
-    };
-    target.productLine ||= usableText(source.productLine, source.salesProductLine);
-    target.productSeries ||= usableText(source.productSeries, source.salesSeries);
-    target.sku ||= sku;
-    target.materialCode ||= materialCode;
-    target.materialName ||= materialName;
-    target.productionQty += numberValue(quantities.productionQty);
-    target.transitQty += numberValue(quantities.transitQty);
-    target.domesticInventoryQty += numberValue(quantities.domesticInventoryQty);
-    target.crossBorderInventoryQty += numberValue(quantities.crossBorderInventoryQty);
-    target.inventoryQty = target.domesticInventoryQty + target.crossBorderInventoryQty;
-    rowMap.set(key, target);
-  };
-
-  demands.forEach((row) => addSummaryRow(row, { productionQty: row.remainingInboundQty }));
-  transitRows.forEach((row) => addSummaryRow(row, { transitQty: row.quantity }));
-  domesticRows.forEach((row) => addSummaryRow(row, {
-    domesticInventoryQty: numberValue(row.wdtStockQty) + numberValue(row.jdStockQty)
-  }));
-  crossBorderRows.forEach((row) => addSummaryRow(row, {
-    crossBorderInventoryQty: row.inventoryQty ?? row.totalQty
-  }));
-
-  const rows = [...rowMap.values()]
-    .filter((row) => row.productionQty !== 0 || row.transitQty !== 0 || row.inventoryQty !== 0)
-    .sort((left, right) => (
-      left.businessUnit.localeCompare(right.businessUnit, 'zh-Hans-CN')
-      || left.productLine.localeCompare(right.productLine, 'zh-Hans-CN')
-      || left.productSeries.localeCompare(right.productSeries, 'zh-Hans-CN')
-      || left.sku.localeCompare(right.sku, 'zh-Hans-CN')
-      || left.materialCode.localeCompare(right.materialCode, 'zh-Hans-CN')
-    ));
-  const productionQty = rows.reduce((sum, row) => sum + row.productionQty, 0);
-  const transitQty = rows.reduce((sum, row) => sum + row.transitQty, 0);
-  const domesticInventoryQty = rows.reduce((sum, row) => sum + row.domesticInventoryQty, 0);
-  const crossBorderInventoryQty = rows.reduce((sum, row) => sum + row.crossBorderInventoryQty, 0);
-
-  return {
-    在制量: productionQty,
-    在途量: transitQty,
-    在库量: {
-      国内: domesticInventoryQty,
-      跨境: crossBorderInventoryQty,
-      合计: domesticInventoryQty + crossBorderInventoryQty
-    },
-    updatedAt,
-    rows
-  };
+  });
 }
 
 function enrichDemandFields(supplier, materialCode, orderCreator = '', lookups = dimensionLookups()) {
@@ -3499,6 +3412,22 @@ app.get('/api/inventory-summary', requireAuth, requirePage('inventorySummary'), 
   res.json(inventorySummaryData());
 });
 
+app.get('/api/inventory-purchase-summary', requireAuth, requirePage('inventoryPurchase'), (req, res) => {
+  const model = inventorySummaryData();
+  res.json({
+    updatedAt: model.updatedAt,
+    months: model.months,
+    rows: model.rows.filter((row) => (
+      row.deliveryStatuses?.length
+      || numberValue(row.unfulfilledQty)
+      || numberValue(row.finishedNotShippedQty)
+      || numberValue(row.unpreparedQty)
+      || numberValue(row.preparedNotStartedQty)
+      || numberValue(row.inProductionQty)
+    ))
+  });
+});
+
 app.get('/api/cross-border-inventory', requireAuth, requirePage('crossBorderInventory'), (req, res) => {
   const model = buildCrossBorderInventoryModel();
   res.json({ rows: model.rows, sourceApplications: model.sourceApplications, qualitySummary: model.qualitySummary });
@@ -4061,8 +3990,11 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   const firstMileParsed = isFirstMileSlot(slotId)
     ? parseFirstMileWorkbook(req.file, { slotId, fileName: safeFilename(req.file) })
     : null;
-  const parsed = firstMileParsed || workbookRows(req.file, sheetName || null, { includePreviews: false });
-  const parsedRows = firstMileParsed ? firstMileParsed.rows : parsed.rows.map((row) => {
+  const inventorySummaryParsed = isInventorySummarySlot(slotId)
+    ? parseInventorySummaryWorkbook(req.file, slotId, mapping)
+    : null;
+  const parsed = firstMileParsed || inventorySummaryParsed || workbookRows(req.file, sheetName || null, { includePreviews: false });
+  const parsedRows = firstMileParsed || inventorySummaryParsed ? parsed.rows : parsed.rows.map((row) => {
     if (['inventorySummaryFile4', 'inventorySummaryFile5'].includes(slotId)) {
       return {
         storeName: pick(row, mapping.storeName) || pickAny(row, ['店铺', '店铺名称', '账号', '账号名称']),
@@ -4086,7 +4018,8 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         productType: pick(row, mapping.productType) || pickAny(row, ['产品类型', '销售产品分类', '商品类型', '产品类别', '商品类别', '品类', '一级品类']),
         productLine: pick(row, mapping.productLine),
         productSeries: pick(row, mapping.productSeries),
-        model: pick(row, mapping.model) || pickAny(row, ['型号', '产品型号', '款式', '规格型号', '规格'])
+        model: pick(row, mapping.model) || pickAny(row, ['型号', '产品型号', '款式', '规格型号', '规格']),
+        pretaxPrice: pick(row, mapping.pretaxPrice) || pickAny(row, ['不含税结算价'])
       };
     }
     if (slotId === 'purchaseAssignment') {
@@ -4106,6 +4039,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     if (slotId === 'spare1') {
       return {
         raw: row,
+        subject: pick(row, mapping.subject) || pickDimensionAlias(row, ['主体', '使用组织', '库存组织']),
         warehouseCode: pick(row, mapping.warehouseCode) || pickDimensionAlias(row, ['仓库编码', '仓库代码', '仓库编号', '金蝶仓库编码', '仓库ID']),
         warehouseName: pick(row, mapping.warehouseName) || pickDimensionAlias(row, ['仓库名称', '仓库名', '金蝶仓库名称']),
         marketplace: pick(row, mapping.marketplace) || pickDimensionAlias(row, ['站点', '站点名称', '国家站点', '销售站点', '国家/地区']),
@@ -4116,6 +4050,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     if (slotId === 'warehouseMaterialMap') {
       return {
         raw: row,
+        subject: pick(row, mapping.subject) || pickAny(row, ['主体', '使用组织', '库存组织']),
         warehouseCode: pick(row, mapping.warehouseCode) || pickAny(row, ['仓库编码', '仓库代码']),
         warehouseName: pick(row, mapping.warehouseName) || pickAny(row, ['仓库名称', '仓库名', '仓库']),
         materialCode: pick(row, mapping.materialCode) || pickAny(row, ['物料编码', '品号', '商品编码', '存货编码']),
@@ -4215,7 +4150,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     : parsedRows;
   const storedMapping = firstMileParsed
     ? { ...mapping, __firstMileSummary: firstMileParsed.summary }
-    : mapping;
+    : inventorySummaryParsed?.mapping || mapping;
   const now = nowText();
   const beforeOrderCounts = orderDataCounts();
   transaction(() => {
@@ -4223,14 +4158,14 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
       `INSERT INTO dimension_files (slot_id, title, file_name, sheet_name, sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
       ON CONFLICT(slot_id) DO UPDATE SET title = excluded.title, file_name = excluded.file_name, sheet_name = excluded.sheet_name, sheet_names = excluded.sheet_names, mapping_json = excluded.mapping_json, rows_json = excluded.rows_json, applied = 1, uploaded_by = excluded.uploaded_by, updated_at = excluded.updated_at`,
-      [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), firstMileParsed ? '' : sheetName, JSON.stringify(parsed.sheetNames), JSON.stringify(storedMapping), JSON.stringify(rows), req.user.name, now]
+      [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), firstMileParsed ? '' : inventorySummaryParsed?.sheetName || sheetName, JSON.stringify(parsed.sheetNames), JSON.stringify(storedMapping), JSON.stringify(rows), req.user.name, now]
     );
     if (slotId === 'productCategory' || slotId === 'purchaseAssignment') applyDimensionEnrichment();
     assertOrderDataUnchanged(beforeOrderCounts);
   });
   res.json({
     rowCount: rows.length,
-    sheetName: firstMileParsed ? '' : sheetName,
+    sheetName: firstMileParsed ? '' : inventorySummaryParsed?.sheetName || sheetName,
     sheetNames: parsed.sheetNames,
     applied: true,
     diagnostics: dimensionDiagnostics(slotId, rows),

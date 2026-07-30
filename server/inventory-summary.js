@@ -165,6 +165,10 @@ function safeNumber(value) {
   return Number.isFinite(parsed) ? { value: parsed, valid: true } : { value: 0, valid: false };
 }
 
+function isDefaultFbmWarehouse(value) {
+  return matchKey(value) === matchKey('默认仓库');
+}
+
 function normalizeMonth(value) {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}`;
@@ -285,10 +289,20 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
     field,
     columnMap[field] ? row[columnMap[field]] ?? '' : ''
   ])));
+  let filteredZeroQtyRows = 0;
+  let filteredDefaultWarehouseRows = 0;
   const rows = slotId === 'inventorySummaryFile2'
     ? mappedRows.filter((row) => {
+      if (isDefaultFbmWarehouse(row.warehouseName)) {
+        filteredDefaultWarehouseRows += 1;
+        return false;
+      }
       const quantity = safeNumber(row.actualTotalQty);
-      return !quantity.valid || quantity.value !== 0;
+      if (quantity.valid && quantity.value === 0) {
+        filteredZeroQtyRows += 1;
+        return false;
+      }
+      return true;
     })
     : mappedRows;
   return {
@@ -302,7 +316,8 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
         parserVersion: 1,
         sheetName,
         rowCount: rows.length,
-        filteredZeroQtyRows: mappedRows.length - rows.length
+        filteredZeroQtyRows,
+        filteredDefaultWarehouseRows
       }
     }
   };
@@ -742,6 +757,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   });
 
   source.inventorySummaryFile2.rows.forEach((raw) => {
+    if (isDefaultFbmWarehouse(raw.warehouseName)) return;
     const materialCode = text(raw.identifier).replace(/\.0$/, '');
     const quantity = safeNumber(raw.actualTotalQty);
     if (quantity.valid && quantity.value === 0) return;

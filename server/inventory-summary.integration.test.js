@@ -158,12 +158,13 @@ test('inventory summary model uses inventory library facts, layered totals and s
   assert.deepEqual(crossBorderM1?.unfulfilledReasons, [{ name: '未填写', qty: 50, value: 500 }]);
 });
 
-test('FBM inventory ignores zero actual total rows before mapping and aggregation', () => {
+test('FBM inventory ignores zero quantities and default warehouse rows before mapping and aggregation', () => {
   const rowsBySlot = new Map([
     ['inventorySummaryFile2', [
       { identifier: 'M-ZERO-1', warehouseName: 'Unknown Warehouse', actualTotalQty: '0' },
       { identifier: 'M-ZERO-2', warehouseName: 'Unknown Warehouse', actualTotalQty: '0.0' },
-      { identifier: 'M-ZERO-3', warehouseName: 'Unknown Warehouse', actualTotalQty: '-0' }
+      { identifier: 'M-ZERO-3', warehouseName: 'Unknown Warehouse', actualTotalQty: '-0' },
+      { identifier: 'M-DEFAULT', warehouseName: ' 默认 仓库 ', actualTotalQty: '999' }
     ]]
   ]);
   const result = buildInventorySummaryModel({
@@ -176,10 +177,11 @@ test('FBM inventory ignores zero actual total rows before mapping and aggregatio
   assert.equal(result.totals.fbmInventoryValue || 0, 0);
 });
 
-test('FBM workbook parser excludes zero actual total rows from saved data', () => {
+test('FBM workbook parser excludes zero quantities and default warehouse rows from saved data', () => {
   const workbook = xlsx.utils.book_new();
   const worksheet = xlsx.utils.json_to_sheet([
     { identifier: 'M-ZERO', warehouseName: 'Warehouse A', actualTotalQty: '0' },
+    { identifier: 'M-DEFAULT', warehouseName: '默认仓库', actualTotalQty: '999' },
     { identifier: 'M-STOCK', warehouseName: 'Warehouse A', actualTotalQty: '1,250' }
   ]);
   xlsx.utils.book_append_sheet(workbook, worksheet, 'FBM');
@@ -195,6 +197,7 @@ test('FBM workbook parser excludes zero actual total rows from saved data', () =
   assert.equal(parsed.rows.length, 1);
   assert.equal(parsed.rows[0].identifier, 'M-STOCK');
   assert.equal(parsed.mapping.__inventorySummary.filteredZeroQtyRows, 1);
+  assert.equal(parsed.mapping.__inventorySummary.filteredDefaultWarehouseRows, 1);
 });
 
 test('WFS inventory resolves business unit by subject, mapped warehouse and material code', () => {

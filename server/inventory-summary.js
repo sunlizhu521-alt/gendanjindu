@@ -165,8 +165,14 @@ function safeNumber(value) {
   return Number.isFinite(parsed) ? { value: parsed, valid: true } : { value: 0, valid: false };
 }
 
-function isDefaultFbmWarehouse(value) {
-  return matchKey(value) === matchKey('默认仓库');
+const IGNORED_FBM_WAREHOUSES = new Set([
+  '默认仓库',
+  'US-FBA移除中转虚拟仓',
+  '虚拟仓库--仅用于测试'
+].map(matchKey));
+
+function isIgnoredFbmWarehouse(value) {
+  return IGNORED_FBM_WAREHOUSES.has(matchKey(value));
 }
 
 function normalizeMonth(value) {
@@ -290,11 +296,11 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
     columnMap[field] ? row[columnMap[field]] ?? '' : ''
   ])));
   let filteredZeroQtyRows = 0;
-  let filteredDefaultWarehouseRows = 0;
+  let filteredIgnoredWarehouseRows = 0;
   const rows = slotId === 'inventorySummaryFile2'
     ? mappedRows.filter((row) => {
-      if (isDefaultFbmWarehouse(row.warehouseName)) {
-        filteredDefaultWarehouseRows += 1;
+      if (isIgnoredFbmWarehouse(row.warehouseName)) {
+        filteredIgnoredWarehouseRows += 1;
         return false;
       }
       const quantity = safeNumber(row.actualTotalQty);
@@ -317,7 +323,7 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
         sheetName,
         rowCount: rows.length,
         filteredZeroQtyRows,
-        filteredDefaultWarehouseRows
+        filteredIgnoredWarehouseRows
       }
     }
   };
@@ -757,7 +763,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   });
 
   source.inventorySummaryFile2.rows.forEach((raw) => {
-    if (isDefaultFbmWarehouse(raw.warehouseName)) return;
+    if (isIgnoredFbmWarehouse(raw.warehouseName)) return;
     const materialCode = text(raw.identifier).replace(/\.0$/, '');
     const quantity = safeNumber(raw.actualTotalQty);
     if (quantity.valid && quantity.value === 0) return;

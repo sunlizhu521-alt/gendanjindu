@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { purchaseTrackingBusinessUnit } from './business-unit.js';
+import InventoryCalculationGuide from './InventoryCalculationGuide.jsx';
 
 const API = import.meta.env.DEV ? 'http://localhost:4003' : '';
 const TOKEN_KEY = 'gendanjinduToken';
@@ -1514,6 +1515,7 @@ function InventorySummary({ token, active }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [exporting, setExporting] = useState(false);
+  const [showMethodology, setShowMethodology] = useState(false);
 
   useEffect(() => {
     if (!active) return undefined;
@@ -1666,11 +1668,18 @@ function InventorySummary({ token, active }) {
     }
   }
 
+  if (showMethodology) {
+    return <InventoryCalculationGuide onBack={() => setShowMethodology(false)} />;
+  }
+
   return (
     <section className="inventory-dashboard">
       <div className="inventory-dashboard-heading">
         <div>
-          <h2>销售与库存看板</h2>
+          <div className="inventory-dashboard-title-row">
+            <h2>销售与库存看板</h2>
+            <button type="button" className="ghost compact-button inventory-methodology-entry" onClick={() => setShowMethodology(true)}>库存计算口径</button>
+          </div>
           <p>销售、在库、在途与采购未交付统一口径</p>
         </div>
         <span>数据更新：{data?.updatedAt || '暂无'}</span>

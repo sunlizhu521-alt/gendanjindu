@@ -151,6 +151,89 @@ test('inventory summary model uses inventory library facts, layered totals and s
   assert.deepEqual(crossBorderM1?.unfulfilledReasons, [{ name: '未填写', qty: 50, value: 500 }]);
 });
 
+test('inventory business unit mapping reads legacy raw dimensions and stays independent from product price issues', () => {
+  const rowsBySlot = new Map([
+    ['productCategory', [{
+      raw: {
+        物料编码: 'M1',
+        SKU: 'SKU-1',
+        金蝶名称: 'Material One',
+        销售产品线: 'Line A',
+        销售系列: 'Series A'
+      },
+      materialCode: 'M1'
+    }, {
+      materialCode: 'M2',
+      sku: 'SKU-2',
+      materialName: 'Material Two',
+      productLine: 'Line B',
+      productSeries: 'Series B',
+      pretaxPrice: '10'
+    }]],
+    ['spare1', [{
+      raw: { 使用组织: '主体一', 金蝶名称: 'FBM仓' },
+      subject: '',
+      warehouseName: 'FBM仓'
+    }]],
+    ['warehouseMaterialMap', [{
+      raw: {
+        库存组织: '主体一',
+        仓库名称: 'FBM仓',
+        物料编码: 'M1',
+        事业部: '跨境事业部'
+      },
+      subject: '',
+      warehouseName: '',
+      materialCode: '',
+      businessUnit: ''
+    }, {
+      raw: {
+        库存组织: '主体二',
+        仓库名称: 'FBA金蝶仓',
+        物料编码: 'M2',
+        事业部: '海外事业部'
+      }
+    }]],
+    ['inventorySummaryFile1', [{
+      sku: 'SKU-2',
+      warehouseName: 'FBA源仓',
+      inventoryAttribute: '全部',
+      endingInventoryQty: '7'
+    }]],
+    ['inventorySummaryFile2', [{
+      identifier: 'M1',
+      warehouseName: 'FBM仓',
+      actualTotalQty: '5'
+    }]],
+    ['inventorySummaryFile9', [{
+      raw: {
+        主体: '主体二',
+        领星FBA仓库: 'FBA源仓',
+        金蝶仓库名称: 'FBA金蝶仓'
+      },
+      lingxingWarehouseName: '',
+      kingdeeWarehouseName: ''
+    }]],
+    ['inventorySummaryFile10', [{ lingxingSku: 'SKU-2', identifier: 'M2' }]]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: '2026-07-30 14:00:00' })
+  });
+  assert.equal(result.rows.length, 2);
+  const legacyGeneralWarehouseRow = result.rows.find((row) => row.fbmInventoryQty === 5);
+  assert.equal(legacyGeneralWarehouseRow?.businessUnit, '跨境事业部');
+  assert.equal(legacyGeneralWarehouseRow?.materialCode, '未匹配');
+  assert.equal(legacyGeneralWarehouseRow?.fbmInventoryValue, 0);
+  assert.equal(legacyGeneralWarehouseRow?.mappingStatus, '映射冲突');
+  assert.deepEqual(legacyGeneralWarehouseRow?.issues, ['不含税结算价缺失或无效']);
+  const legacyFbaWarehouseRow = result.rows.find((row) => row.materialCode === 'M2');
+  assert.equal(legacyFbaWarehouseRow?.businessUnit, '海外事业部');
+  assert.equal(legacyFbaWarehouseRow?.fbaInventoryQty, 7);
+  assert.equal(legacyFbaWarehouseRow?.fbaInventoryValue, 70);
+  assert.equal(legacyFbaWarehouseRow?.mappingStatus, '完整');
+});
+
 test('inventory workbook parser expands merged FBA transit cells and rejects ambiguous workbooks', () => {
   const workbook = xlsx.utils.book_new();
   const worksheet = xlsx.utils.aoa_to_sheet([

@@ -4109,9 +4109,11 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     if (['lingxingWarehouseMap', 'inventorySummaryFile9', 'inventorySummaryFile13'].includes(slotId)) {
       return {
         raw: row,
-        lingxingWarehouseName: pick(row, mapping.lingxingWarehouseName) || pickAny(row, ['领星仓库名称', '领星仓库', '仓库名称', '仓库']),
+        subject: pick(row, mapping.subject) || pickAny(row, ['主体', '使用组织', '库存组织']),
+        storeName: pick(row, mapping.storeName) || pickAny(row, ['店铺', '店铺名称']),
+        lingxingWarehouseName: pick(row, mapping.lingxingWarehouseName) || pickAny(row, ['领星FBA仓库', '领星FBA仓', '领星仓库名称', '领星仓库', '仓库名称', '仓库']),
         kingdeeWarehouseCode: pick(row, mapping.kingdeeWarehouseCode) || pickAny(row, ['金蝶仓库编码', '仓库编码', '仓库代码']),
-        kingdeeWarehouseName: pick(row, mapping.kingdeeWarehouseName) || pickAny(row, ['金蝶仓库名称', '金蝶仓库']),
+        kingdeeWarehouseName: pick(row, mapping.kingdeeWarehouseName) || pickAny(row, ['金蝶仓库名称', '金蝶仓库', '金蝶名称']),
         remark: pick(row, mapping.remark) || pickAny(row, ['备注', '说明'])
       };
     }

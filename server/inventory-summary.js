@@ -50,8 +50,8 @@ const FIELD_ALIASES = {
   materialCode: ['物料编码', '品号'],
   salesQty: ['销售数量'],
   salesAmount: ['销售金额'],
-  lingxingWarehouseName: ['领星FBA仓库', '领星仓库名称', '领星仓库'],
-  kingdeeWarehouseName: ['金蝶仓库名称', '金蝶仓库'],
+  lingxingWarehouseName: ['领星FBA仓库', '领星FBA仓', '领星仓库名称', '领星仓库'],
+  kingdeeWarehouseName: ['金蝶仓库名称', '金蝶仓库', '金蝶名称'],
   lingxingSku: ['SKU', '领星SKU', '领星MSKU', 'MSKU'],
   month: ['下单月份'],
   remainingQty: ['备货剩余数量'],
@@ -328,15 +328,20 @@ function combinedKey(...parts) {
 }
 
 function aliasValue(row, aliases) {
-  for (const alias of aliases) {
-    const value = row?.[alias];
-    if (text(value)) return value;
-  }
-  const keys = Object.keys(row || {});
-  for (const alias of aliases) {
-    const target = headerKey(alias);
-    const key = keys.find((candidate) => headerKey(candidate) === target);
-    if (key && text(row[key])) return row[key];
+  const sources = [row, row?.raw].filter((source, index, values) => (
+    source && typeof source === 'object' && values.indexOf(source) === index
+  ));
+  for (const source of sources) {
+    for (const alias of aliases) {
+      const value = source[alias];
+      if (text(value)) return value;
+    }
+    const keys = Object.keys(source);
+    for (const alias of aliases) {
+      const target = headerKey(alias);
+      const key = keys.find((candidate) => headerKey(candidate) === target);
+      if (key && text(source[key])) return source[key];
+    }
   }
   return '';
 }
@@ -357,7 +362,7 @@ function warehouseSubject(row) {
 }
 
 function warehouseName(row) {
-  return text(aliasValue(row, ['warehouseName', '仓库名称', '金蝶仓库名称']));
+  return text(aliasValue(row, ['warehouseName', '仓库名称', '金蝶仓库名称', '金蝶仓库', '金蝶名称']));
 }
 
 function warehouseBusinessUnit(row) {
@@ -489,13 +494,19 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   );
   const fbaWarehouseLookup = exactLookup(
     source.inventorySummaryFile9.rows,
-    (row) => matchKey(row.lingxingWarehouseName),
-    (row) => ({ subject: text(row.subject), warehouseName: text(row.kingdeeWarehouseName) })
+    (row) => matchKey(aliasValue(row, ['lingxingWarehouseName', '领星FBA仓库', '领星FBA仓', '领星仓库名称', '领星仓库'])),
+    (row) => ({
+      subject: warehouseSubject(row),
+      warehouseName: text(aliasValue(row, ['kingdeeWarehouseName', '金蝶仓库名称', '金蝶仓库', '金蝶名称']))
+    })
   );
   const transitWarehouseLookup = exactLookup(
     source.inventorySummaryFile13.rows,
-    (row) => matchKey(row.storeName),
-    (row) => ({ subject: text(row.subject), warehouseName: text(row.kingdeeWarehouseName) })
+    (row) => matchKey(aliasValue(row, ['storeName', '店铺', '店铺名称'])),
+    (row) => ({
+      subject: warehouseSubject(row),
+      warehouseName: text(aliasValue(row, ['kingdeeWarehouseName', '金蝶仓库名称', '金蝶仓库', '金蝶名称']))
+    })
   );
   const warehouseSubjectLookup = exactLookup(
     getRows('spare1'),
@@ -583,14 +594,15 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     const productResult = resolveProduct(materialCode, sourceType, rawIdentifier);
     const rowIssues = [...issues, productResult.issue].filter(Boolean);
     const resolvedBusinessUnit = text(businessUnit) || '未匹配';
-    const mapped = rowIssues.length === 0 && resolvedBusinessUnit !== '未匹配' && productResult.product.materialCode;
-    const key = mapped
+    const hasBusinessUnit = resolvedBusinessUnit !== '未匹配';
+    const hasProduct = Boolean(productResult.product.materialCode);
+    const key = hasBusinessUnit && hasProduct
       ? combinedKey(resolvedBusinessUnit, productResult.product.materialCode)
       : combinedKey('未匹配', resolvedBusinessUnit, sourceType, rawIdentifier || materialCode || sourceIndex);
     const row = rowMap.get(key) || emptySummaryRow(
       key,
-      mapped ? resolvedBusinessUnit : '未匹配',
-      mapped ? productResult.product : { ...productResult.product, materialCode: '' },
+      hasBusinessUnit ? resolvedBusinessUnit : '未匹配',
+      hasProduct ? productResult.product : { ...productResult.product, materialCode: '' },
       text(rawIdentifier || materialCode)
     );
     if (rowIssues.length) {

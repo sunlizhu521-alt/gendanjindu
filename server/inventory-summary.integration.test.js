@@ -217,6 +217,36 @@ test('all inventory sources ignore zero quantity rows before mapping, aggregatio
   });
 });
 
+test('FBA and FBM transit ignore zero in-transit quantities before dimension mapping and diagnostics', () => {
+  const rowsBySlot = new Map([
+    ['inventorySummaryFile4', [{
+      storeName: 'Unknown Store',
+      sku: 'SKU-FBA-TRANSIT-ZERO',
+      shipmentStatus: 'IN_TRANSIT',
+      dispatchQty: '10',
+      shippedQty: '10',
+      signedQty: '10'
+    }]],
+    ['inventorySummaryFile5', [{
+      sku: 'SKU-FBM-TRANSIT-ZERO',
+      warehouseName: 'Unknown Warehouse',
+      stockupQty: '200',
+      receivedQty: '200'
+    }]]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
+  });
+  assert.equal(result.rows.length, 0);
+  assert.equal(result.anomalies.length, 0);
+  assert.equal(result.totals.transitQty || 0, 0);
+  assert.equal(result.totals.transitValue || 0, 0);
+  const diagnostics = buildInventoryDimensionDiagnostics(result);
+  assert.deepEqual(diagnostics.issues, []);
+  assert.deepEqual(diagnostics.tasks, []);
+});
+
 test('invalid inventory quantities stop before dimension mapping and maintenance diagnostics', () => {
   const rowsBySlot = new Map([
     ['inventorySummaryFile1', [
@@ -612,6 +642,16 @@ test('inventory dimension diagnostics defensively excludes legacy zero-quantity 
         sourceType: 'FBM库存',
         sourceKey: 'M-ZERO',
         materialCode: 'M-ZERO',
+        issue: '主体、仓库与物料映射缺失',
+        qty: 0,
+        value: 0
+      },
+      {
+        id: 'zero-transit',
+        factId: 'zero-transit',
+        sourceType: 'FBM在途',
+        sourceKey: 'SKU-TRANSIT-ZERO',
+        materialCode: 'M-TRANSIT-ZERO',
         issue: '主体、仓库与物料映射缺失',
         qty: 0,
         value: 0

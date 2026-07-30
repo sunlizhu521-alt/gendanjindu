@@ -182,7 +182,9 @@ const INVENTORY_SOURCE_TYPES = new Set([
   'FBM库存',
   'WFS库存',
   '国内在库',
-  '京东在库'
+  '京东在库',
+  'FBA在途',
+  'FBM在途'
 ]);
 
 function isIgnoredFbmWarehouse(value) {
@@ -866,10 +868,11 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     if (!FBA_TRANSIT_STATUSES.has(text(raw.shipmentStatus).toUpperCase())) return;
     const dispatchQty = numeric(raw.dispatchQty, 'FBA在途', raw.sku, '发货数量');
     if (Math.abs(dispatchQty) <= 0.000001) return;
-    const skuResult = resolveSku(raw.sku);
     const shipped = numeric(raw.shippedQty, 'FBA在途', raw.sku, '已发货');
     const signed = numeric(raw.signedQty, 'FBA在途', raw.sku, '签收量');
     const qty = Math.max(shipped - signed, 0);
+    if (Math.abs(qty) <= 0.000001) return;
+    const skuResult = resolveSku(raw.sku);
     const warehouseResult = skuResult.materialCode ? resolveSpecialWarehouse(transitWarehouseLookup, raw.storeName, skuResult.materialCode) : { businessUnit: '', issue: '' };
     const product = resolveProduct(skuResult.materialCode, 'FBA在途', raw.sku);
     addFact({
@@ -890,8 +893,9 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   });
 
   source.inventorySummaryFile5.rows.forEach((raw) => {
-    const skuResult = resolveSku(raw.sku);
     const qty = numeric(raw.stockupQty, 'FBM在途', raw.sku, '备货数量') - numeric(raw.receivedQty, 'FBM在途', raw.sku, '收货数量');
+    if (Math.abs(qty) <= 0.000001) return;
+    const skuResult = resolveSku(raw.sku);
     const warehouseResult = skuResult.materialCode ? resolveGeneralWarehouse(raw.warehouseName, skuResult.materialCode) : { businessUnit: '', issue: '' };
     const product = resolveProduct(skuResult.materialCode, 'FBM在途', raw.sku);
     addFact({

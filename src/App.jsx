@@ -201,7 +201,7 @@ const LINGXING_INVENTORY_SLOTS = [
 const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
   { id: 'inventorySummaryFile1', title: 'FBA库存报表', fields: [
     ['storeName', '店铺'], ['marketplace', '站点'], ['sku', 'SKU'], ['fnsku', 'FNSKU'],
-    ['asin', 'ASIN'], ['warehouseName', '仓库名称'], ['inventoryAttribute', '库存属性'], ['endingInventoryQty', '期末库存数量']
+    ['asin', 'ASIN'], ['warehouseName', '仓库名称'], ['inventoryAttribute', '库存属性'], ['endingInventoryQty', '期末库存-数量']
   ] },
   { id: 'inventorySummaryFile2', title: 'FBM库存报表', fields: [
     ['storeName', '店铺'], ['marketplace', '站点'], ['identifier', '识别码'],
@@ -3243,6 +3243,8 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
     targetTitles: [],
     inventoryTypes: [],
     issueStatuses: [],
+    productLines: [],
+    productSeries: [],
     keyword: ''
   });
 
@@ -3261,6 +3263,8 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
   const selectedTargets = Array.isArray(filters.targetTitles) ? filters.targetTitles : [];
   const selectedTypes = Array.isArray(filters.inventoryTypes) ? filters.inventoryTypes : [];
   const selectedStatuses = Array.isArray(filters.issueStatuses) ? filters.issueStatuses : [];
+  const selectedProductLines = Array.isArray(filters.productLines) ? filters.productLines : [];
+  const selectedProductSeries = Array.isArray(filters.productSeries) ? filters.productSeries : [];
   const allTasks = [...(payload.missingTasks || []), ...(payload.conflicts || [])];
   const targetOptions = [...new Set([
     ...allTasks.map((row) => row.targetTitle),
@@ -3282,6 +3286,30 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
   ])];
   const includesSelected = (selected, value) => selected.length === 0 || selected.includes(value);
   const includesAnySelected = (selected, values) => selected.length === 0 || values.some((value) => selected.includes(value));
+  const inventoryIssueMatches = (row, { skipProductLine = false, skipProductSeries = false } = {}) => {
+    const keyword = normalize(filters.keyword).toLowerCase();
+    const productLine = normalize(row.productLine) || '未匹配';
+    const productSeries = normalize(row.productSeries) || '未匹配';
+    const searchText = [
+      row.targetTitle, row.issueCode, row.missingKey, row.sourceType, row.sourceKey, row.subject,
+      row.sourceWarehouseName, row.kingdeeWarehouseName, row.storeName, row.sourceSku,
+      row.materialCode, row.materialName, productLine, productSeries, row.businessUnit, row.maintenanceHint
+    ].join(' ').toLowerCase();
+    return includesSelected(selectedTargets, row.targetTitle)
+      && includesSelected(selectedTypes, row.sourceType)
+      && includesSelected(selectedStatuses, row.issueStatus)
+      && (skipProductLine || includesSelected(selectedProductLines, productLine))
+      && (skipProductSeries || includesSelected(selectedProductSeries, productSeries))
+      && (!keyword || searchText.includes(keyword));
+  };
+  const productLineOptions = [...new Set((payload.inventorySummaryIssues || [])
+    .filter((row) => inventoryIssueMatches(row, { skipProductLine: true }))
+    .map((row) => normalize(row.productLine) || '未匹配'))]
+    .sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+  const productSeriesOptions = [...new Set((payload.inventorySummaryIssues || [])
+    .filter((row) => inventoryIssueMatches(row, { skipProductSeries: true }))
+    .map((row) => normalize(row.productSeries) || '未匹配'))]
+    .sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const matchTask = (row) => {
     const keyword = normalize(filters.keyword).toLowerCase();
     const text = [row.targetTitle, row.issueCode, row.missingKey, row.inventoryTypes, row.stores, row.marketplaces].join(' ').toLowerCase();
@@ -3312,18 +3340,7 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
       && includesSelected(selectedStatuses, '源文件异常')
       && (!keyword || text.includes(keyword));
   });
-  const inventorySummaryIssues = (payload.inventorySummaryIssues || []).filter((row) => {
-    const keyword = normalize(filters.keyword).toLowerCase();
-    const text = [
-      row.targetTitle, row.issueCode, row.missingKey, row.sourceType, row.sourceKey, row.subject,
-      row.sourceWarehouseName, row.kingdeeWarehouseName, row.storeName, row.sourceSku,
-      row.materialCode, row.materialName, row.productLine, row.productSeries, row.businessUnit, row.maintenanceHint
-    ].join(' ').toLowerCase();
-    return includesSelected(selectedTargets, row.targetTitle)
-      && includesSelected(selectedTypes, row.sourceType)
-      && includesSelected(selectedStatuses, row.issueStatus)
-      && (!keyword || text.includes(keyword));
-  });
+  const inventorySummaryIssues = (payload.inventorySummaryIssues || []).filter((row) => inventoryIssueMatches(row));
   const inventorySummaryTasks = (payload.inventorySummaryTasks || []).filter((row) => {
     const keyword = normalize(filters.keyword).toLowerCase();
     const text = [row.targetTitle, row.issueCode, row.sourceTypes?.join(' '), row.sampleKeys?.join(' '), row.requiredFields?.join(' ')].join(' ').toLowerCase();
@@ -3332,7 +3349,7 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
       && includesSelected(selectedStatuses, row.issueStatus)
       && (!keyword || text.includes(keyword));
   });
-  const paginationResetKey = `${selectedTargets.join(',')}|${selectedTypes.join(',')}|${selectedStatuses.join(',')}|${filters.keyword}|${refreshVersion}`;
+  const paginationResetKey = `${selectedTargets.join(',')}|${selectedTypes.join(',')}|${selectedStatuses.join(',')}|${selectedProductLines.join(',')}|${selectedProductSeries.join(',')}|${filters.keyword}|${refreshVersion}`;
   const inventoryIssuePagination = usePaginatedRows(inventorySummaryIssues, paginationResetKey, 20);
   const inventoryTaskPagination = usePaginatedRows(inventorySummaryTasks, paginationResetKey, 20);
   const matchPagination = usePaginatedRows(matchRows, paginationResetKey, 20);
@@ -3439,8 +3456,10 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
         <MultiSelectFilter label="需要维护的表" allLabel="全部维表" value={selectedTargets} options={targetOptions} onChange={(value) => setFilters({ ...filters, targetTitles: value })} />
         <MultiSelectFilter label="数据来源" allLabel="全部来源" value={selectedTypes} options={inventoryTypeOptions} onChange={(value) => setFilters({ ...filters, inventoryTypes: value })} />
         <MultiSelectFilter label="问题状态" allLabel="全部状态" value={selectedStatuses} options={issueStatusOptions} onChange={(value) => setFilters({ ...filters, issueStatuses: value })} />
+        <MultiSelectFilter label="产品线" allLabel="全部产品线" value={selectedProductLines} options={productLineOptions} onChange={(value) => setFilters({ ...filters, productLines: value })} />
+        <MultiSelectFilter label="销售系列" allLabel="全部销售系列" value={selectedProductSeries} options={productSeriesOptions} onChange={(value) => setFilters({ ...filters, productSeries: value })} />
         <input className="search-input" placeholder="搜索物料、SKU、仓库、问题、店铺、站点" value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} />
-        <button type="button" className="ghost compact-button" onClick={() => setFilters({ targetTitles: [], inventoryTypes: [], issueStatuses: [], keyword: '' })}>清空筛选</button>
+        <button type="button" className="ghost compact-button" onClick={() => setFilters({ targetTitles: [], inventoryTypes: [], issueStatuses: [], productLines: [], productSeries: [], keyword: '' })}>清空筛选</button>
         <button type="button" className="compact-button" onClick={exportMissing}>导出待维护 Excel</button>
       </div>
       <div className="diagnostic-group-heading inventory-diagnostic-heading">

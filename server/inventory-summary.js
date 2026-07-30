@@ -33,7 +33,7 @@ const FIELD_ALIASES = {
   identifier: ['识别码', '物料编码', '品号'],
   warehouseName: ['仓库名称', '仓库名', '仓库', '收货仓库'],
   inventoryAttribute: ['库存属性', '库存筛选'],
-  endingInventoryQty: ['期末库存数量'],
+  endingInventoryQty: ['期末库存-数量', '期末库存数量'],
   actualTotalQty: ['实际总量'],
   totalInventoryQty: ['总库存数量', '总库存(数量)', '总库存（数量）'],
   shipmentStatus: ['货件状态'],
@@ -271,7 +271,12 @@ function worksheetRows(sheet, schema) {
   return { rows, columns };
 }
 
-function mappedColumn(field, mapping, columns) {
+function mappedColumn(field, mapping, columns, slotId) {
+  if (slotId === 'inventorySummaryFile1' && field === 'endingInventoryQty') {
+    const canonicalAliases = new Set(['期末库存-数量', '期末库存数量'].map(headerKey));
+    const canonicalColumn = columns.find((column) => canonicalAliases.has(headerKey(column)));
+    if (canonicalColumn) return canonicalColumn;
+  }
   const configured = text(mapping?.[field]);
   if (configured && columns.includes(configured)) return configured;
   const aliases = new Set((FIELD_ALIASES[field] || []).map(headerKey));
@@ -306,7 +311,7 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
   const sheet = workbook.Sheets[sheetName];
   if (slotId === 'inventorySummaryFile4') expandMergedCells(sheet);
   const parsed = worksheetRows(sheet, schema);
-  const columnMap = Object.fromEntries(schema.fields.map((field) => [field, mappedColumn(field, mapping, parsed.columns)]));
+  const columnMap = Object.fromEntries(schema.fields.map((field) => [field, mappedColumn(field, mapping, parsed.columns, slotId)]));
   const missing = schema.required.filter((field) => !columnMap[field]);
   if (missing.length) {
     const labels = missing.map((field) => FIELD_ALIASES[field]?.[0] || field);

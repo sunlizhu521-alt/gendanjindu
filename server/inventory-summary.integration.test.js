@@ -324,6 +324,53 @@ test('all inventory workbook parsers exclude zero quantity rows from saved data'
   });
 });
 
+test('FBA parser locks the ending inventory field and retains every nonzero missing-SKU row', () => {
+  const quantities = [1, 1, 1, 1, 1, 1, 1, 1, 6, 24, 146, 273, 71, 22, 3];
+  const legacyQuantities = [1, 39, 20, 5, 141, ...Array(10).fill(0)];
+  const workbook = xlsx.utils.book_new();
+  const rows = quantities.map((quantity, index) => ({
+    SKU: '',
+    仓库: '国源欧洲-PL波兰仓',
+    库存属性: '全部',
+    '期末库存-数量': quantity,
+    '期末库存(含移仓)-数量': legacyQuantities[index]
+  }));
+  rows.push({
+    SKU: '',
+    仓库: '国源欧洲-PL波兰仓',
+    库存属性: '全部',
+    '期末库存-数量': 0,
+    '期末库存(含移仓)-数量': 999
+  });
+  xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(rows), '底表');
+
+  const parsed = parseInventorySummaryWorkbook(
+    { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) },
+    'inventorySummaryFile1',
+    {
+      sku: 'SKU',
+      warehouseName: '仓库',
+      inventoryAttribute: '库存属性',
+      endingInventoryQty: '期末库存(含移仓)-数量'
+    }
+  );
+
+  assert.equal(parsed.mapping.endingInventoryQty, '期末库存-数量');
+  assert.equal(parsed.rows.length, 15);
+  assert.equal(parsed.rows.reduce((sum, row) => sum + Number(row.endingInventoryQty), 0), 553);
+  assert.equal(parsed.mapping.__inventorySummary.filteredZeroQtyRows, 1);
+
+  const model = buildInventorySummaryModel({
+    getRows: (slotId) => (slotId === 'inventorySummaryFile1' ? parsed.rows : []),
+    getRecord: (slotId) => ({ rows: slotId === 'inventorySummaryFile1' ? parsed.rows : [], updatedAt: now })
+  });
+  const diagnostics = buildInventoryDimensionDiagnostics(model);
+  const missingSkuIssues = diagnostics.issues.filter((row) => row.targetSlotId === 'inventorySummaryFile10');
+  assert.equal(missingSkuIssues.length, 15);
+  assert.equal(missingSkuIssues.reduce((sum, row) => sum + row.qty, 0), 553);
+  assert.equal(diagnostics.issues.some((row) => row.qty === 0), false);
+});
+
 test('WFS inventory resolves business unit by subject, mapped warehouse and material code', () => {
   const rowsBySlot = new Map([
     ['productCategory', [

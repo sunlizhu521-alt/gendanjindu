@@ -3337,6 +3337,18 @@ th {
   min-width: 190px;
 }
 
+.diagnostic-loading-banner {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.diagnostic-error-banner {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
 .diagnostic-group-heading {
   display: flex;
   align-items: flex-end;

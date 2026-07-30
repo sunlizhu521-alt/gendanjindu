@@ -3102,6 +3102,8 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
     inventorySummaryTasks: [],
     inventorySummaryQuality: {}
   });
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [filters, setFilters] = useSessionFilters('dimensionMissing', {
     targetTitles: [],
     inventoryTypes: [],
@@ -3110,9 +3112,15 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
   });
 
   useEffect(() => {
+    setLoading(true);
+    setLoadError('');
     request('/api/dimension-missing/cross-border', { token })
       .then((data) => setPayload(data || {}))
-      .catch((err) => setMessage(`维度表缺失加载失败：${err.message}`));
+      .catch((err) => {
+        setLoadError(err.message);
+        setMessage(`维度表缺失加载失败：${err.message}`);
+      })
+      .finally(() => setLoading(false));
   }, [token, refreshVersion]);
 
   const selectedTargets = Array.isArray(filters.targetTitles) ? filters.targetTitles : [];
@@ -3282,9 +3290,13 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
     <>
       <div className="section-heading-row dashboard-heading">
         <h2>维度表缺失</h2>
-        <span className="section-count">库存数据待维护 {payload.inventorySummaryIssues?.length || 0} 条；原跨境诊断缺失 {payload.missingTasks?.length || 0} 项、冲突 {payload.conflicts?.length || 0} 项</span>
+        <span className="section-count">{loading
+          ? '正在分析库存数据与维度文件，请稍候...'
+          : `库存数据待维护 ${payload.inventorySummaryIssues?.length || 0} 条；原跨境诊断缺失 ${payload.missingTasks?.length || 0} 项、冲突 ${payload.conflicts?.length || 0} 项`}</span>
       </div>
       <SourceApplicationsNote sources={payload.sourceApplications || []} />
+      {loading && <div className="quality-banner diagnostic-loading-banner">正在逐行检查库存文件的 SKU、仓库、主体、物料及商品分类映射，数据量较大时可能需要几十秒。</div>}
+      {loadError && <div className="quality-banner diagnostic-error-banner">维度表缺失加载失败：{loadError}</div>}
       <div className="toolbar filters-row dimension-missing-filters">
         <MultiSelectFilter label="需要维护的表" allLabel="全部维表" value={selectedTargets} options={targetOptions} onChange={(value) => setFilters({ ...filters, targetTitles: value })} />
         <MultiSelectFilter label="数据来源" allLabel="全部来源" value={selectedTypes} options={inventoryTypeOptions} onChange={(value) => setFilters({ ...filters, inventoryTypes: value })} />

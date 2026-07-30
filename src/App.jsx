@@ -643,11 +643,11 @@ function inventoryPurchaseGroups(rows, keyOf) {
   ));
 }
 
-function InventoryMetricToggle({ metric, onChange, label }) {
+function InventoryMetricToggle({ metric, onChange, label, valueLabel = '货值' }) {
   return (
     <div className="inventory-metric-toggle" role="group" aria-label={`${label}指标切换`}>
       <button type="button" className={metric === 'qty' ? 'active' : ''} onClick={() => onChange('qty')}>数量</button>
-      <button type="button" className={metric === 'value' ? 'active' : ''} onClick={() => onChange('value')}>货值</button>
+      <button type="button" className={metric === 'value' ? 'active' : ''} onClick={() => onChange('value')}>{valueLabel}</button>
     </div>
   );
 }
@@ -1255,6 +1255,105 @@ function formatDashboardWan(value) {
   return `${(numberValue(value) / 10000).toLocaleString('zh-CN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}万元`;
 }
 
+function InventorySummaryMonthlyBars({ title, rows, baseLabel = '销售' }) {
+  const [metric, setMetric] = useState('qty');
+  const chartRows = [...rows].sort((left, right) => String(left.id).localeCompare(String(right.id)));
+  const valueKey = metric === 'qty' ? 'salesQty' : 'salesAmount';
+  const years = [...new Set(chartRows.map((row) => String(row.id || row.name).slice(0, 4)).filter(Boolean))];
+  const palette = ['#0f8f88', '#1683e8', '#d98619', '#7c5ce7', '#ef5b45'];
+  const colorByYear = new Map(years.map((year, index) => [year, palette[index % palette.length]]));
+  const maxValue = Math.max(...chartRows.map((row) => Math.abs(numberValue(row[valueKey]))), 1);
+  return (
+    <article className="inventory-chart-panel">
+      <div className="inventory-chart-head">
+        <h3>{title}</h3>
+        <div className="inventory-chart-controls">
+          <span className="inventory-chart-legend">
+            {years.map((year) => <span key={year}><i style={{ background: colorByYear.get(year) }} />{year}年</span>)}
+          </span>
+          <InventoryMetricToggle metric={metric} onChange={setMetric} label={title} valueLabel="金额" />
+        </div>
+      </div>
+      {chartRows.length === 0 ? <p className="empty-chart">暂无数据</p> : (
+        <div className="inventory-vertical-chart-scroll">
+          <div className="inventory-monthly-bars" style={{ minWidth: `${Math.max(720, chartRows.length * 82)}px` }}>
+            {chartRows.map((row) => {
+              const value = numberValue(row[valueKey]);
+              const year = String(row.id || row.name).slice(0, 4);
+              const display = metric === 'qty' ? formatDashboardNumber(value) : formatDashboardWan(value);
+              return (
+                <div className="inventory-monthly-bar" key={row.id || row.name}>
+                  <small title={`${row.name}${baseLabel}${metric === 'qty' ? '数量' : '金额'}：${display}`}>{display}</small>
+                  <div>
+                    <i
+                      style={{
+                        height: `${Math.max(Math.abs(value) / maxValue * 100, value ? 3 : 0)}%`,
+                        background: colorByYear.get(year) || palette[0]
+                      }}
+                    />
+                  </div>
+                  <strong title={row.name}>{row.name}</strong>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function InventorySummaryVerticalGroupedBars({ title, rows }) {
+  const [metric, setMetric] = useState('qty');
+  const series = [
+    { key: metric === 'qty' ? 'inventoryQty' : 'inventoryValue', label: '在库', color: '#0f8f88' },
+    { key: metric === 'qty' ? 'transitQty' : 'transitValue', label: '在途', color: '#1683e8' },
+    { key: metric === 'qty' ? 'unfulfilledQty' : 'unfulfilledValue', label: '未交付', color: '#f59e0b' }
+  ];
+  const maxValue = Math.max(...rows.flatMap((row) => series.map((item) => Math.abs(numberValue(row[item.key])))), 1);
+  return (
+    <article className="inventory-chart-panel">
+      <div className="inventory-chart-head">
+        <h3>{title}</h3>
+        <div className="inventory-chart-controls">
+          <span className="inventory-chart-legend">
+            {series.map((item) => <span key={item.key}><i style={{ background: item.color }} />{item.label}</span>)}
+          </span>
+          <InventoryMetricToggle metric={metric} onChange={setMetric} label={title} />
+        </div>
+      </div>
+      {rows.length === 0 ? <p className="empty-chart">暂无数据</p> : (
+        <div className="inventory-vertical-chart-scroll">
+          <div className="inventory-business-bars" style={{ minWidth: `${Math.max(720, rows.length * 210)}px` }}>
+            {rows.map((row) => (
+              <div className="inventory-business-group" key={row.id || row.name}>
+                <div className="inventory-business-series">
+                  {series.map((item) => {
+                    const value = numberValue(row[item.key]);
+                    const display = metric === 'qty' ? formatDashboardNumber(value) : formatDashboardWan(value);
+                    return (
+                      <span key={item.key}>
+                        <small title={`${row.name}${item.label}：${display}`}>{display}</small>
+                        <i
+                          style={{
+                            height: `${Math.max(Math.abs(value) / maxValue * 150, value ? 4 : 0)}px`,
+                            background: item.color
+                          }}
+                        />
+                      </span>
+                    );
+                  })}
+                </div>
+                <strong title={row.name}>{row.name}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </article>
+  );
+}
+
 function InventorySummaryLineChart({ title, rows, monthly = false, baseLabel = '销售' }) {
   const [metric, setMetric] = useState('qty');
   const series = monthly
@@ -1604,9 +1703,9 @@ function InventorySummary({ token, active }) {
           </section>
 
           <section className="inventory-chart-grid">
-            <InventorySummaryLineChart title="每月销售变化趋势" rows={monthRows} monthly />
+            <InventorySummaryMonthlyBars title="每月销售变化趋势" rows={monthRows} />
             <InventorySummaryGroupedBars title="销售产品线库存、在途与未交付" rows={productLineRows} />
-            <InventorySummaryLineChart title="事业部库存、在途与未交付" rows={businessUnitRows} />
+            <InventorySummaryVerticalGroupedBars title="事业部库存、在途与未交付" rows={businessUnitRows} />
             <InventorySummaryAbc rows={filteredRows} />
           </section>
 

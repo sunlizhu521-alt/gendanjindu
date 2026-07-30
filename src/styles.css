@@ -1328,6 +1328,128 @@ h3 {
   font-size: 10px;
 }
 
+.inventory-vertical-chart-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+}
+
+.inventory-monthly-bars {
+  display: flex;
+  height: 220px;
+  align-items: end;
+  gap: 8px;
+  padding: 2px 8px 8px;
+}
+
+.inventory-monthly-bar {
+  display: grid;
+  flex: 0 0 74px;
+  grid-template-rows: 28px 154px 28px;
+  min-width: 0;
+}
+
+.inventory-monthly-bar > small {
+  align-self: end;
+  overflow: hidden;
+  color: #334155;
+  font-size: 9px;
+  font-weight: 700;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-monthly-bar > div {
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  border-bottom: 1px solid #cbd5e1;
+}
+
+.inventory-monthly-bar i {
+  display: block;
+  width: 42px;
+  min-height: 0;
+  border-radius: 3px 3px 0 0;
+}
+
+.inventory-monthly-bar > strong {
+  align-self: start;
+  overflow: hidden;
+  padding-top: 6px;
+  color: #64748b;
+  font-size: 9px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-business-bars {
+  display: flex;
+  height: 220px;
+  align-items: end;
+  gap: 12px;
+  padding: 2px 8px 8px;
+}
+
+.inventory-business-group {
+  display: grid;
+  flex: 0 0 198px;
+  grid-template-rows: 184px 28px;
+  min-width: 0;
+}
+
+.inventory-business-series {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
+  gap: 6px;
+  border-bottom: 1px solid #cbd5e1;
+}
+
+.inventory-business-series > span {
+  display: flex;
+  height: 178px;
+  min-width: 0;
+  align-items: center;
+  flex-direction: column;
+  justify-content: end;
+}
+
+.inventory-business-series small {
+  width: 100%;
+  min-height: 20px;
+  overflow: hidden;
+  color: #334155;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-business-series i {
+  display: block;
+  width: 100%;
+  max-width: 48px;
+  flex: 0 0 auto;
+  border-radius: 3px 3px 0 0;
+}
+
+.inventory-business-group > strong {
+  align-self: start;
+  overflow: hidden;
+  padding-top: 6px;
+  color: #475569;
+  font-size: 10px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .inventory-horizontal-bars {
   display: grid;
   max-height: 230px;

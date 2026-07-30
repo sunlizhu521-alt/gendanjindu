@@ -768,7 +768,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   source.inventorySummaryFile3.rows.forEach((raw) => {
     const skuResult = resolveSku(raw.sku);
     const qty = numeric(raw.totalInventoryQty, 'WFS库存', raw.sku, '总库存数量');
-    const warehouseResult = skuResult.materialCode ? resolveGeneralWarehouse(raw.warehouseName, skuResult.materialCode) : { businessUnit: '', issue: '' };
+    const warehouseResult = skuResult.materialCode ? resolveSpecialWarehouse(fbaWarehouseLookup, raw.warehouseName, skuResult.materialCode) : { businessUnit: '', issue: '' };
     const product = resolveProduct(skuResult.materialCode, 'WFS库存', raw.sku);
     addFact({
       sourceType: 'WFS库存',

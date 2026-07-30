@@ -69,7 +69,7 @@ test('inventory summary model uses inventory library facts, layered totals and s
       { sku: 'SKU-1', warehouseName: 'FBA源仓', inventoryAttribute: '可售', endingInventoryQty: '9,999' }
     ]],
     ['inventorySummaryFile2', [{ identifier: 'M1', warehouseName: 'FBM仓', actualTotalQty: '200' }]],
-    ['inventorySummaryFile3', [{ sku: 'SKU-1', warehouseName: 'WFS仓', totalInventoryQty: '300' }]],
+    ['inventorySummaryFile3', [{ sku: 'SKU-1', warehouseName: 'WFS源仓', totalInventoryQty: '300' }]],
     ['inventorySummaryFile4', [
       { storeName: '店铺一', sku: 'SKU-1', shipmentStatus: 'SHIPPED', dispatchQty: '600', shippedQty: '500', signedQty: '100' },
       { storeName: '店铺一', sku: 'SKU-1', shipmentStatus: 'SHIPPED', dispatchQty: '0', shippedQty: '900', signedQty: '0' },
@@ -87,7 +87,10 @@ test('inventory summary model uses inventory library facts, layered totals and s
       { date: '2026-02-16', businessUnit: '跨境事业部', materialCode: 'M3', salesQty: '10', salesAmount: '1,000' },
       { date: '2026-02-17', businessUnit: '跨境事业部', materialCode: 'M4', salesQty: '10', salesAmount: '1,000' }
     ]],
-    ['inventorySummaryFile9', [{ subject: '主体一', lingxingWarehouseName: 'FBA源仓', kingdeeWarehouseName: 'FBA金蝶仓' }]],
+    ['inventorySummaryFile9', [
+      { subject: '主体一', lingxingWarehouseName: 'FBA源仓', kingdeeWarehouseName: 'FBA金蝶仓' },
+      { subject: '主体一', lingxingWarehouseName: 'WFS源仓', kingdeeWarehouseName: 'WFS仓' }
+    ]],
     ['inventorySummaryFile10', [
       { lingxingSku: 'SKU-1', identifier: 'M1' },
       { lingxingSku: 'SKU-3', identifier: 'M3' },
@@ -192,6 +195,69 @@ test('FBM workbook parser excludes zero actual total rows from saved data', () =
   assert.equal(parsed.rows.length, 1);
   assert.equal(parsed.rows[0].identifier, 'M-STOCK');
   assert.equal(parsed.mapping.__inventorySummary.filteredZeroQtyRows, 1);
+});
+
+test('WFS inventory resolves business unit by subject, mapped warehouse and material code', () => {
+  const rowsBySlot = new Map([
+    ['productCategory', [
+      { materialCode: 'M-ONE', sku: 'SKU-ONE', materialName: 'Item One', productLine: 'Line', productSeries: 'Series', pretaxPrice: '10' },
+      { materialCode: 'M-TWO', sku: 'SKU-TWO', materialName: 'Item Two', productLine: 'Line', productSeries: 'Series', pretaxPrice: '20' }
+    ]],
+    ['warehouseMaterialMap', [
+      { subject: '102-G', warehouseName: 'WFS仓', materialCode: 'M-ONE', businessUnit: '海外一部' },
+      { subject: '102-G', warehouseName: 'WFS仓', materialCode: 'M-TWO', businessUnit: '海外二部' }
+    ]],
+    ['inventorySummaryFile3', [
+      { sku: 'SKU-ONE', warehouseName: '国源-Walmart美国仓', totalInventoryQty: '100' },
+      { sku: 'SKU-TWO', warehouseName: '国源-Walmart美国仓', totalInventoryQty: '200' }
+    ]],
+    ['inventorySummaryFile9', [
+      { subject: '102-G', businessUnit: '海外一部', lingxingWarehouseName: '国源-Walmart美国仓', kingdeeWarehouseName: 'WFS仓' },
+      { subject: '102-G', businessUnit: '海外二部', lingxingWarehouseName: '国源-Walmart美国仓', kingdeeWarehouseName: 'WFS仓' }
+    ]],
+    ['inventorySummaryFile10', [
+      { lingxingSku: 'SKU-ONE', identifier: 'M-ONE' },
+      { lingxingSku: 'SKU-TWO', identifier: 'M-TWO' }
+    ]]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
+  });
+  const overseasOne = result.rows.find((row) => row.matchKey === '海外一部+M-ONE');
+  const overseasTwo = result.rows.find((row) => row.matchKey === '海外二部+M-TWO');
+  assert.equal(overseasOne?.wfsInventoryQty, 100);
+  assert.equal(overseasTwo?.wfsInventoryQty, 200);
+  assert.equal(result.anomalies.length, 0);
+});
+
+test('WFS inventory marks conflicting business unit mappings instead of guessing', () => {
+  const rowsBySlot = new Map([
+    ['productCategory', [
+      { materialCode: 'M-CONFLICT', sku: 'SKU-CONFLICT', materialName: 'Conflict Item', productLine: 'Line', productSeries: 'Series', pretaxPrice: '10' }
+    ]],
+    ['warehouseMaterialMap', [
+      { subject: '102-G', warehouseName: 'WFS仓', materialCode: 'M-CONFLICT', businessUnit: '海外一部' },
+      { subject: '102-G', warehouseName: 'WFS仓', materialCode: 'M-CONFLICT', businessUnit: '海外二部' }
+    ]],
+    ['inventorySummaryFile3', [
+      { sku: 'SKU-CONFLICT', warehouseName: '国源-Walmart美国仓', totalInventoryQty: '50' }
+    ]],
+    ['inventorySummaryFile9', [
+      { subject: '102-G', lingxingWarehouseName: '国源-Walmart美国仓', kingdeeWarehouseName: 'WFS仓' }
+    ]],
+    ['inventorySummaryFile10', [
+      { lingxingSku: 'SKU-CONFLICT', identifier: 'M-CONFLICT' }
+    ]]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
+  });
+  const unmatched = result.rows.find((row) => row.matchKey === '未匹配');
+  assert.equal(unmatched?.wfsInventoryQty, 50);
+  assert.equal(result.rows.some((row) => ['海外一部', '海外二部'].includes(row.businessUnit)), false);
+  assert.equal(result.anomalies.some((row) => row.issue === '主体、仓库与物料映射冲突'), true);
 });
 
 test('inventory business unit mapping reads legacy raw dimensions and stays independent from product price issues', () => {

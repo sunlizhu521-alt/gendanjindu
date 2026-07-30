@@ -179,7 +179,7 @@ test('FBM inventory ignores zero quantities and excluded warehouse rows before m
   assert.equal(result.totals.fbmInventoryValue || 0, 0);
 });
 
-test('all inventory sources ignore zero quantity rows before mapping and aggregation', () => {
+test('all inventory sources ignore zero quantity rows before mapping, aggregation and diagnostics', () => {
   const rowsBySlot = new Map([
     ['inventorySummaryFile1', [
       { sku: 'SKU-FBA-ZERO', warehouseName: 'Unknown FBA', inventoryAttribute: '全部', endingInventoryQty: '0' }
@@ -205,6 +205,16 @@ test('all inventory sources ignore zero quantity rows before mapping and aggrega
   assert.equal(result.anomalies.length, 0);
   assert.equal(result.totals.inventoryQty || 0, 0);
   assert.equal(result.totals.inventoryValue || 0, 0);
+  const diagnostics = buildInventoryDimensionDiagnostics(result);
+  assert.deepEqual(diagnostics.issues, []);
+  assert.deepEqual(diagnostics.tasks, []);
+  assert.deepEqual(diagnostics.qualitySummary, {
+    issueRows: 0,
+    affectedFacts: 0,
+    affectedQty: 0,
+    affectedValue: 0,
+    targetCount: 0
+  });
 });
 
 test('FBM workbook parser excludes zero quantities and excluded warehouse rows from saved data', () => {

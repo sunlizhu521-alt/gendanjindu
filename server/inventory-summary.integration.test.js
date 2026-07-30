@@ -155,6 +155,45 @@ test('inventory summary model uses inventory library facts, layered totals and s
   assert.deepEqual(crossBorderM1?.unfulfilledReasons, [{ name: '未填写', qty: 50, value: 500 }]);
 });
 
+test('FBM inventory ignores zero actual total rows before mapping and aggregation', () => {
+  const rowsBySlot = new Map([
+    ['inventorySummaryFile2', [
+      { identifier: 'M-ZERO-1', warehouseName: 'Unknown Warehouse', actualTotalQty: '0' },
+      { identifier: 'M-ZERO-2', warehouseName: 'Unknown Warehouse', actualTotalQty: '0.0' },
+      { identifier: 'M-ZERO-3', warehouseName: 'Unknown Warehouse', actualTotalQty: '-0' }
+    ]]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
+  });
+  assert.equal(result.rows.length, 0);
+  assert.equal(result.anomalies.length, 0);
+  assert.equal(result.totals.fbmInventoryQty || 0, 0);
+  assert.equal(result.totals.fbmInventoryValue || 0, 0);
+});
+
+test('FBM workbook parser excludes zero actual total rows from saved data', () => {
+  const workbook = xlsx.utils.book_new();
+  const worksheet = xlsx.utils.json_to_sheet([
+    { identifier: 'M-ZERO', warehouseName: 'Warehouse A', actualTotalQty: '0' },
+    { identifier: 'M-STOCK', warehouseName: 'Warehouse A', actualTotalQty: '1,250' }
+  ]);
+  xlsx.utils.book_append_sheet(workbook, worksheet, 'FBM');
+  const parsed = parseInventorySummaryWorkbook(
+    { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) },
+    'inventorySummaryFile2',
+    {
+      identifier: 'identifier',
+      warehouseName: 'warehouseName',
+      actualTotalQty: 'actualTotalQty'
+    }
+  );
+  assert.equal(parsed.rows.length, 1);
+  assert.equal(parsed.rows[0].identifier, 'M-STOCK');
+  assert.equal(parsed.mapping.__inventorySummary.filteredZeroQtyRows, 1);
+});
+
 test('inventory business unit mapping reads legacy raw dimensions and stays independent from product price issues', () => {
   const rowsBySlot = new Map([
     ['productCategory', [{

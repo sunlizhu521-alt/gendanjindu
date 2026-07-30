@@ -281,10 +281,16 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
     const labels = missing.map((field) => FIELD_ALIASES[field]?.[0] || field);
     throw inventoryValidationError(`缺少必填列：${labels.join('、')}`);
   }
-  const rows = parsed.rows.map((row) => Object.fromEntries(schema.fields.map((field) => [
+  const mappedRows = parsed.rows.map((row) => Object.fromEntries(schema.fields.map((field) => [
     field,
     columnMap[field] ? row[columnMap[field]] ?? '' : ''
   ])));
+  const rows = slotId === 'inventorySummaryFile2'
+    ? mappedRows.filter((row) => {
+      const quantity = safeNumber(row.actualTotalQty);
+      return !quantity.valid || quantity.value !== 0;
+    })
+    : mappedRows;
   return {
     rows,
     sheetName,
@@ -295,7 +301,8 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
       __inventorySummary: {
         parserVersion: 1,
         sheetName,
-        rowCount: rows.length
+        rowCount: rows.length,
+        filteredZeroQtyRows: mappedRows.length - rows.length
       }
     }
   };
@@ -736,6 +743,8 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
 
   source.inventorySummaryFile2.rows.forEach((raw) => {
     const materialCode = text(raw.identifier).replace(/\.0$/, '');
+    const quantity = safeNumber(raw.actualTotalQty);
+    if (quantity.valid && quantity.value === 0) return;
     const qty = numeric(raw.actualTotalQty, 'FBM库存', raw.identifier, '实际总量');
     const warehouseResult = resolveGeneralWarehouse(raw.warehouseName, materialCode);
     const product = resolveProduct(materialCode, 'FBM库存', raw.identifier);

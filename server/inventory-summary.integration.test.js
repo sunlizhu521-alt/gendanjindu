@@ -179,6 +179,34 @@ test('FBM inventory ignores zero quantities and excluded warehouse rows before m
   assert.equal(result.totals.fbmInventoryValue || 0, 0);
 });
 
+test('all inventory sources ignore zero quantity rows before mapping and aggregation', () => {
+  const rowsBySlot = new Map([
+    ['inventorySummaryFile1', [
+      { sku: 'SKU-FBA-ZERO', warehouseName: 'Unknown FBA', inventoryAttribute: '全部', endingInventoryQty: '0' }
+    ]],
+    ['inventorySummaryFile2', [
+      { identifier: 'M-FBM-ZERO', warehouseName: 'Unknown FBM', actualTotalQty: '0' }
+    ]],
+    ['inventorySummaryFile3', [
+      { sku: 'SKU-WFS-ZERO', warehouseName: 'Unknown WFS', totalInventoryQty: '0.0' }
+    ]],
+    ['inventorySummaryFile6', [
+      { subject: 'Unknown Subject', warehouseName: 'Unknown Domestic', materialCode: 'M-DOMESTIC-ZERO', domesticStockQty: '-0' }
+    ]],
+    ['inventorySummaryFile7', [
+      { jdId: 'JD-ZERO', jdStockQty: '0' }
+    ]]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
+  });
+  assert.equal(result.rows.length, 0);
+  assert.equal(result.anomalies.length, 0);
+  assert.equal(result.totals.inventoryQty || 0, 0);
+  assert.equal(result.totals.inventoryValue || 0, 0);
+});
+
 test('FBM workbook parser excludes zero quantities and excluded warehouse rows from saved data', () => {
   const workbook = xlsx.utils.book_new();
   const worksheet = xlsx.utils.json_to_sheet([
@@ -202,6 +230,56 @@ test('FBM workbook parser excludes zero quantities and excluded warehouse rows f
   assert.equal(parsed.rows[0].identifier, 'M-STOCK');
   assert.equal(parsed.mapping.__inventorySummary.filteredZeroQtyRows, 1);
   assert.equal(parsed.mapping.__inventorySummary.filteredIgnoredWarehouseRows, 3);
+});
+
+test('all inventory workbook parsers exclude zero quantity rows from saved data', () => {
+  const cases = [
+    {
+      slotId: 'inventorySummaryFile1',
+      mapping: {
+        sku: 'sku',
+        warehouseName: 'warehouseName',
+        inventoryAttribute: 'inventoryAttribute',
+        endingInventoryQty: 'endingInventoryQty'
+      },
+      zero: { sku: 'SKU-ZERO', warehouseName: 'Warehouse', inventoryAttribute: '全部', endingInventoryQty: '0' },
+      stock: { sku: 'SKU-STOCK', warehouseName: 'Warehouse', inventoryAttribute: '全部', endingInventoryQty: '10' }
+    },
+    {
+      slotId: 'inventorySummaryFile3',
+      mapping: { sku: 'sku', warehouseName: 'warehouseName', totalInventoryQty: 'totalInventoryQty' },
+      zero: { sku: 'SKU-ZERO', warehouseName: 'Warehouse', totalInventoryQty: '0' },
+      stock: { sku: 'SKU-STOCK', warehouseName: 'Warehouse', totalInventoryQty: '20' }
+    },
+    {
+      slotId: 'inventorySummaryFile6',
+      mapping: {
+        subject: 'subject',
+        warehouseName: 'warehouseName',
+        materialCode: 'materialCode',
+        domesticStockQty: 'domesticStockQty'
+      },
+      zero: { subject: 'Subject', warehouseName: 'Warehouse', materialCode: 'M-ZERO', domesticStockQty: '0' },
+      stock: { subject: 'Subject', warehouseName: 'Warehouse', materialCode: 'M-STOCK', domesticStockQty: '30' }
+    },
+    {
+      slotId: 'inventorySummaryFile7',
+      mapping: { jdId: 'jdId', jdStockQty: 'jdStockQty' },
+      zero: { jdId: 'JD-ZERO', jdStockQty: '0' },
+      stock: { jdId: 'JD-STOCK', jdStockQty: '40' }
+    }
+  ];
+  cases.forEach(({ slotId, mapping, zero, stock }) => {
+    const workbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet([zero, stock]), 'Inventory');
+    const parsed = parseInventorySummaryWorkbook(
+      { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) },
+      slotId,
+      mapping
+    );
+    assert.equal(parsed.rows.length, 1, slotId);
+    assert.equal(parsed.mapping.__inventorySummary.filteredZeroQtyRows, 1, slotId);
+  });
 });
 
 test('WFS inventory resolves business unit by subject, mapped warehouse and material code', () => {

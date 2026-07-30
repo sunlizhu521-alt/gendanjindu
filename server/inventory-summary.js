@@ -170,9 +170,23 @@ const IGNORED_FBM_WAREHOUSES = new Set([
   'US-FBA移除中转虚拟仓',
   '虚拟仓库--仅用于测试'
 ].map(matchKey));
+const INVENTORY_QUANTITY_FIELDS = {
+  inventorySummaryFile1: 'endingInventoryQty',
+  inventorySummaryFile2: 'actualTotalQty',
+  inventorySummaryFile3: 'totalInventoryQty',
+  inventorySummaryFile6: 'domesticStockQty',
+  inventorySummaryFile7: 'jdStockQty'
+};
 
 function isIgnoredFbmWarehouse(value) {
   return IGNORED_FBM_WAREHOUSES.has(matchKey(value));
+}
+
+function hasZeroInventoryQuantity(row, slotId) {
+  const field = INVENTORY_QUANTITY_FIELDS[slotId];
+  if (!field) return false;
+  const quantity = safeNumber(row?.[field]);
+  return quantity.valid && quantity.value === 0;
 }
 
 function normalizeMonth(value) {
@@ -297,14 +311,13 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
   ])));
   let filteredZeroQtyRows = 0;
   let filteredIgnoredWarehouseRows = 0;
-  const rows = slotId === 'inventorySummaryFile2'
+  const rows = INVENTORY_QUANTITY_FIELDS[slotId]
     ? mappedRows.filter((row) => {
-      if (isIgnoredFbmWarehouse(row.warehouseName)) {
+      if (slotId === 'inventorySummaryFile2' && isIgnoredFbmWarehouse(row.warehouseName)) {
         filteredIgnoredWarehouseRows += 1;
         return false;
       }
-      const quantity = safeNumber(row.actualTotalQty);
-      if (quantity.valid && quantity.value === 0) {
+      if (hasZeroInventoryQuantity(row, slotId)) {
         filteredZeroQtyRows += 1;
         return false;
       }
@@ -741,6 +754,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
 
   source.inventorySummaryFile1.rows.forEach((raw) => {
     if (text(raw.inventoryAttribute).toLowerCase() !== '全部'.toLowerCase()) return;
+    if (hasZeroInventoryQuantity(raw, 'inventorySummaryFile1')) return;
     const skuResult = resolveSku(raw.sku);
     const qty = numeric(raw.endingInventoryQty, 'FBA库存', raw.sku, '期末库存数量');
     const warehouseResult = skuResult.materialCode ? resolveSpecialWarehouse(fbaWarehouseLookup, raw.warehouseName, skuResult.materialCode) : { businessUnit: '', issue: '' };
@@ -764,9 +778,8 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
 
   source.inventorySummaryFile2.rows.forEach((raw) => {
     if (isIgnoredFbmWarehouse(raw.warehouseName)) return;
+    if (hasZeroInventoryQuantity(raw, 'inventorySummaryFile2')) return;
     const materialCode = text(raw.identifier).replace(/\.0$/, '');
-    const quantity = safeNumber(raw.actualTotalQty);
-    if (quantity.valid && quantity.value === 0) return;
     const qty = numeric(raw.actualTotalQty, 'FBM库存', raw.identifier, '实际总量');
     const warehouseResult = resolveGeneralWarehouse(raw.warehouseName, materialCode);
     const product = resolveProduct(materialCode, 'FBM库存', raw.identifier);
@@ -788,6 +801,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   });
 
   source.inventorySummaryFile3.rows.forEach((raw) => {
+    if (hasZeroInventoryQuantity(raw, 'inventorySummaryFile3')) return;
     const skuResult = resolveSku(raw.sku);
     const qty = numeric(raw.totalInventoryQty, 'WFS库存', raw.sku, '总库存数量');
     const warehouseResult = skuResult.materialCode ? resolveSpecialWarehouse(fbaWarehouseLookup, raw.warehouseName, skuResult.materialCode) : { businessUnit: '', issue: '' };
@@ -858,6 +872,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   });
 
   source.inventorySummaryFile6.rows.forEach((raw) => {
+    if (hasZeroInventoryQuantity(raw, 'inventorySummaryFile6')) return;
     const materialCode = text(raw.materialCode).replace(/\.0$/, '');
     const warehouseResult = resolveWarehouseBusinessUnit(raw.subject, raw.warehouseName, materialCode);
     const qty = numeric(raw.domesticStockQty, '国内在库', raw.materialCode, '库存量(主单位)');
@@ -890,6 +905,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   });
 
   source.inventorySummaryFile7.rows.forEach((raw) => {
+    if (hasZeroInventoryQuantity(raw, 'inventorySummaryFile7')) return;
     const jdResult = resolveJd(raw.jdId);
     const qty = numeric(raw.jdStockQty, '京东在库', raw.jdId, '全国现货库存');
     const product = resolveProduct(jdResult.materialCode, '京东在库', raw.jdId);

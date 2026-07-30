@@ -3243,6 +3243,7 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
     targetTitles: [],
     inventoryTypes: [],
     issueStatuses: [],
+    inventoryOrganizations: [],
     productLines: [],
     productSeries: [],
     keyword: ''
@@ -3263,6 +3264,7 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
   const selectedTargets = Array.isArray(filters.targetTitles) ? filters.targetTitles : [];
   const selectedTypes = Array.isArray(filters.inventoryTypes) ? filters.inventoryTypes : [];
   const selectedStatuses = Array.isArray(filters.issueStatuses) ? filters.issueStatuses : [];
+  const selectedInventoryOrganizations = Array.isArray(filters.inventoryOrganizations) ? filters.inventoryOrganizations : [];
   const selectedProductLines = Array.isArray(filters.productLines) ? filters.productLines : [];
   const selectedProductSeries = Array.isArray(filters.productSeries) ? filters.productSeries : [];
   const allTasks = [...(payload.missingTasks || []), ...(payload.conflicts || [])];
@@ -3286,8 +3288,13 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
   ])];
   const includesSelected = (selected, value) => selected.length === 0 || selected.includes(value);
   const includesAnySelected = (selected, values) => selected.length === 0 || values.some((value) => selected.includes(value));
-  const inventoryIssueMatches = (row, { skipProductLine = false, skipProductSeries = false } = {}) => {
+  const inventoryIssueMatches = (row, {
+    skipInventoryOrganization = false,
+    skipProductLine = false,
+    skipProductSeries = false
+  } = {}) => {
     const keyword = normalize(filters.keyword).toLowerCase();
+    const inventoryOrganization = normalize(row.subject) || '未匹配';
     const productLine = normalize(row.productLine) || '未匹配';
     const productSeries = normalize(row.productSeries) || '未匹配';
     const searchText = [
@@ -3298,10 +3305,15 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
     return includesSelected(selectedTargets, row.targetTitle)
       && includesSelected(selectedTypes, row.sourceType)
       && includesSelected(selectedStatuses, row.issueStatus)
+      && (skipInventoryOrganization || includesSelected(selectedInventoryOrganizations, inventoryOrganization))
       && (skipProductLine || includesSelected(selectedProductLines, productLine))
       && (skipProductSeries || includesSelected(selectedProductSeries, productSeries))
       && (!keyword || searchText.includes(keyword));
   };
+  const inventoryOrganizationOptions = [...new Set((payload.inventorySummaryIssues || [])
+    .filter((row) => inventoryIssueMatches(row, { skipInventoryOrganization: true }))
+    .map((row) => normalize(row.subject) || '未匹配'))]
+    .sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const productLineOptions = [...new Set((payload.inventorySummaryIssues || [])
     .filter((row) => inventoryIssueMatches(row, { skipProductLine: true }))
     .map((row) => normalize(row.productLine) || '未匹配'))]
@@ -3349,7 +3361,7 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
       && includesSelected(selectedStatuses, row.issueStatus)
       && (!keyword || text.includes(keyword));
   });
-  const paginationResetKey = `${selectedTargets.join(',')}|${selectedTypes.join(',')}|${selectedStatuses.join(',')}|${selectedProductLines.join(',')}|${selectedProductSeries.join(',')}|${filters.keyword}|${refreshVersion}`;
+  const paginationResetKey = `${selectedTargets.join(',')}|${selectedTypes.join(',')}|${selectedStatuses.join(',')}|${selectedInventoryOrganizations.join(',')}|${selectedProductLines.join(',')}|${selectedProductSeries.join(',')}|${filters.keyword}|${refreshVersion}`;
   const inventoryIssuePagination = usePaginatedRows(inventorySummaryIssues, paginationResetKey, 20);
   const inventoryTaskPagination = usePaginatedRows(inventorySummaryTasks, paginationResetKey, 20);
   const matchPagination = usePaginatedRows(matchRows, paginationResetKey, 20);
@@ -3456,10 +3468,11 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
         <MultiSelectFilter label="需要维护的表" allLabel="全部维表" value={selectedTargets} options={targetOptions} onChange={(value) => setFilters({ ...filters, targetTitles: value })} />
         <MultiSelectFilter label="数据来源" allLabel="全部来源" value={selectedTypes} options={inventoryTypeOptions} onChange={(value) => setFilters({ ...filters, inventoryTypes: value })} />
         <MultiSelectFilter label="问题状态" allLabel="全部状态" value={selectedStatuses} options={issueStatusOptions} onChange={(value) => setFilters({ ...filters, issueStatuses: value })} />
+        <MultiSelectFilter label="库存组织" allLabel="全部库存组织" value={selectedInventoryOrganizations} options={inventoryOrganizationOptions} onChange={(value) => setFilters({ ...filters, inventoryOrganizations: value })} />
         <MultiSelectFilter label="产品线" allLabel="全部产品线" value={selectedProductLines} options={productLineOptions} onChange={(value) => setFilters({ ...filters, productLines: value })} />
         <MultiSelectFilter label="销售系列" allLabel="全部销售系列" value={selectedProductSeries} options={productSeriesOptions} onChange={(value) => setFilters({ ...filters, productSeries: value })} />
         <input className="search-input" placeholder="搜索物料、SKU、仓库、问题、店铺、站点" value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} />
-        <button type="button" className="ghost compact-button" onClick={() => setFilters({ targetTitles: [], inventoryTypes: [], issueStatuses: [], productLines: [], productSeries: [], keyword: '' })}>清空筛选</button>
+        <button type="button" className="ghost compact-button" onClick={() => setFilters({ targetTitles: [], inventoryTypes: [], issueStatuses: [], inventoryOrganizations: [], productLines: [], productSeries: [], keyword: '' })}>清空筛选</button>
         <button type="button" className="compact-button" onClick={exportMissing}>导出待维护 Excel</button>
       </div>
       <div className="diagnostic-group-heading inventory-diagnostic-heading">

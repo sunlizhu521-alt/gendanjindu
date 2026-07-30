@@ -225,6 +225,7 @@ const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
   { id: 'inventorySummaryFile7', title: '京东在库报表', fields: [
     ['jdId', 'SKU/京东ID'], ['jdStockQty', '全国现货库存']
   ] },
+  { id: 'inventorySummaryFile14', title: '库存槽位 14', fields: [] },
   { id: 'inventorySummaryFile8', title: '销售数据报表', fields: [
     ['date', '日期'], ['businessUnit', '事业部'], ['materialCode', '物料编码'],
     ['salesQty', '销售数量'], ['salesAmount', '销售金额']
@@ -249,7 +250,6 @@ const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
   { id: 'inventorySummaryFile13', title: 'Dim-领星FBA在途&金蝶仓库', fields: [
     ['subject', '主体'], ['storeName', '店铺'], ['kingdeeWarehouseName', '金蝶仓库名称']
   ] },
-  { id: 'inventorySummaryFile14', title: '库存槽位 14', fields: [] },
   { id: 'inventorySummaryFile15', title: '库存槽位 15', fields: [] },
   { id: 'inventorySummaryFile16', title: '库存槽位 16', fields: [] }
 ];

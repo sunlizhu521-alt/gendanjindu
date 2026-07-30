@@ -3326,6 +3326,71 @@ th {
   margin-top: 14px;
 }
 
+.dimension-missing-filters {
+  position: relative;
+  z-index: 20;
+  overflow: visible;
+  flex-wrap: wrap;
+}
+
+.dimension-missing-filters .multi-filter {
+  min-width: 190px;
+}
+
+.diagnostic-group-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 18px;
+  padding: 13px 16px;
+  border-left: 4px solid #0f766e;
+  background: #ecfdf5;
+}
+
+.diagnostic-group-heading h3 {
+  margin: 2px 0 0;
+  font-size: 18px;
+}
+
+.diagnostic-group-heading .section-kicker {
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.inventory-diagnostic-metrics {
+  margin-top: 10px;
+  border: 1px solid #a7f3d0;
+  background: #f0fdfa;
+}
+
+.inventory-diagnostic-section {
+  border-color: #99f6e4;
+  box-shadow: inset 3px 0 0 #14b8a6;
+}
+
+.inventory-task-section {
+  box-shadow: inset 3px 0 0 #0ea5e9;
+}
+
+.inventory-diagnostic-table table {
+  min-width: 1900px;
+}
+
+.legacy-diagnostic-heading {
+  border-left-color: #64748b;
+  background: #f8fafc;
+}
+
+.legacy-diagnostic-heading .section-kicker {
+  color: #64748b;
+}
+
+.legacy-diagnostic-metrics {
+  margin-top: 10px;
+}
+
 .diagnostic-table table {
   min-width: 1500px;
 }
@@ -3365,6 +3430,11 @@ th {
 
   .security-watermark span {
     font-size: 12px;
+  }
+
+  .diagnostic-group-heading {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .app-shell {

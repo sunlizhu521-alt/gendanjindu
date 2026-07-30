@@ -415,6 +415,7 @@ function emptySummaryRow(id, businessUnit, product, rawIdentifier) {
     pretaxPrice: product.pretaxPrice,
     mappingStatus: '完整',
     issues: new Set(),
+    sourceTypes: new Set(),
     inventorySources: new Set(),
     deliveryStatuses: new Set(),
     salesByMonth: {},
@@ -521,9 +522,18 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   const rowMap = new Map();
   const anomalies = [];
   let sourceIndex = 0;
+  let factIndex = 0;
 
-  const addAnomaly = (sourceType, sourceKey, issue, qty = 0, value = 0) => {
-    anomalies.push({ id: `${sourceType}-${sourceIndex += 1}`, sourceType, sourceKey: text(sourceKey), issue, qty, value });
+  const addAnomaly = (sourceType, sourceKey, issue, qty = 0, value = 0, context = {}) => {
+    anomalies.push({
+      ...context,
+      id: `${sourceType}-${sourceIndex += 1}`,
+      sourceType,
+      sourceKey: text(sourceKey),
+      issue,
+      qty,
+      value
+    });
   };
 
   const resolveProduct = (materialCode, sourceType, sourceKey) => {
@@ -558,25 +568,71 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   const resolveWarehouseBusinessUnit = (subject, warehouse, materialCode) => {
     const result = warehouseMaterialLookup.resolve(combinedKey(subject, warehouse, materialCode));
     if (result.status !== 'ok' || !text(result.value?.businessUnit)) {
-      return { businessUnit: '', issue: `主体、仓库与物料${result.status === 'conflict' ? '映射冲突' : '映射缺失'}` };
+      return {
+        businessUnit: '',
+        issue: `主体、仓库与物料${result.status === 'conflict' ? '映射冲突' : '映射缺失'}`,
+        subject: text(subject),
+        kingdeeWarehouseName: text(warehouse)
+      };
     }
-    return { businessUnit: result.value.businessUnit, issue: '' };
+    return {
+      businessUnit: result.value.businessUnit,
+      issue: '',
+      subject: text(subject),
+      kingdeeWarehouseName: text(warehouse)
+    };
   };
 
   const resolveGeneralWarehouse = (sourceWarehouse, materialCode) => {
     const subjectResult = warehouseSubjectLookup.resolve(sourceWarehouse);
     if (subjectResult.status !== 'ok' || !text(subjectResult.value?.subject)) {
-      return { businessUnit: '', issue: `仓库主体${subjectResult.status === 'conflict' ? '映射冲突' : '映射缺失'}` };
+      return {
+        businessUnit: '',
+        issue: `仓库主体${subjectResult.status === 'conflict' ? '映射冲突' : '映射缺失'}`,
+        subject: '',
+        sourceWarehouseName: text(sourceWarehouse),
+        kingdeeWarehouseName: text(sourceWarehouse)
+      };
     }
-    return resolveWarehouseBusinessUnit(subjectResult.value.subject, sourceWarehouse, materialCode);
+    return {
+      ...resolveWarehouseBusinessUnit(subjectResult.value.subject, sourceWarehouse, materialCode),
+      sourceWarehouseName: text(sourceWarehouse)
+    };
   };
 
   const resolveSpecialWarehouse = (lookup, sourceWarehouse, materialCode) => {
     const warehouseResult = lookup.resolve(sourceWarehouse);
     if (warehouseResult.status !== 'ok' || !text(warehouseResult.value?.subject) || !text(warehouseResult.value?.warehouseName)) {
-      return { businessUnit: '', issue: `仓库对照${warehouseResult.status === 'conflict' ? '映射冲突' : '映射缺失'}` };
+      return {
+        businessUnit: '',
+        issue: `仓库对照${warehouseResult.status === 'conflict' ? '映射冲突' : '映射缺失'}`,
+        subject: '',
+        sourceWarehouseName: text(sourceWarehouse),
+        kingdeeWarehouseName: ''
+      };
     }
-    return resolveWarehouseBusinessUnit(warehouseResult.value.subject, warehouseResult.value.warehouseName, materialCode);
+    return {
+      ...resolveWarehouseBusinessUnit(warehouseResult.value.subject, warehouseResult.value.warehouseName, materialCode),
+      sourceWarehouseName: text(sourceWarehouse)
+    };
+  };
+
+  const issueImpact = (quantities) => {
+    const pairs = [
+      ['fbaInventoryQty', 'fbaInventoryValue'],
+      ['fbmInventoryQty', 'fbmInventoryValue'],
+      ['wfsInventoryQty', 'wfsInventoryValue'],
+      ['domesticMainInventoryQty', 'domesticMainInventoryValue'],
+      ['jdInventoryQty', 'jdInventoryValue'],
+      ['fbaTransitQty', 'fbaTransitValue'],
+      ['fbmTransitQty', 'fbmTransitValue'],
+      ['unfulfilledQty', 'unfulfilledValue'],
+      ['salesQty', 'salesAmount']
+    ];
+    const pair = pairs.find(([qtyField]) => Object.hasOwn(quantities, qtyField));
+    return pair
+      ? { qty: Number(quantities[pair[0]] || 0), value: Number(quantities[pair[1]] || 0) }
+      : { qty: 0, value: 0 };
   };
 
   const addFact = ({
@@ -589,8 +645,10 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     inventorySource = '',
     deliveryStatus = '',
     month = '',
-    distribution = null
+    distribution = null,
+    sourceContext = {}
   }) => {
+    const factId = `${sourceType}-${factIndex += 1}`;
     const productResult = resolveProduct(materialCode, sourceType, rawIdentifier);
     const rowIssues = [...issues, productResult.issue].filter(Boolean);
     const resolvedBusinessUnit = text(businessUnit) || '未匹配';
@@ -609,6 +667,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       row.mappingStatus = '映射冲突';
       rowIssues.forEach((issue) => row.issues.add(issue));
     }
+    row.sourceTypes.add(sourceType);
     if (inventorySource) row.inventorySources.add(inventorySource);
     if (deliveryStatus) row.deliveryStatuses.add(deliveryStatus);
     Object.entries(quantities).forEach(([field, amount]) => {
@@ -630,7 +689,20 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       sumBucket(row.remarks, distribution.remark, distribution.qty, distribution.value);
     }
     rowMap.set(key, row);
-    rowIssues.forEach((issue) => addAnomaly(sourceType, rawIdentifier || materialCode, issue, quantities.unfulfilledQty || quantities.inventoryQty || quantities.transitQty || 0, 0));
+    const impact = issueImpact(quantities);
+    rowIssues.forEach((issue) => addAnomaly(
+      sourceType,
+      rawIdentifier || materialCode,
+      issue,
+      impact.qty,
+      impact.value,
+      {
+        factId,
+        materialCode: text(materialCode).replace(/\.0$/, ''),
+        businessUnit: resolvedBusinessUnit,
+        ...sourceContext
+      }
+    ));
   };
 
   const numeric = (value, sourceType, sourceKey, field) => {
@@ -652,7 +724,13 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       businessUnit: warehouseResult.businessUnit,
       issues: [skuResult.issue, warehouseResult.issue],
       inventorySource: 'FBA库存',
-      quantities: { fbaInventoryQty: qty, fbaInventoryValue: qty * product.product.pretaxPrice }
+      quantities: { fbaInventoryQty: qty, fbaInventoryValue: qty * product.product.pretaxPrice },
+      sourceContext: {
+        sourceSku: text(raw.sku),
+        sourceWarehouseName: text(raw.warehouseName),
+        subject: warehouseResult.subject || '',
+        kingdeeWarehouseName: warehouseResult.kingdeeWarehouseName || ''
+      }
     });
   });
 
@@ -668,7 +746,13 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       businessUnit: warehouseResult.businessUnit,
       issues: [warehouseResult.issue],
       inventorySource: 'FBM库存',
-      quantities: { fbmInventoryQty: qty, fbmInventoryValue: qty * product.product.pretaxPrice }
+      quantities: { fbmInventoryQty: qty, fbmInventoryValue: qty * product.product.pretaxPrice },
+      sourceContext: {
+        sourceSku: text(raw.identifier),
+        sourceWarehouseName: text(raw.warehouseName),
+        subject: warehouseResult.subject || '',
+        kingdeeWarehouseName: warehouseResult.kingdeeWarehouseName || ''
+      }
     });
   });
 
@@ -684,7 +768,13 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       businessUnit: warehouseResult.businessUnit,
       issues: [skuResult.issue, warehouseResult.issue],
       inventorySource: 'WFS库存',
-      quantities: { wfsInventoryQty: qty, wfsInventoryValue: qty * product.product.pretaxPrice }
+      quantities: { wfsInventoryQty: qty, wfsInventoryValue: qty * product.product.pretaxPrice },
+      sourceContext: {
+        sourceSku: text(raw.sku),
+        sourceWarehouseName: text(raw.warehouseName),
+        subject: warehouseResult.subject || '',
+        kingdeeWarehouseName: warehouseResult.kingdeeWarehouseName || ''
+      }
     });
   });
 
@@ -704,7 +794,14 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       materialCode: skuResult.materialCode,
       businessUnit: warehouseResult.businessUnit,
       issues: [skuResult.issue, warehouseResult.issue],
-      quantities: { fbaTransitQty: qty, fbaTransitValue: qty * product.product.pretaxPrice }
+      quantities: { fbaTransitQty: qty, fbaTransitValue: qty * product.product.pretaxPrice },
+      sourceContext: {
+        sourceSku: text(raw.sku),
+        storeName: text(raw.storeName),
+        sourceWarehouseName: text(raw.storeName),
+        subject: warehouseResult.subject || '',
+        kingdeeWarehouseName: warehouseResult.kingdeeWarehouseName || ''
+      }
     });
   });
 
@@ -719,7 +816,13 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       materialCode: skuResult.materialCode,
       businessUnit: warehouseResult.businessUnit,
       issues: [skuResult.issue, warehouseResult.issue],
-      quantities: { fbmTransitQty: qty, fbmTransitValue: qty * product.product.pretaxPrice }
+      quantities: { fbmTransitQty: qty, fbmTransitValue: qty * product.product.pretaxPrice },
+      sourceContext: {
+        sourceSku: text(raw.sku),
+        sourceWarehouseName: text(raw.warehouseName),
+        subject: warehouseResult.subject || '',
+        kingdeeWarehouseName: warehouseResult.kingdeeWarehouseName || ''
+      }
     });
   });
 
@@ -728,7 +831,14 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     const warehouseResult = resolveWarehouseBusinessUnit(raw.subject, raw.warehouseName, materialCode);
     const qty = numeric(raw.domesticStockQty, '国内在库', raw.materialCode, '库存量(主单位)');
     if (warehouseResult.businessUnit !== '国内事业部') {
-      addAnomaly('国内在库', raw.materialCode, warehouseResult.issue || '非国内事业部数据已排除', qty, 0);
+      addAnomaly('国内在库', raw.materialCode, warehouseResult.issue || '非国内事业部数据已排除', qty, 0, {
+        factId: `国内在库-${factIndex += 1}`,
+        materialCode,
+        businessUnit: warehouseResult.businessUnit || '未匹配',
+        subject: text(raw.subject),
+        sourceWarehouseName: text(raw.warehouseName),
+        kingdeeWarehouseName: text(raw.warehouseName)
+      });
       return;
     }
     const product = resolveProduct(materialCode, '国内在库', raw.materialCode);
@@ -739,7 +849,12 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       businessUnit: '国内事业部',
       issues: [warehouseResult.issue],
       inventorySource: '国内在库',
-      quantities: { domesticMainInventoryQty: qty, domesticMainInventoryValue: qty * product.product.pretaxPrice }
+      quantities: { domesticMainInventoryQty: qty, domesticMainInventoryValue: qty * product.product.pretaxPrice },
+      sourceContext: {
+        subject: text(raw.subject),
+        sourceWarehouseName: text(raw.warehouseName),
+        kingdeeWarehouseName: text(raw.warehouseName)
+      }
     });
   });
 
@@ -754,7 +869,11 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       businessUnit: '国内事业部',
       issues: [jdResult.issue],
       inventorySource: '京东在库',
-      quantities: { jdInventoryQty: qty, jdInventoryValue: qty * product.product.pretaxPrice }
+      quantities: { jdInventoryQty: qty, jdInventoryValue: qty * product.product.pretaxPrice },
+      sourceContext: {
+        sourceSku: text(raw.jdId),
+        jdId: text(raw.jdId)
+      }
     });
   });
 
@@ -769,7 +888,8 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       businessUnit: text(raw.businessUnit) || '未匹配',
       issues: [month ? '' : '销售日期无法识别'],
       month,
-      quantities: { salesQty: qty, salesAmount: amount }
+      quantities: { salesQty: qty, salesAmount: amount },
+      sourceContext: { sourceSku: text(raw.materialCode) }
     });
   });
 
@@ -812,7 +932,8 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
         reason: raw.unfulfilledReason,
         detail: raw.reasonDetail,
         remark: raw.remark
-      }
+      },
+      sourceContext: { sourceSku: text(raw.materialCode) }
     });
   });
 
@@ -831,6 +952,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     return {
       ...row,
       issues: [...row.issues],
+      sourceTypes: [...row.sourceTypes],
       inventorySources: [...row.inventorySources],
       deliveryStatuses,
       deliveryStatus: deliveryStatuses.includes('是') && deliveryStatuses.includes('否')
@@ -899,5 +1021,171 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     totals,
     anomalies,
     rows
+  };
+}
+
+const INVENTORY_DIMENSION_TARGETS = {
+  sku: {
+    slotId: 'inventorySummaryFile10',
+    title: 'Dim-领星SKU对应物料编码-产品管理',
+    page: 'inventorySummaryLibrary',
+    fields: ['SKU', '识别码（物料编码）']
+  },
+  jd: {
+    slotId: 'inventorySummaryFile11',
+    title: 'Dim-京东ID与品号匹配',
+    page: 'inventorySummaryLibrary',
+    fields: ['京东ID', '物料编码']
+  },
+  fbaWarehouse: {
+    slotId: 'inventorySummaryFile9',
+    title: 'Dim-领星FBA仓库&金蝶仓库',
+    page: 'inventorySummaryLibrary',
+    fields: ['主体', '领星FBA仓库', '金蝶仓库']
+  },
+  fbaTransitWarehouse: {
+    slotId: 'inventorySummaryFile13',
+    title: 'Dim-领星FBA在途&金蝶仓库',
+    page: 'inventorySummaryLibrary',
+    fields: ['店铺', '主体', '金蝶仓库']
+  },
+  warehouseSubject: {
+    slotId: 'spare1',
+    title: '仓库名称',
+    page: 'dimensionLibrary',
+    fields: ['使用组织（主体）', '仓库名称']
+  },
+  warehouseMaterial: {
+    slotId: 'warehouseMaterialMap',
+    title: '仓库与物料对照表',
+    page: 'dimensionLibrary',
+    fields: ['库存组织（主体）', '仓库名称', '物料编码', '事业部']
+  },
+  product: {
+    slotId: 'productCategory',
+    title: '商品分类',
+    page: 'dimensionLibrary',
+    fields: ['物料编码', 'SKU', '物料名称', '销售产品线', '销售系列', '不含税结算价']
+  }
+};
+
+function inventoryMaintenanceTarget(anomaly) {
+  const issue = text(anomaly.issue);
+  if (issue.startsWith('SKU与物料编码')) return INVENTORY_DIMENSION_TARGETS.sku;
+  if (issue.startsWith('京东ID与品号')) return INVENTORY_DIMENSION_TARGETS.jd;
+  if (issue.startsWith('仓库对照')) {
+    return anomaly.sourceType === 'FBA在途'
+      ? INVENTORY_DIMENSION_TARGETS.fbaTransitWarehouse
+      : INVENTORY_DIMENSION_TARGETS.fbaWarehouse;
+  }
+  if (issue.startsWith('仓库主体')) return INVENTORY_DIMENSION_TARGETS.warehouseSubject;
+  if (issue.startsWith('主体、仓库与物料')) return INVENTORY_DIMENSION_TARGETS.warehouseMaterial;
+  if ((issue.startsWith('商品分类') || issue.startsWith('不含税结算价')) && text(anomaly.materialCode)) {
+    return INVENTORY_DIMENSION_TARGETS.product;
+  }
+  return null;
+}
+
+function inventoryMissingKey(anomaly, target) {
+  const materialCode = text(anomaly.materialCode);
+  const sourceSku = text(anomaly.sourceSku || anomaly.jdId || anomaly.sourceKey);
+  const sourceWarehouse = text(anomaly.sourceWarehouseName || anomaly.storeName);
+  if (target.slotId === 'inventorySummaryFile10') return sourceSku;
+  if (target.slotId === 'inventorySummaryFile11') return text(anomaly.jdId || anomaly.sourceKey);
+  if (target.slotId === 'inventorySummaryFile9') return sourceWarehouse;
+  if (target.slotId === 'inventorySummaryFile13') return text(anomaly.storeName || sourceWarehouse);
+  if (target.slotId === 'spare1') return sourceWarehouse;
+  if (target.slotId === 'warehouseMaterialMap') {
+    return [anomaly.subject, anomaly.kingdeeWarehouseName || sourceWarehouse, materialCode].map(text).join(' + ');
+  }
+  return materialCode || sourceSku;
+}
+
+export function buildInventoryDimensionDiagnostics(model = {}) {
+  const issues = (model.anomalies || []).flatMap((anomaly) => {
+    const target = inventoryMaintenanceTarget(anomaly);
+    if (!target) return [];
+    const issueCode = text(anomaly.issue);
+    return [{
+      id: `inventory-summary-${anomaly.id}-${target.slotId}`,
+      factId: text(anomaly.factId || anomaly.id),
+      sourceType: text(anomaly.sourceType),
+      sourceKey: text(anomaly.sourceKey),
+      issueCode,
+      issueStatus: issueCode.includes('冲突') ? '映射冲突' : '维度缺失',
+      targetSlotId: target.slotId,
+      targetTitle: target.title,
+      maintainPage: target.page,
+      requiredFields: [...target.fields],
+      maintenanceHint: `请在“${target.title}”补充：${target.fields.join('、')}`,
+      missingKey: inventoryMissingKey(anomaly, target),
+      subject: text(anomaly.subject),
+      sourceWarehouseName: text(anomaly.sourceWarehouseName),
+      kingdeeWarehouseName: text(anomaly.kingdeeWarehouseName),
+      storeName: text(anomaly.storeName),
+      sourceSku: text(anomaly.sourceSku || anomaly.jdId || anomaly.sourceKey),
+      materialCode: text(anomaly.materialCode),
+      businessUnit: text(anomaly.businessUnit) || '未匹配',
+      qty: Number(anomaly.qty || 0),
+      value: Number(anomaly.value || 0)
+    }];
+  });
+
+  const taskMap = new Map();
+  issues.forEach((row) => {
+    const taskKey = [row.targetSlotId, row.issueCode].join('|');
+    const task = taskMap.get(taskKey) || {
+      id: taskKey,
+      targetSlotId: row.targetSlotId,
+      targetTitle: row.targetTitle,
+      maintainPage: row.maintainPage,
+      issueCode: row.issueCode,
+      issueStatus: row.issueStatus,
+      requiredFields: row.requiredFields,
+      affectedRows: 0,
+      affectedQty: 0,
+      affectedValue: 0,
+      sourceTypes: new Set(),
+      missingKeys: new Set(),
+      factIds: new Set()
+    };
+    task.sourceTypes.add(row.sourceType);
+    if (row.missingKey) task.missingKeys.add(row.missingKey);
+    if (!task.factIds.has(row.factId)) {
+      task.factIds.add(row.factId);
+      task.affectedRows += 1;
+      task.affectedQty += row.qty;
+      task.affectedValue += row.value;
+    }
+    taskMap.set(taskKey, task);
+  });
+
+  const tasks = [...taskMap.values()].map((task) => ({
+    ...task,
+    sourceTypes: [...task.sourceTypes].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')),
+    sampleKeys: [...task.missingKeys].slice(0, 8),
+    factIds: undefined,
+    missingKeys: undefined
+  })).sort((left, right) => (
+    right.affectedQty - left.affectedQty
+    || left.targetTitle.localeCompare(right.targetTitle, 'zh-Hans-CN')
+    || left.issueCode.localeCompare(right.issueCode, 'zh-Hans-CN')
+  ));
+
+  const affectedFacts = new Map();
+  issues.forEach((row) => {
+    if (!affectedFacts.has(row.factId)) affectedFacts.set(row.factId, row);
+  });
+  const affectedRows = [...affectedFacts.values()];
+  return {
+    issues,
+    tasks,
+    qualitySummary: {
+      issueRows: issues.length,
+      affectedFacts: affectedRows.length,
+      affectedQty: affectedRows.reduce((sum, row) => sum + row.qty, 0),
+      affectedValue: affectedRows.reduce((sum, row) => sum + row.value, 0),
+      targetCount: new Set(issues.map((row) => row.targetSlotId)).size
+    }
   };
 }

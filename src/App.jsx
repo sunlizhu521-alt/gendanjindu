@@ -3092,8 +3092,22 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
 }
 
 function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onMaintain }) {
-  const [payload, setPayload] = useState({ matchRows: [], missingTasks: [], conflicts: [], sourceAnomalies: [], qualitySummary: {} });
-  const [filters, setFilters] = useSessionFilters('dimensionMissing', { targetTitle: '', inventoryType: '', keyword: '' });
+  const [payload, setPayload] = useState({
+    matchRows: [],
+    missingTasks: [],
+    conflicts: [],
+    sourceAnomalies: [],
+    qualitySummary: {},
+    inventorySummaryIssues: [],
+    inventorySummaryTasks: [],
+    inventorySummaryQuality: {}
+  });
+  const [filters, setFilters] = useSessionFilters('dimensionMissing', {
+    targetTitles: [],
+    inventoryTypes: [],
+    issueStatuses: [],
+    keyword: ''
+  });
 
   useEffect(() => {
     request('/api/dimension-missing/cross-border', { token })
@@ -3101,22 +3115,37 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
       .catch((err) => setMessage(`维度表缺失加载失败：${err.message}`));
   }, [token, refreshVersion]);
 
+  const selectedTargets = Array.isArray(filters.targetTitles) ? filters.targetTitles : [];
+  const selectedTypes = Array.isArray(filters.inventoryTypes) ? filters.inventoryTypes : [];
+  const selectedStatuses = Array.isArray(filters.issueStatuses) ? filters.issueStatuses : [];
   const allTasks = [...(payload.missingTasks || []), ...(payload.conflicts || [])];
   const targetOptions = [...new Set([
     ...allTasks.map((row) => row.targetTitle),
     ...(payload.matchRows || []).flatMap((row) => (row.maintenanceTargets || []).map((target) => target.title)),
-    ...(payload.sourceAnomalies || []).map((row) => row.targetTitle)
+    ...(payload.sourceAnomalies || []).map((row) => row.targetTitle),
+    ...(payload.inventorySummaryIssues || []).map((row) => row.targetTitle)
   ].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const inventoryTypeOptions = [...new Set([
     ...allTasks.flatMap((row) => normalize(row.inventoryTypes).split('、')),
     ...(payload.matchRows || []).map((row) => row.inventoryType),
-    ...(payload.sourceAnomalies || []).map((row) => row.inventoryType)
+    ...(payload.sourceAnomalies || []).map((row) => row.inventoryType),
+    ...(payload.inventorySummaryIssues || []).map((row) => row.sourceType)
   ].filter(Boolean))].sort();
+  const issueStatusOptions = [...new Set([
+    ...(payload.inventorySummaryIssues || []).map((row) => row.issueStatus),
+    ...(payload.missingTasks || []).length ? ['维度缺失'] : [],
+    ...(payload.conflicts || []).length ? ['映射冲突'] : [],
+    ...(payload.sourceAnomalies || []).length ? ['源文件异常'] : []
+  ])];
+  const includesSelected = (selected, value) => selected.length === 0 || selected.includes(value);
+  const includesAnySelected = (selected, values) => selected.length === 0 || values.some((value) => selected.includes(value));
   const matchTask = (row) => {
     const keyword = normalize(filters.keyword).toLowerCase();
     const text = [row.targetTitle, row.issueCode, row.missingKey, row.inventoryTypes, row.stores, row.marketplaces].join(' ').toLowerCase();
-    return (!filters.targetTitle || row.targetTitle === filters.targetTitle)
-      && (!filters.inventoryType || normalize(row.inventoryTypes).split('、').includes(filters.inventoryType))
+    const status = row.issueCode?.includes('冲突') ? '映射冲突' : '维度缺失';
+    return includesSelected(selectedTargets, row.targetTitle)
+      && includesAnySelected(selectedTypes, normalize(row.inventoryTypes).split('、').filter(Boolean))
+      && includesSelected(selectedStatuses, status)
       && (!keyword || text.includes(keyword));
   };
   const missingTasks = (payload.missingTasks || []).filter(matchTask);
@@ -3127,18 +3156,42 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
     const text = [maintenanceTitles.join(' '), row.problemCodes?.join(' '), row.sourceProblemCodes?.join(' '), row.inventoryType,
       row.storeName, row.sourceSku, row.identifier, row.warehouseName, row.materialCode, row.sku, row.materialName,
       row.kingdeeWarehouseName, row.businessUnit, row.productLine, row.productSeries, row.marketplace].join(' ').toLowerCase();
-    return (!filters.targetTitle || maintenanceTitles.includes(filters.targetTitle))
-      && (!filters.inventoryType || row.inventoryType === filters.inventoryType)
+    return includesAnySelected(selectedTargets, maintenanceTitles)
+      && includesSelected(selectedTypes, row.inventoryType)
+      && (selectedStatuses.length === 0 || selectedStatuses.includes(row.mappingStatus))
       && (!keyword || text.includes(keyword));
   });
   const sourceAnomalies = (payload.sourceAnomalies || []).filter((row) => {
     const keyword = normalize(filters.keyword).toLowerCase();
     const text = [row.sourceTitle, row.issueType, row.detail, row.sourceKey, row.storeName, row.marketplace, row.warehouseName].join(' ').toLowerCase();
-    return (!filters.targetTitle || row.targetTitle === filters.targetTitle)
-      && (!filters.inventoryType || row.inventoryType === filters.inventoryType)
+    return includesSelected(selectedTargets, row.targetTitle)
+      && includesSelected(selectedTypes, row.inventoryType)
+      && includesSelected(selectedStatuses, '源文件异常')
       && (!keyword || text.includes(keyword));
   });
-  const paginationResetKey = `${filters.targetTitle}|${filters.inventoryType}|${filters.keyword}|${refreshVersion}`;
+  const inventorySummaryIssues = (payload.inventorySummaryIssues || []).filter((row) => {
+    const keyword = normalize(filters.keyword).toLowerCase();
+    const text = [
+      row.targetTitle, row.issueCode, row.missingKey, row.sourceType, row.sourceKey, row.subject,
+      row.sourceWarehouseName, row.kingdeeWarehouseName, row.storeName, row.sourceSku,
+      row.materialCode, row.businessUnit, row.maintenanceHint
+    ].join(' ').toLowerCase();
+    return includesSelected(selectedTargets, row.targetTitle)
+      && includesSelected(selectedTypes, row.sourceType)
+      && includesSelected(selectedStatuses, row.issueStatus)
+      && (!keyword || text.includes(keyword));
+  });
+  const inventorySummaryTasks = (payload.inventorySummaryTasks || []).filter((row) => {
+    const keyword = normalize(filters.keyword).toLowerCase();
+    const text = [row.targetTitle, row.issueCode, row.sourceTypes?.join(' '), row.sampleKeys?.join(' '), row.requiredFields?.join(' ')].join(' ').toLowerCase();
+    return includesSelected(selectedTargets, row.targetTitle)
+      && includesAnySelected(selectedTypes, row.sourceTypes || [])
+      && includesSelected(selectedStatuses, row.issueStatus)
+      && (!keyword || text.includes(keyword));
+  });
+  const paginationResetKey = `${selectedTargets.join(',')}|${selectedTypes.join(',')}|${selectedStatuses.join(',')}|${filters.keyword}|${refreshVersion}`;
+  const inventoryIssuePagination = usePaginatedRows(inventorySummaryIssues, paginationResetKey, 20);
+  const inventoryTaskPagination = usePaginatedRows(inventorySummaryTasks, paginationResetKey, 20);
   const matchPagination = usePaginatedRows(matchRows, paginationResetKey, 20);
   const missingPagination = usePaginatedRows(missingTasks, paginationResetKey, 20);
   const conflictPagination = usePaginatedRows(conflicts, paginationResetKey, 20);
@@ -3149,6 +3202,34 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
     try {
       const XLSX = await import('xlsx');
       const workbook = XLSX.utils.book_new();
+      if (inventorySummaryIssues.length) XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(inventorySummaryIssues.map((row) => ({
+        需要维护的维表: row.targetTitle,
+        问题状态: row.issueStatus,
+        问题类型: row.issueCode,
+        数据来源: row.sourceType,
+        主体: row.subject,
+        源仓库或店铺: row.sourceWarehouseName || row.storeName,
+        金蝶仓库: row.kingdeeWarehouseName,
+        SKU或识别码: row.sourceSku,
+        物料编码: row.materialCode,
+        事业部: row.businessUnit,
+        数量: row.qty,
+        货值元: row.value,
+        缺失键: row.missingKey,
+        待补字段: row.requiredFields?.join('、'),
+        维护提示: row.maintenanceHint
+      }))), '库存数据待维护明细');
+      if (inventorySummaryTasks.length) XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(inventorySummaryTasks.map((row) => ({
+        需要维护的维表: row.targetTitle,
+        问题状态: row.issueStatus,
+        问题类型: row.issueCode,
+        待补字段: row.requiredFields?.join('、'),
+        影响数据: row.affectedRows,
+        影响数量: row.affectedQty,
+        影响货值元: row.affectedValue,
+        数据来源: row.sourceTypes?.join('、'),
+        示例缺失键: row.sampleKeys?.join('；')
+      }))), '库存维度维护清单');
       if (matchRows.length) XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(matchRows.map((row) => ({
         需要维护的表: (row.maintenanceTargets || []).map((target) => target.title).join('、') || '无需维护',
         匹配状态: row.mappingStatus, 问题: [...(row.problemCodes || []), ...(row.sourceProblemCodes || [])].join('、'),
@@ -3196,21 +3277,62 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
     </div>
   ) : '-';
   const quality = payload.qualitySummary || {};
+  const inventoryQuality = payload.inventorySummaryQuality || {};
   return (
     <>
       <div className="section-heading-row dashboard-heading">
         <h2>维度表缺失</h2>
-        <span className="section-count">匹配明细 {payload.matchRows?.length || 0} 条，缺失 {payload.missingTasks?.length || 0} 项，冲突 {payload.conflicts?.length || 0} 项，源异常 {payload.sourceAnomalies?.length || 0} 项</span>
+        <span className="section-count">库存数据待维护 {payload.inventorySummaryIssues?.length || 0} 条；原跨境诊断缺失 {payload.missingTasks?.length || 0} 项、冲突 {payload.conflicts?.length || 0} 项</span>
       </div>
       <SourceApplicationsNote sources={payload.sourceApplications || []} />
-      <div className="toolbar filters-row">
-        <SelectField label="需要维护的表" value={filters.targetTitle} options={targetOptions} onChange={(value) => setFilters({ ...filters, targetTitle: value })} />
-        <SelectField label="库存类型" value={filters.inventoryType} options={inventoryTypeOptions} onChange={(value) => setFilters({ ...filters, inventoryType: value })} />
+      <div className="toolbar filters-row dimension-missing-filters">
+        <MultiSelectFilter label="需要维护的表" allLabel="全部维表" value={selectedTargets} options={targetOptions} onChange={(value) => setFilters({ ...filters, targetTitles: value })} />
+        <MultiSelectFilter label="数据来源" allLabel="全部来源" value={selectedTypes} options={inventoryTypeOptions} onChange={(value) => setFilters({ ...filters, inventoryTypes: value })} />
+        <MultiSelectFilter label="问题状态" allLabel="全部状态" value={selectedStatuses} options={issueStatusOptions} onChange={(value) => setFilters({ ...filters, issueStatuses: value })} />
         <input className="search-input" placeholder="搜索物料、SKU、仓库、问题、店铺、站点" value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} />
-        <button type="button" className="ghost compact-button" onClick={() => setFilters({ targetTitle: '', inventoryType: '', keyword: '' })}>清空筛选</button>
+        <button type="button" className="ghost compact-button" onClick={() => setFilters({ targetTitles: [], inventoryTypes: [], issueStatuses: [], keyword: '' })}>清空筛选</button>
         <button type="button" className="compact-button" onClick={exportMissing}>导出待维护 Excel</button>
       </div>
-      <section className="metric-grid">
+      <div className="diagnostic-group-heading inventory-diagnostic-heading">
+        <div><span className="section-kicker">INVENTORY DATA</span><h3>库存汇总数据诊断</h3></div>
+        <span className="section-count">直接抓取库存汇总文件库无法完成维度映射的记录</span>
+      </div>
+      <section className="metric-grid inventory-diagnostic-metrics">
+        <MetricCard label="待维护问题" value={numberValue(inventoryQuality.issueRows).toLocaleString()} />
+        <MetricCard label="受影响数据" value={numberValue(inventoryQuality.affectedFacts).toLocaleString()} />
+        <MetricCard label="影响数量" value={numberValue(inventoryQuality.affectedQty).toLocaleString(undefined, { maximumFractionDigits: 1 })} />
+        <MetricCard label="涉及维表" value={numberValue(inventoryQuality.targetCount).toLocaleString()} />
+      </section>
+      <section className="panel diagnostic-section inventory-diagnostic-section">
+        <div className="section-heading-row"><h3>库存数据待维护明细</h3><span className="section-count">筛选后 {inventorySummaryIssues.length} / {payload.inventorySummaryIssues?.length || 0} 条</span></div>
+        <DataTable className="compact-table diagnostic-table inventory-diagnostic-table" rows={inventoryIssuePagination.pageRows}
+          columns={['需要维护的维表', '问题', '数据来源', '主体', '源仓库/店铺', '金蝶仓库', 'SKU/识别码', '物料编码', '事业部', '数量', '货值（元）', '缺失键', '待补字段', '操作']}
+          render={(row) => [
+            row.targetTitle, row.issueCode, row.sourceType, row.subject || '-', row.sourceWarehouseName || row.storeName || '-',
+            row.kingdeeWarehouseName || '-', row.sourceSku || '-', row.materialCode || '-', row.businessUnit,
+            numberValue(row.qty).toLocaleString(undefined, { maximumFractionDigits: 1 }),
+            numberValue(row.value).toLocaleString(undefined, { maximumFractionDigits: 1 }),
+            row.missingKey || '-', row.requiredFields?.join('、'), maintainButton(row)
+          ]} />
+        <TablePagination label="库存数据待维护明细分页" currentPage={inventoryIssuePagination.currentPage} totalPages={inventoryIssuePagination.totalPages} onPageChange={inventoryIssuePagination.setCurrentPage} pageSize={inventoryIssuePagination.pageSize} />
+      </section>
+      <section className="panel diagnostic-section inventory-diagnostic-section inventory-task-section">
+        <div className="section-heading-row"><h3>库存维度维护清单</h3><span className="section-count">{inventorySummaryTasks.length} 项</span></div>
+        <DataTable className="compact-table diagnostic-table" rows={inventoryTaskPagination.pageRows}
+          columns={['需要维护的维表', '问题类型', '待补字段', '影响数据', '影响数量', '影响货值（元）', '数据来源', '示例缺失键', '操作']}
+          render={(row) => [
+            row.targetTitle, row.issueCode, row.requiredFields?.join('、'), row.affectedRows,
+            numberValue(row.affectedQty).toLocaleString(undefined, { maximumFractionDigits: 1 }),
+            numberValue(row.affectedValue).toLocaleString(undefined, { maximumFractionDigits: 1 }),
+            row.sourceTypes?.join('、'), row.sampleKeys?.join('；') || '-', maintainButton(row)
+          ]} />
+        <TablePagination label="库存维度维护清单分页" currentPage={inventoryTaskPagination.currentPage} totalPages={inventoryTaskPagination.totalPages} onPageChange={inventoryTaskPagination.setCurrentPage} pageSize={inventoryTaskPagination.pageSize} />
+      </section>
+      <div className="diagnostic-group-heading legacy-diagnostic-heading">
+        <div><span className="section-kicker">LEGACY CROSS-BORDER</span><h3>原跨境库存诊断</h3></div>
+        <span className="section-count">保留原有领星库存映射检查逻辑</span>
+      </div>
+      <section className="metric-grid legacy-diagnostic-metrics">
         <MetricCard label="库存总量" value={numberValue(quality.inventoryQty).toLocaleString()} />
         <MetricCard label="映射完整库存" value={numberValue(quality.completeInventoryQty).toLocaleString()} />
         <MetricCard label="未映射/冲突库存" value={numberValue(quality.issueInventoryQty).toLocaleString()} />

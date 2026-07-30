@@ -15,7 +15,12 @@ import { fileURLToPath } from 'node:url';
 import xlsx from 'xlsx';
 import { all, get, initDatabase, run, runMany, saveDatabase, transaction } from './database.js';
 import { dedupeFirstMileRows, firstMileOwner, inspectFirstMileWorkbook, isFirstMileSlot, parseFirstMileWorkbook } from './first-mile.js';
-import { buildInventorySummaryModel, isInventorySummarySlot, parseInventorySummaryWorkbook } from './inventory-summary.js';
+import {
+  buildInventoryDimensionDiagnostics,
+  buildInventorySummaryModel,
+  isInventorySummarySlot,
+  parseInventorySummaryWorkbook
+} from './inventory-summary.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -3465,13 +3470,32 @@ app.post('/api/first-mile-board/export', requireAuth, requirePage('firstMileBoar
 
 app.get('/api/dimension-missing/cross-border', requireAuth, requirePage('dimensionMissing'), (req, res) => {
   const model = buildCrossBorderInventoryModel();
+  const inventoryDiagnostics = buildInventoryDimensionDiagnostics(inventorySummaryData());
+  const inventorySourceApplications = [...new Set(inventoryDiagnostics.issues.map((row) => row.targetSlotId))]
+    .map((slotId) => {
+      const record = get(
+        'SELECT file_name, updated_at FROM dimension_files WHERE slot_id = ? AND applied = 1',
+        [slotId]
+      );
+      return {
+        slotId,
+        label: DIMENSION_SLOTS[slotId] || slotId,
+        fileName: record?.file_name || '未上传',
+        appliedAt: record?.updated_at || '暂无'
+      };
+    });
+  const sourceApplications = [...model.sourceApplications, ...inventorySourceApplications]
+    .filter((row, index, rows) => rows.findIndex((item) => item.slotId === row.slotId) === index);
   res.json({
     matchRows: model.rows,
     missingTasks: model.missingTasks,
     conflicts: model.conflicts,
     sourceAnomalies: model.sourceAnomalies,
-    sourceApplications: model.sourceApplications,
-    qualitySummary: model.qualitySummary
+    sourceApplications,
+    qualitySummary: model.qualitySummary,
+    inventorySummaryIssues: inventoryDiagnostics.issues,
+    inventorySummaryTasks: inventoryDiagnostics.tasks,
+    inventorySummaryQuality: inventoryDiagnostics.qualitySummary
   });
 });
 

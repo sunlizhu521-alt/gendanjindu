@@ -9,7 +9,11 @@ import { fileURLToPath } from 'node:url';
 import bcrypt from 'bcryptjs';
 import initSqlJs from 'sql.js';
 import xlsx from 'xlsx';
-import { buildInventorySummaryModel, parseInventorySummaryWorkbook } from './inventory-summary.js';
+import {
+  buildInventoryDimensionDiagnostics,
+  buildInventorySummaryModel,
+  parseInventorySummaryWorkbook
+} from './inventory-summary.js';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const now = '2026-07-20 15:00:00';
@@ -232,6 +236,86 @@ test('inventory business unit mapping reads legacy raw dimensions and stays inde
   assert.equal(legacyFbaWarehouseRow?.fbaInventoryQty, 7);
   assert.equal(legacyFbaWarehouseRow?.fbaInventoryValue, 70);
   assert.equal(legacyFbaWarehouseRow?.mappingStatus, '完整');
+});
+
+test('inventory dimension diagnostics identifies the exact maintenance table and affected quantity', () => {
+  const rowsBySlot = new Map([
+    ['productCategory', [{
+      materialCode: 'M1',
+      sku: 'SKU-1',
+      materialName: 'Material One',
+      productLine: 'Line A',
+      productSeries: 'Series A',
+      pretaxPrice: '10'
+    }]],
+    ['spare1', [{ subject: '主体一', warehouseName: '缺失事业部仓' }]],
+    ['inventorySummaryFile2', [{
+      identifier: 'M1',
+      warehouseName: '缺失事业部仓',
+      actualTotalQty: '5'
+    }]]
+  ]);
+  const model = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: '2026-07-30 15:00:00' })
+  });
+  const diagnostics = buildInventoryDimensionDiagnostics(model);
+  assert.equal(diagnostics.issues.length, 1);
+  assert.deepEqual({
+    targetSlotId: diagnostics.issues[0].targetSlotId,
+    targetTitle: diagnostics.issues[0].targetTitle,
+    missingKey: diagnostics.issues[0].missingKey,
+    subject: diagnostics.issues[0].subject,
+    warehouse: diagnostics.issues[0].kingdeeWarehouseName,
+    materialCode: diagnostics.issues[0].materialCode,
+    qty: diagnostics.issues[0].qty,
+    value: diagnostics.issues[0].value
+  }, {
+    targetSlotId: 'warehouseMaterialMap',
+    targetTitle: '仓库与物料对照表',
+    missingKey: '主体一 + 缺失事业部仓 + M1',
+    subject: '主体一',
+    warehouse: '缺失事业部仓',
+    materialCode: 'M1',
+    qty: 5,
+    value: 50
+  });
+  assert.equal(diagnostics.tasks[0].affectedRows, 1);
+  assert.equal(diagnostics.tasks[0].affectedQty, 5);
+  assert.equal(diagnostics.qualitySummary.targetCount, 1);
+});
+
+test('inventory dimension diagnostics routes every mapping issue to its maintenance slot', () => {
+  const diagnostics = buildInventoryDimensionDiagnostics({
+    anomalies: [
+      { id: '1', factId: '1', sourceType: 'FBA库存', sourceKey: 'SKU-1', sourceSku: 'SKU-1', issue: 'SKU与物料编码缺失', qty: 1 },
+      { id: '2', factId: '2', sourceType: '京东在库', sourceKey: 'JD-1', jdId: 'JD-1', issue: '京东ID与品号映射冲突', qty: 2 },
+      { id: '3', factId: '3', sourceType: 'FBA库存', sourceKey: 'FBA仓', sourceWarehouseName: 'FBA仓', issue: '仓库对照映射缺失', qty: 3 },
+      { id: '4', factId: '4', sourceType: 'FBA在途', sourceKey: '店铺一', storeName: '店铺一', issue: '仓库对照映射缺失', qty: 4 },
+      { id: '5', factId: '5', sourceType: 'FBM库存', sourceKey: 'FBM仓', sourceWarehouseName: 'FBM仓', issue: '仓库主体映射缺失', qty: 5 },
+      {
+        id: '6', factId: '6', sourceType: '国内在库', sourceKey: 'M6', subject: '主体六',
+        kingdeeWarehouseName: '仓库六', materialCode: 'M6', issue: '主体、仓库与物料映射缺失', qty: 6
+      },
+      { id: '7', factId: '7', sourceType: '销售数据', sourceKey: 'M7', materialCode: 'M7', issue: '商品分类缺失', qty: 7 },
+      { id: '8', factId: '7', sourceType: '销售数据', sourceKey: 'M7', materialCode: 'M7', issue: '不含税结算价缺失或无效', qty: 7 }
+    ]
+  });
+  assert.deepEqual(
+    [...new Set(diagnostics.issues.map((row) => row.targetSlotId))].sort(),
+    [
+      'inventorySummaryFile10',
+      'inventorySummaryFile11',
+      'inventorySummaryFile13',
+      'inventorySummaryFile9',
+      'productCategory',
+      'spare1',
+      'warehouseMaterialMap'
+    ].sort()
+  );
+  assert.equal(diagnostics.qualitySummary.affectedFacts, 7);
+  assert.equal(diagnostics.qualitySummary.affectedQty, 28);
+  assert.equal(diagnostics.qualitySummary.targetCount, 7);
 });
 
 test('inventory workbook parser expands merged FBA transit cells and rejects ambiguous workbooks', () => {
@@ -641,6 +725,9 @@ test('inventory summary and domestic board use complete source models and enforc
       maintenanceTargets: ['领星SKU和物料编码对照', '领星&金蝶仓库对照']
     });
     assert.ok(dimensionMissing.sourceAnomalies.every((row) => row.targetTitle && row.targetSlotId && row.maintainPage));
+    assert.ok(Array.isArray(dimensionMissing.inventorySummaryIssues));
+    assert.ok(Array.isArray(dimensionMissing.inventorySummaryTasks));
+    assert.equal(typeof dimensionMissing.inventorySummaryQuality, 'object');
     const demandRows = (await demandsResponse.json()).rows;
     const m1Demand = demandRows.find((row) => row.materialCode === 'M1');
     assert.equal(m1Demand?.operatorName, '薛文乐');

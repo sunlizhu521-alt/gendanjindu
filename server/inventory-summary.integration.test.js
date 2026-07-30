@@ -217,6 +217,38 @@ test('all inventory sources ignore zero quantity rows before mapping, aggregatio
   });
 });
 
+test('invalid inventory quantities stop before dimension mapping and maintenance diagnostics', () => {
+  const rowsBySlot = new Map([
+    ['inventorySummaryFile1', [
+      { sku: 'SKU-FBA-INVALID', warehouseName: 'Unknown FBA', inventoryAttribute: '全部', endingInventoryQty: '' }
+    ]],
+    ['inventorySummaryFile2', [
+      { identifier: 'M-FBM-INVALID', warehouseName: 'Unknown FBM', actualTotalQty: '--' }
+    ]],
+    ['inventorySummaryFile3', [
+      { sku: 'SKU-WFS-INVALID', warehouseName: 'Unknown WFS', totalInventoryQty: 'invalid' }
+    ]],
+    ['inventorySummaryFile6', [
+      { subject: 'Unknown Subject', warehouseName: 'Unknown Domestic', materialCode: 'M-DOMESTIC-INVALID', domesticStockQty: '-' }
+    ]],
+    ['inventorySummaryFile7', [
+      { jdId: 'JD-INVALID', jdStockQty: '' }
+    ]]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
+  });
+  assert.equal(result.rows.length, 0);
+  assert.equal(result.anomalies.length, 5);
+  assert.equal(result.anomalies.every((row) => row.issue.endsWith('不是有效数量')), true);
+  const diagnostics = buildInventoryDimensionDiagnostics(result);
+  assert.deepEqual(diagnostics.issues, []);
+  assert.deepEqual(diagnostics.tasks, []);
+  assert.equal(diagnostics.qualitySummary.issueRows, 0);
+  assert.equal(diagnostics.qualitySummary.affectedQty, 0);
+});
+
 test('FBM workbook parser excludes zero quantities and excluded warehouse rows from saved data', () => {
   const workbook = xlsx.utils.book_new();
   const worksheet = xlsx.utils.json_to_sheet([
@@ -516,6 +548,37 @@ test('inventory dimension diagnostics routes every mapping issue to its maintena
   assert.equal(diagnostics.qualitySummary.affectedFacts, 7);
   assert.equal(diagnostics.qualitySummary.affectedQty, 28);
   assert.equal(diagnostics.qualitySummary.targetCount, 7);
+});
+
+test('inventory dimension diagnostics defensively excludes legacy zero-quantity mapping issues', () => {
+  const diagnostics = buildInventoryDimensionDiagnostics({
+    anomalies: [
+      {
+        id: 'zero',
+        factId: 'zero',
+        sourceType: 'FBM库存',
+        sourceKey: 'M-ZERO',
+        materialCode: 'M-ZERO',
+        issue: '主体、仓库与物料映射缺失',
+        qty: 0,
+        value: 0
+      },
+      {
+        id: 'stock',
+        factId: 'stock',
+        sourceType: 'FBM库存',
+        sourceKey: 'M-STOCK',
+        materialCode: 'M-STOCK',
+        issue: '主体、仓库与物料映射缺失',
+        qty: 10,
+        value: 100
+      }
+    ]
+  });
+  assert.equal(diagnostics.issues.length, 1);
+  assert.equal(diagnostics.issues[0].sourceKey, 'M-STOCK');
+  assert.equal(diagnostics.qualitySummary.affectedFacts, 1);
+  assert.equal(diagnostics.qualitySummary.affectedQty, 10);
 });
 
 test('inventory workbook parser expands merged FBA transit cells and rejects ambiguous workbooks', () => {

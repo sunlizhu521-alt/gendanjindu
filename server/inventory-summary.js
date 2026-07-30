@@ -177,6 +177,13 @@ const INVENTORY_QUANTITY_FIELDS = {
   inventorySummaryFile6: 'domesticStockQty',
   inventorySummaryFile7: 'jdStockQty'
 };
+const INVENTORY_SOURCE_TYPES = new Set([
+  'FBA库存',
+  'FBM库存',
+  'WFS库存',
+  '国内在库',
+  '京东在库'
+]);
 
 function isIgnoredFbmWarehouse(value) {
   return IGNORED_FBM_WAREHOUSES.has(matchKey(value));
@@ -752,11 +759,21 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     return parsed.value;
   };
 
+  const inventoryQuantity = (raw, slotId, sourceType, sourceKey, field) => {
+    const quantityField = INVENTORY_QUANTITY_FIELDS[slotId];
+    const parsed = safeNumber(raw?.[quantityField]);
+    if (!parsed.valid) {
+      addAnomaly(sourceType, sourceKey, `${field}不是有效数量`, 0, 0);
+      return null;
+    }
+    return parsed.value === 0 ? null : parsed.value;
+  };
+
   source.inventorySummaryFile1.rows.forEach((raw) => {
     if (text(raw.inventoryAttribute).toLowerCase() !== '全部'.toLowerCase()) return;
-    if (hasZeroInventoryQuantity(raw, 'inventorySummaryFile1')) return;
+    const qty = inventoryQuantity(raw, 'inventorySummaryFile1', 'FBA库存', raw.sku, '期末库存数量');
+    if (qty === null) return;
     const skuResult = resolveSku(raw.sku);
-    const qty = numeric(raw.endingInventoryQty, 'FBA库存', raw.sku, '期末库存数量');
     const warehouseResult = skuResult.materialCode ? resolveSpecialWarehouse(fbaWarehouseLookup, raw.warehouseName, skuResult.materialCode) : { businessUnit: '', issue: '' };
     const product = resolveProduct(skuResult.materialCode, 'FBA库存', raw.sku);
     addFact({
@@ -778,9 +795,9 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
 
   source.inventorySummaryFile2.rows.forEach((raw) => {
     if (isIgnoredFbmWarehouse(raw.warehouseName)) return;
-    if (hasZeroInventoryQuantity(raw, 'inventorySummaryFile2')) return;
+    const qty = inventoryQuantity(raw, 'inventorySummaryFile2', 'FBM库存', raw.identifier, '实际总量');
+    if (qty === null) return;
     const materialCode = text(raw.identifier).replace(/\.0$/, '');
-    const qty = numeric(raw.actualTotalQty, 'FBM库存', raw.identifier, '实际总量');
     const warehouseResult = resolveGeneralWarehouse(raw.warehouseName, materialCode);
     const product = resolveProduct(materialCode, 'FBM库存', raw.identifier);
     addFact({
@@ -801,9 +818,9 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   });
 
   source.inventorySummaryFile3.rows.forEach((raw) => {
-    if (hasZeroInventoryQuantity(raw, 'inventorySummaryFile3')) return;
+    const qty = inventoryQuantity(raw, 'inventorySummaryFile3', 'WFS库存', raw.sku, '总库存数量');
+    if (qty === null) return;
     const skuResult = resolveSku(raw.sku);
-    const qty = numeric(raw.totalInventoryQty, 'WFS库存', raw.sku, '总库存数量');
     const warehouseResult = skuResult.materialCode ? resolveSpecialWarehouse(fbaWarehouseLookup, raw.warehouseName, skuResult.materialCode) : { businessUnit: '', issue: '' };
     const product = resolveProduct(skuResult.materialCode, 'WFS库存', raw.sku);
     addFact({
@@ -872,10 +889,10 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   });
 
   source.inventorySummaryFile6.rows.forEach((raw) => {
-    if (hasZeroInventoryQuantity(raw, 'inventorySummaryFile6')) return;
+    const qty = inventoryQuantity(raw, 'inventorySummaryFile6', '国内在库', raw.materialCode, '库存量(主单位)');
+    if (qty === null) return;
     const materialCode = text(raw.materialCode).replace(/\.0$/, '');
     const warehouseResult = resolveWarehouseBusinessUnit(raw.subject, raw.warehouseName, materialCode);
-    const qty = numeric(raw.domesticStockQty, '国内在库', raw.materialCode, '库存量(主单位)');
     if (warehouseResult.businessUnit !== '国内事业部') {
       addAnomaly('国内在库', raw.materialCode, warehouseResult.issue || '非国内事业部数据已排除', qty, 0, {
         factId: `国内在库-${factIndex += 1}`,
@@ -905,9 +922,9 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   });
 
   source.inventorySummaryFile7.rows.forEach((raw) => {
-    if (hasZeroInventoryQuantity(raw, 'inventorySummaryFile7')) return;
+    const qty = inventoryQuantity(raw, 'inventorySummaryFile7', '京东在库', raw.jdId, '全国现货库存');
+    if (qty === null) return;
     const jdResult = resolveJd(raw.jdId);
-    const qty = numeric(raw.jdStockQty, '京东在库', raw.jdId, '全国现货库存');
     const product = resolveProduct(jdResult.materialCode, '京东在库', raw.jdId);
     addFact({
       sourceType: '京东在库',
@@ -1149,7 +1166,10 @@ function inventoryMissingKey(anomaly, target) {
 }
 
 export function buildInventoryDimensionDiagnostics(model = {}) {
-  const issues = (model.anomalies || []).flatMap((anomaly) => {
+  const issues = (model.anomalies || []).filter((anomaly) => (
+    !INVENTORY_SOURCE_TYPES.has(text(anomaly.sourceType))
+    || Math.abs(Number(anomaly.qty || 0)) > 0.000001
+  )).flatMap((anomaly) => {
     const target = inventoryMaintenanceTarget(anomaly);
     if (!target) return [];
     const issueCode = text(anomaly.issue);

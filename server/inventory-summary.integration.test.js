@@ -208,8 +208,8 @@ test('inventory business unit mapping reads legacy raw dimensions and stays inde
     ['inventorySummaryFile9', [{
       raw: {
         主体: '主体二',
-        领星FBA仓库: 'FBA源仓',
-        金蝶仓库名称: 'FBA金蝶仓'
+        仓库: 'FBA源仓',
+        金蝶仓库: 'FBA金蝶仓'
       },
       lingxingWarehouseName: '',
       kingdeeWarehouseName: ''

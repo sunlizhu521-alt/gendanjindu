@@ -50,7 +50,7 @@ const FIELD_ALIASES = {
   materialCode: ['物料编码', '品号'],
   salesQty: ['销售数量'],
   salesAmount: ['销售金额'],
-  lingxingWarehouseName: ['领星FBA仓库', '领星FBA仓', '领星仓库名称', '领星仓库'],
+  lingxingWarehouseName: ['领星FBA仓库', '领星FBA仓', '领星仓库名称', '领星仓库', '仓库'],
   kingdeeWarehouseName: ['金蝶仓库名称', '金蝶仓库', '金蝶名称'],
   lingxingSku: ['SKU', '领星SKU', '领星MSKU', 'MSKU'],
   month: ['下单月份'],
@@ -494,7 +494,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   );
   const fbaWarehouseLookup = exactLookup(
     source.inventorySummaryFile9.rows,
-    (row) => matchKey(aliasValue(row, ['lingxingWarehouseName', '领星FBA仓库', '领星FBA仓', '领星仓库名称', '领星仓库'])),
+    (row) => matchKey(aliasValue(row, ['lingxingWarehouseName', '领星FBA仓库', '领星FBA仓', '领星仓库名称', '领星仓库', '仓库'])),
     (row) => ({
       subject: warehouseSubject(row),
       warehouseName: text(aliasValue(row, ['kingdeeWarehouseName', '金蝶仓库名称', '金蝶仓库', '金蝶名称']))

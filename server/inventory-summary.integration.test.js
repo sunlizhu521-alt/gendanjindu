@@ -355,6 +355,95 @@ test('all inventory workbook parsers exclude zero quantity rows from saved data'
   });
 });
 
+test('JD transit workbook parser requires one sheet and preserves zero, negative and invalid quantities', () => {
+  const workbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet([
+    { 物料编码: 'M-POSITIVE', 在途数量: '12' },
+    { 物料编码: 'M-ZERO', 在途数量: '0' },
+    { 物料编码: 'M-NEGATIVE', 在途数量: '-3' },
+    { 物料编码: 'M-INVALID', 在途数量: '-' },
+    { 物料编码: '合计', 在途数量: '9' }
+  ]), '京东在途');
+  const parsed = parseInventorySummaryWorkbook(
+    { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) },
+    'inventorySummaryFile14'
+  );
+  assert.deepEqual(parsed.rows, [
+    { materialCode: 'M-POSITIVE', jdTransitQty: '12' },
+    { materialCode: 'M-ZERO', jdTransitQty: '0' },
+    { materialCode: 'M-NEGATIVE', jdTransitQty: '-3' },
+    { materialCode: 'M-INVALID', jdTransitQty: '-' }
+  ]);
+  assert.equal(parsed.mapping.__inventorySummary.filteredZeroQtyRows, 0);
+  assert.equal(parsed.mapping.__inventorySummary.filteredSummaryRows, 1);
+
+  xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet([['其他']]), '多余工作表');
+  assert.throws(
+    () => parseInventorySummaryWorkbook(
+      { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) },
+      'inventorySummaryFile14'
+    ),
+    /京东在途报表应只包含一个工作表/
+  );
+});
+
+test('JD transit aggregates by domestic material, retains subject layers and diagnoses zero-impact missing dimensions', () => {
+  const rowsBySlot = new Map([
+    ['productCategory', [{
+      materialCode: 'M1',
+      sku: 'SKU-1',
+      materialName: 'Material One',
+      productLine: 'Line A',
+      productSeries: 'Series A',
+      pretaxPrice: '10'
+    }]],
+    ['inventorySummaryFile14', [
+      { materialCode: 'M1', jdTransitQty: '5' },
+      { materialCode: 'M1', jdTransitQty: '-2' },
+      { materialCode: 'M1', jdTransitQty: '0' },
+      { materialCode: 'M1', jdTransitQty: '-' },
+      { materialCode: 'M-MISSING', jdTransitQty: '4' },
+      { materialCode: 'M-MISSING-ZERO', jdTransitQty: '0' }
+    ]]
+  ]);
+  const model = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
+  });
+  const m1 = model.rows.find((row) => row.matchKey === '国内事业部+M1');
+  assert.equal(m1?.jdTransitQty, 3);
+  assert.equal(m1?.jdTransitValue, 30);
+  assert.deepEqual(m1?.inventorySubjects, ['浙江迈德斯特医疗器械科技有限公司']);
+  assert.deepEqual(m1?.inventorySubjectBreakdown, [{
+    subject: '浙江迈德斯特医疗器械科技有限公司',
+    jdTransitQty: 3,
+    jdTransitValue: 30
+  }]);
+  assert.equal(model.在途量, 7);
+  assert.equal(model.totals.jdTransitQty, 7);
+  assert.equal(model.totals.jdTransitValue, 30);
+  assert.equal(model.totals.transitQty, 7);
+  assert.equal(model.totals.transitValue, 30);
+
+  const diagnostics = buildInventoryDimensionDiagnostics(model);
+  assert.equal(
+    diagnostics.issues.some((row) => (
+      row.targetSlotId === 'inventorySummaryFile14'
+      && row.issueCode === '在途数量不是有效数量'
+      && row.materialCode === 'M1'
+    )),
+    true
+  );
+  assert.equal(
+    diagnostics.issues.some((row) => (
+      row.targetSlotId === 'productCategory'
+      && row.materialCode === 'M-MISSING-ZERO'
+      && row.qty === 0
+    )),
+    true
+  );
+});
+
 test('inventory summary rows are excluded during upload parsing and when reading legacy saved rows', () => {
   const workbook = xlsx.utils.book_new();
   xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet([

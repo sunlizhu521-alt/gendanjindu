@@ -226,7 +226,9 @@ const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
   { id: 'inventorySummaryFile7', title: '京东在库报表', fields: [
     ['jdId', 'SKU/京东ID'], ['jdStockQty', '全国现货库存']
   ] },
-  { id: 'inventorySummaryFile14', title: '库存槽位 14', fields: [] },
+  { id: 'inventorySummaryFile14', title: '京东在途', fields: [
+    ['materialCode', '物料编码'], ['jdTransitQty', '在途数量']
+  ] },
   { id: 'inventorySummaryFile8', title: '销售数据报表', fields: [
     ['date', '日期'], ['businessUnit', '事业部'], ['materialCode', '物料编码'],
     ['salesQty', '销售数量'], ['salesAmount', '销售金额']
@@ -1209,6 +1211,7 @@ function inventoryDashboardTotals(rows) {
     'domesticMainInventoryQty', 'domesticMainInventoryValue', 'jdInventoryQty', 'jdInventoryValue',
     'domesticInventoryQty', 'domesticInventoryValue', 'inventoryQty', 'inventoryValue',
     'fbaTransitQty', 'fbaTransitValue', 'fbmTransitQty', 'fbmTransitValue',
+    'jdTransitQty', 'jdTransitValue',
     'transitQty', 'transitValue', 'finishedNotShippedQty', 'finishedNotShippedValue',
     'unpreparedQty', 'unpreparedValue', 'preparedNotStartedQty', 'preparedNotStartedValue',
     'inProductionQty', 'inProductionValue', 'unfulfilledQty', 'unfulfilledValue',
@@ -1221,6 +1224,77 @@ function inventoryDashboardTotals(rows) {
     });
     return summary;
   }, Object.fromEntries(fields.map((field) => [field, 0])));
+}
+
+const INVENTORY_DEFAULT_BUSINESS_UNITS = [
+  '海外事业一部',
+  '海外事业部二部',
+  '国内事业部',
+  '全球招商事业部'
+];
+const INVENTORY_SUBJECT_MEASURE_FIELDS = [
+  'fbaInventoryQty', 'fbaInventoryValue',
+  'fbmInventoryQty', 'fbmInventoryValue',
+  'wfsInventoryQty', 'wfsInventoryValue',
+  'domesticMainInventoryQty', 'domesticMainInventoryValue',
+  'jdInventoryQty', 'jdInventoryValue',
+  'fbaTransitQty', 'fbaTransitValue',
+  'fbmTransitQty', 'fbmTransitValue',
+  'jdTransitQty', 'jdTransitValue'
+];
+
+function inventoryDefaultFilters() {
+  return {
+    businessUnits: [...INVENTORY_DEFAULT_BUSINESS_UNITS],
+    inventorySubjects: [],
+    productTypes: ['成品'],
+    productLines: [],
+    productSeries: [],
+    skus: [],
+    quantityAbcs: [],
+    amountAbcs: [],
+    inventorySources: [],
+    deliveryStatuses: [],
+    keyword: ''
+  };
+}
+
+function inventoryProductType(row) {
+  return normalize(row.productLine) === '其他/配件' ? '配件' : '成品';
+}
+
+function inventoryRowForSubjects(row, selectedSubjects) {
+  if (!selectedSubjects.length) return row;
+  const selected = new Set(selectedSubjects);
+  const selectedBreakdown = (row.inventorySubjectBreakdown || [])
+    .filter((item) => selected.has(normalize(item.subject)));
+  const amounts = Object.fromEntries(INVENTORY_SUBJECT_MEASURE_FIELDS.map((field) => [
+    field,
+    selectedBreakdown.reduce((sum, item) => sum + numberValue(item[field]), 0)
+  ]));
+  const crossBorderInventoryQty = amounts.fbaInventoryQty + amounts.fbmInventoryQty + amounts.wfsInventoryQty;
+  const crossBorderInventoryValue = amounts.fbaInventoryValue + amounts.fbmInventoryValue + amounts.wfsInventoryValue;
+  const domesticInventoryQty = amounts.domesticMainInventoryQty + amounts.jdInventoryQty;
+  const domesticInventoryValue = amounts.domesticMainInventoryValue + amounts.jdInventoryValue;
+  const inventoryQty = crossBorderInventoryQty + domesticInventoryQty;
+  const inventoryValue = crossBorderInventoryValue + domesticInventoryValue;
+  const transitQty = amounts.fbaTransitQty + amounts.fbmTransitQty + amounts.jdTransitQty;
+  const transitValue = amounts.fbaTransitValue + amounts.fbmTransitValue + amounts.jdTransitValue;
+  return {
+    ...row,
+    ...amounts,
+    inventorySubjects: selectedBreakdown.map((item) => item.subject),
+    crossBorderInventoryQty,
+    crossBorderInventoryValue,
+    domesticInventoryQty,
+    domesticInventoryValue,
+    inventoryQty,
+    inventoryValue,
+    transitQty,
+    transitValue,
+    scaleQty: inventoryQty + transitQty + numberValue(row.unfulfilledQty),
+    scaleValue: inventoryValue + transitValue + numberValue(row.unfulfilledValue)
+  };
 }
 
 function inventoryDashboardGroups(rows, keyOf) {
@@ -1524,21 +1598,10 @@ function InventorySummaryAbc({ rows }) {
 }
 
 function InventorySummary({ token, active }) {
-  const emptyFilters = {
-    businessUnits: [],
-    productLines: [],
-    productSeries: [],
-    skus: [],
-    quantityAbcs: [],
-    amountAbcs: [],
-    inventorySources: [],
-    deliveryStatuses: [],
-    keyword: ''
-  };
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [filters, setFilters] = useState(emptyFilters);
+  const [filters, setFilters] = useState(inventoryDefaultFilters);
   const [searchInput, setSearchInput] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -1588,21 +1651,30 @@ function InventorySummary({ token, active }) {
     const sourceMatches = omitted === 'inventorySources'
       || filters.inventorySources.length === 0
       || (row.inventorySources || []).some((value) => filters.inventorySources.includes(value));
+    const subjectMatches = omitted === 'inventorySubjects'
+      || filters.inventorySubjects.length === 0
+      || (row.inventorySubjects || []).some((value) => filters.inventorySubjects.includes(value));
+    const productTypeMatches = omitted === 'productTypes'
+      || filters.productTypes.length === 0
+      || filters.productTypes.includes(inventoryProductType(row));
     const deliveryMatches = omitted === 'deliveryStatuses'
       || filters.deliveryStatuses.length === 0
       || (row.deliveryStatuses || [row.deliveryStatus]).some((value) => filters.deliveryStatuses.includes(value));
     const keyword = normalize(filters.keyword).toLowerCase();
     const keywordMatches = !keyword || [
       row.matchKey, row.businessUnit, row.productLine, row.productSeries, row.materialCode,
-      row.sku, row.materialName, row.rawIdentifier, ...(row.issues || [])
+      row.sku, row.materialName, row.rawIdentifier, inventoryProductType(row),
+      ...(row.inventorySubjects || []), ...(row.issues || [])
     ].join(' ').toLowerCase().includes(keyword);
-    return scalarMatches && sourceMatches && deliveryMatches && keywordMatches;
+    return scalarMatches && sourceMatches && subjectMatches && productTypeMatches && deliveryMatches && keywordMatches;
   };
   const unique = (values) => [...new Set(values.flat().map(normalize).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const options = useMemo(() => {
     const rowsFor = (key) => rows.filter((row) => rowMatches(row, key));
     return {
       businessUnits: unique(rowsFor('businessUnits').map((row) => row.businessUnit)),
+      inventorySubjects: unique(rowsFor('inventorySubjects').map((row) => row.inventorySubjects || [])),
+      productTypes: unique(rowsFor('productTypes').map((row) => inventoryProductType(row))),
       productLines: unique(rowsFor('productLines').map((row) => row.productLine)),
       productSeries: unique(rowsFor('productSeries').map((row) => row.productSeries)),
       skus: unique(rowsFor('skus').map((row) => row.sku)),
@@ -1612,7 +1684,9 @@ function InventorySummary({ token, active }) {
       deliveryStatuses: unique(rowsFor('deliveryStatuses').map((row) => row.deliveryStatuses || [row.deliveryStatus]))
     };
   }, [rows, filters]);
-  const filteredRows = useMemo(() => rows.filter((row) => rowMatches(row)), [rows, filters]);
+  const filteredRows = useMemo(() => rows
+    .filter((row) => rowMatches(row))
+    .map((row) => inventoryRowForSubjects(row, filters.inventorySubjects)), [rows, filters]);
   const totals = useMemo(() => inventoryDashboardTotals(filteredRows), [filteredRows]);
   const fullTotals = useMemo(() => inventoryDashboardTotals(rows), [rows]);
   const businessUnitRows = useMemo(() => inventoryDashboardGroups(filteredRows, (row) => row.businessUnit), [filteredRows]);
@@ -1635,7 +1709,7 @@ function InventorySummary({ token, active }) {
   const updateFilter = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
   const clearFilters = () => {
     setSearchInput('');
-    setFilters(emptyFilters);
+    setFilters(inventoryDefaultFilters());
   };
   const monthColumns = data?.months || [];
   const tableColumns = [
@@ -1720,6 +1794,8 @@ function InventorySummary({ token, active }) {
         <>
           <div className="toolbar filters-row inventory-summary-filters inventory-summary-filter-grid">
             <MultiSelectFilter label="事业部" allLabel="全部事业部" value={filters.businessUnits} options={options.businessUnits} onChange={(value) => updateFilter('businessUnits', value)} />
+            <MultiSelectFilter label="库存主体" allLabel="全部库存主体" value={filters.inventorySubjects} options={options.inventorySubjects} onChange={(value) => updateFilter('inventorySubjects', value)} />
+            <MultiSelectFilter label="成品/配件" allLabel="全部类型" value={filters.productTypes} options={options.productTypes} onChange={(value) => updateFilter('productTypes', value)} />
             <MultiSelectFilter label="产品线" allLabel="全部产品线" value={filters.productLines} options={options.productLines} onChange={(value) => updateFilter('productLines', value)} />
             <MultiSelectFilter label="系列" allLabel="全部系列" value={filters.productSeries} options={options.productSeries} onChange={(value) => updateFilter('productSeries', value)} />
             <MultiSelectFilter label="SKU" allLabel="全部SKU" value={filters.skus} options={options.skus} onChange={(value) => updateFilter('skus', value)} />

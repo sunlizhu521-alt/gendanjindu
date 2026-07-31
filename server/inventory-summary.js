@@ -1,6 +1,6 @@
 import xlsx from 'xlsx';
 
-const INVENTORY_SLOT_IDS = new Set(Array.from({ length: 13 }, (_, index) => `inventorySummaryFile${index + 1}`));
+const INVENTORY_SLOT_IDS = new Set(Array.from({ length: 14 }, (_, index) => `inventorySummaryFile${index + 1}`));
 const UNIQUE_SHEET_SLOT_IDS = new Set([
   'inventorySummaryFile1',
   'inventorySummaryFile2',
@@ -13,7 +13,8 @@ const UNIQUE_SHEET_SLOT_IDS = new Set([
   'inventorySummaryFile10',
   'inventorySummaryFile11',
   'inventorySummaryFile12',
-  'inventorySummaryFile13'
+  'inventorySummaryFile13',
+  'inventorySummaryFile14'
 ]);
 const FBA_TRANSIT_STATUSES = new Set([
   'RECEIVING',
@@ -50,6 +51,7 @@ const FIELD_ALIASES = {
   domesticStockQty: ['库存量(主单位)', '库存量（主单位）'],
   jdId: ['SKU', 'sku', '京东ID', '京东id', 'ID', 'id'],
   jdStockQty: ['全国现货库存'],
+  jdTransitQty: ['在途数量'],
   date: ['日期'],
   businessUnit: ['事业部'],
   materialCode: ['物料编码', '品号'],
@@ -148,6 +150,10 @@ const SLOT_SCHEMAS = {
   inventorySummaryFile13: {
     required: ['subject', 'storeName', 'kingdeeWarehouseName'],
     fields: ['subject', 'storeName', 'kingdeeWarehouseName']
+  },
+  inventorySummaryFile14: {
+    required: ['materialCode', 'jdTransitQty'],
+    fields: ['materialCode', 'jdTransitQty']
   }
 };
 
@@ -199,7 +205,8 @@ const FACT_SUMMARY_IDENTITY_FIELDS = {
   inventorySummaryFile6: ['subject', 'warehouseName', 'materialCode'],
   inventorySummaryFile7: ['jdId'],
   inventorySummaryFile8: ['materialCode'],
-  inventorySummaryFile12: ['materialCode']
+  inventorySummaryFile12: ['materialCode'],
+  inventorySummaryFile14: ['materialCode']
 };
 const INVENTORY_SOURCE_TYPES = new Set([
   'FBA库存',
@@ -208,7 +215,20 @@ const INVENTORY_SOURCE_TYPES = new Set([
   '国内在库',
   '京东在库',
   'FBA在途',
-  'FBM在途'
+  'FBM在途',
+  '京东在途'
+]);
+const ZERO_QUANTITY_DIAGNOSTIC_SOURCE_TYPES = new Set(['京东在途']);
+const JD_INVENTORY_SUBJECT = '浙江迈德斯特医疗器械科技有限公司';
+const INVENTORY_SUBJECT_FIELDS = new Set([
+  'fbaInventoryQty', 'fbaInventoryValue',
+  'fbmInventoryQty', 'fbmInventoryValue',
+  'wfsInventoryQty', 'wfsInventoryValue',
+  'domesticMainInventoryQty', 'domesticMainInventoryValue',
+  'jdInventoryQty', 'jdInventoryValue',
+  'fbaTransitQty', 'fbaTransitValue',
+  'fbmTransitQty', 'fbmTransitValue',
+  'jdTransitQty', 'jdTransitValue'
 ]);
 
 function isIgnoredFbmWarehouse(value) {
@@ -331,7 +351,11 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
   if (!file?.buffer) throw inventoryValidationError('未收到上传文件');
   const workbook = xlsx.read(file.buffer, { type: 'buffer', cellDates: true, dense: true });
   if (UNIQUE_SHEET_SLOT_IDS.has(slotId) && workbook.SheetNames.length !== 1) {
-    throw inventoryValidationError(`${slotId === 'inventorySummaryFile4' ? 'FBA在途报表' : '该文件'}应只包含一个工作表`);
+    const singleSheetTitle = {
+      inventorySummaryFile4: 'FBA在途报表',
+      inventorySummaryFile14: '京东在途报表'
+    }[slotId] || '该文件';
+    throw inventoryValidationError(`${singleSheetTitle}应只包含一个工作表`);
   }
   const sheetName = slotId === 'inventorySummaryFile5'
     ? workbook.SheetNames.find((name) => text(name) === '备货单详情')
@@ -520,6 +544,8 @@ function emptySummaryRow(id, businessUnit, product, rawIdentifier) {
     issues: new Set(),
     sourceTypes: new Set(),
     inventorySources: new Set(),
+    inventorySubjects: new Set(),
+    inventorySubjectBreakdown: {},
     deliveryStatuses: new Set(),
     salesByMonth: {},
     salesAmountByMonth: {},
@@ -543,6 +569,8 @@ function emptySummaryRow(id, businessUnit, product, rawIdentifier) {
     fbaTransitValue: 0,
     fbmTransitQty: 0,
     fbmTransitValue: 0,
+    jdTransitQty: 0,
+    jdTransitValue: 0,
     finishedNotShippedQty: 0,
     finishedNotShippedValue: 0,
     unpreparedQty: 0,
@@ -578,7 +606,7 @@ function rowsRecord(getRecord, slotId) {
 }
 
 export function buildInventorySummaryModel({ getRows, getRecord }) {
-  const source = Object.fromEntries(Array.from({ length: 13 }, (_, index) => {
+  const source = Object.fromEntries(Array.from({ length: 14 }, (_, index) => {
     const slotId = `inventorySummaryFile${index + 1}`;
     return [slotId, rowsRecord(getRecord, slotId)];
   }));
@@ -749,6 +777,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       ['jdInventoryQty', 'jdInventoryValue'],
       ['fbaTransitQty', 'fbaTransitValue'],
       ['fbmTransitQty', 'fbmTransitValue'],
+      ['jdTransitQty', 'jdTransitValue'],
       ['unfulfilledQty', 'unfulfilledValue'],
       ['salesQty', 'salesAmount']
     ];
@@ -766,6 +795,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     issues = [],
     quantities = {},
     inventorySource = '',
+    inventorySubject = '',
     deliveryStatus = '',
     month = '',
     distribution = null,
@@ -792,6 +822,16 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     }
     row.sourceTypes.add(sourceType);
     if (inventorySource) row.inventorySources.add(inventorySource);
+    if (Object.keys(quantities).some((field) => INVENTORY_SUBJECT_FIELDS.has(field))) {
+      const subject = text(inventorySubject) || '未匹配';
+      row.inventorySubjects.add(subject);
+      const subjectAmounts = row.inventorySubjectBreakdown[subject] || {};
+      Object.entries(quantities).forEach(([field, amount]) => {
+        if (!INVENTORY_SUBJECT_FIELDS.has(field)) return;
+        subjectAmounts[field] = (subjectAmounts[field] || 0) + amount;
+      });
+      row.inventorySubjectBreakdown[subject] = subjectAmounts;
+    }
     if (deliveryStatus) row.deliveryStatuses.add(deliveryStatus);
     Object.entries(quantities).forEach(([field, amount]) => {
       row[field] += amount;
@@ -858,6 +898,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       businessUnit: warehouseResult.businessUnit,
       issues: [skuResult.issue, warehouseResult.issue],
       inventorySource: 'FBA库存',
+      inventorySubject: warehouseResult.subject,
       quantities: { fbaInventoryQty: qty, fbaInventoryValue: qty * product.product.pretaxPrice },
       sourceContext: {
         sourceSku: text(raw.sku),
@@ -882,6 +923,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       businessUnit: warehouseResult.businessUnit,
       issues: [warehouseResult.issue],
       inventorySource: 'FBM库存',
+      inventorySubject: warehouseResult.subject,
       quantities: { fbmInventoryQty: qty, fbmInventoryValue: qty * product.product.pretaxPrice },
       sourceContext: {
         sourceSku: text(raw.identifier),
@@ -905,6 +947,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       businessUnit: warehouseResult.businessUnit,
       issues: [skuResult.issue, warehouseResult.issue],
       inventorySource: 'WFS库存',
+      inventorySubject: warehouseResult.subject,
       quantities: { wfsInventoryQty: qty, wfsInventoryValue: qty * product.product.pretaxPrice },
       sourceContext: {
         sourceSku: text(raw.sku),
@@ -932,6 +975,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       materialCode: skuResult.materialCode,
       businessUnit: warehouseResult.businessUnit,
       issues: [skuResult.issue, warehouseResult.issue],
+      inventorySubject: warehouseResult.subject,
       quantities: { fbaTransitQty: qty, fbaTransitValue: qty * product.product.pretaxPrice },
       sourceContext: {
         sourceSku: text(raw.sku),
@@ -955,6 +999,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       materialCode: skuResult.materialCode,
       businessUnit: warehouseResult.businessUnit,
       issues: [skuResult.issue, warehouseResult.issue],
+      inventorySubject: warehouseResult.subject,
       quantities: { fbmTransitQty: qty, fbmTransitValue: qty * product.product.pretaxPrice },
       sourceContext: {
         sourceSku: text(raw.sku),
@@ -989,6 +1034,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       businessUnit: '国内事业部',
       issues: [warehouseResult.issue],
       inventorySource: '国内在库',
+      inventorySubject: text(raw.subject),
       quantities: { domesticMainInventoryQty: qty, domesticMainInventoryValue: qty * product.product.pretaxPrice },
       sourceContext: {
         subject: text(raw.subject),
@@ -1010,10 +1056,38 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       businessUnit: '国内事业部',
       issues: [jdResult.issue],
       inventorySource: '京东在库',
+      inventorySubject: JD_INVENTORY_SUBJECT,
       quantities: { jdInventoryQty: qty, jdInventoryValue: qty * product.product.pretaxPrice },
       sourceContext: {
         sourceSku: text(raw.jdId),
         jdId: text(raw.jdId)
+      }
+    });
+  });
+
+  source.inventorySummaryFile14.rows.forEach((raw) => {
+    const materialCode = text(raw.materialCode).replace(/\.0$/, '');
+    const quantity = safeNumber(raw.jdTransitQty);
+    if (!quantity.valid) {
+      addAnomaly('京东在途', materialCode, '在途数量不是有效数量', 0, 0, {
+        materialCode,
+        businessUnit: '国内事业部',
+        subject: JD_INVENTORY_SUBJECT
+      });
+    }
+    const qty = quantity.valid ? quantity.value : 0;
+    const product = resolveProduct(materialCode, '京东在途', materialCode);
+    addFact({
+      sourceType: '京东在途',
+      rawIdentifier: materialCode,
+      materialCode,
+      businessUnit: '国内事业部',
+      issues: [materialCode ? '' : '物料编码为空'],
+      inventorySubject: JD_INVENTORY_SUBJECT,
+      quantities: { jdTransitQty: qty, jdTransitValue: qty * product.product.pretaxPrice },
+      sourceContext: {
+        sourceSku: materialCode,
+        subject: JD_INVENTORY_SUBJECT
       }
     });
   });
@@ -1085,8 +1159,8 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     const domesticInventoryValue = row.domesticMainInventoryValue + row.jdInventoryValue;
     const inventoryQty = crossBorderInventoryQty + domesticInventoryQty;
     const inventoryValue = crossBorderInventoryValue + domesticInventoryValue;
-    const transitQty = row.fbaTransitQty + row.fbmTransitQty;
-    const transitValue = row.fbaTransitValue + row.fbmTransitValue;
+    const transitQty = row.fbaTransitQty + row.fbmTransitQty + row.jdTransitQty;
+    const transitValue = row.fbaTransitValue + row.fbmTransitValue + row.jdTransitValue;
     const scaleQty = inventoryQty + transitQty + row.unfulfilledQty;
     const scaleValue = inventoryValue + transitValue + row.unfulfilledValue;
     const deliveryStatuses = [...row.deliveryStatuses];
@@ -1095,6 +1169,10 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       issues: [...row.issues],
       sourceTypes: [...row.sourceTypes],
       inventorySources: [...row.inventorySources],
+      inventorySubjects: [...row.inventorySubjects].sort((left, right) => left.localeCompare(right, 'zh-Hans-CN')),
+      inventorySubjectBreakdown: Object.entries(row.inventorySubjectBreakdown)
+        .map(([subject, values]) => ({ subject, ...values }))
+        .sort((left, right) => left.subject.localeCompare(right.subject, 'zh-Hans-CN')),
       deliveryStatuses,
       deliveryStatus: deliveryStatuses.includes('是') && deliveryStatuses.includes('否')
         ? '是&否'
@@ -1135,6 +1213,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       'inventoryQty', 'inventoryValue',
       'fbaTransitQty', 'fbaTransitValue',
       'fbmTransitQty', 'fbmTransitValue',
+      'jdTransitQty', 'jdTransitValue',
       'transitQty', 'transitValue',
       'finishedNotShippedQty', 'finishedNotShippedValue',
       'unpreparedQty', 'unpreparedValue',
@@ -1207,6 +1286,12 @@ const INVENTORY_DIMENSION_TARGETS = {
     title: '商品分类',
     page: 'dimensionLibrary',
     fields: ['物料编码', 'SKU', '物料名称', '销售产品线', '销售系列', '不含税结算价']
+  },
+  jdTransitSource: {
+    slotId: 'inventorySummaryFile14',
+    title: '京东在途',
+    page: 'inventorySummaryLibrary',
+    fields: ['物料编码', '在途数量']
   }
 };
 
@@ -1221,6 +1306,9 @@ function inventoryMaintenanceTarget(anomaly) {
   }
   if (issue.startsWith('仓库主体')) return INVENTORY_DIMENSION_TARGETS.warehouseSubject;
   if (issue.startsWith('主体、仓库与物料')) return INVENTORY_DIMENSION_TARGETS.warehouseMaterial;
+  if (anomaly.sourceType === '京东在途' && (issue === '在途数量不是有效数量' || issue === '物料编码为空')) {
+    return INVENTORY_DIMENSION_TARGETS.jdTransitSource;
+  }
   if ((issue.startsWith('商品分类') || issue.startsWith('不含税结算价')) && text(anomaly.materialCode)) {
     return INVENTORY_DIMENSION_TARGETS.product;
   }
@@ -1245,6 +1333,7 @@ function inventoryMissingKey(anomaly, target) {
 export function buildInventoryDimensionDiagnostics(model = {}) {
   const issues = (model.anomalies || []).filter((anomaly) => (
     !INVENTORY_SOURCE_TYPES.has(text(anomaly.sourceType))
+    || ZERO_QUANTITY_DIAGNOSTIC_SOURCE_TYPES.has(text(anomaly.sourceType))
     || Math.abs(Number(anomaly.qty || 0)) > 0.000001
   )).flatMap((anomaly) => {
     const target = inventoryMaintenanceTarget(anomaly);

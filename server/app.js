@@ -102,7 +102,7 @@ const DIMENSION_SLOTS = {
   inventorySummaryFile11: 'Dim-京东ID与品号匹配',
   inventorySummaryFile12: '采购跟单情况',
   inventorySummaryFile13: 'Dim-领星FBA在途&金蝶仓库',
-  inventorySummaryFile14: '库存槽位 14',
+  inventorySummaryFile14: '京东在途',
   inventorySummaryFile15: '库存槽位 15',
   inventorySummaryFile16: '库存槽位 16',
   firstMileData1: '张婷婷头程数据',
@@ -3479,6 +3479,7 @@ app.get('/api/dimension-missing/cross-border', requireAuth, requirePage('dimensi
     FBM在途: 'inventorySummaryFile5',
     国内在库: 'inventorySummaryFile6',
     京东在库: 'inventorySummaryFile7',
+    京东在途: 'inventorySummaryFile14',
     销售数据: 'inventorySummaryFile8',
     采购未交付: 'inventorySummaryFile12'
   };

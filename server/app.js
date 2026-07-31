@@ -373,6 +373,7 @@ function auditActionForRequest(req) {
   if (requestPath.includes('/export')) return '导出数据';
   if (requestPath.includes('/preview') || requestPath === '/api/workbook/inspect') return '解析预览';
   if (requestPath.includes('/test-cache') || requestPath.endsWith('/cache')) return '清除采购订单缓存';
+  if (requestPath === '/api/users/bulk-delete' && req.method === 'POST') return '批量删除用户';
   if (requestPath.startsWith('/api/users') && req.method === 'POST') return '创建用户';
   if (requestPath.startsWith('/api/users') && req.method === 'PATCH' && normalize(req.body?.password)) return '重置用户密码';
   if (requestPath.startsWith('/api/users') && req.method === 'PATCH' && Array.isArray(req.body?.pageAccess)) return '分配页面权限';
@@ -405,6 +406,7 @@ function auditTargetForRequest(req) {
 function auditDetailsForRequest(req) {
   if (req.file) return `文件：${safeFilename(req.file).slice(0, 500)}，大小：${Math.ceil(numberValue(req.file.size) / 1024)} KB`;
   if (Array.isArray(req.body?.rows)) return `提交 ${req.body.rows.length} 条记录`;
+  if (Array.isArray(req.body?.userIds)) return `选择 ${req.body.userIds.length} 名用户`;
   if (Array.isArray(req.body?.pageAccess)) return `页面权限 ${req.body.pageAccess.length} 项`;
   if (req.path.includes('/export')) return '导出当前筛选结果';
   return '';
@@ -4639,6 +4641,37 @@ app.patch('/api/users/:id', requireAuth, requirePage('permissions'), requireAdmi
   run(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`, params);
   saveDatabase();
   res.json({ ok: true });
+});
+
+app.post('/api/users/bulk-delete', requireAuth, requirePage('permissions'), requireAdmin, (req, res) => {
+  const userIds = Array.isArray(req.body?.userIds)
+    ? [...new Set(req.body.userIds.map((value) => normalize(value)).filter(Boolean))]
+    : [];
+  if (!userIds.length) return res.status(400).json({ error: '请选择要删除的用户' });
+  if (userIds.length > 100) return res.status(400).json({ error: '单次最多删除100名用户' });
+  if (userIds.includes(req.user.id)) return res.status(400).json({ error: '不能删除当前登录用户' });
+
+  const placeholders = userIds.map(() => '?').join(', ');
+  const targets = all(`SELECT id, name FROM users WHERE id IN (${placeholders})`, userIds);
+  if (!targets.length) return res.status(404).json({ error: '所选用户不存在或已被删除' });
+
+  const deletedIds = targets.map((user) => user.id);
+  const deletedNames = targets.map((user) => user.name);
+  const foundIds = new Set(deletedIds);
+  const notFoundIds = userIds.filter((id) => !foundIds.has(id));
+  const deletePlaceholders = deletedIds.map(() => '?').join(', ');
+  transaction(() => {
+    run(`DELETE FROM sessions WHERE user_id IN (${deletePlaceholders})`, deletedIds);
+    run(`DELETE FROM users WHERE id IN (${deletePlaceholders})`, deletedIds);
+  });
+
+  res.json({
+    ok: true,
+    deletedCount: deletedIds.length,
+    deletedIds,
+    deletedNames,
+    notFoundIds
+  });
 });
 
 app.use((err, req, res, next) => {

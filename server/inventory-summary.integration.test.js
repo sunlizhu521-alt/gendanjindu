@@ -981,8 +981,18 @@ test('inventory summary and domestic board use complete source models and enforc
     'INSERT INTO users (id, name, password_hash, role, page_access, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     ['limited-id', 'Limited User', 'unused', '普通用户', JSON.stringify(['operationBoard']), now, now]
   );
+  database.run(
+    'INSERT INTO users (id, name, password_hash, role, page_access, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ['bulk-user-1', 'Bulk User One', 'unused', '普通用户', '[]', now, now]
+  );
+  database.run(
+    'INSERT INTO users (id, name, password_hash, role, page_access, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ['bulk-user-2', 'Bulk User Two', 'unused', '普通用户', '[]', now, now]
+  );
   database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['admin-token', 'admin-id', now]);
   database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['limited-token', 'limited-id', now]);
+  database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['bulk-token-1', 'bulk-user-1', now]);
+  database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['bulk-token-2', 'bulk-user-2', now]);
   database.run('INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)', ['expired-token', 'admin-id', now, '2020-01-01 00:00:00']);
 
   const demandSql = `INSERT INTO order_demands
@@ -1273,6 +1283,40 @@ test('inventory summary and domestic board use complete source models and enforc
     });
     assert.equal(duplicateUserResponse.status, 500);
     assert.deepEqual(await duplicateUserResponse.json(), { error: '服务器处理失败，请稍后重试' });
+
+    const unauthorizedBulkDeleteResponse = await fetch(`http://127.0.0.1:${port}/api/users/bulk-delete`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer limited-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userIds: ['bulk-user-1'] })
+    });
+    assert.equal(unauthorizedBulkDeleteResponse.status, 403);
+
+    const selfDeleteResponse = await fetch(`http://127.0.0.1:${port}/api/users/bulk-delete`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userIds: ['admin-id', 'bulk-user-1'] })
+    });
+    assert.equal(selfDeleteResponse.status, 400);
+    assert.deepEqual(await selfDeleteResponse.json(), { error: '不能删除当前登录用户' });
+
+    const bulkDeleteResponse = await fetch(`http://127.0.0.1:${port}/api/users/bulk-delete`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userIds: ['bulk-user-1', 'bulk-user-2', 'bulk-user-1', 'missing-user'] })
+    });
+    assert.equal(bulkDeleteResponse.status, 200);
+    assert.deepEqual(await bulkDeleteResponse.json(), {
+      ok: true,
+      deletedCount: 2,
+      deletedIds: ['bulk-user-1', 'bulk-user-2'],
+      deletedNames: ['Bulk User One', 'Bulk User Two'],
+      notFoundIds: ['missing-user']
+    });
+    const usersAfterBulkDelete = await fetch(`http://127.0.0.1:${port}/api/users`, {
+      headers: { Authorization: 'Bearer admin-token' }
+    }).then((response) => response.json());
+    assert.ok(!usersAfterBulkDelete.rows.some((row) => ['bulk-user-1', 'bulk-user-2'].includes(row.id)));
+    assert.equal((await fetch(`http://127.0.0.1:${port}/api/bootstrap`, { headers: { Authorization: 'Bearer bulk-token-1' } })).status, 401);
 
     const summary = await adminResponse.json();
     assert.deepEqual({

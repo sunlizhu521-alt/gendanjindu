@@ -6040,16 +6040,20 @@ function OperationLogsPage({ token, setMessage }) {
   );
 }
 
-function PermissionsPage({ token, pages, setMessage }) {
+function PermissionsPage({ token, currentUser, pages, setMessage }) {
   const [users, setUsers] = useState([]);
   const [form, setForm] = useState({ name: '', password: '' });
   const [draftAccess, setDraftAccess] = useState({});
+  const [selectedUserIds, setSelectedUserIds] = useState([]);
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     const payload = await request('/api/users', { token });
     const rows = payload.rows || [];
     setUsers(rows);
     setDraftAccess(Object.fromEntries(rows.map((user) => [user.id, user.pageAccess || []])));
+    const availableIds = new Set(rows.filter((user) => user.id !== currentUser?.id).map((user) => user.id));
+    setSelectedUserIds((current) => current.filter((id) => availableIds.has(id)));
   }
 
   useEffect(() => { load().catch(() => {}); }, []);
@@ -6086,6 +6090,43 @@ function PermissionsPage({ token, pages, setMessage }) {
     setMessage('密码已重置。');
   }
 
+  function toggleUserSelection(userId) {
+    setSelectedUserIds((current) => current.includes(userId)
+      ? current.filter((id) => id !== userId)
+      : [...current, userId]);
+  }
+
+  const selectableUsers = users.filter((user) => user.id !== currentUser?.id);
+  const allSelected = selectableUsers.length > 0 && selectableUsers.every((user) => selectedUserIds.includes(user.id));
+
+  function toggleAllUsers() {
+    setSelectedUserIds(allSelected ? [] : selectableUsers.map((user) => user.id));
+  }
+
+  async function deleteSelectedUsers() {
+    const selectedUsers = users.filter((user) => selectedUserIds.includes(user.id));
+    if (!selectedUsers.length) return;
+    const names = selectedUsers.map((user) => user.name).join('、');
+    if (!window.confirm(`确定删除以下 ${selectedUsers.length} 名用户吗？\n${names}\n\n删除后这些用户将立即退出登录，此操作不可撤销。`)) return;
+
+    setDeleting(true);
+    try {
+      const result = await request('/api/users/bulk-delete', {
+        token,
+        method: 'POST',
+        body: JSON.stringify({ userIds: selectedUserIds })
+      });
+      const missingText = result.notFoundIds?.length ? `，另有 ${result.notFoundIds.length} 名用户已不存在` : '';
+      setSelectedUserIds([]);
+      setMessage(`已删除 ${result.deletedCount} 名用户${missingText}。`);
+      await load();
+    } catch (error) {
+      setMessage(`批量删除失败：${error.message}`);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <>
       <div className="section-heading-row"><h2>权限管理</h2><span className="section-count">管理员创建用户并分配页面权限</span></div>
@@ -6094,11 +6135,29 @@ function PermissionsPage({ token, pages, setMessage }) {
         <label>初始密码<input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>
         <button type="submit" className="compact-button">创建用户</button>
       </form>
+      <div className="permission-bulk-toolbar">
+        <label className="check-row">
+          <input type="checkbox" checked={allSelected} disabled={!selectableUsers.length || deleting} onChange={toggleAllUsers} />
+          全选可删除用户
+        </label>
+        <span className="section-count">已选 {selectedUserIds.length} 人</span>
+        <button type="button" className="danger compact-button" disabled={!selectedUserIds.length || deleting} onClick={deleteSelectedUsers}>
+          {deleting ? '正在删除...' : '批量删除'}
+        </button>
+      </div>
       <DataTable
         className="permission-table"
         rows={users}
-        columns={['姓名', '角色', '页面权限', '操作']}
+        columns={['选择', '姓名', '角色', '页面权限', '操作']}
         render={(user) => [
+          <input
+            type="checkbox"
+            aria-label={`选择 ${user.name}`}
+            checked={selectedUserIds.includes(user.id)}
+            disabled={user.id === currentUser?.id || deleting}
+            title={user.id === currentUser?.id ? '不能删除当前登录用户' : ''}
+            onChange={() => toggleUserSelection(user.id)}
+          />,
           user.name,
           user.role,
           <div className="permission-grid">
@@ -6273,7 +6332,7 @@ function App() {
         {shouldMount('dimensionLibrary') && <PagePane page="dimensionLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} gridColumns={3} onDataApplied={refreshCrossBorderData} highlightSlotId={highlightSlotId} /></PagePane>}
         {shouldMount('trace') && <PagePane page="trace" activeTab={activeTab}><TracePage token={token} setMessage={setMessage} /></PagePane>}
         {shouldMount('operationLogs') && <PagePane page="operationLogs" activeTab={activeTab}><OperationLogsPage token={token} setMessage={setMessage} /></PagePane>}
-        {shouldMount('permissions') && <PagePane page="permissions" activeTab={activeTab}><PermissionsPage token={token} pages={pages} setMessage={setMessage} /></PagePane>}
+        {shouldMount('permissions') && <PagePane page="permissions" activeTab={activeTab}><PermissionsPage token={token} currentUser={user} pages={pages} setMessage={setMessage} /></PagePane>}
         <PersistentHorizontalScrollbar activeTab={activeTab} />
       </section>
     </main>

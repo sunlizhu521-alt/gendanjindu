@@ -632,12 +632,14 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     const result = productLookup.resolve(text(materialCode).replace(/\.0$/, ''));
     if (result.status !== 'ok') {
       return {
+        sku: '未匹配',
         materialName: '未匹配',
         productLine: '未匹配',
         productSeries: '未匹配'
       };
     }
     return {
+      sku: text(result.value.sku) || '未匹配',
       materialName: text(result.value.materialName) || '未匹配',
       productLine: text(result.value.productLine) || '未匹配',
       productSeries: text(result.value.productSeries) || '未匹配'
@@ -1266,6 +1268,7 @@ export function buildInventoryDimensionDiagnostics(model = {}) {
       kingdeeWarehouseName: text(anomaly.kingdeeWarehouseName),
       storeName: text(anomaly.storeName),
       sourceSku: text(anomaly.sourceSku || anomaly.jdId || anomaly.sourceKey),
+      sku: text(anomaly.sku) || '未匹配',
       materialCode: text(anomaly.materialCode),
       materialName: text(anomaly.materialName) || '未匹配',
       productLine: text(anomaly.productLine) || '未匹配',

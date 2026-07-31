@@ -222,6 +222,46 @@ test('FBM inventory keeps nonzero blank identifiers unmatched and routes them to
   assert.equal(diagnostics.tasks.find((row) => row.targetSlotId === 'inventorySummaryFile2')?.affectedQty, 1009);
 });
 
+test('domestic inventory excludes JD central and outbound-goods warehouses before aggregation and diagnostics', () => {
+  const rowsBySlot = new Map([
+    ['productCategory', [
+      { materialCode: 'M-KEEP', sku: 'SKU-KEEP', materialName: 'Kept material', productLine: 'Line A', productSeries: 'Series A', pretaxPrice: '10' }
+    ]],
+    ['warehouseMaterialMap', [
+      { subject: 'Domestic Subject', warehouseName: 'Regular Warehouse', materialCode: 'M-KEEP', businessUnit: '国内事业部' }
+    ]],
+    ['inventorySummaryFile6', [
+      { subject: 'Domestic Subject', warehouseName: '999-M/国内事业部/京东总仓/国内医疗器械', materialCode: 'M-JD', domesticStockQty: '100' },
+      { subject: 'Domestic Subject', warehouseName: '001-M/国内事业部/发出商品仓/天猫', materialCode: 'M-OUTBOUND', domesticStockQty: '200' },
+      { subject: 'Domestic Subject', warehouseName: 'Regular Warehouse', materialCode: 'M-KEEP', domesticStockQty: '30' }
+    ]]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
+  });
+  assert.equal(result.在库量.国内, 30);
+  assert.deepEqual(result.rows.map((row) => row.materialCode), ['M-KEEP']);
+  assert.equal(result.anomalies.length, 0);
+  assert.equal(buildInventoryDimensionDiagnostics(result).qualitySummary.issueRows, 0);
+
+  const workbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(rowsBySlot.get('inventorySummaryFile6')), 'Inventory');
+  const parsed = parseInventorySummaryWorkbook(
+    { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) },
+    'inventorySummaryFile6',
+    {
+      subject: 'subject',
+      warehouseName: 'warehouseName',
+      materialCode: 'materialCode',
+      domesticStockQty: 'domesticStockQty'
+    }
+  );
+  assert.equal(parsed.rows.length, 1);
+  assert.equal(parsed.rows[0].materialCode, 'M-KEEP');
+  assert.equal(parsed.mapping.__inventorySummary.filteredIgnoredWarehouseRows, 2);
+});
+
 test('all inventory sources ignore zero quantity rows before mapping, aggregation and diagnostics', () => {
   const rowsBySlot = new Map([
     ['inventorySummaryFile1', [

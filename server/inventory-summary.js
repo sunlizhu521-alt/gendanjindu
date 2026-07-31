@@ -181,6 +181,10 @@ const IGNORED_FBM_WAREHOUSES = new Set([
   'US-FBA移除中转虚拟仓',
   '虚拟仓库--仅用于测试'
 ].map(matchKey));
+const IGNORED_DOMESTIC_WAREHOUSE_KEYWORDS = [
+  '京东总仓',
+  '发出商品仓'
+].map(matchKey);
 const INVENTORY_QUANTITY_FIELDS = {
   inventorySummaryFile1: 'endingInventoryQty',
   inventorySummaryFile2: 'actualTotalQty',
@@ -233,6 +237,11 @@ const INVENTORY_SUBJECT_FIELDS = new Set([
 
 function isIgnoredFbmWarehouse(value) {
   return IGNORED_FBM_WAREHOUSES.has(matchKey(value));
+}
+
+function isIgnoredDomesticWarehouse(value) {
+  const warehouse = matchKey(value);
+  return warehouse && IGNORED_DOMESTIC_WAREHOUSE_KEYWORDS.some((keyword) => warehouse.includes(keyword));
 }
 
 function hasZeroInventoryQuantity(row, slotId) {
@@ -385,6 +394,10 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
       return false;
     }
     if (slotId === 'inventorySummaryFile2' && isIgnoredFbmWarehouse(row.warehouseName)) {
+      filteredIgnoredWarehouseRows += 1;
+      return false;
+    }
+    if (slotId === 'inventorySummaryFile6' && isIgnoredDomesticWarehouse(row.warehouseName)) {
       filteredIgnoredWarehouseRows += 1;
       return false;
     }
@@ -1013,6 +1026,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   });
 
   source.inventorySummaryFile6.rows.forEach((raw) => {
+    if (isIgnoredDomesticWarehouse(raw.warehouseName)) return;
     const qty = inventoryQuantity(raw, 'inventorySummaryFile6', '国内在库', raw.materialCode, '库存量(主单位)');
     if (qty === null) return;
     const materialCode = text(raw.materialCode).replace(/\.0$/, '');

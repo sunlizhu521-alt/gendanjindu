@@ -3227,6 +3227,7 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
 }
 
 function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onMaintain }) {
+  const loadRequestId = useRef(0);
   const [payload, setPayload] = useState({
     matchRows: [],
     missingTasks: [],
@@ -3249,16 +3250,30 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
     keyword: ''
   });
 
-  useEffect(() => {
+  async function loadMissingDiagnostics(showSuccess = false) {
+    const requestId = loadRequestId.current + 1;
+    loadRequestId.current = requestId;
     setLoading(true);
     setLoadError('');
-    request('/api/dimension-missing/cross-border', { token })
-      .then((data) => setPayload(data || {}))
-      .catch((err) => {
-        setLoadError(err.message);
-        setMessage(`维度表缺失加载失败：${err.message}`);
-      })
-      .finally(() => setLoading(false));
+    try {
+      const data = await request(`/api/dimension-missing/cross-border?refresh=${Date.now()}`, {
+        token,
+        cache: 'no-store'
+      });
+      if (requestId !== loadRequestId.current) return;
+      setPayload(data || {});
+      if (showSuccess) setMessage('维度表缺失信息已按当前应用文件重新获取。');
+    } catch (err) {
+      if (requestId !== loadRequestId.current) return;
+      setLoadError(err.message);
+      setMessage(`维度表缺失加载失败：${err.message}`);
+    } finally {
+      if (requestId === loadRequestId.current) setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadMissingDiagnostics();
   }, [token, refreshVersion]);
 
   const selectedTargets = Array.isArray(filters.targetTitles) ? filters.targetTitles : [];
@@ -3458,6 +3473,14 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
     <>
       <div className="section-heading-row dashboard-heading">
         <h2>维度表缺失</h2>
+        <button
+          type="button"
+          className="ghost compact-button dimension-missing-refresh"
+          disabled={loading}
+          onClick={() => loadMissingDiagnostics(true)}
+        >
+          {loading ? '刷新中...' : '刷新缺失信息'}
+        </button>
         <span className="section-count">{loading
           ? '正在分析库存数据与维度文件，请稍候...'
           : `库存数据待维护 ${payload.inventorySummaryIssues?.length || 0} 条；原跨境诊断缺失 ${payload.missingTasks?.length || 0} 项、冲突 ${payload.conflicts?.length || 0} 项`}</span>

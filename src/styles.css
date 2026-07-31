@@ -3711,6 +3711,10 @@ th {
   min-width: 190px;
 }
 
+.dimension-missing-refresh {
+  min-width: 112px;
+}
+
 .diagnostic-loading-banner {
   border-color: #93c5fd;
   background: #eff6ff;

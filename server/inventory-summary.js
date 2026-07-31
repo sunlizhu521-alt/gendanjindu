@@ -52,7 +52,7 @@ const FIELD_ALIASES = {
   salesAmount: ['销售金额'],
   lingxingWarehouseName: ['领星FBA仓库', '领星FBA仓', '领星仓库名称', '领星仓库', '仓库'],
   kingdeeWarehouseName: ['金蝶仓库名称', '金蝶仓库', '金蝶名称'],
-  lingxingSku: ['SKU', '领星SKU', '领星MSKU', 'MSKU'],
+  lingxingSku: ['*SKU', 'SKU', '领星SKU', '领星MSKU', 'MSKU'],
   month: ['下单月份'],
   remainingQty: ['备货剩余数量'],
   finishedQty: ['完工未发产品'],
@@ -365,6 +365,14 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
     }
     return true;
   });
+  const fbaScopeRows = slotId === 'inventorySummaryFile1'
+    ? rows.filter((row) => matchKey(row.inventoryAttribute) === matchKey('全部'))
+    : [];
+  const fbaBlankSkuRows = fbaScopeRows.filter((row) => !text(row.sku));
+  const quantityTotal = (items, field) => items.reduce((sum, row) => {
+    const quantity = safeNumber(row[field]);
+    return sum + (quantity.valid ? quantity.value : 0);
+  }, 0);
   return {
     rows,
     sheetName,
@@ -373,12 +381,19 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
       ...mapping,
       ...columnMap,
       __inventorySummary: {
-        parserVersion: 1,
+        parserType: 'inventorySummary',
+        parserVersion: 2,
         sheetName,
+        sourceRowCount: mappedRows.length,
         rowCount: rows.length,
         filteredZeroQtyRows,
         filteredIgnoredWarehouseRows,
-        filteredSummaryRows
+        filteredSummaryRows,
+        fbaScopeRows: fbaScopeRows.length,
+        fbaScopeQuantity: quantityTotal(fbaScopeRows, 'endingInventoryQty'),
+        fbaBlankSkuRows: fbaBlankSkuRows.length,
+        fbaBlankSkuQuantity: quantityTotal(fbaBlankSkuRows, 'endingInventoryQty'),
+        filteredFbaAttributeRows: slotId === 'inventorySummaryFile1' ? rows.length - fbaScopeRows.length : 0
       }
     }
   };

@@ -390,19 +390,19 @@ test('inventory summary rows are excluded during upload parsing and when reading
   assert.equal(buildInventoryDimensionDiagnostics(model).qualitySummary.issueRows, 0);
 });
 
-test('FBA parser locks the ending inventory field and retains every nonzero missing-SKU row', () => {
+test('FBA parser locks the ending inventory field and retains every nonzero unmapped-SKU row', () => {
   const quantities = [1, 1, 1, 1, 1, 1, 1, 1, 6, 24, 146, 273, 71, 22, 3];
   const legacyQuantities = [1, 39, 20, 5, 141, ...Array(10).fill(0)];
   const workbook = xlsx.utils.book_new();
   const rows = quantities.map((quantity, index) => ({
-    SKU: '',
+    SKU: `MISSING-SKU-${index + 1}`,
     仓库: '国源欧洲-PL波兰仓',
     库存属性: '全部',
     '期末库存-数量': quantity,
     '期末库存(含移仓)-数量': legacyQuantities[index]
   }));
   rows.push({
-    SKU: '',
+    SKU: 'MISSING-SKU-ZERO',
     仓库: '国源欧洲-PL波兰仓',
     库存属性: '全部',
     '期末库存-数量': 0,
@@ -425,6 +425,11 @@ test('FBA parser locks the ending inventory field and retains every nonzero miss
   assert.equal(parsed.rows.length, 15);
   assert.equal(parsed.rows.reduce((sum, row) => sum + Number(row.endingInventoryQty), 0), 553);
   assert.equal(parsed.mapping.__inventorySummary.filteredZeroQtyRows, 1);
+  assert.equal(parsed.mapping.__inventorySummary.sourceRowCount, 16);
+  assert.equal(parsed.mapping.__inventorySummary.fbaScopeRows, 15);
+  assert.equal(parsed.mapping.__inventorySummary.fbaScopeQuantity, 553);
+  assert.equal(parsed.mapping.__inventorySummary.fbaBlankSkuRows, 0);
+  assert.equal(parsed.mapping.__inventorySummary.fbaBlankSkuQuantity, 0);
 
   const model = buildInventorySummaryModel({
     getRows: (slotId) => (slotId === 'inventorySummaryFile1' ? parsed.rows : []),
@@ -435,6 +440,19 @@ test('FBA parser locks the ending inventory field and retains every nonzero miss
   assert.equal(missingSkuIssues.length, 15);
   assert.equal(missingSkuIssues.reduce((sum, row) => sum + row.qty, 0), 553);
   assert.equal(diagnostics.issues.some((row) => row.qty === 0), false);
+});
+
+test('SKU dimension parser automatically recognizes the *SKU header', () => {
+  const workbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet([
+    { '*SKU': 'SKU-STAR-1', 识别码: 'M-STAR-1' }
+  ]), 'SKU映射');
+  const parsed = parseInventorySummaryWorkbook(
+    { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) },
+    'inventorySummaryFile10'
+  );
+  assert.deepEqual(parsed.rows, [{ lingxingSku: 'SKU-STAR-1', identifier: 'M-STAR-1', remark: '' }]);
+  assert.equal(parsed.mapping.lingxingSku, '*SKU');
 });
 
 test('WFS inventory resolves business unit by subject, mapped warehouse and material code', () => {
@@ -1364,6 +1382,74 @@ test('inventory summary and domestic board use complete source models and enforc
       inventoryAttribute: '可售',
       endingInventoryQty: '1,036'
     }]);
+
+    const fbaCompletenessWorkbook = xlsx.utils.book_new();
+    const fbaMissingQuantities = [1, 1, 1, 1, 1, 1, 1, 1, 6, 24, 146, 273, 71, 22, 3];
+    xlsx.utils.book_append_sheet(fbaCompletenessWorkbook, xlsx.utils.json_to_sheet([
+      ...fbaMissingQuantities.map((quantity, index) => ({
+        SKU: `MISSING-SKU-${index + 1}`,
+        仓库: '国源欧洲-PL波兰仓',
+        库存属性: '全部',
+        '期末库存-数量': quantity
+      })),
+      {
+        SKU: 'MISSING-SKU-ZERO',
+        仓库: '国源欧洲-PL波兰仓',
+        库存属性: '全部',
+        '期末库存-数量': 0
+      }
+    ]), 'FBA库存');
+    const fbaCompletenessForm = new FormData();
+    fbaCompletenessForm.append(
+      'file',
+      new Blob([xlsx.write(fbaCompletenessWorkbook, { type: 'buffer', bookType: 'xlsx' })]),
+      '【FBA在库】库存报表-FBA仓-明细-202607300925.xlsx'
+    );
+    const fbaCompletenessResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions/inventorySummaryFile1/upload`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token' },
+      body: fbaCompletenessForm
+    });
+    const fbaCompletenessPayload = await fbaCompletenessResponse.json();
+    assert.equal(fbaCompletenessResponse.status, 200, `${JSON.stringify(fbaCompletenessPayload)}\n${logs.join('')}`);
+    assert.equal(fbaCompletenessPayload.rowCount, 15);
+    assert.deepEqual(
+      {
+        sourceRows: fbaCompletenessPayload.parseSummary?.sourceRowCount,
+        validRows: fbaCompletenessPayload.parseSummary?.fbaScopeRows,
+        validQty: fbaCompletenessPayload.parseSummary?.fbaScopeQuantity,
+        blankSkuRows: fbaCompletenessPayload.parseSummary?.fbaBlankSkuRows,
+        blankSkuQty: fbaCompletenessPayload.parseSummary?.fbaBlankSkuQuantity,
+        filteredZeroRows: fbaCompletenessPayload.parseSummary?.filteredZeroQtyRows
+      },
+      { sourceRows: 16, validRows: 15, validQty: 553, blankSkuRows: 0, blankSkuQty: 0, filteredZeroRows: 1 }
+    );
+
+    const fbaDiagnosticsResponse = await fetch(`http://127.0.0.1:${port}/api/dimension-missing/cross-border`, {
+      headers: { Authorization: 'Bearer admin-token' }
+    });
+    const fbaDiagnosticsPayload = await fbaDiagnosticsResponse.json();
+    assert.equal(fbaDiagnosticsResponse.status, 200, `${JSON.stringify(fbaDiagnosticsPayload)}\n${logs.join('')}`);
+    const fbaMissingSkuIssues = fbaDiagnosticsPayload.inventorySummaryIssues.filter((row) => (
+      row.sourceType === 'FBA库存'
+      && row.targetSlotId === 'inventorySummaryFile10'
+      && row.sourceWarehouseName === '国源欧洲-PL波兰仓'
+    ));
+    assert.equal(fbaMissingSkuIssues.length, 15);
+    assert.equal(fbaMissingSkuIssues.reduce((sum, row) => sum + row.qty, 0), 553);
+    const fbaSourceApplication = fbaDiagnosticsPayload.sourceApplications.find((row) => row.slotId === 'inventorySummaryFile1');
+    assert.deepEqual(
+      {
+        fileName: fbaSourceApplication?.fileName,
+        rows: fbaSourceApplication?.parseSummary?.fbaScopeRows,
+        quantity: fbaSourceApplication?.parseSummary?.fbaScopeQuantity
+      },
+      {
+        fileName: '【FBA在库】库存报表-FBA仓-明细-202607300925.xlsx',
+        rows: 15,
+        quantity: 553
+      }
+    );
 
     const loginResponse = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
       method: 'POST',

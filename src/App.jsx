@@ -3054,7 +3054,7 @@ function AppliedTimeNote({ label = '采购订单列表应用时间', value = '' 
 
 function SourceApplicationsNote({ sources = [] }) {
   const text = sources.length
-    ? sources.map((source) => `${source.label}：${source.appliedAt || '暂无'}`).join('；')
+    ? sources.map((source) => `${source.label}${source.fileName ? `（${source.fileName}）` : ''}：${source.appliedAt || '暂无'}`).join('；')
     : '暂无';
   return <div className="dashboard-applied-note">文件应用时间：{text}</div>;
 }
@@ -5431,17 +5431,24 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       if (state.sheetName) data.append('sheetName', state.sheetName);
       const payload = await request(`/api/dimensions/${slot.id}/upload`, { token, method: 'POST', body: data });
       const parseSummary = payload.parseSummary;
+      const inventoryParseSummary = parseSummary?.parserType === 'inventorySummary' ? parseSummary : null;
+      const uploadSummaryText = inventoryParseSummary
+        ? `上传保存完成：源数据 ${inventoryParseSummary.sourceRowCount || 0} 行，有效保存 ${payload.rowCount} 行`
+        : parseSummary
+          ? `上传保存完成：${payload.rowCount} 行，${parseSummary.issueRows || 0} 行异常`
+          : `上传保存完成：${payload.rowCount} 行`;
+      const appliedSummaryText = inventoryParseSummary
+        ? `${slot.title} 已自动解析并应用 ${payload.rowCount} 行；源数据 ${inventoryParseSummary.sourceRowCount || 0} 行，零数量过滤 ${inventoryParseSummary.filteredZeroQtyRows || 0} 行，汇总行过滤 ${inventoryParseSummary.filteredSummaryRows || 0} 行。`
+        : parseSummary
+          ? `${slot.title} 已自动解析并应用 ${payload.rowCount} 行，异常 ${parseSummary.issueRows || 0} 行。`
+          : `${slot.title} 已上传 ${payload.rowCount} 行，并已自动应用刷新。`;
       setSlotState(slot.id, {
         progress: 78,
-        statusText: parseSummary
-          ? `上传保存完成：${payload.rowCount} 行，${parseSummary.issueRows || 0} 行异常，正在应用刷新...`
-          : `上传保存完成：${payload.rowCount} 行，正在应用刷新...`,
+        statusText: `${uploadSummaryText}，正在应用刷新...`,
         statusType: 'active',
         busy: 'apply'
       });
-      setMessage(parseSummary
-        ? `${slot.title} 已自动解析并应用 ${payload.rowCount} 行，异常 ${parseSummary.issueRows || 0} 行。`
-        : `${slot.title} 已上传 ${payload.rowCount} 行，并已自动应用刷新。`);
+      setMessage(appliedSummaryText);
       await load();
       if (reloadDemandData) await reloadDemands();
       onDataApplied(slot.id);
@@ -5603,6 +5610,22 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
                     业务工作表：{record.mapping.__firstMileSummary.recognizedSheets?.length || 0}，
                     有效 {record.mapping.__firstMileSummary.validRows || 0} 行，
                     异常 {record.mapping.__firstMileSummary.issueRows || 0} 行
+                  </span>
+                )}
+                {record?.mapping?.__inventorySummary && (
+                  <span>
+                    解析：源数据 {record.mapping.__inventorySummary.sourceRowCount ?? record.rowCount} 行，
+                    有效保存 {record.mapping.__inventorySummary.rowCount ?? record.rowCount} 行，
+                    零数量过滤 {record.mapping.__inventorySummary.filteredZeroQtyRows || 0} 行，
+                    汇总行过滤 {record.mapping.__inventorySummary.filteredSummaryRows || 0} 行
+                  </span>
+                )}
+                {slot.id === 'inventorySummaryFile1' && record?.mapping?.__inventorySummary && (
+                  <span>
+                    FBA完整性：库存属性=全部 {record.mapping.__inventorySummary.fbaScopeRows || 0} 行，
+                    数量 {numberValue(record.mapping.__inventorySummary.fbaScopeQuantity).toLocaleString(undefined, { maximumFractionDigits: 1 })}；
+                    源SKU空值 {record.mapping.__inventorySummary.fbaBlankSkuRows || 0} 行，
+                    对应数量 {numberValue(record.mapping.__inventorySummary.fbaBlankSkuQuantity).toLocaleString(undefined, { maximumFractionDigits: 1 })}
                   </span>
                 )}
                 {record && <span>更新：{record.updated_at}</span>}

@@ -3471,6 +3471,34 @@ app.post('/api/first-mile-board/export', requireAuth, requirePage('firstMileBoar
 app.get('/api/dimension-missing/cross-border', requireAuth, requirePage('dimensionMissing'), (req, res) => {
   const model = buildCrossBorderInventoryModel();
   const inventoryDiagnostics = buildInventoryDimensionDiagnostics(inventorySummaryData());
+  const inventoryFactSlotByType = {
+    FBA库存: 'inventorySummaryFile1',
+    FBM库存: 'inventorySummaryFile2',
+    WFS库存: 'inventorySummaryFile3',
+    FBA在途: 'inventorySummaryFile4',
+    FBM在途: 'inventorySummaryFile5',
+    国内在库: 'inventorySummaryFile6',
+    京东在库: 'inventorySummaryFile7',
+    销售数据: 'inventorySummaryFile8',
+    采购未交付: 'inventorySummaryFile12'
+  };
+  const inventoryFactApplications = [...new Set(inventoryDiagnostics.issues
+    .map((row) => inventoryFactSlotByType[row.sourceType])
+    .filter(Boolean))]
+    .map((slotId) => {
+      const record = get(
+        'SELECT file_name, mapping_json, updated_at FROM dimension_files WHERE slot_id = ? AND applied = 1',
+        [slotId]
+      );
+      const mapping = parseJson(record?.mapping_json, {});
+      return {
+        slotId,
+        label: DIMENSION_SLOTS[slotId] || slotId,
+        fileName: record?.file_name || '未上传',
+        appliedAt: record?.updated_at || '暂无',
+        parseSummary: mapping.__inventorySummary || null
+      };
+    });
   const inventorySourceApplications = [...new Set(inventoryDiagnostics.issues.map((row) => row.targetSlotId))]
     .map((slotId) => {
       const record = get(
@@ -3484,7 +3512,7 @@ app.get('/api/dimension-missing/cross-border', requireAuth, requirePage('dimensi
         appliedAt: record?.updated_at || '暂无'
       };
     });
-  const sourceApplications = [...model.sourceApplications, ...inventorySourceApplications]
+  const sourceApplications = [...inventoryFactApplications, ...model.sourceApplications, ...inventorySourceApplications]
     .filter((row, index, rows) => rows.findIndex((item) => item.slotId === row.slotId) === index);
   res.json({
     matchRows: model.rows,
@@ -4195,7 +4223,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     sheetNames: parsed.sheetNames,
     applied: true,
     diagnostics: dimensionDiagnostics(slotId, rows),
-    parseSummary: firstMileParsed?.summary || null,
+    parseSummary: firstMileParsed?.summary || inventorySummaryParsed?.mapping?.__inventorySummary || null,
     ...(slotId.startsWith('inventorySummaryFile') ? {} : { rows: demandRows(false, req.user) })
   });
 });

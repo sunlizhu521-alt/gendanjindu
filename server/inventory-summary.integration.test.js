@@ -1513,6 +1513,58 @@ test('inventory summary and domestic board use complete source models and enforc
       { title: 'Dim-领星FBA在途&金蝶仓库', rowCount: 1 }
     );
 
+    const forecastWorkbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(forecastWorkbook, xlsx.utils.json_to_sheet([
+      { 月份: '2026-08', SKU: 'SKU-A', 预测数量: 10 }
+    ]), '预测A');
+    xlsx.utils.book_append_sheet(forecastWorkbook, xlsx.utils.json_to_sheet([
+      { 月份: '2026-09', SKU: 'SKU-B', 预测数量: 20 }
+    ]), '预测B');
+    const forecastBuffer = xlsx.write(forecastWorkbook, { type: 'buffer', bookType: 'xlsx' });
+    const unselectedForecastForm = new FormData();
+    unselectedForecastForm.append('file', new Blob([forecastBuffer]), '销售预测.xlsx');
+    const unselectedForecastResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions/inventorySummaryFile15/upload`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token' },
+      body: unselectedForecastForm
+    });
+    assert.equal(unselectedForecastResponse.status, 400);
+    assert.match((await unselectedForecastResponse.json()).error, /包含多个工作表，请先选择/);
+
+    const selectedForecastForm = new FormData();
+    selectedForecastForm.append('file', new Blob([forecastBuffer]), '销售预测.xlsx');
+    selectedForecastForm.append('sheetName', '预测B');
+    const selectedForecastResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions/inventorySummaryFile15/upload`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token' },
+      body: selectedForecastForm
+    });
+    const selectedForecastPayload = await selectedForecastResponse.json();
+    assert.equal(selectedForecastResponse.status, 200, `${JSON.stringify(selectedForecastPayload)}\n${logs.join('')}`);
+    assert.deepEqual({
+      rowCount: selectedForecastPayload.rowCount,
+      sheetName: selectedForecastPayload.sheetName,
+      sheetNames: selectedForecastPayload.sheetNames
+    }, {
+      rowCount: 1,
+      sheetName: '预测B',
+      sheetNames: ['预测A', '预测B']
+    });
+
+    const forecastDimensionsResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions`, {
+      headers: { Authorization: 'Bearer admin-token' }
+    });
+    const forecastRecord = (await forecastDimensionsResponse.json()).rows.find((row) => row.slot_id === 'inventorySummaryFile15');
+    assert.deepEqual({
+      title: forecastRecord?.title,
+      sheetName: forecastRecord?.sheet_name,
+      rowCount: forecastRecord?.rowCount
+    }, {
+      title: '销售预测',
+      sheetName: '预测B',
+      rowCount: 1
+    });
+
     const inventoryDatabase = new SQL.Database(readFileSync(path.join(dataDir, 'gendanjindu.sqlite')));
     const inventoryStatement = inventoryDatabase.prepare('SELECT rows_json FROM dimension_files WHERE slot_id = ?');
     inventoryStatement.bind(['inventorySummaryFile1']);
@@ -1623,6 +1675,7 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.ok(loggedInBootstrapPayload.user.pageAccess.includes('inventoryPurchase'));
     assert.equal(loggedInBootstrapPayload.dimensionSlots.inventorySummaryFile13, 'Dim-领星FBA在途&金蝶仓库');
     assert.equal(loggedInBootstrapPayload.dimensionSlots.inventorySummaryFile10, 'Dim-领星SKU对应物料编码-产品管理');
+    assert.equal(loggedInBootstrapPayload.dimensionSlots.inventorySummaryFile15, '销售预测');
     assert.equal(loggedInBootstrapPayload.dimensionSlots.inventorySummaryFile16, '库存槽位 16');
 
     const persistedDatabase = new SQL.Database(readFileSync(path.join(dataDir, 'gendanjindu.sqlite')));

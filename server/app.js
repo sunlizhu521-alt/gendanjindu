@@ -103,7 +103,7 @@ const DIMENSION_SLOTS = {
   inventorySummaryFile12: '采购跟单情况',
   inventorySummaryFile13: 'Dim-领星FBA在途&金蝶仓库',
   inventorySummaryFile14: '京东在途',
-  inventorySummaryFile15: '库存槽位 15',
+  inventorySummaryFile15: '销售预测',
   inventorySummaryFile16: '库存槽位 16',
   firstMileData1: '张婷婷头程数据',
   firstMileData2: '扈翠芸头程数据',
@@ -4042,6 +4042,21 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   const slotId = req.params.slotId;
   const mapping = parseJson(req.body.mapping, {});
   const sheetName = normalize(req.body.sheetName);
+  if (slotId === 'inventorySummaryFile15') {
+    const inspection = workbookInspect(req.file, sheetName || null);
+    if (sheetName && !inspection.sheetNames.includes(sheetName)) {
+      const error = new Error('销售预测选择的工作表不存在，请重新选择');
+      error.status = 400;
+      error.publicMessage = error.message;
+      throw error;
+    }
+    if (inspection.sheetNames.length > 1 && !sheetName) {
+      const error = new Error('销售预测包含多个工作表，请先选择要使用的工作表');
+      error.status = 400;
+      error.publicMessage = error.message;
+      throw error;
+    }
+  }
   const firstMileParsed = isFirstMileSlot(slotId)
     ? parseFirstMileWorkbook(req.file, { slotId, fileName: safeFilename(req.file) })
     : null;

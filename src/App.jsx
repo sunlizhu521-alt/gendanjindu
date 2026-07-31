@@ -1228,7 +1228,7 @@ function inventoryDashboardTotals(rows) {
 
 const INVENTORY_DEFAULT_BUSINESS_UNITS = [
   '海外事业一部',
-  '海外事业部二部',
+  '海外事业二部',
   '国内事业部',
   '全球招商事业部'
 ];

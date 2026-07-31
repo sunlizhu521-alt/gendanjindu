@@ -354,6 +354,42 @@ test('all inventory workbook parsers exclude zero quantity rows from saved data'
   });
 });
 
+test('inventory summary rows are excluded during upload parsing and when reading legacy saved rows', () => {
+  const workbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet([
+    { subject: 'Domestic Subject', warehouseName: 'Domestic Warehouse', materialCode: 'M-STOCK', domesticStockQty: '30' },
+    { subject: '合计', warehouseName: '', materialCode: '', domesticStockQty: '12,513,828.915' }
+  ]), 'Inventory');
+  const parsed = parseInventorySummaryWorkbook(
+    { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) },
+    'inventorySummaryFile6',
+    {
+      subject: 'subject',
+      warehouseName: 'warehouseName',
+      materialCode: 'materialCode',
+      domesticStockQty: 'domesticStockQty'
+    }
+  );
+  assert.equal(parsed.rows.length, 1);
+  assert.equal(parsed.rows[0].materialCode, 'M-STOCK');
+  assert.equal(parsed.mapping.__inventorySummary.filteredSummaryRows, 1);
+
+  const legacyRows = [
+    { subject: '合计', warehouseName: '', materialCode: '', domesticStockQty: '12,513,828.915' }
+  ];
+  const model = buildInventorySummaryModel({
+    getRows: () => [],
+    getRecord: (slotId) => ({
+      rows: slotId === 'inventorySummaryFile6' ? legacyRows : [],
+      updatedAt: now
+    })
+  });
+  assert.equal(model.rows.length, 0);
+  assert.equal(model.anomalies.length, 0);
+  assert.equal(model.在库量.合计, 0);
+  assert.equal(buildInventoryDimensionDiagnostics(model).qualitySummary.issueRows, 0);
+});
+
 test('FBA parser locks the ending inventory field and retains every nonzero missing-SKU row', () => {
   const quantities = [1, 1, 1, 1, 1, 1, 1, 1, 6, 24, 146, 273, 71, 22, 3];
   const legacyQuantities = [1, 39, 20, 5, 141, ...Array(10).fill(0)];

@@ -177,6 +177,25 @@ const INVENTORY_QUANTITY_FIELDS = {
   inventorySummaryFile6: 'domesticStockQty',
   inventorySummaryFile7: 'jdStockQty'
 };
+const SUMMARY_ROW_LABELS = new Set([
+  '合计',
+  '总计',
+  '小计',
+  '汇总',
+  'total',
+  'grand total'
+].map(matchKey));
+const FACT_SUMMARY_IDENTITY_FIELDS = {
+  inventorySummaryFile1: ['sku'],
+  inventorySummaryFile2: ['identifier'],
+  inventorySummaryFile3: ['sku'],
+  inventorySummaryFile4: ['sku', 'storeName'],
+  inventorySummaryFile5: ['sku', 'warehouseName'],
+  inventorySummaryFile6: ['subject', 'warehouseName', 'materialCode'],
+  inventorySummaryFile7: ['jdId'],
+  inventorySummaryFile8: ['materialCode'],
+  inventorySummaryFile12: ['materialCode']
+};
 const INVENTORY_SOURCE_TYPES = new Set([
   'FBA库存',
   'FBM库存',
@@ -196,6 +215,11 @@ function hasZeroInventoryQuantity(row, slotId) {
   if (!field) return false;
   const quantity = safeNumber(row?.[field]);
   return quantity.valid && quantity.value === 0;
+}
+
+function isSummaryRow(row, slotId) {
+  const fields = FACT_SUMMARY_IDENTITY_FIELDS[slotId] || [];
+  return fields.some((field) => SUMMARY_ROW_LABELS.has(matchKey(row?.[field])));
 }
 
 function normalizeMonth(value) {
@@ -325,19 +349,22 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
   ])));
   let filteredZeroQtyRows = 0;
   let filteredIgnoredWarehouseRows = 0;
-  const rows = INVENTORY_QUANTITY_FIELDS[slotId]
-    ? mappedRows.filter((row) => {
-      if (slotId === 'inventorySummaryFile2' && isIgnoredFbmWarehouse(row.warehouseName)) {
-        filteredIgnoredWarehouseRows += 1;
-        return false;
-      }
-      if (hasZeroInventoryQuantity(row, slotId)) {
-        filteredZeroQtyRows += 1;
-        return false;
-      }
-      return true;
-    })
-    : mappedRows;
+  let filteredSummaryRows = 0;
+  const rows = mappedRows.filter((row) => {
+    if (isSummaryRow(row, slotId)) {
+      filteredSummaryRows += 1;
+      return false;
+    }
+    if (slotId === 'inventorySummaryFile2' && isIgnoredFbmWarehouse(row.warehouseName)) {
+      filteredIgnoredWarehouseRows += 1;
+      return false;
+    }
+    if (hasZeroInventoryQuantity(row, slotId)) {
+      filteredZeroQtyRows += 1;
+      return false;
+    }
+    return true;
+  });
   return {
     rows,
     sheetName,
@@ -350,7 +377,8 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
         sheetName,
         rowCount: rows.length,
         filteredZeroQtyRows,
-        filteredIgnoredWarehouseRows
+        filteredIgnoredWarehouseRows,
+        filteredSummaryRows
       }
     }
   };
@@ -522,8 +550,9 @@ function sumBucket(target, name, qty, value) {
 
 function rowsRecord(getRecord, slotId) {
   const record = getRecord(slotId);
+  const rows = Array.isArray(record?.rows) ? record.rows : [];
   return {
-    rows: Array.isArray(record?.rows) ? record.rows : [],
+    rows: rows.filter((row) => !isSummaryRow(row, slotId)),
     updatedAt: text(record?.updatedAt)
   };
 }

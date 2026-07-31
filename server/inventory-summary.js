@@ -921,12 +921,14 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       rawIdentifier: raw.identifier,
       materialCode,
       businessUnit: warehouseResult.businessUnit,
-      issues: [warehouseResult.issue],
+      issues: [materialCode ? '' : '识别码为空', warehouseResult.issue],
       inventorySource: 'FBM库存',
       inventorySubject: warehouseResult.subject,
       quantities: { fbmInventoryQty: qty, fbmInventoryValue: qty * product.product.pretaxPrice },
       sourceContext: {
         sourceSku: text(raw.identifier),
+        storeName: text(raw.storeName),
+        marketplace: text(raw.marketplace),
         sourceWarehouseName: text(raw.warehouseName),
         subject: warehouseResult.subject || '',
         kingdeeWarehouseName: warehouseResult.kingdeeWarehouseName || ''
@@ -1287,6 +1289,12 @@ const INVENTORY_DIMENSION_TARGETS = {
     page: 'dimensionLibrary',
     fields: ['物料编码', 'SKU', '物料名称', '销售产品线', '销售系列', '不含税结算价']
   },
+  fbmSource: {
+    slotId: 'inventorySummaryFile2',
+    title: 'FBM库存报表',
+    page: 'inventorySummaryLibrary',
+    fields: ['识别码']
+  },
   jdTransitSource: {
     slotId: 'inventorySummaryFile14',
     title: '京东在途',
@@ -1297,6 +1305,9 @@ const INVENTORY_DIMENSION_TARGETS = {
 
 function inventoryMaintenanceTarget(anomaly) {
   const issue = text(anomaly.issue);
+  if (anomaly.sourceType === 'FBM库存' && issue === '识别码为空') {
+    return INVENTORY_DIMENSION_TARGETS.fbmSource;
+  }
   if (issue.startsWith('SKU与物料编码')) return INVENTORY_DIMENSION_TARGETS.sku;
   if (issue.startsWith('京东ID与品号')) return INVENTORY_DIMENSION_TARGETS.jd;
   if (issue.startsWith('仓库对照')) {
@@ -1321,6 +1332,9 @@ function inventoryMissingKey(anomaly, target) {
   const sourceWarehouse = text(anomaly.sourceWarehouseName || anomaly.storeName);
   if (target.slotId === 'inventorySummaryFile10') return sourceSku;
   if (target.slotId === 'inventorySummaryFile11') return text(anomaly.jdId || anomaly.sourceKey);
+  if (target.slotId === 'inventorySummaryFile2') {
+    return [anomaly.storeName, anomaly.marketplace, sourceWarehouse].map(text).filter(Boolean).join(' + ') || '识别码为空';
+  }
   if (target.slotId === 'inventorySummaryFile9') return sourceWarehouse;
   if (target.slotId === 'inventorySummaryFile13') return text(anomaly.storeName || sourceWarehouse);
   if (target.slotId === 'spare1') return sourceWarehouse;
@@ -1339,13 +1353,14 @@ export function buildInventoryDimensionDiagnostics(model = {}) {
     const target = inventoryMaintenanceTarget(anomaly);
     if (!target) return [];
     const issueCode = text(anomaly.issue);
+    const sourceFieldMissing = target.slotId === 'inventorySummaryFile2' && issueCode === '识别码为空';
     return [{
       id: `inventory-summary-${anomaly.id}-${target.slotId}`,
       factId: text(anomaly.factId || anomaly.id),
       sourceType: text(anomaly.sourceType),
       sourceKey: text(anomaly.sourceKey),
       issueCode,
-      issueStatus: issueCode.includes('冲突') ? '映射冲突' : '维度缺失',
+      issueStatus: issueCode.includes('冲突') ? '映射冲突' : sourceFieldMissing ? '源字段缺失' : '维度缺失',
       targetSlotId: target.slotId,
       targetTitle: target.title,
       maintainPage: target.page,
@@ -1356,6 +1371,7 @@ export function buildInventoryDimensionDiagnostics(model = {}) {
       sourceWarehouseName: text(anomaly.sourceWarehouseName),
       kingdeeWarehouseName: text(anomaly.kingdeeWarehouseName),
       storeName: text(anomaly.storeName),
+      marketplace: text(anomaly.marketplace),
       sourceSku: text(anomaly.sourceSku || anomaly.jdId || anomaly.sourceKey),
       sku: text(anomaly.sku) || '未匹配',
       materialCode: text(anomaly.materialCode),

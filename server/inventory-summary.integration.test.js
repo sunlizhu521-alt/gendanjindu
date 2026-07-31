@@ -179,6 +179,49 @@ test('FBM inventory ignores zero quantities and excluded warehouse rows before m
   assert.equal(result.totals.fbmInventoryValue || 0, 0);
 });
 
+test('FBM inventory keeps nonzero blank identifiers unmatched and routes them to the source report', () => {
+  const rowsBySlot = new Map([
+    ['spare1', [{ subject: '主体一', warehouseName: 'FBM仓' }]],
+    ['warehouseMaterialMap', [{ subject: '主体一', warehouseName: 'FBM仓', materialCode: '', businessUnit: '海外事业二部' }]],
+    ['inventorySummaryFile2', [{
+      storeName: '店铺一',
+      marketplace: '美国',
+      identifier: '',
+      warehouseName: 'FBM仓',
+      actualTotalQty: '1,009'
+    }]]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
+  });
+  const unmatched = result.rows.find((row) => row.productLine === '未匹配');
+  assert.equal(result.totals.fbmInventoryQty, 1009);
+  assert.equal(unmatched?.fbmInventoryQty, 1009);
+  assert.equal(unmatched?.issues.includes('识别码为空'), true);
+
+  const diagnostics = buildInventoryDimensionDiagnostics(result);
+  const sourceIssue = diagnostics.issues.find((row) => row.issueCode === '识别码为空');
+  assert.deepEqual({
+    targetSlotId: sourceIssue?.targetSlotId,
+    targetTitle: sourceIssue?.targetTitle,
+    maintainPage: sourceIssue?.maintainPage,
+    issueStatus: sourceIssue?.issueStatus,
+    missingKey: sourceIssue?.missingKey,
+    requiredFields: sourceIssue?.requiredFields,
+    qty: sourceIssue?.qty
+  }, {
+    targetSlotId: 'inventorySummaryFile2',
+    targetTitle: 'FBM库存报表',
+    maintainPage: 'inventorySummaryLibrary',
+    issueStatus: '源字段缺失',
+    missingKey: '店铺一 + 美国 + FBM仓',
+    requiredFields: ['识别码'],
+    qty: 1009
+  });
+  assert.equal(diagnostics.tasks.find((row) => row.targetSlotId === 'inventorySummaryFile2')?.affectedQty, 1009);
+});
+
 test('all inventory sources ignore zero quantity rows before mapping, aggregation and diagnostics', () => {
   const rowsBySlot = new Map([
     ['inventorySummaryFile1', [
@@ -774,7 +817,11 @@ test('inventory dimension diagnostics routes every mapping issue to its maintena
         kingdeeWarehouseName: '仓库六', materialCode: 'M6', issue: '主体、仓库与物料映射缺失', qty: 6
       },
       { id: '7', factId: '7', sourceType: '销售数据', sourceKey: 'M7', materialCode: 'M7', issue: '商品分类缺失', qty: 7 },
-      { id: '8', factId: '7', sourceType: '销售数据', sourceKey: 'M7', materialCode: 'M7', issue: '不含税结算价缺失或无效', qty: 7 }
+      { id: '8', factId: '7', sourceType: '销售数据', sourceKey: 'M7', materialCode: 'M7', issue: '不含税结算价缺失或无效', qty: 7 },
+      {
+        id: '9', factId: '9', sourceType: 'FBM库存', sourceKey: '', storeName: '店铺一',
+        marketplace: '美国', sourceWarehouseName: 'FBM仓', issue: '识别码为空', qty: 9
+      }
     ]
   });
   assert.deepEqual(
@@ -783,15 +830,16 @@ test('inventory dimension diagnostics routes every mapping issue to its maintena
       'inventorySummaryFile10',
       'inventorySummaryFile11',
       'inventorySummaryFile13',
+      'inventorySummaryFile2',
       'inventorySummaryFile9',
       'productCategory',
       'spare1',
       'warehouseMaterialMap'
     ].sort()
   );
-  assert.equal(diagnostics.qualitySummary.affectedFacts, 7);
-  assert.equal(diagnostics.qualitySummary.affectedQty, 28);
-  assert.equal(diagnostics.qualitySummary.targetCount, 7);
+  assert.equal(diagnostics.qualitySummary.affectedFacts, 8);
+  assert.equal(diagnostics.qualitySummary.affectedQty, 37);
+  assert.equal(diagnostics.qualitySummary.targetCount, 8);
 });
 
 test('inventory dimension diagnostics defensively excludes legacy zero-quantity mapping issues', () => {

@@ -3475,7 +3475,7 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
       const XLSX = await import('xlsx');
       const workbook = XLSX.utils.book_new();
       if (inventorySummaryIssues.length) XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(inventorySummaryIssues.map((row) => ({
-        需要维护的维表: row.targetTitle,
+        需要维护的表: row.targetTitle,
         问题状态: row.issueStatus,
         问题类型: row.issueCode,
         数据来源: row.sourceType,
@@ -3496,7 +3496,7 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
         维护提示: row.maintenanceHint
       }))), '库存数据待维护明细');
       if (inventorySummaryTasks.length) XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(inventorySummaryTasks.map((row) => ({
-        需要维护的维表: row.targetTitle,
+        需要维护的表: row.targetTitle,
         问题状态: row.issueStatus,
         问题类型: row.issueCode,
         待补字段: row.requiredFields?.join('、'),
@@ -3574,7 +3574,7 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
       {loading && <div className="quality-banner diagnostic-loading-banner">正在逐行检查库存文件的 SKU、仓库、主体、物料及商品分类映射，数据量较大时可能需要几十秒。</div>}
       {loadError && <div className="quality-banner diagnostic-error-banner">维度表缺失加载失败：{loadError}</div>}
       <div className="toolbar filters-row dimension-missing-filters">
-        <MultiSelectFilter label="需要维护的表" allLabel="全部维表" value={selectedTargets} options={targetOptions} onChange={(value) => setFilters({ ...filters, targetTitles: value })} />
+        <MultiSelectFilter label="需要维护的表" allLabel="全部表" value={selectedTargets} options={targetOptions} onChange={(value) => setFilters({ ...filters, targetTitles: value })} />
         <MultiSelectFilter label="数据来源" allLabel="全部来源" value={selectedTypes} options={inventoryTypeOptions} onChange={(value) => setFilters({ ...filters, inventoryTypes: value })} />
         <MultiSelectFilter label="问题状态" allLabel="全部状态" value={selectedStatuses} options={issueStatusOptions} onChange={(value) => setFilters({ ...filters, issueStatuses: value })} />
         <MultiSelectFilter label="库存组织" allLabel="全部库存组织" value={selectedInventoryOrganizations} options={inventoryOrganizationOptions} onChange={(value) => setFilters({ ...filters, inventoryOrganizations: value })} />
@@ -3592,12 +3592,12 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
         <MetricCard label="待维护问题" value={numberValue(inventoryQuality.issueRows).toLocaleString()} />
         <MetricCard label="受影响数据" value={numberValue(inventoryQuality.affectedFacts).toLocaleString()} />
         <MetricCard label="影响数量" value={numberValue(inventoryQuality.affectedQty).toLocaleString(undefined, { maximumFractionDigits: 1 })} />
-        <MetricCard label="涉及维表" value={numberValue(inventoryQuality.targetCount).toLocaleString()} />
+        <MetricCard label="涉及表" value={numberValue(inventoryQuality.targetCount).toLocaleString()} />
       </section>
       <section className="panel diagnostic-section inventory-diagnostic-section">
         <div className="section-heading-row"><h3>库存数据待维护明细</h3><span className="section-count">筛选后 {inventorySummaryIssues.length} / {payload.inventorySummaryIssues?.length || 0} 条</span></div>
         <DataTable className="compact-table diagnostic-table inventory-diagnostic-table" rows={inventoryIssuePagination.pageRows}
-          columns={['需要维护的维表', '问题', '数据来源', '主体', '源仓库/店铺', '金蝶仓库', 'SKU/识别码', 'SKU', '物料编码', '产品名称', '销售产品线', '销售系列', '事业部', '数量', '货值（元）', '缺失键', '待补字段', '操作']}
+          columns={['需要维护的表', '问题', '数据来源', '主体', '源仓库/店铺', '金蝶仓库', 'SKU/识别码', 'SKU', '物料编码', '产品名称', '销售产品线', '销售系列', '事业部', '数量', '货值（元）', '缺失键', '待补字段', '操作']}
           render={(row) => [
             row.targetTitle, row.issueCode, row.sourceType, row.subject || '-', row.sourceWarehouseName || row.storeName || '-',
             row.kingdeeWarehouseName || '-', row.sourceSku || '-', row.sku || '未匹配', row.materialCode || '-',
@@ -3611,7 +3611,7 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, onM
       <section className="panel diagnostic-section inventory-diagnostic-section inventory-task-section">
         <div className="section-heading-row"><h3>库存维度维护清单</h3><span className="section-count">{inventorySummaryTasks.length} 项</span></div>
         <DataTable className="compact-table diagnostic-table" rows={inventoryTaskPagination.pageRows}
-          columns={['需要维护的维表', '问题类型', '待补字段', '影响数据', '影响数量', '影响货值（元）', '数据来源', '示例缺失键', '操作']}
+          columns={['需要维护的表', '问题类型', '待补字段', '影响数据', '影响数量', '影响货值（元）', '数据来源', '示例缺失键', '操作']}
           render={(row) => [
             row.targetTitle, row.issueCode, row.requiredFields?.join('、'), row.affectedRows,
             numberValue(row.affectedQty).toLocaleString(undefined, { maximumFractionDigits: 1 }),

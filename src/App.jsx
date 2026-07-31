@@ -1300,10 +1300,10 @@ function InventorySummaryMonthlyBars({ title, rows, baseLabel = '销售' }) {
       </div>
       {!hasData ? <p className="empty-chart">暂无数据</p> : (
         <div className="inventory-vertical-chart-scroll">
-          <div className="inventory-monthly-bars" style={{ minWidth: `${Math.max(960, monthGroups.length * Math.max(106, years.length * 48))}px` }}>
+          <div className="inventory-monthly-bars" style={{ minWidth: `${Math.max(1080, monthGroups.length * Math.max(112, years.length * 42))}px` }}>
             {monthGroups.map((group) => (
-              <div className="inventory-monthly-group" key={group.id}>
-                <div className="inventory-monthly-series" style={{ '--inventory-year-count': years.length }}>
+              <div className="inventory-monthly-group" key={group.id} aria-label={`${group.name}销售数据`}>
+                <div className="inventory-monthly-series">
                   {group.series.map((row) => {
                     const value = numberValue(row[valueKey]);
                     const display = metric === 'qty' ? formatDashboardNumber(value) : formatDashboardWan(value);
@@ -1313,10 +1313,11 @@ function InventorySummaryMonthlyBars({ title, rows, baseLabel = '销售' }) {
                         <i
                           title={`${row.name}${baseLabel}${metric === 'qty' ? '数量' : '金额'}：${display}`}
                           style={{
-                            height: `${Math.max(Math.abs(value) / maxValue * 150, value ? 4 : 0)}px`,
+                            height: `${Math.max(Math.abs(value) / maxValue * 142, value ? 4 : 0)}px`,
                             background: colorByYear.get(row.year) || palette[0]
                           }}
                         />
+                        <em>{row.year}年</em>
                       </span>
                     );
                   })}

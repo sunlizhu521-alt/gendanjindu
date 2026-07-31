@@ -125,7 +125,7 @@ export default function InventoryCalculationGuide({ onBack }) {
             </article>
           ))}
         </div>
-        <p className="inventory-methodology-note">除销售金额外，货值统一按“对应数量 × 商品分类维度的不含税结算价”逐行计算后汇总；页面显示万元，Excel导出保留原始元。</p>
+        <p className="inventory-methodology-note">除销售金额外，货值统一按“对应数量 × 商品分类维度的不含税结算价”逐行计算后汇总；页面金额不超过一万元时显示元，超过一万元时显示万元，均不保留小数；Excel导出保留原始元和原始精度。</p>
       </section>
 
       <section className="inventory-methodology-section">

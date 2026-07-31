@@ -797,7 +797,7 @@ function InventoryPurchaseMetric({ label, quantity, value, note, share, tone }) 
       <span>{label}</span>
       <div className="inventory-purchase-kpi-row"><small>数量</small><strong>{formatDashboardNumber(quantity)}</strong></div>
       <div className="inventory-purchase-kpi-row value"><small>货值</small><strong>{value === null ? '待接入' : value}</strong></div>
-      <small>{share === null ? note : `${note} · 占比 ${share.toFixed(1)}%`}</small>
+      <small>{share === null ? note : `${note} · 占比 ${formatDashboardPercent(share)}`}</small>
     </article>
   );
 }
@@ -1323,11 +1323,19 @@ function inventoryDashboardGroups(rows, keyOf) {
 }
 
 function formatDashboardNumber(value) {
-  return numberValue(value).toLocaleString('zh-CN', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  return numberValue(value).toLocaleString('zh-CN', { maximumFractionDigits: 0 });
 }
 
 function formatDashboardWan(value) {
-  return `${(numberValue(value) / 10000).toLocaleString('zh-CN', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}万元`;
+  const amount = numberValue(value);
+  if (Math.abs(amount) > 10000) {
+    return `${(amount / 10000).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}万元`;
+  }
+  return `${amount.toLocaleString('zh-CN', { maximumFractionDigits: 0 })}元`;
+}
+
+function formatDashboardPercent(value) {
+  return `${numberValue(value).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}%`;
 }
 
 function InventorySummaryMonthlyBars({ title, rows, baseLabel = '销售' }) {
@@ -1589,7 +1597,7 @@ function InventorySummaryAbc({ rows }) {
             <div className="inventory-abc-value">{metric === 'qty' ? formatDashboardNumber(row.value) : formatDashboardWan(row.value)}</div>
             <div className="inventory-abc-track"><i style={{ height: `${Math.max(Math.abs(row.value) / maxValue * 100, row.value ? 8 : 0)}%` }} /></div>
             <strong>{row.name}类</strong>
-            <span>{total ? `${(row.value / total * 100).toFixed(1)}%` : '0.0%'}</span>
+            <span>{formatDashboardPercent(total ? row.value / total * 100 : 0)}</span>
           </div>
         ))}
       </div>

@@ -201,7 +201,7 @@ const LINGXING_INVENTORY_SLOTS = [
 const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
   { id: 'inventorySummaryFile1', title: 'FBA库存报表', fields: [
     ['storeName', '店铺'], ['marketplace', '站点'], ['sku', 'SKU'], ['fnsku', 'FNSKU'],
-    ['asin', 'ASIN'], ['warehouseName', '仓库名称'], ['inventoryAttribute', '库存属性'], ['endingInventoryQty', '期末库存-数量']
+    ['asin', 'ASIN'], ['warehouseName', '仓库名称'], ['inventoryAttribute', '库存属性'], ['endingInventoryQty', '期末库存(含移仓)-数量']
   ] },
   { id: 'inventorySummaryFile2', title: 'FBM库存报表', fields: [
     ['storeName', '店铺'], ['marketplace', '站点'], ['identifier', '识别码'],
@@ -3054,7 +3054,7 @@ function AppliedTimeNote({ label = '采购订单列表应用时间', value = '' 
 
 function SourceApplicationsNote({ sources = [] }) {
   const text = sources.length
-    ? sources.map((source) => `${source.label}${source.fileName ? `（${source.fileName}）` : ''}：${source.appliedAt || '暂无'}`).join('；')
+    ? sources.map((source) => `${source.label}${source.fileName ? `（${source.fileName}）` : ''}${source.requiresReupload ? '【需按最新口径重新上传】' : ''}：${source.appliedAt || '暂无'}`).join('；')
     : '暂无';
   return <div className="dashboard-applied-note">文件应用时间：{text}</div>;
 }
@@ -5627,6 +5627,9 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
                     源SKU空值 {record.mapping.__inventorySummary.fbaBlankSkuRows || 0} 行，
                     对应数量 {numberValue(record.mapping.__inventorySummary.fbaBlankSkuQuantity).toLocaleString(undefined, { maximumFractionDigits: 1 })}
                   </span>
+                )}
+                {slot.id === 'inventorySummaryFile1' && record && numberValue(record.mapping?.__inventorySummary?.parserVersion) < 3 && (
+                  <span className="issue-reason">当前文件仍是旧数量口径，请重新上传原始FBA库存报表，系统将按“期末库存(含移仓)-数量”重新解析。</span>
                 )}
                 {record && <span>更新：{record.updated_at}</span>}
               </div>

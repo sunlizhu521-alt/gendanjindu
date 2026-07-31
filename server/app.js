@@ -3496,7 +3496,9 @@ app.get('/api/dimension-missing/cross-border', requireAuth, requirePage('dimensi
         label: DIMENSION_SLOTS[slotId] || slotId,
         fileName: record?.file_name || '未上传',
         appliedAt: record?.updated_at || '暂无',
-        parseSummary: mapping.__inventorySummary || null
+        parseSummary: mapping.__inventorySummary || null,
+        requiresReupload: slotId === 'inventorySummaryFile1'
+          && numberValue(mapping.__inventorySummary?.parserVersion) < 3
       };
     });
   const inventorySourceApplications = [...new Set(inventoryDiagnostics.issues.map((row) => row.targetSlotId))]

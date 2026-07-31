@@ -301,6 +301,7 @@ test('FBM workbook parser excludes zero quantities and excluded warehouse rows f
   assert.equal(parsed.rows.length, 1);
   assert.equal(parsed.rows[0].identifier, 'M-STOCK');
   assert.equal(parsed.mapping.__inventorySummary.filteredZeroQtyRows, 1);
+  assert.equal(parsed.mapping.__inventorySummary.parserVersion, 3);
   assert.equal(parsed.mapping.__inventorySummary.filteredIgnoredWarehouseRows, 3);
 });
 
@@ -312,10 +313,10 @@ test('all inventory workbook parsers exclude zero quantity rows from saved data'
         sku: 'sku',
         warehouseName: 'warehouseName',
         inventoryAttribute: 'inventoryAttribute',
-        endingInventoryQty: 'endingInventoryQty'
+        endingInventoryQty: '期末库存(含移仓)-数量'
       },
-      zero: { sku: 'SKU-ZERO', warehouseName: 'Warehouse', inventoryAttribute: '全部', endingInventoryQty: '0' },
-      stock: { sku: 'SKU-STOCK', warehouseName: 'Warehouse', inventoryAttribute: '全部', endingInventoryQty: '10' }
+      zero: { sku: 'SKU-ZERO', warehouseName: 'Warehouse', inventoryAttribute: '全部', '期末库存(含移仓)-数量': '0' },
+      stock: { sku: 'SKU-STOCK', warehouseName: 'Warehouse', inventoryAttribute: '全部', '期末库存(含移仓)-数量': '10' }
     },
     {
       slotId: 'inventorySummaryFile3',
@@ -392,21 +393,21 @@ test('inventory summary rows are excluded during upload parsing and when reading
 
 test('FBA parser locks the ending inventory field and retains every nonzero unmapped-SKU row', () => {
   const quantities = [1, 1, 1, 1, 1, 1, 1, 1, 6, 24, 146, 273, 71, 22, 3];
-  const legacyQuantities = [1, 39, 20, 5, 141, ...Array(10).fill(0)];
+  const plainQuantities = [1, 39, 20, 5, 141, ...Array(10).fill(0)];
   const workbook = xlsx.utils.book_new();
   const rows = quantities.map((quantity, index) => ({
     SKU: `MISSING-SKU-${index + 1}`,
     仓库: '国源欧洲-PL波兰仓',
     库存属性: '全部',
-    '期末库存-数量': quantity,
-    '期末库存(含移仓)-数量': legacyQuantities[index]
+    '期末库存-数量': plainQuantities[index],
+    '期末库存(含移仓)-数量': quantity
   }));
   rows.push({
     SKU: 'MISSING-SKU-ZERO',
     仓库: '国源欧洲-PL波兰仓',
     库存属性: '全部',
-    '期末库存-数量': 0,
-    '期末库存(含移仓)-数量': 999
+    '期末库存-数量': 999,
+    '期末库存(含移仓)-数量': 0
   });
   xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(rows), '底表');
 
@@ -421,7 +422,7 @@ test('FBA parser locks the ending inventory field and retains every nonzero unma
     }
   );
 
-  assert.equal(parsed.mapping.endingInventoryQty, '期末库存-数量');
+  assert.equal(parsed.mapping.endingInventoryQty, '期末库存(含移仓)-数量');
   assert.equal(parsed.rows.length, 15);
   assert.equal(parsed.rows.reduce((sum, row) => sum + Number(row.endingInventoryQty), 0), 553);
   assert.equal(parsed.mapping.__inventorySummary.filteredZeroQtyRows, 1);
@@ -440,6 +441,21 @@ test('FBA parser locks the ending inventory field and retains every nonzero unma
   assert.equal(missingSkuIssues.length, 15);
   assert.equal(missingSkuIssues.reduce((sum, row) => sum + row.qty, 0), 553);
   assert.equal(diagnostics.issues.some((row) => row.qty === 0), false);
+});
+
+test('FBA parser rejects workbooks that only contain the non-transfer ending inventory field', () => {
+  const workbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet([
+    { SKU: 'SKU-WRONG-FIELD', 仓库: 'Warehouse', 库存属性: '全部', '期末库存-数量': 100 }
+  ]), 'FBA库存');
+  assert.throws(
+    () => parseInventorySummaryWorkbook(
+      { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) },
+      'inventorySummaryFile1',
+      { endingInventoryQty: '期末库存-数量' }
+    ),
+    /缺少必填列：期末库存\(含移仓\)-数量/
+  );
 });
 
 test('SKU dimension parser automatically recognizes the *SKU header', () => {
@@ -1265,7 +1281,7 @@ test('inventory summary and domestic board use complete source models and enforc
         ASIN: 'ASIN-1',
         仓库名称: 'FBA Warehouse',
         库存属性: '可售',
-        期末库存数量: '1,036',
+        '期末库存(含移仓)-数量': '1,036',
         不应持久化字段: 'large-unused-value'
       }
     ]), 'FBA库存');
@@ -1283,7 +1299,7 @@ test('inventory summary and domestic board use complete source models and enforc
       asin: 'ASIN',
       warehouseName: '仓库名称',
       inventoryAttribute: '库存属性',
-      endingInventoryQty: '期末库存数量'
+      endingInventoryQty: '期末库存(含移仓)-数量'
     }));
     const inventoryUploadResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions/inventorySummaryFile1/upload`, {
       method: 'POST',
@@ -1297,7 +1313,7 @@ test('inventory summary and domestic board use complete source models and enforc
 
     const invalidInventoryWorkbook = xlsx.utils.book_new();
     xlsx.utils.book_append_sheet(invalidInventoryWorkbook, xlsx.utils.aoa_to_sheet([
-      ['SKU', '仓库名称', '库存属性', '期末库存数量'],
+      ['SKU', '仓库名称', '库存属性', '期末库存(含移仓)-数量'],
       ['SKU-BAD', '仓库', '全部', 999]
     ]), '工作表1');
     xlsx.utils.book_append_sheet(invalidInventoryWorkbook, xlsx.utils.aoa_to_sheet([['多余工作表']]), '工作表2');
@@ -1390,13 +1406,13 @@ test('inventory summary and domestic board use complete source models and enforc
         SKU: `MISSING-SKU-${index + 1}`,
         仓库: '国源欧洲-PL波兰仓',
         库存属性: '全部',
-        '期末库存-数量': quantity
+        '期末库存(含移仓)-数量': quantity
       })),
       {
         SKU: 'MISSING-SKU-ZERO',
         仓库: '国源欧洲-PL波兰仓',
         库存属性: '全部',
-        '期末库存-数量': 0
+        '期末库存(含移仓)-数量': 0
       }
     ]), 'FBA库存');
     const fbaCompletenessForm = new FormData();
@@ -1416,13 +1432,14 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.deepEqual(
       {
         sourceRows: fbaCompletenessPayload.parseSummary?.sourceRowCount,
+        parserVersion: fbaCompletenessPayload.parseSummary?.parserVersion,
         validRows: fbaCompletenessPayload.parseSummary?.fbaScopeRows,
         validQty: fbaCompletenessPayload.parseSummary?.fbaScopeQuantity,
         blankSkuRows: fbaCompletenessPayload.parseSummary?.fbaBlankSkuRows,
         blankSkuQty: fbaCompletenessPayload.parseSummary?.fbaBlankSkuQuantity,
         filteredZeroRows: fbaCompletenessPayload.parseSummary?.filteredZeroQtyRows
       },
-      { sourceRows: 16, validRows: 15, validQty: 553, blankSkuRows: 0, blankSkuQty: 0, filteredZeroRows: 1 }
+      { sourceRows: 16, parserVersion: 3, validRows: 15, validQty: 553, blankSkuRows: 0, blankSkuQty: 0, filteredZeroRows: 1 }
     );
 
     const fbaDiagnosticsResponse = await fetch(`http://127.0.0.1:${port}/api/dimension-missing/cross-border`, {

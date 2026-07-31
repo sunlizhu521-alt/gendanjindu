@@ -33,7 +33,12 @@ const FIELD_ALIASES = {
   identifier: ['识别码', '物料编码', '品号'],
   warehouseName: ['仓库名称', '仓库名', '仓库', '收货仓库'],
   inventoryAttribute: ['库存属性', '库存筛选'],
-  endingInventoryQty: ['期末库存-数量', '期末库存数量'],
+  endingInventoryQty: [
+    '期末库存(含移仓)-数量',
+    '期末库存（含移仓）-数量',
+    '期末库存(含移仓)数量',
+    '期末库存（含移仓）数量'
+  ],
   actualTotalQty: ['实际总量'],
   totalInventoryQty: ['总库存数量', '总库存(数量)', '总库存（数量）'],
   shipmentStatus: ['货件状态'],
@@ -299,9 +304,9 @@ function worksheetRows(sheet, schema) {
 
 function mappedColumn(field, mapping, columns, slotId) {
   if (slotId === 'inventorySummaryFile1' && field === 'endingInventoryQty') {
-    const canonicalAliases = new Set(['期末库存-数量', '期末库存数量'].map(headerKey));
+    const canonicalAliases = new Set(FIELD_ALIASES.endingInventoryQty.map(headerKey));
     const canonicalColumn = columns.find((column) => canonicalAliases.has(headerKey(column)));
-    if (canonicalColumn) return canonicalColumn;
+    return canonicalColumn || '';
   }
   const configured = text(mapping?.[field]);
   if (configured && columns.includes(configured)) return configured;
@@ -382,7 +387,7 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
       ...columnMap,
       __inventorySummary: {
         parserType: 'inventorySummary',
-        parserVersion: 2,
+        parserVersion: 3,
         sheetName,
         sourceRowCount: mappedRows.length,
         rowCount: rows.length,
@@ -839,7 +844,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
 
   source.inventorySummaryFile1.rows.forEach((raw) => {
     if (text(raw.inventoryAttribute).toLowerCase() !== '全部'.toLowerCase()) return;
-    const qty = inventoryQuantity(raw, 'inventorySummaryFile1', 'FBA库存', raw.sku, '期末库存数量');
+    const qty = inventoryQuantity(raw, 'inventorySummaryFile1', 'FBA库存', raw.sku, '期末库存(含移仓)-数量');
     if (qty === null) return;
     const skuResult = resolveSku(raw.sku);
     const warehouseResult = skuResult.materialCode ? resolveSpecialWarehouse(fbaWarehouseLookup, raw.warehouseName, skuResult.materialCode) : { businessUnit: '', issue: '' };

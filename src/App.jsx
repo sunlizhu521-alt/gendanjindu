@@ -217,7 +217,8 @@ const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
   ] },
   { id: 'inventorySummaryFile5', title: 'FBM在途报表', fields: [
     ['storeName', '店铺'], ['marketplace', '站点'], ['sku', 'SKU'],
-    ['warehouseName', '收货仓库'], ['stockupQty', '备货数量'], ['receivedQty', '收货数量']
+    ['warehouseName', '发货仓库（单据）'], ['documentStatus', '单据状态'],
+    ['stockupQty', '备货数量'], ['receivedQty', '收货数量']
   ] },
   { id: 'inventorySummaryFile6', title: '国内在库报表', fields: [
     ['subject', '使用组织/库存组织'], ['warehouseName', '仓库名称'],

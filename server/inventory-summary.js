@@ -25,6 +25,17 @@ const FBA_TRANSIT_STATUSES = new Set([
   'SHIPPED',
   'DELIVERED'
 ]);
+const FBM_TRANSIT_WAREHOUSES = new Set([
+  '102-US-海外二部-海上在途',
+  '101-US-海外一部-海上在途',
+  '101-G-海外一部-海上在途',
+  '102-Q-海外二部-海上在途',
+  '102-G-海外二部-海上在途',
+  '104-US-全球招商部-海上在途',
+  '106-G-国内事业部-海上在途',
+  '101-G海外一部供应商仓跨境医疗器械'
+].map(matchKey));
+const FBM_TRANSIT_DOCUMENT_STATUSES = new Set(['待收货', '待配货'].map(matchKey));
 
 const FIELD_ALIASES = {
   subject: ['主体', '使用组织', '库存组织'],
@@ -32,7 +43,7 @@ const FIELD_ALIASES = {
   marketplace: ['站点', '国家', '国家/地区', '销售平台'],
   sku: ['SKU', 'sku', 'MSKU', 'Seller SKU', '卖家SKU', '商品SKU'],
   identifier: ['识别码', '物料编码', '品号'],
-  warehouseName: ['仓库名称', '仓库名', '仓库', '收货仓库'],
+  warehouseName: ['仓库名称', '仓库名', '仓库', '收货仓库', '发货仓库（单据）', '发货仓库(单据)'],
   inventoryAttribute: ['库存属性', '库存筛选'],
   endingInventoryQty: [
     '期末库存(含移仓)-数量',
@@ -48,6 +59,7 @@ const FIELD_ALIASES = {
   signedQty: ['签收量'],
   stockupQty: ['备货数量'],
   receivedQty: ['收货数量'],
+  documentStatus: ['单据状态'],
   domesticStockQty: ['库存量(主单位)', '库存量（主单位）'],
   jdId: ['SKU', 'sku', '京东ID', '京东id', 'ID', 'id'],
   jdStockQty: ['全国现货库存'],
@@ -90,8 +102,8 @@ const SLOT_SCHEMAS = {
     fields: ['storeName', 'marketplace', 'sku', 'shipmentStatus', 'dispatchQty', 'shippedQty', 'signedQty']
   },
   inventorySummaryFile5: {
-    required: ['sku', 'warehouseName', 'stockupQty', 'receivedQty'],
-    fields: ['storeName', 'marketplace', 'sku', 'warehouseName', 'stockupQty', 'receivedQty']
+    required: ['sku', 'warehouseName', 'documentStatus', 'stockupQty', 'receivedQty'],
+    fields: ['storeName', 'marketplace', 'sku', 'warehouseName', 'documentStatus', 'stockupQty', 'receivedQty']
   },
   inventorySummaryFile6: {
     required: ['subject', 'warehouseName', 'materialCode', 'domesticStockQty'],
@@ -239,6 +251,14 @@ function isIgnoredFbmWarehouse(value) {
   return IGNORED_FBM_WAREHOUSES.has(matchKey(value));
 }
 
+function isAllowedFbmTransitWarehouse(value) {
+  return FBM_TRANSIT_WAREHOUSES.has(matchKey(value));
+}
+
+function isAllowedFbmTransitDocumentStatus(value) {
+  return FBM_TRANSIT_DOCUMENT_STATUSES.has(matchKey(value));
+}
+
 function isIgnoredDomesticWarehouse(value) {
   const warehouse = matchKey(value);
   return warehouse && IGNORED_DOMESTIC_WAREHOUSE_KEYWORDS.some((keyword) => warehouse.includes(keyword));
@@ -337,6 +357,11 @@ function mappedColumn(field, mapping, columns, slotId) {
     const canonicalColumn = columns.find((column) => canonicalAliases.has(headerKey(column)));
     return canonicalColumn || '';
   }
+  if (slotId === 'inventorySummaryFile5' && field === 'warehouseName') {
+    const canonicalAliases = new Set(['发货仓库（单据）', '发货仓库(单据)'].map(headerKey));
+    const canonicalColumn = columns.find((column) => canonicalAliases.has(headerKey(column)));
+    return canonicalColumn || '';
+  }
   const configured = text(mapping?.[field]);
   if (configured && columns.includes(configured)) return configured;
   const aliases = new Set((FIELD_ALIASES[field] || []).map(headerKey));
@@ -387,6 +412,8 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
   ])));
   let filteredZeroQtyRows = 0;
   let filteredIgnoredWarehouseRows = 0;
+  let filteredFbmTransitWarehouseRows = 0;
+  let filteredFbmTransitStatusRows = 0;
   let filteredSummaryRows = 0;
   const rows = mappedRows.filter((row) => {
     if (isSummaryRow(row, slotId)) {
@@ -399,6 +426,14 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
     }
     if (slotId === 'inventorySummaryFile6' && isIgnoredDomesticWarehouse(row.warehouseName)) {
       filteredIgnoredWarehouseRows += 1;
+      return false;
+    }
+    if (slotId === 'inventorySummaryFile5' && !isAllowedFbmTransitWarehouse(row.warehouseName)) {
+      filteredFbmTransitWarehouseRows += 1;
+      return false;
+    }
+    if (slotId === 'inventorySummaryFile5' && !isAllowedFbmTransitDocumentStatus(row.documentStatus)) {
+      filteredFbmTransitStatusRows += 1;
       return false;
     }
     if (hasZeroInventoryQuantity(row, slotId)) {
@@ -424,12 +459,14 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
       ...columnMap,
       __inventorySummary: {
         parserType: 'inventorySummary',
-        parserVersion: 3,
+        parserVersion: 4,
         sheetName,
         sourceRowCount: mappedRows.length,
         rowCount: rows.length,
         filteredZeroQtyRows,
         filteredIgnoredWarehouseRows,
+        filteredFbmTransitWarehouseRows,
+        filteredFbmTransitStatusRows,
         filteredSummaryRows,
         fbaScopeRows: fbaScopeRows.length,
         fbaScopeQuantity: quantityTotal(fbaScopeRows, 'endingInventoryQty'),
@@ -1003,6 +1040,8 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   });
 
   source.inventorySummaryFile5.rows.forEach((raw) => {
+    if (!isAllowedFbmTransitWarehouse(raw.warehouseName)) return;
+    if (!isAllowedFbmTransitDocumentStatus(raw.documentStatus)) return;
     const qty = numeric(raw.stockupQty, 'FBM在途', raw.sku, '备货数量') - numeric(raw.receivedQty, 'FBM在途', raw.sku, '收货数量');
     if (Math.abs(qty) <= 0.000001) return;
     const skuResult = resolveSku(raw.sku);

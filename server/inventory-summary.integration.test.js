@@ -54,14 +54,14 @@ test('inventory summary model uses inventory library facts, layered totals and s
     ['spare1', [
       { subject: '主体一', warehouseName: 'FBM仓' },
       { subject: '主体一', warehouseName: 'WFS仓' },
-      { subject: '主体一', warehouseName: '收货仓' }
+      { subject: '主体一', warehouseName: '102-US-海外二部-海上在途' }
     ]],
     ['warehouseMaterialMap', [
       { subject: '主体一', warehouseName: 'FBA金蝶仓', materialCode: 'M1', businessUnit: '跨境事业部' },
       { subject: '主体一', warehouseName: 'FBM仓', materialCode: 'M1', businessUnit: '跨境事业部' },
       { subject: '主体一', warehouseName: 'WFS仓', materialCode: 'M1', businessUnit: '跨境事业部' },
       { subject: '主体一', warehouseName: 'FBA在途金蝶仓', materialCode: 'M1', businessUnit: '跨境事业部' },
-      { subject: '主体一', warehouseName: '收货仓', materialCode: 'M1', businessUnit: '跨境事业部' },
+      { subject: '主体一', warehouseName: '102-US-海外二部-海上在途', materialCode: 'M1', businessUnit: '跨境事业部' },
       { subject: '国内主体', warehouseName: '国内仓', materialCode: 'M2', businessUnit: '国内事业部' }
     ]],
     ['inventorySummaryFile1', [
@@ -75,7 +75,13 @@ test('inventory summary model uses inventory library facts, layered totals and s
       { storeName: '店铺一', sku: 'SKU-1', shipmentStatus: 'SHIPPED', dispatchQty: '0', shippedQty: '900', signedQty: '0' },
       { storeName: '店铺一', sku: 'SKU-1', shipmentStatus: 'CANCELLED', dispatchQty: '100', shippedQty: '100', signedQty: '0' }
     ]],
-    ['inventorySummaryFile5', [{ sku: 'SKU-1', warehouseName: '收货仓', stockupQty: '200', receivedQty: '50' }]],
+    ['inventorySummaryFile5', [{
+      sku: 'SKU-1',
+      warehouseName: '102-US-海外二部-海上在途',
+      documentStatus: '待收货',
+      stockupQty: '200',
+      receivedQty: '50'
+    }]],
     ['inventorySummaryFile6', [
       { subject: '国内主体', warehouseName: '国内仓', materialCode: 'M2', domesticStockQty: '50' },
       { subject: '主体一', warehouseName: 'FBM仓', materialCode: 'M1', domesticStockQty: '700' }
@@ -312,7 +318,8 @@ test('FBA and FBM transit ignore zero in-transit quantities before dimension map
     }]],
     ['inventorySummaryFile5', [{
       sku: 'SKU-FBM-TRANSIT-ZERO',
-      warehouseName: 'Unknown Warehouse',
+      warehouseName: '102-US-海外二部-海上在途',
+      documentStatus: '待配货',
       stockupQty: '200',
       receivedQty: '200'
     }]]
@@ -384,7 +391,7 @@ test('FBM workbook parser excludes zero quantities and excluded warehouse rows f
   assert.equal(parsed.rows.length, 1);
   assert.equal(parsed.rows[0].identifier, 'M-STOCK');
   assert.equal(parsed.mapping.__inventorySummary.filteredZeroQtyRows, 1);
-  assert.equal(parsed.mapping.__inventorySummary.parserVersion, 3);
+  assert.equal(parsed.mapping.__inventorySummary.parserVersion, 4);
   assert.equal(parsed.mapping.__inventorySummary.filteredIgnoredWarehouseRows, 3);
 });
 
@@ -923,16 +930,20 @@ test('inventory dimension diagnostics defensively excludes legacy zero-quantity 
   assert.equal(diagnostics.qualitySummary.affectedQty, 10);
 });
 
-test('inventory workbook parser expands merged FBA transit cells and rejects ambiguous workbooks', () => {
+test('inventory workbook parser expands every merged FBA transit field and rejects ambiguous workbooks', () => {
   const workbook = xlsx.utils.book_new();
   const worksheet = xlsx.utils.aoa_to_sheet([
     ['店铺', 'SKU', '货件状态', '发货数量', '已发货', '签收量'],
     ['店铺一', 'SKU-1', 'SHIPPED', 10, 8, 2],
-    ['', '', 'RECEIVING', 5, 5, 0]
+    ['', '', '', '', '', '']
   ]);
   worksheet['!merges'] = [
     xlsx.utils.decode_range('A2:A3'),
-    xlsx.utils.decode_range('B2:B3')
+    xlsx.utils.decode_range('B2:B3'),
+    xlsx.utils.decode_range('C2:C3'),
+    xlsx.utils.decode_range('D2:D3'),
+    xlsx.utils.decode_range('E2:E3'),
+    xlsx.utils.decode_range('F2:F3')
   ];
   xlsx.utils.book_append_sheet(workbook, worksheet, '任意名称');
   const parsed = parseInventorySummaryWorkbook(
@@ -940,8 +951,15 @@ test('inventory workbook parser expands merged FBA transit cells and rejects amb
     'inventorySummaryFile4'
   );
   assert.equal(parsed.rows.length, 2);
-  assert.equal(parsed.rows[1].storeName, '店铺一');
-  assert.equal(parsed.rows[1].sku, 'SKU-1');
+  assert.deepEqual(parsed.rows[1], {
+    storeName: '店铺一',
+    marketplace: '',
+    sku: 'SKU-1',
+    shipmentStatus: 'SHIPPED',
+    dispatchQty: 10,
+    shippedQty: 8,
+    signedQty: 2
+  });
 
   xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet([['其他'], ['数据']]), '多余工作表');
   assert.throws(
@@ -951,6 +969,63 @@ test('inventory workbook parser expands merged FBA transit cells and rejects amb
     ),
     /应只包含一个工作表/
   );
+});
+
+test('FBM transit parser and model keep only approved document warehouses and statuses', () => {
+  const allowedWarehouses = [
+    '102-US-海外二部-海上在途',
+    '101-US-海外一部-海上在途',
+    '101-G-海外一部-海上在途',
+    '102-Q-海外二部-海上在途',
+    '102-G-海外二部-海上在途',
+    '104-US-全球招商部-海上在途',
+    '106-G-国内事业部-海上在途',
+    '101-G海外一部供应商仓跨境医疗器械'
+  ];
+  const sourceRows = [
+    ...allowedWarehouses.map((warehouseName, index) => ({
+      SKU: `SKU-${index + 1}`,
+      '发货仓库（单据）': warehouseName,
+      单据状态: index % 2 ? '待配货' : '待收货',
+      备货数量: 10,
+      收货数量: 2
+    })),
+    { SKU: 'SKU-BAD-WAREHOUSE', '发货仓库（单据）': '其他仓库', 单据状态: '待收货', 备货数量: 100, 收货数量: 0 },
+    { SKU: 'SKU-BAD-STATUS', '发货仓库（单据）': allowedWarehouses[0], 单据状态: '已完成', 备货数量: 100, 收货数量: 0 }
+  ];
+  const workbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(sourceRows), '备货单详情');
+  xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet([['说明']]), '说明');
+  const parsed = parseInventorySummaryWorkbook(
+    { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) },
+    'inventorySummaryFile5'
+  );
+
+  assert.equal(parsed.rows.length, 8);
+  assert.deepEqual(new Set(parsed.rows.map((row) => row.warehouseName)), new Set(allowedWarehouses));
+  assert.deepEqual(new Set(parsed.rows.map((row) => row.documentStatus)), new Set(['待收货', '待配货']));
+  assert.equal(parsed.mapping.__inventorySummary.filteredFbmTransitWarehouseRows, 1);
+  assert.equal(parsed.mapping.__inventorySummary.filteredFbmTransitStatusRows, 1);
+
+  const rowsBySlot = new Map([
+    ['productCategory', [{ materialCode: 'M1', pretaxPrice: 10 }]],
+    ['inventorySummaryFile10', sourceRows.map((row) => ({ lingxingSku: row.SKU, identifier: 'M1' }))],
+    ['spare1', allowedWarehouses.map((warehouseName) => ({ subject: '主体一', warehouseName }))],
+    ['warehouseMaterialMap', allowedWarehouses.map((warehouseName) => ({
+      subject: '主体一', warehouseName, materialCode: 'M1', businessUnit: '海外事业一部'
+    }))],
+    ['inventorySummaryFile5', [
+      ...parsed.rows,
+      { sku: 'SKU-BAD-WAREHOUSE', warehouseName: '其他仓库', documentStatus: '待收货', stockupQty: 100, receivedQty: 0 },
+      { sku: 'SKU-BAD-STATUS', warehouseName: allowedWarehouses[0], documentStatus: '已完成', stockupQty: 100, receivedQty: 0 }
+    ]]
+  ]);
+  const model = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
+  });
+  assert.equal(model.totals.fbmTransitQty, 64);
+  assert.equal(model.totals.fbmTransitValue, 640);
 });
 
 test('inventory summary and domestic board use complete source models and enforce page access', async () => {
@@ -1714,7 +1789,7 @@ test('inventory summary and domestic board use complete source models and enforc
         blankSkuQty: fbaCompletenessPayload.parseSummary?.fbaBlankSkuQuantity,
         filteredZeroRows: fbaCompletenessPayload.parseSummary?.filteredZeroQtyRows
       },
-      { sourceRows: 16, parserVersion: 3, validRows: 15, validQty: 553, blankSkuRows: 0, blankSkuQty: 0, filteredZeroRows: 1 }
+      { sourceRows: 16, parserVersion: 4, validRows: 15, validQty: 553, blankSkuRows: 0, blankSkuQty: 0, filteredZeroRows: 1 }
     );
 
     const fbaDiagnosticsResponse = await fetch(`http://127.0.0.1:${port}/api/dimension-missing/cross-border`, {

@@ -1819,6 +1819,40 @@ test('inventory summary and domestic board use complete source models and enforc
       }
     );
 
+    const refreshedSkuWorkbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(refreshedSkuWorkbook, xlsx.utils.json_to_sheet(
+      fbaMissingQuantities.map((_, index) => ({
+        '*SKU': `MISSING-SKU-${index + 1}`,
+        识别码: `REFRESHED-MATERIAL-${index + 1}`
+      }))
+    ), 'SKU映射');
+    const refreshedSkuForm = new FormData();
+    refreshedSkuForm.append(
+      'file',
+      new Blob([xlsx.write(refreshedSkuWorkbook, { type: 'buffer', bookType: 'xlsx' })]),
+      'Dim-领星SKU对应物料编码-产品管理.xlsx'
+    );
+    const refreshedSkuResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions/inventorySummaryFile10/upload`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token' },
+      body: refreshedSkuForm
+    });
+    const refreshedSkuPayload = await refreshedSkuResponse.json();
+    assert.equal(refreshedSkuResponse.status, 200, `${JSON.stringify(refreshedSkuPayload)}\n${logs.join('')}`);
+    assert.equal(refreshedSkuPayload.rowCount, 15);
+
+    const refreshedDiagnosticsResponse = await fetch(`http://127.0.0.1:${port}/api/dimension-missing/cross-border?refresh=${Date.now()}`, {
+      headers: { Authorization: 'Bearer admin-token' }
+    });
+    const refreshedDiagnosticsPayload = await refreshedDiagnosticsResponse.json();
+    assert.equal(refreshedDiagnosticsResponse.status, 200, `${JSON.stringify(refreshedDiagnosticsPayload)}\n${logs.join('')}`);
+    const staleSkuIssues = refreshedDiagnosticsPayload.inventorySummaryIssues.filter((row) => (
+      row.sourceType === 'FBA库存'
+      && row.targetSlotId === 'inventorySummaryFile10'
+      && row.sourceWarehouseName === '国源欧洲-PL波兰仓'
+    ));
+    assert.equal(staleSkuIssues.length, 0);
+
     const loginResponse = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

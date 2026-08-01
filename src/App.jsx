@@ -1824,6 +1824,18 @@ function InventorySummary({ token, active }) {
             <InventoryPurchaseMetric label="库存规模合计" quantity={totals.scaleQty} value={formatDashboardWan(totals.scaleValue)} note="在库+在途+未交付" share={share(totals.scaleQty, fullTotals.scaleQty)} tone="materials" />
           </section>
 
+          <section className="inventory-transit-breakdown" aria-labelledby="inventoryTransitBreakdownTitle">
+            <div className="inventory-transit-breakdown-head">
+              <h3 id="inventoryTransitBreakdownTitle">在途构成</h3>
+              <span>FBA在途 + FBM在途 + 京东在途</span>
+            </div>
+            <div className="inventory-kpi-grid inventory-transit-kpis">
+              <InventoryPurchaseMetric label="FBA在途" quantity={totals.fbaTransitQty} value={formatDashboardWan(totals.fbaTransitValue)} note="占在途合计" share={share(totals.fbaTransitQty, totals.transitQty)} tone="fba-transit" />
+              <InventoryPurchaseMetric label="FBM在途" quantity={totals.fbmTransitQty} value={formatDashboardWan(totals.fbmTransitValue)} note="占在途合计" share={share(totals.fbmTransitQty, totals.transitQty)} tone="fbm-transit" />
+              <InventoryPurchaseMetric label="京东在途" quantity={totals.jdTransitQty} value={formatDashboardWan(totals.jdTransitValue)} note="占在途合计" share={share(totals.jdTransitQty, totals.transitQty)} tone="jd-transit" />
+            </div>
+          </section>
+
           <section className="inventory-chart-grid">
             <InventorySummaryMonthlyBars title="每月销售变化趋势" rows={monthRows} />
             <InventorySummaryGroupedBars title="销售产品线库存、在途与未交付" rows={productLineRows} />

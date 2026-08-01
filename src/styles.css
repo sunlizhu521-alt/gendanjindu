@@ -1572,6 +1572,49 @@ h3 {
   border-right: 0;
 }
 
+.inventory-transit-breakdown {
+  display: grid;
+  gap: 7px;
+}
+
+.inventory-transit-breakdown-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 2px;
+}
+
+.inventory-transit-breakdown-head h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.inventory-transit-breakdown-head span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.inventory-transit-kpis {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.inventory-transit-kpis .inventory-kpi:nth-child(3) {
+  border-right: 0;
+}
+
+.inventory-kpi.fba-transit::before {
+  background: #1683e8;
+}
+
+.inventory-kpi.fbm-transit::before {
+  background: #0f9f8f;
+}
+
+.inventory-kpi.jd-transit::before {
+  background: #f59e0b;
+}
+
 .inventory-chart-legend > span {
   display: inline-flex;
   align-items: center;
@@ -2321,6 +2364,14 @@ h3 {
 
   .inventory-kpi:nth-child(-n + 3) {
     border-bottom: 1px solid #e5eaf0;
+  }
+
+  .inventory-transit-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .inventory-transit-kpis .inventory-kpi:nth-child(-n + 3) {
+    border-bottom: 0;
   }
 
   .inventory-purchase-chart-grid {
@@ -3989,6 +4040,26 @@ th {
 
   .inventory-kpi:nth-child(-n + 4) {
     border-bottom: 1px solid #e5eaf0;
+  }
+
+  .inventory-transit-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-transit-kpis .inventory-kpi,
+  .inventory-transit-kpis .inventory-kpi:nth-child(odd) {
+    border-right: 0;
+    border-bottom: 1px solid #e5eaf0;
+  }
+
+  .inventory-transit-kpis .inventory-kpi:last-child {
+    border-bottom: 0;
+  }
+
+  .inventory-transit-breakdown-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
   }
 
   .inventory-dashboard-heading,

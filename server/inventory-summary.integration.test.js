@@ -657,16 +657,16 @@ test('WFS inventory resolves business unit by subject, mapped warehouse and mate
       { materialCode: 'M-TWO', sku: 'SKU-TWO', materialName: 'Item Two', productLine: 'Line', productSeries: 'Series', pretaxPrice: '20' }
     ]],
     ['warehouseMaterialMap', [
-      { subject: '102-G', warehouseName: 'WFS仓', materialCode: 'M-ONE', businessUnit: '海外一部' },
-      { subject: '102-G', warehouseName: 'WFS仓', materialCode: 'M-TWO', businessUnit: '海外二部' }
+      { subject: '102-G', warehouseName: '102-G/海外一部/WFS仓/国源-Walmart美国仓', materialCode: 'M-ONE', businessUnit: '海外一部' },
+      { subject: '102-G', warehouseName: '102-G/海外二部/WFS仓/国源-Walmart美国仓', materialCode: 'M-TWO', businessUnit: '海外二部' }
     ]],
     ['inventorySummaryFile3', [
       { sku: 'SKU-ONE', warehouseName: '国源-Walmart美国仓', totalInventoryQty: '100' },
       { sku: 'SKU-TWO', warehouseName: '国源-Walmart美国仓', totalInventoryQty: '200' }
     ]],
     ['inventorySummaryFile9', [
-      { subject: '102-G', businessUnit: '海外一部', lingxingWarehouseName: '国源-Walmart美国仓', kingdeeWarehouseName: 'WFS仓' },
-      { subject: '102-G', businessUnit: '海外二部', lingxingWarehouseName: '国源-Walmart美国仓', kingdeeWarehouseName: 'WFS仓' }
+      { subject: '102-G', lingxingWarehouseName: '国源-Walmart美国仓', kingdeeWarehouseName: '102-G/海外一部/WFS仓/国源-Walmart美国仓' },
+      { subject: '102-G', lingxingWarehouseName: '国源-Walmart美国仓', kingdeeWarehouseName: '102-G/海外二部/WFS仓/国源-Walmart美国仓' }
     ]],
     ['inventorySummaryFile10', [
       { lingxingSku: 'SKU-ONE', identifier: 'M-ONE' },
@@ -690,14 +690,15 @@ test('WFS inventory marks conflicting business unit mappings instead of guessing
       { materialCode: 'M-CONFLICT', sku: 'SKU-CONFLICT', materialName: 'Conflict Item', productLine: 'Line', productSeries: 'Series', pretaxPrice: '10' }
     ]],
     ['warehouseMaterialMap', [
-      { subject: '102-G', warehouseName: 'WFS仓', materialCode: 'M-CONFLICT', businessUnit: '海外一部' },
-      { subject: '102-G', warehouseName: 'WFS仓', materialCode: 'M-CONFLICT', businessUnit: '海外二部' }
+      { subject: '102-G', warehouseName: '102-G/海外一部/WFS仓/国源-Walmart美国仓', materialCode: 'M-CONFLICT', businessUnit: '海外一部' },
+      { subject: '102-G', warehouseName: '102-G/海外二部/WFS仓/国源-Walmart美国仓', materialCode: 'M-CONFLICT', businessUnit: '海外二部' }
     ]],
     ['inventorySummaryFile3', [
       { sku: 'SKU-CONFLICT', warehouseName: '国源-Walmart美国仓', totalInventoryQty: '50' }
     ]],
     ['inventorySummaryFile9', [
-      { subject: '102-G', lingxingWarehouseName: '国源-Walmart美国仓', kingdeeWarehouseName: 'WFS仓' }
+      { subject: '102-G', lingxingWarehouseName: '国源-Walmart美国仓', kingdeeWarehouseName: '102-G/海外一部/WFS仓/国源-Walmart美国仓' },
+      { subject: '102-G', lingxingWarehouseName: '国源-Walmart美国仓', kingdeeWarehouseName: '102-G/海外二部/WFS仓/国源-Walmart美国仓' }
     ]],
     ['inventorySummaryFile10', [
       { lingxingSku: 'SKU-CONFLICT', identifier: 'M-CONFLICT' }

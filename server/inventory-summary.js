@@ -489,6 +489,11 @@ function exactLookup(rows, keyOf, valueOf) {
     buckets.get(key).set(signature, value);
   });
   return {
+    candidates(rawKey) {
+      const key = matchKey(rawKey);
+      const bucket = key ? buckets.get(key) : null;
+      return bucket ? [...bucket.values()] : [];
+    },
     resolve(rawKey) {
       const key = matchKey(rawKey);
       const bucket = key ? buckets.get(key) : null;
@@ -818,6 +823,45 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     };
   };
 
+  const resolveWfsWarehouse = (sourceWarehouse, materialCode) => {
+    const candidates = fbaWarehouseLookup.candidates(sourceWarehouse);
+    if (!candidates.length) {
+      return {
+        businessUnit: '',
+        issue: '仓库对照映射缺失',
+        subject: '',
+        sourceWarehouseName: text(sourceWarehouse),
+        kingdeeWarehouseName: ''
+      };
+    }
+    const resolved = candidates.map((candidate) => ({
+      candidate,
+      result: resolveWarehouseBusinessUnit(candidate.subject, candidate.warehouseName, materialCode)
+    }));
+    const matches = resolved.filter(({ result }) => !result.issue && text(result.businessUnit));
+    const businessUnits = new Set(matches.map(({ result }) => matchKey(result.businessUnit)));
+    if (businessUnits.size === 1) {
+      return {
+        ...matches[0].result,
+        sourceWarehouseName: text(sourceWarehouse)
+      };
+    }
+    if (businessUnits.size > 1 || resolved.some(({ result }) => result.issue.includes('映射冲突'))) {
+      return {
+        businessUnit: '',
+        issue: '主体、仓库与物料映射冲突',
+        subject: '',
+        sourceWarehouseName: text(sourceWarehouse),
+        kingdeeWarehouseName: ''
+      };
+    }
+    const fallback = resolved[0]?.result || {};
+    return {
+      ...fallback,
+      sourceWarehouseName: text(sourceWarehouse)
+    };
+  };
+
   const issueImpact = (quantities) => {
     const pairs = [
       ['fbaInventoryQty', 'fbaInventoryValue'],
@@ -990,7 +1034,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     const qty = inventoryQuantity(raw, 'inventorySummaryFile3', 'WFS库存', raw.sku, '总库存数量');
     if (qty === null) return;
     const skuResult = resolveSku(raw.sku);
-    const warehouseResult = skuResult.materialCode ? resolveSpecialWarehouse(fbaWarehouseLookup, raw.warehouseName, skuResult.materialCode) : { businessUnit: '', issue: '' };
+    const warehouseResult = skuResult.materialCode ? resolveWfsWarehouse(raw.warehouseName, skuResult.materialCode) : { businessUnit: '', issue: '' };
     const product = resolveProduct(skuResult.materialCode, 'WFS库存', raw.sku);
     addFact({
       sourceType: 'WFS库存',

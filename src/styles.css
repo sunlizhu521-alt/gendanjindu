@@ -867,6 +867,40 @@ h3 {
   white-space: nowrap;
 }
 
+.inventory-methodology-pending {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 13px 15px;
+  border: 1px solid #f5c76b;
+  border-left: 4px solid #d97706;
+  border-radius: 6px;
+  background: #fffbeb;
+}
+
+.inventory-methodology-pending > span {
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: #d97706;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.inventory-methodology-pending strong {
+  color: #92400e;
+  font-size: 15px;
+}
+
+.inventory-methodology-pending p {
+  margin: 5px 0 0;
+  color: #78350f;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .inventory-methodology-section {
   min-width: 0;
   padding: 15px 16px 16px;
@@ -3974,6 +4008,10 @@ th {
   }
 
   .inventory-methodology-header {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-methodology-pending {
     grid-template-columns: 1fr;
   }
 

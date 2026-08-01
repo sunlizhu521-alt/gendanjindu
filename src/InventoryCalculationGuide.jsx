@@ -112,6 +112,15 @@ export default function InventoryCalculationGuide({ onBack }) {
         </div>
       </header>
 
+      <aside className="inventory-methodology-pending" aria-label="待确认库存口径">
+        <span>待确认</span>
+        <div>
+          <strong>退货仓中的全新成品是否计入正常在库量</strong>
+          <p>需与同事确认。判断标准应以商品是否全新、完整且可正常销售为准，不因仓库名称包含“退货”就自动剔除。</p>
+          <p><b>当前系统处理：</b>仍计入在库量；确认前不修改现有库存计算逻辑。</p>
+        </div>
+      </aside>
+
       <section className="inventory-methodology-section">
         <div className="inventory-methodology-section-head">
           <h3>分层计算公式</h3>

@@ -962,6 +962,26 @@ test('inventory workbook parser expands every merged FBA transit field and rejec
     signedQty: 2
   });
 
+  const flattenedWorkbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(flattenedWorkbook, xlsx.utils.aoa_to_sheet([
+    ['店铺', 'SKU', '货件状态', '发货数量', '已发货', '签收量'],
+    ['店铺一', 'SKU-1', 'SHIPPED', 10, 8, 2],
+    ['', 'SKU-2', '', '', 5, 1]
+  ]), '已拆分明细');
+  const flattened = parseInventorySummaryWorkbook(
+    { buffer: xlsx.write(flattenedWorkbook, { type: 'buffer', bookType: 'xlsx' }) },
+    'inventorySummaryFile4'
+  );
+  assert.deepEqual(flattened.rows[1], {
+    storeName: '店铺一',
+    marketplace: '',
+    sku: 'SKU-2',
+    shipmentStatus: 'SHIPPED',
+    dispatchQty: 10,
+    shippedQty: 5,
+    signedQty: 1
+  });
+
   xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet([['其他'], ['数据']]), '多余工作表');
   assert.throws(
     () => parseInventorySummaryWorkbook(

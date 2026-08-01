@@ -48,7 +48,7 @@ const INVENTORY_CALCULATION_SOURCES = [
     name: 'FBA在途',
     file: 'FBA在途报表',
     fields: '店铺、SKU、货件状态、发货数量、已发货、签收量',
-    filters: '拆分并向下填充全部合并单元格；仅保留 RECEIVING、READY_TO_SHIP、CLOSED、IN_TRANSIT、WORKING、SHIPPED、DELIVERED；发货数量=0时排除',
+    filters: '拆分并向下填充全部合并单元格；即使文件已丢失合并标记，也继续向下填充店铺、站点、货件状态和发货数量；仅保留 RECEIVING、READY_TO_SHIP、CLOSED、IN_TRANSIT、WORKING、SHIPPED、DELIVERED；发货数量=0时排除',
     mapping: 'SKU → Dim-领星SKU对应物料编码-产品管理；店铺 → Dim-领星FBA在途&金蝶仓库 → 主体+金蝶仓库+物料编码 → 仓库与物料对照表 → 事业部',
     quantity: '逐行 MAX(已发货-签收量, 0)，再按事业部+物料编码汇总',
     value: '在途数量 × 商品分类维度的不含税结算价'

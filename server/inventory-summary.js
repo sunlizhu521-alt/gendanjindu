@@ -410,6 +410,16 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
     field,
     columnMap[field] ? row[columnMap[field]] ?? '' : ''
   ])));
+  if (slotId === 'inventorySummaryFile4') {
+    const carryFields = ['storeName', 'marketplace', 'shipmentStatus', 'dispatchQty'];
+    const previous = {};
+    mappedRows.forEach((row) => {
+      carryFields.forEach((field) => {
+        if (text(row[field])) previous[field] = row[field];
+        else if (previous[field] !== undefined) row[field] = previous[field];
+      });
+    });
+  }
   let filteredZeroQtyRows = 0;
   let filteredIgnoredWarehouseRows = 0;
   let filteredFbmTransitWarehouseRows = 0;

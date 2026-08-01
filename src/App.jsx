@@ -1825,6 +1825,20 @@ function InventorySummary({ token, active }) {
             <InventoryPurchaseMetric label="库存规模合计" quantity={totals.scaleQty} value={formatDashboardWan(totals.scaleValue)} note="在库+在途+未交付" share={share(totals.scaleQty, fullTotals.scaleQty)} tone="materials" />
           </section>
 
+          <section className="inventory-transit-breakdown" aria-labelledby="inventoryStockBreakdownTitle">
+            <div className="inventory-transit-breakdown-head">
+              <h3 id="inventoryStockBreakdownTitle">在库构成</h3>
+              <span>FBA在库 + FBM在库 + WFS在库 + 国内在库 + 京东在库</span>
+            </div>
+            <div className="inventory-kpi-grid inventory-stock-kpis">
+              <InventoryPurchaseMetric label="FBA在库" quantity={totals.fbaInventoryQty} value={formatDashboardWan(totals.fbaInventoryValue)} note="占在库合计" share={share(totals.fbaInventoryQty, totals.inventoryQty)} tone="fba-stock" />
+              <InventoryPurchaseMetric label="FBM在库" quantity={totals.fbmInventoryQty} value={formatDashboardWan(totals.fbmInventoryValue)} note="占在库合计" share={share(totals.fbmInventoryQty, totals.inventoryQty)} tone="fbm-stock" />
+              <InventoryPurchaseMetric label="WFS在库" quantity={totals.wfsInventoryQty} value={formatDashboardWan(totals.wfsInventoryValue)} note="占在库合计" share={share(totals.wfsInventoryQty, totals.inventoryQty)} tone="wfs-stock" />
+              <InventoryPurchaseMetric label="国内在库" quantity={totals.domesticMainInventoryQty} value={formatDashboardWan(totals.domesticMainInventoryValue)} note="占在库合计" share={share(totals.domesticMainInventoryQty, totals.inventoryQty)} tone="domestic" />
+              <InventoryPurchaseMetric label="京东在库" quantity={totals.jdInventoryQty} value={formatDashboardWan(totals.jdInventoryValue)} note="占在库合计" share={share(totals.jdInventoryQty, totals.inventoryQty)} tone="jd-stock" />
+            </div>
+          </section>
+
           <section className="inventory-transit-breakdown" aria-labelledby="inventoryTransitBreakdownTitle">
             <div className="inventory-transit-breakdown-head">
               <h3 id="inventoryTransitBreakdownTitle">在途构成</h3>

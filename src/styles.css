@@ -1599,8 +1599,32 @@ h3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.inventory-stock-kpis {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.inventory-stock-kpis .inventory-kpi:last-child {
+  border-right: 0;
+}
+
 .inventory-transit-kpis .inventory-kpi:nth-child(3) {
   border-right: 0;
+}
+
+.inventory-kpi.fba-stock::before {
+  background: #0f766e;
+}
+
+.inventory-kpi.fbm-stock::before {
+  background: #2563eb;
+}
+
+.inventory-kpi.wfs-stock::before {
+  background: #7c3aed;
+}
+
+.inventory-kpi.jd-stock::before {
+  background: #d97706;
 }
 
 .inventory-kpi.fba-transit::before {
@@ -2368,6 +2392,18 @@ h3 {
 
   .inventory-transit-kpis {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .inventory-stock-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .inventory-stock-kpis .inventory-kpi:nth-child(3) {
+    border-right: 0;
+  }
+
+  .inventory-stock-kpis .inventory-kpi:nth-child(-n + 3) {
+    border-bottom: 1px solid #e5eaf0;
   }
 
   .inventory-transit-kpis .inventory-kpi:nth-child(-n + 3) {
@@ -4044,6 +4080,20 @@ th {
 
   .inventory-transit-kpis {
     grid-template-columns: 1fr;
+  }
+
+  .inventory-stock-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-stock-kpis .inventory-kpi,
+  .inventory-stock-kpis .inventory-kpi:nth-child(odd) {
+    border-right: 0;
+    border-bottom: 1px solid #e5eaf0;
+  }
+
+  .inventory-stock-kpis .inventory-kpi:last-child {
+    border-bottom: 0;
   }
 
   .inventory-transit-kpis .inventory-kpi,

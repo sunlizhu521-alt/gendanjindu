@@ -2120,7 +2120,7 @@ h3 {
 }
 
 .inventory-purchase-kpi {
-  grid-template-rows: auto auto auto 1fr;
+  grid-template-rows: auto auto auto auto 1fr;
   gap: 5px;
 }
 
@@ -2147,6 +2147,35 @@ h3 {
 .inventory-purchase-kpi-row.value strong {
   color: #0f8f88;
   font-size: 14px;
+}
+
+.inventory-purchase-kpi-scope {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 5px;
+  border-top: 1px dashed #dbe3ea;
+  color: #475569;
+  font-size: 11px;
+}
+
+.inventory-purchase-kpi-scope span,
+.inventory-purchase-kpi-scope small {
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.inventory-purchase-kpi-scope span {
+  font-weight: 700;
+}
+
+.inventory-purchase-kpi-scope small {
+  min-height: 0;
+  color: #b45309;
+  text-align: right;
 }
 
 .inventory-pie-layout {

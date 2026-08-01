@@ -792,12 +792,22 @@ function InventoryPieChart({ title, rows, pendingText = '数据字段待接入',
   );
 }
 
-function InventoryPurchaseMetric({ label, quantity, value, note, share, tone }) {
+function InventoryPurchaseMetric({ label, quantity, value, note, share, tone, fullQuantity = null }) {
+  const hasFullQuantity = fullQuantity !== null && fullQuantity !== undefined;
+  const excludedQuantity = hasFullQuantity
+    ? Math.max(numberValue(fullQuantity) - numberValue(quantity), 0)
+    : 0;
   return (
     <article className={`inventory-kpi inventory-purchase-kpi ${tone}`}>
       <span>{label}</span>
-      <div className="inventory-purchase-kpi-row"><small>数量</small><strong>{formatDashboardNumber(quantity)}</strong></div>
+      <div className="inventory-purchase-kpi-row"><small>筛选</small><strong>{formatDashboardNumber(quantity)}</strong></div>
       <div className="inventory-purchase-kpi-row value"><small>货值</small><strong>{value === null ? '待接入' : value}</strong></div>
+      {hasFullQuantity && (
+        <div className="inventory-purchase-kpi-scope">
+          <span>文件全量 {formatDashboardNumber(fullQuantity)} 件</span>
+          <small>筛选排除 {formatDashboardNumber(excludedQuantity)} 件</small>
+        </div>
+      )}
       <small>{share === null ? note : `${note} · 占比 ${formatDashboardPercent(share)}`}</small>
     </article>
   );
@@ -1828,26 +1838,26 @@ function InventorySummary({ token, active }) {
           <section className="inventory-transit-breakdown" aria-labelledby="inventoryStockBreakdownTitle">
             <div className="inventory-transit-breakdown-head">
               <h3 id="inventoryStockBreakdownTitle">在库构成</h3>
-              <span>FBA在库 + FBM在库 + WFS在库 + 国内在库 + 京东在库</span>
+              <span>主数字按当前筛选；文件全量不受页面筛选影响</span>
             </div>
             <div className="inventory-kpi-grid inventory-stock-kpis">
-              <InventoryPurchaseMetric label="FBA在库" quantity={totals.fbaInventoryQty} value={formatDashboardWan(totals.fbaInventoryValue)} note="占在库合计" share={share(totals.fbaInventoryQty, totals.inventoryQty)} tone="fba-stock" />
-              <InventoryPurchaseMetric label="FBM在库" quantity={totals.fbmInventoryQty} value={formatDashboardWan(totals.fbmInventoryValue)} note="占在库合计" share={share(totals.fbmInventoryQty, totals.inventoryQty)} tone="fbm-stock" />
-              <InventoryPurchaseMetric label="WFS在库" quantity={totals.wfsInventoryQty} value={formatDashboardWan(totals.wfsInventoryValue)} note="占在库合计" share={share(totals.wfsInventoryQty, totals.inventoryQty)} tone="wfs-stock" />
-              <InventoryPurchaseMetric label="国内在库" quantity={totals.domesticMainInventoryQty} value={formatDashboardWan(totals.domesticMainInventoryValue)} note="占在库合计" share={share(totals.domesticMainInventoryQty, totals.inventoryQty)} tone="domestic" />
-              <InventoryPurchaseMetric label="京东在库" quantity={totals.jdInventoryQty} value={formatDashboardWan(totals.jdInventoryValue)} note="占在库合计" share={share(totals.jdInventoryQty, totals.inventoryQty)} tone="jd-stock" />
+              <InventoryPurchaseMetric label="FBA在库" quantity={totals.fbaInventoryQty} fullQuantity={fullTotals.fbaInventoryQty} value={formatDashboardWan(totals.fbaInventoryValue)} note="占筛选后在库合计" share={share(totals.fbaInventoryQty, totals.inventoryQty)} tone="fba-stock" />
+              <InventoryPurchaseMetric label="FBM在库" quantity={totals.fbmInventoryQty} fullQuantity={fullTotals.fbmInventoryQty} value={formatDashboardWan(totals.fbmInventoryValue)} note="占筛选后在库合计" share={share(totals.fbmInventoryQty, totals.inventoryQty)} tone="fbm-stock" />
+              <InventoryPurchaseMetric label="WFS在库" quantity={totals.wfsInventoryQty} fullQuantity={fullTotals.wfsInventoryQty} value={formatDashboardWan(totals.wfsInventoryValue)} note="占筛选后在库合计" share={share(totals.wfsInventoryQty, totals.inventoryQty)} tone="wfs-stock" />
+              <InventoryPurchaseMetric label="国内在库" quantity={totals.domesticMainInventoryQty} fullQuantity={fullTotals.domesticMainInventoryQty} value={formatDashboardWan(totals.domesticMainInventoryValue)} note="占筛选后在库合计" share={share(totals.domesticMainInventoryQty, totals.inventoryQty)} tone="domestic" />
+              <InventoryPurchaseMetric label="京东在库" quantity={totals.jdInventoryQty} fullQuantity={fullTotals.jdInventoryQty} value={formatDashboardWan(totals.jdInventoryValue)} note="占筛选后在库合计" share={share(totals.jdInventoryQty, totals.inventoryQty)} tone="jd-stock" />
             </div>
           </section>
 
           <section className="inventory-transit-breakdown" aria-labelledby="inventoryTransitBreakdownTitle">
             <div className="inventory-transit-breakdown-head">
               <h3 id="inventoryTransitBreakdownTitle">在途构成</h3>
-              <span>FBA在途 + FBM在途 + 京东在途</span>
+              <span>主数字按当前筛选；文件全量不受页面筛选影响</span>
             </div>
             <div className="inventory-kpi-grid inventory-transit-kpis">
-              <InventoryPurchaseMetric label="FBA在途" quantity={totals.fbaTransitQty} value={formatDashboardWan(totals.fbaTransitValue)} note="占在途合计" share={share(totals.fbaTransitQty, totals.transitQty)} tone="fba-transit" />
-              <InventoryPurchaseMetric label="FBM在途" quantity={totals.fbmTransitQty} value={formatDashboardWan(totals.fbmTransitValue)} note="占在途合计" share={share(totals.fbmTransitQty, totals.transitQty)} tone="fbm-transit" />
-              <InventoryPurchaseMetric label="京东在途" quantity={totals.jdTransitQty} value={formatDashboardWan(totals.jdTransitValue)} note="占在途合计" share={share(totals.jdTransitQty, totals.transitQty)} tone="jd-transit" />
+              <InventoryPurchaseMetric label="FBA在途" quantity={totals.fbaTransitQty} fullQuantity={fullTotals.fbaTransitQty} value={formatDashboardWan(totals.fbaTransitValue)} note="占筛选后在途合计" share={share(totals.fbaTransitQty, totals.transitQty)} tone="fba-transit" />
+              <InventoryPurchaseMetric label="FBM在途" quantity={totals.fbmTransitQty} fullQuantity={fullTotals.fbmTransitQty} value={formatDashboardWan(totals.fbmTransitValue)} note="占筛选后在途合计" share={share(totals.fbmTransitQty, totals.transitQty)} tone="fbm-transit" />
+              <InventoryPurchaseMetric label="京东在途" quantity={totals.jdTransitQty} fullQuantity={fullTotals.jdTransitQty} value={formatDashboardWan(totals.jdTransitValue)} note="占筛选后在途合计" share={share(totals.jdTransitQty, totals.transitQty)} tone="jd-transit" />
             </div>
           </section>
 

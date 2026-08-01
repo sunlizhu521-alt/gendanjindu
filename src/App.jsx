@@ -1627,6 +1627,7 @@ function InventorySummary({ token, active }) {
   const [pageSize, setPageSize] = useState(10);
   const [exporting, setExporting] = useState(false);
   const [showMethodology, setShowMethodology] = useState(false);
+  const [showSourceBreakdown, setShowSourceBreakdown] = useState(false);
 
   useEffect(() => {
     if (!active) return undefined;
@@ -1750,6 +1751,16 @@ function InventorySummary({ token, active }) {
     ['销售额', (row) => row.amountAbc],
     ['在库量', (row) => formatDashboardNumber(row.inventoryQty)],
     ['在途量', (row) => formatDashboardNumber(row.transitQty)],
+    ...(showSourceBreakdown ? [
+      ['FBA在库', (row) => formatDashboardNumber(row.fbaInventoryQty)],
+      ['FBM在库', (row) => formatDashboardNumber(row.fbmInventoryQty)],
+      ['WFS在库', (row) => formatDashboardNumber(row.wfsInventoryQty)],
+      ['国内在库', (row) => formatDashboardNumber(row.domesticMainInventoryQty)],
+      ['京东在库', (row) => formatDashboardNumber(row.jdInventoryQty)],
+      ['FBA在途', (row) => formatDashboardNumber(row.fbaTransitQty)],
+      ['FBM在途', (row) => formatDashboardNumber(row.fbmTransitQty)],
+      ['京东在途', (row) => formatDashboardNumber(row.jdTransitQty)]
+    ] : []),
     ['已生产未发货', (row) => formatDashboardNumber(row.finishedNotShippedQty)],
     ['已下单未备料未生产', (row) => formatDashboardNumber(row.unpreparedQty)],
     ['已备料未生产', (row) => formatDashboardNumber(row.preparedNotStartedQty)],
@@ -1774,7 +1785,13 @@ function InventorySummary({ token, active }) {
           row.matchKey, row.businessUnit, row.productLine, row.productSeries, row.materialCode, row.sku, row.materialName,
           ...monthColumns.map((month) => numberValue(row.salesByMonth?.[month])),
           numberValue(row.salesQty), numberValue(row.salesAmount), row.quantityAbc, row.amountAbc,
-          numberValue(row.inventoryQty), numberValue(row.transitQty), numberValue(row.finishedNotShippedQty),
+          numberValue(row.inventoryQty), numberValue(row.transitQty),
+          ...(showSourceBreakdown ? [
+            numberValue(row.fbaInventoryQty), numberValue(row.fbmInventoryQty), numberValue(row.wfsInventoryQty),
+            numberValue(row.domesticMainInventoryQty), numberValue(row.jdInventoryQty),
+            numberValue(row.fbaTransitQty), numberValue(row.fbmTransitQty), numberValue(row.jdTransitQty)
+          ] : []),
+          numberValue(row.finishedNotShippedQty),
           numberValue(row.unpreparedQty), numberValue(row.preparedNotStartedQty), numberValue(row.inProductionQty),
           numberValue(row.unfulfilledQty), row.deliveryStatus, numberValue(row.pretaxPrice),
           numberValue(row.normalOrderQty), numberValue(row.normalOrderValue),
@@ -1872,6 +1889,7 @@ function InventorySummary({ token, active }) {
             <strong>事业部订单库存明细</strong>
             <div className="inventory-table-actions">
               <span>当前筛选 {filteredRows.length} / {rows.length} 条，异常 {filteredRows.filter((row) => row.mappingStatus !== '完整').length} 条</span>
+              <button type="button" className="ghost compact-button" onClick={() => setShowSourceBreakdown((current) => !current)}>{showSourceBreakdown ? '隐藏来源分层' : '显示来源分层'}</button>
               <button type="button" className="ghost compact-button" disabled={exporting || !filteredRows.length} onClick={exportRows}>{exporting ? '导出中...' : '导出Excel'}</button>
               <label className="inventory-page-size">每页
                 <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>

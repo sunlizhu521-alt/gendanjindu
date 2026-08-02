@@ -557,6 +557,15 @@ function warehouseName(row) {
   return text(aliasValue(row, ['warehouseName', '仓库名称', '金蝶仓库名称', '金蝶仓库', '金蝶名称']));
 }
 
+function terminalWarehouseName(value) {
+  const segments = text(value).split(/[\\/]/).map((segment) => text(segment)).filter(Boolean);
+  return segments.at(-1) || '';
+}
+
+function isWfsWarehouseName(value) {
+  return text(value).split(/[\\/]/).some((segment) => matchKey(segment) === matchKey('WFS仓'));
+}
+
 function warehouseBusinessUnit(row) {
   return text(aliasValue(row, ['businessUnit', '事业部']));
 }
@@ -716,6 +725,15 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     (row) => combinedKey(warehouseSubject(row), warehouseName(row), aliasValue(row, ['materialCode', '物料编码', '品号'])),
     (row) => ({ businessUnit: warehouseBusinessUnit(row) })
   );
+  const wfsWarehouseMaterialLookup = exactLookup(
+    getRows('warehouseMaterialMap').filter((row) => isWfsWarehouseName(warehouseName(row))),
+    (row) => combinedKey(terminalWarehouseName(warehouseName(row)), aliasValue(row, ['materialCode', '物料编码', '品号'])),
+    (row) => ({
+      subject: warehouseSubject(row),
+      warehouseName: warehouseName(row),
+      businessUnit: warehouseBusinessUnit(row)
+    })
+  );
   const rowMap = new Map();
   const anomalies = [];
   let sourceIndex = 0;
@@ -834,6 +852,29 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   };
 
   const resolveWfsWarehouse = (sourceWarehouse, materialCode) => {
+    const directCandidates = wfsWarehouseMaterialLookup.candidates(
+      combinedKey(terminalWarehouseName(sourceWarehouse), materialCode)
+    ).filter((candidate) => text(candidate.businessUnit));
+    const directBusinessUnits = new Set(directCandidates.map((candidate) => matchKey(candidate.businessUnit)));
+    if (directBusinessUnits.size === 1) {
+      const candidate = directCandidates[0];
+      return {
+        businessUnit: candidate.businessUnit,
+        issue: '',
+        subject: candidate.subject,
+        sourceWarehouseName: text(sourceWarehouse),
+        kingdeeWarehouseName: candidate.warehouseName
+      };
+    }
+    if (directBusinessUnits.size > 1) {
+      return {
+        businessUnit: '',
+        issue: '主体、仓库与物料映射冲突',
+        subject: '',
+        sourceWarehouseName: text(sourceWarehouse),
+        kingdeeWarehouseName: ''
+      };
+    }
     const candidates = fbaWarehouseLookup.candidates(sourceWarehouse);
     if (!candidates.length) {
       return {

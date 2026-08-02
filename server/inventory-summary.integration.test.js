@@ -684,6 +684,39 @@ test('WFS inventory resolves business unit by subject, mapped warehouse and mate
   assert.equal(result.anomalies.length, 0);
 });
 
+test('WFS inventory resolves by terminal warehouse name and material when warehouse aliases are incomplete', () => {
+  const rowsBySlot = new Map([
+    ['productCategory', [
+      { materialCode: 'M-ONE', sku: 'SKU-ONE', materialName: 'Item One', productLine: 'Line', productSeries: 'Series', pretaxPrice: '10' },
+      { materialCode: 'M-TWO', sku: 'SKU-TWO', materialName: 'Item Two', productLine: 'Line', productSeries: 'Series', pretaxPrice: '20' }
+    ]],
+    ['warehouseMaterialMap', [
+      { subject: '杭州国源养老科技有限公司', warehouseName: '101-G/海外事业一部/WFS仓/国源-Walmart美国仓', materialCode: 'M-ONE', businessUnit: '海外事业一部' },
+      { subject: '杭州国源养老科技有限公司', warehouseName: '102-G/海外事业二部/WFS仓/国源-Walmart美国仓', materialCode: 'M-TWO', businessUnit: '海外事业二部' }
+    ]],
+    ['inventorySummaryFile3', [
+      { sku: 'SKU-ONE', warehouseName: '国源-Walmart美国仓', totalInventoryQty: '100' },
+      { sku: 'SKU-TWO', warehouseName: '国源-Walmart美国仓', totalInventoryQty: '200' }
+    ]],
+    ['inventorySummaryFile9', [
+      { subject: '杭州国源养老科技有限公司', lingxingWarehouseName: '国源-Walmart美国仓', kingdeeWarehouseName: '102-G/海外事业二部/WFS仓/国源-Walmart美国仓' }
+    ]],
+    ['inventorySummaryFile10', [
+      { lingxingSku: 'SKU-ONE', identifier: 'M-ONE' },
+      { lingxingSku: 'SKU-TWO', identifier: 'M-TWO' }
+    ]]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
+  });
+  const overseasOne = result.rows.find((row) => row.matchKey === '海外事业一部+M-ONE');
+  const overseasTwo = result.rows.find((row) => row.matchKey === '海外事业二部+M-TWO');
+  assert.equal(overseasOne?.wfsInventoryQty, 100);
+  assert.equal(overseasTwo?.wfsInventoryQty, 200);
+  assert.equal(result.anomalies.length, 0);
+});
+
 test('WFS inventory marks conflicting business unit mappings instead of guessing', () => {
   const rowsBySlot = new Map([
     ['productCategory', [

@@ -1805,6 +1805,13 @@ test('inventory summary and domestic board use complete source models and enforc
       sheetName: '预测B',
       rowCount: 1
     });
+    const forecastDatabase = new SQL.Database(readFileSync(path.join(dataDir, 'gendanjindu.sqlite')));
+    const forecastStatement = forecastDatabase.prepare('SELECT rows_json FROM dimension_files WHERE slot_id = ?');
+    forecastStatement.bind(['inventorySummaryFile15']);
+    assert.equal(forecastStatement.step(), true);
+    assert.deepEqual(JSON.parse(forecastStatement.getAsObject().rows_json), [{ 月份: '2026-09', SKU: 'SKU-B', 预测数量: '20' }]);
+    forecastStatement.free();
+    forecastDatabase.close();
 
     const agingWorkbook = xlsx.utils.book_new();
     xlsx.utils.book_append_sheet(agingWorkbook, xlsx.utils.json_to_sheet([

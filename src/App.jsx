@@ -5664,7 +5664,9 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
         ? `${slot.title} 已自动解析并应用 ${payload.rowCount} 行；源数据 ${inventoryParseSummary.sourceRowCount || 0} 行，零数量过滤 ${inventoryParseSummary.filteredZeroQtyRows || 0} 行，汇总行过滤 ${inventoryParseSummary.filteredSummaryRows || 0} 行。`
         : parseSummary
           ? `${slot.title} 已自动解析并应用 ${payload.rowCount} 行，异常 ${parseSummary.issueRows || 0} 行。`
-          : `${slot.title} 已上传 ${payload.rowCount} 行，并已自动应用刷新。`;
+          : slot.requiresSheetSelection && payload.sheetName
+            ? `${slot.title} 已上传并应用工作表“${payload.sheetName}”，共 ${payload.rowCount} 行。`
+            : `${slot.title} 已上传 ${payload.rowCount} 行，并已自动应用刷新。`;
       setSlotState(slot.id, {
         progress: 78,
         statusText: `${uploadSummaryText}，正在应用刷新...`,
@@ -5824,7 +5826,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
                   </fieldset>
                 ) : (
                 <div className="sheet-selector">
-                  <label>选择工作表
+                  <label>{slot.requiresSheetSelection ? '选择应用的工作表' : '选择工作表'}
                     <select value={currentSheet} disabled={busy} onChange={(e) => selectSheet(slot, e.target.value)}>
                       <option value="">{slot.requiresSheetSelection ? '请选择工作表' : '全部工作表'}</option>
                       {sheetNames.map((name) => <option key={name} value={name}>{name}</option>)}
@@ -5848,6 +5850,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
               <div className="slot-info">
                 {record && <span>文件：{record.file_name}</span>}
                 {hasSheets && <span>工作表：{sheetNames.join('、')}</span>}
+                {record?.sheet_name && <span>已应用工作表：{record.sheet_name}</span>}
                 {record?.selectedSheetNames?.length > 0 && <span>已应用工作表：{record.selectedSheetNames.join('、')}</span>}
                 {state.file && <span>本次解析行数：{state.inspectRowCount || 0}</span>}
                 {record && <span>已保存行数：{record.rowCount}</span>}

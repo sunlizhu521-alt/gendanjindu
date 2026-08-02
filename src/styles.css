@@ -4282,10 +4282,10 @@ th {
 .sheet-multi-selector { margin: 0 16px 12px; padding: 10px; border: 1px solid #dbe3ef; border-radius: 6px; background: #f8fafc; min-width: 0; }
 .sheet-multi-selector legend { padding: 0 4px; font-size: 13px; color: #475569; }
 .sheet-multi-selector legend span { color: #2563eb; font-weight: 700; }
-.sheet-multi-selector > div { display: grid; gap: 6px; max-height: 150px; overflow-y: auto; }
+.sheet-multi-selector > div { display: grid; gap: 6px; max-height: 150px; overflow-x: hidden; overflow-y: auto; }
 .sheet-multi-selector label { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 13px; color: #334155; cursor: pointer; }
-.sheet-multi-selector label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sheet-multi-selector input { flex: 0 0 auto; accent-color: #2563eb; }
+.sheet-multi-selector label span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet-multi-selector input[type="checkbox"] { flex: 0 0 16px; width: 16px; height: 16px; margin: 0; padding: 0; accent-color: #2563eb; }
 .warn-text { color: #d97706; font-weight: 500; }
 .error-text { color: #dc2626; font-weight: 600; }
 .skipped-details { margin-top: 8px; }

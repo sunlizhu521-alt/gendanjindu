@@ -529,8 +529,8 @@ function workbookSheetNames(file) {
   return xlsx.read(file.buffer, { type: 'buffer', bookSheets: true, WTF: false }).SheetNames || [];
 }
 
-function workbookChoiceInspect(file) {
-  const sheetNames = workbookSheetNames(file);
+async function workbookChoiceInspect(file) {
+  const sheetNames = await workbookSheetNamesFromUpload(file);
   return {
     sheetNames,
     sheetPreviews: sheetNames.map((sheetName) => ({
@@ -682,6 +682,19 @@ async function workbookSheetDefinitions(directory) {
       path: target.startsWith('xl/') ? target : `xl/${target}`
     };
   });
+}
+
+async function workbookSheetNamesFromUpload(file) {
+  if (!file?.path && !file?.buffer) throw new Error('未收到上传文件');
+  const extension = path.extname(file.originalname || file.path || '').toLowerCase();
+  if (extension !== '.xlsx') {
+    const buffer = file.buffer || await fs.promises.readFile(file.path);
+    return workbookSheetNames({ ...file, buffer });
+  }
+  const directory = file.path
+    ? await unzipper.Open.file(file.path)
+    : await unzipper.Open.buffer(file.buffer);
+  return (await workbookSheetDefinitions(directory)).map((sheet) => sheet.name);
 }
 
 async function readSharedStrings(directory) {
@@ -873,15 +886,38 @@ async function streamingKingdeeWorkbookRows(file, sheetName = null, options = {}
   const sharedStrings = await readSharedStrings(directory);
   const dateStyleIndexes = await readDateStyleIndexes(directory);
   const sheetNames = worksheetEntries.map((sheet) => sheet.name);
-  const explicitSheet = sheetName ? worksheetEntries.find((sheet) => sheet.name === sheetName) : null;
-  const preferredSheet = !sheetName
+  const requestedSheetNames = (Array.isArray(sheetName) ? sheetName : sheetName ? [sheetName] : [])
+    .map(normalize)
+    .filter((name, index, names) => name && names.indexOf(name) === index);
+  const explicitSheets = requestedSheetNames
+    .map((name) => worksheetEntries.find((sheet) => sheet.name === name))
+    .filter(Boolean);
+  const preferredSheet = !requestedSheetNames.length
     ? worksheetEntries.find((sheet) => options.preferredSheetPatterns?.some((pattern) => pattern.test(sheet.name)))
     : null;
-  const candidates = explicitSheet
-    ? [explicitSheet]
+  const candidates = requestedSheetNames.length
+    ? explicitSheets
     : preferredSheet
       ? [preferredSheet]
       : worksheetEntries;
+  if (requestedSheetNames.length) {
+    const sheets = [];
+    for (const worksheet of candidates) {
+      const data = await streamWorksheetData(worksheet.entry, worksheet.name, sharedStrings, dateStyleIndexes);
+      const rows = options.stringifyValues
+        ? data.rows.map((row) => Object.fromEntries(
+          Object.entries(row).map(([column, value]) => [column, normalize(value)])
+        ))
+        : data.rows;
+      sheets.push({
+        sheetName: data.sheetName,
+        rows,
+        columns: data.columns,
+        headerRow: data.headerRow
+      });
+    }
+    return { sheetNames, sheetPreviews: [], sheets, rows: sheets.flatMap((sheet) => sheet.rows) };
+  }
   let fallbackSheet = null;
   for (const worksheet of candidates) {
     const data = await streamWorksheetData(worksheet.entry, worksheet.name, sharedStrings, dateStyleIndexes);
@@ -914,6 +950,12 @@ function cleanupKingdeeUpload(req, res, next) {
   res.once('finish', cleanup);
   res.once('close', cleanup);
   next();
+}
+
+function dimensionWorkbookUpload(req, res, next) {
+  const useDisk = ['inventorySummaryFile15', 'inventorySummaryFile16'].includes(normalize(req.params?.slotId));
+  const middleware = (useDisk ? kingdeeUpload : upload).single('file');
+  return middleware(req, res, next);
 }
 
 function workbookInspect(file, sheetName = null) {
@@ -3631,16 +3673,18 @@ app.put('/api/mappings/:kind', requireAuth, (req, res) => {
   res.json({ mapping });
 });
 
-app.post('/api/workbook/inspect', requireAuth, upload.single('file'), (req, res) => {
+app.post('/api/workbook/inspect', requireAuth, kingdeeUpload.single('file'), cleanupKingdeeUpload, async (req, res) => {
   const sheetName = normalize(req.body.sheetName);
   const slotId = normalize(req.body.slotId);
   if (isFirstMileSlot(slotId)) {
-    return res.json(inspectFirstMileWorkbook(req.file));
+    const file = { ...req.file, buffer: await fs.promises.readFile(req.file.path) };
+    return res.json(inspectFirstMileWorkbook(file));
   }
   if (['inventorySummaryFile15', 'inventorySummaryFile16'].includes(slotId)) {
-    return res.json(workbookChoiceInspect(req.file));
+    return res.json(await workbookChoiceInspect(req.file));
   }
-  res.json(workbookInspect(req.file, sheetName || null));
+  const file = { ...req.file, buffer: await fs.promises.readFile(req.file.path) };
+  res.json(workbookInspect(file, sheetName || null));
 });
 
 function kingdeeImportMapping(body = {}) {
@@ -4083,7 +4127,7 @@ app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'wan
   });
 });
 
-app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'firstMileDatabase']), upload.single('file'), (req, res) => {
+app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'firstMileDatabase']), dimensionWorkbookUpload, cleanupKingdeeUpload, async (req, res) => {
   const slotId = req.params.slotId;
   const mapping = parseJson(req.body.mapping, {});
   const sheetName = normalize(req.body.sheetName);
@@ -4091,7 +4135,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     .map(normalize)
     .filter((name, index, names) => name && names.indexOf(name) === index);
   if (slotId === 'inventorySummaryFile15') {
-    const sheetNames = workbookSheetNames(req.file);
+    const sheetNames = await workbookSheetNamesFromUpload(req.file);
     if (sheetName && !sheetNames.includes(sheetName)) {
       const error = new Error('销售预测选择的工作表不存在，请重新选择');
       error.status = 400;
@@ -4106,7 +4150,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     }
   }
   if (slotId === 'inventorySummaryFile16') {
-    const sheetNames = workbookSheetNames(req.file);
+    const sheetNames = await workbookSheetNamesFromUpload(req.file);
     if (selectedSheetNames.length !== 2) {
       const error = new Error('库龄文件必须选择两个工作表后才能应用');
       error.status = 400;
@@ -4127,10 +4171,14 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   const inventorySummaryParsed = isInventorySummarySlot(slotId)
     ? parseInventorySummaryWorkbook(req.file, slotId, mapping)
     : null;
-  const parsed = firstMileParsed || inventorySummaryParsed || workbookRows(
-    req.file,
-    slotId === 'inventorySummaryFile16' ? selectedSheetNames : sheetName || null,
-    { includePreviews: false }
+  const parsed = firstMileParsed || inventorySummaryParsed || (
+    ['inventorySummaryFile15', 'inventorySummaryFile16'].includes(slotId)
+      ? await streamingKingdeeWorkbookRows(
+        req.file,
+        slotId === 'inventorySummaryFile16' ? selectedSheetNames : sheetName || null,
+        { includePreviews: false, stringifyValues: true }
+      )
+      : workbookRows(req.file, sheetName || null, { includePreviews: false })
   );
   const parsedRows = firstMileParsed || inventorySummaryParsed ? parsed.rows : parsed.rows.map((row) => {
     if (['inventorySummaryFile4', 'inventorySummaryFile5'].includes(slotId)) {

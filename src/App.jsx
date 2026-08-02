@@ -1241,8 +1241,7 @@ const INVENTORY_DEFAULT_BUSINESS_UNITS = [
   '全球招商事业部',
   '国内事业部',
   '海外事业一部',
-  '海外事业二部',
-  '销售部-工厂'
+  '海外事业二部'
 ];
 const INVENTORY_SUBJECT_MEASURE_FIELDS = [
   'fbaInventoryQty', 'fbaInventoryValue',

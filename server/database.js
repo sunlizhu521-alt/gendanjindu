@@ -303,6 +303,7 @@ function migrate() {
       file_name TEXT NOT NULL,
       sheet_name TEXT NOT NULL DEFAULT '',
       sheet_names TEXT NOT NULL DEFAULT '[]',
+      selected_sheet_names TEXT NOT NULL DEFAULT '[]',
       mapping_json TEXT NOT NULL,
       rows_json TEXT NOT NULL,
       applied INTEGER NOT NULL DEFAULT 0,
@@ -364,6 +365,9 @@ function migrate() {
   }
   if (!dimensionColumns.includes('sheet_names')) {
     run("ALTER TABLE dimension_files ADD COLUMN sheet_names TEXT NOT NULL DEFAULT '[]'");
+  }
+  if (!dimensionColumns.includes('selected_sheet_names')) {
+    run("ALTER TABLE dimension_files ADD COLUMN selected_sheet_names TEXT NOT NULL DEFAULT '[]'");
   }
 
   const domesticInputColumns = all('PRAGMA table_info(domestic_board_inputs)').map((row) => row.name);

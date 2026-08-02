@@ -104,7 +104,7 @@ const DIMENSION_SLOTS = {
   inventorySummaryFile13: 'Dim-领星FBA在途&金蝶仓库',
   inventorySummaryFile14: '京东在途',
   inventorySummaryFile15: '销售预测',
-  inventorySummaryFile16: '库存槽位 16',
+  inventorySummaryFile16: '库龄文件',
   firstMileData1: '张婷婷头程数据',
   firstMileData2: '扈翠芸头程数据',
   firstMileData3: '魏静头程数据',
@@ -527,11 +527,14 @@ function sheetData(sheet) {
 function workbookRows(file, sheetName = null, options = {}) {
   if (!file?.buffer) throw new Error('未收到上传文件');
   const workbook = xlsx.read(file.buffer, { type: 'buffer', cellDates: true, dense: true });
-  const preferredSheet = !sheetName && options.preferredSheetPatterns?.length
+  const selectedSheetNames = (Array.isArray(sheetName) ? sheetName : sheetName ? [sheetName] : [])
+    .map(normalize)
+    .filter((name, index, names) => name && names.indexOf(name) === index);
+  const preferredSheet = !selectedSheetNames.length && options.preferredSheetPatterns?.length
     ? workbook.SheetNames.find((name) => options.preferredSheetPatterns.some((pattern) => pattern.test(name)))
     : '';
-  const targetSheets = sheetName
-    ? workbook.SheetNames.filter((name) => name === sheetName)
+  const targetSheets = selectedSheetNames.length
+    ? workbook.SheetNames.filter((name) => selectedSheetNames.includes(name))
     : preferredSheet
       ? [preferredSheet]
       : workbook.SheetNames;
@@ -4019,7 +4022,7 @@ app.post('/api/difference-allocations/:sessionId/apply', requireAuth, requirePag
 });
 
 app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'firstMileDatabase']), (req, res) => {
-  const rows = all('SELECT slot_id, title, file_name, sheet_name, sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at FROM dimension_files');
+  const rows = all('SELECT slot_id, title, file_name, sheet_name, sheet_names, selected_sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at FROM dimension_files');
   res.json({
     rows: rows.map((row) => {
       const dimensionRows = parseJson(row.rows_json, []);
@@ -4032,6 +4035,7 @@ app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'wan
         ...safeRow,
         title: DIMENSION_SLOTS[row.slot_id] || safeRow.title,
         sheetNames: parseJson(row.sheet_names, []),
+        selectedSheetNames: parseJson(row.selected_sheet_names, []),
         mapping,
         rowCount: dimensionRows.length,
         diagnostics: dimensionDiagnostics(row.slot_id, dimensionRows)
@@ -4044,6 +4048,9 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   const slotId = req.params.slotId;
   const mapping = parseJson(req.body.mapping, {});
   const sheetName = normalize(req.body.sheetName);
+  const selectedSheetNames = parseJson(req.body.sheetNames, [])
+    .map(normalize)
+    .filter((name, index, names) => name && names.indexOf(name) === index);
   if (slotId === 'inventorySummaryFile15') {
     const inspection = workbookInspect(req.file, sheetName || null);
     if (sheetName && !inspection.sheetNames.includes(sheetName)) {
@@ -4059,13 +4066,33 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
       throw error;
     }
   }
+  if (slotId === 'inventorySummaryFile16') {
+    const inspection = workbookInspect(req.file);
+    if (selectedSheetNames.length !== 2) {
+      const error = new Error('库龄文件必须选择两个工作表后才能应用');
+      error.status = 400;
+      error.publicMessage = error.message;
+      throw error;
+    }
+    const missingSheets = selectedSheetNames.filter((name) => !inspection.sheetNames.includes(name));
+    if (missingSheets.length) {
+      const error = new Error(`库龄文件选择的工作表不存在：${missingSheets.join('、')}`);
+      error.status = 400;
+      error.publicMessage = error.message;
+      throw error;
+    }
+  }
   const firstMileParsed = isFirstMileSlot(slotId)
     ? parseFirstMileWorkbook(req.file, { slotId, fileName: safeFilename(req.file) })
     : null;
   const inventorySummaryParsed = isInventorySummarySlot(slotId)
     ? parseInventorySummaryWorkbook(req.file, slotId, mapping)
     : null;
-  const parsed = firstMileParsed || inventorySummaryParsed || workbookRows(req.file, sheetName || null, { includePreviews: false });
+  const parsed = firstMileParsed || inventorySummaryParsed || workbookRows(
+    req.file,
+    slotId === 'inventorySummaryFile16' ? selectedSheetNames : sheetName || null,
+    { includePreviews: false }
+  );
   const parsedRows = firstMileParsed || inventorySummaryParsed ? parsed.rows : parsed.rows.map((row) => {
     if (['inventorySummaryFile4', 'inventorySummaryFile5'].includes(slotId)) {
       return {
@@ -4219,9 +4246,12 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     }
     return row;
   });
-  const rows = slotId.startsWith('inventorySummaryFile')
-    ? parsedRows.map(({ raw: _raw, ...row }) => row)
+  const rowsWithSheetSource = slotId === 'inventorySummaryFile16'
+    ? parsed.sheets.flatMap((sheet) => sheet.rows.map((row) => ({ ...row, __sourceSheet: sheet.sheetName })))
     : parsedRows;
+  const rows = slotId.startsWith('inventorySummaryFile')
+    ? rowsWithSheetSource.map(({ raw: _raw, ...row }) => row)
+    : rowsWithSheetSource;
   const storedMapping = firstMileParsed
     ? { ...mapping, __firstMileSummary: firstMileParsed.summary }
     : inventorySummaryParsed?.mapping || mapping;
@@ -4229,10 +4259,10 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   const beforeOrderCounts = orderDataCounts();
   transaction(() => {
     run(
-      `INSERT INTO dimension_files (slot_id, title, file_name, sheet_name, sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-      ON CONFLICT(slot_id) DO UPDATE SET title = excluded.title, file_name = excluded.file_name, sheet_name = excluded.sheet_name, sheet_names = excluded.sheet_names, mapping_json = excluded.mapping_json, rows_json = excluded.rows_json, applied = 1, uploaded_by = excluded.uploaded_by, updated_at = excluded.updated_at`,
-      [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), firstMileParsed ? '' : inventorySummaryParsed?.sheetName || sheetName, JSON.stringify(parsed.sheetNames), JSON.stringify(storedMapping), JSON.stringify(rows), req.user.name, now]
+      `INSERT INTO dimension_files (slot_id, title, file_name, sheet_name, sheet_names, selected_sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      ON CONFLICT(slot_id) DO UPDATE SET title = excluded.title, file_name = excluded.file_name, sheet_name = excluded.sheet_name, sheet_names = excluded.sheet_names, selected_sheet_names = excluded.selected_sheet_names, mapping_json = excluded.mapping_json, rows_json = excluded.rows_json, applied = 1, uploaded_by = excluded.uploaded_by, updated_at = excluded.updated_at`,
+      [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), firstMileParsed ? '' : inventorySummaryParsed?.sheetName || sheetName, JSON.stringify(parsed.sheetNames), JSON.stringify(slotId === 'inventorySummaryFile16' ? selectedSheetNames : []), JSON.stringify(storedMapping), JSON.stringify(rows), req.user.name, now]
     );
     if (slotId === 'productCategory' || slotId === 'purchaseAssignment') applyDimensionEnrichment();
     assertOrderDataUnchanged(beforeOrderCounts);
@@ -4241,6 +4271,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     rowCount: rows.length,
     sheetName: firstMileParsed ? '' : inventorySummaryParsed?.sheetName || sheetName,
     sheetNames: parsed.sheetNames,
+    selectedSheetNames: slotId === 'inventorySummaryFile16' ? selectedSheetNames : [],
     applied: true,
     diagnostics: dimensionDiagnostics(slotId, rows),
     parseSummary: firstMileParsed?.summary || inventorySummaryParsed?.mapping?.__inventorySummary || null,

@@ -1806,6 +1806,84 @@ test('inventory summary and domestic board use complete source models and enforc
       rowCount: 1
     });
 
+    const agingWorkbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(agingWorkbook, xlsx.utils.json_to_sheet([
+      { 物料编码: 'AGING-A', 库龄: '0-30天', 数量: 10 }
+    ]), '国内库龄');
+    xlsx.utils.book_append_sheet(agingWorkbook, xlsx.utils.json_to_sheet([
+      { 物料编码: 'AGING-B', 库龄: '31-60天', 数量: 20 }
+    ]), '跨境库龄');
+    xlsx.utils.book_append_sheet(agingWorkbook, xlsx.utils.json_to_sheet([
+      { 物料编码: 'AGING-C', 库龄: '61天以上', 数量: 30 }
+    ]), '说明');
+    const agingBuffer = xlsx.write(agingWorkbook, { type: 'buffer', bookType: 'xlsx' });
+
+    const oneAgingSheetForm = new FormData();
+    oneAgingSheetForm.append('file', new Blob([agingBuffer]), '库龄文件.xlsx');
+    oneAgingSheetForm.append('sheetNames', JSON.stringify(['国内库龄']));
+    const oneAgingSheetResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions/inventorySummaryFile16/upload`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token' },
+      body: oneAgingSheetForm
+    });
+    assert.equal(oneAgingSheetResponse.status, 400);
+    assert.match((await oneAgingSheetResponse.json()).error, /必须选择两个工作表/);
+
+    const invalidAgingSheetForm = new FormData();
+    invalidAgingSheetForm.append('file', new Blob([agingBuffer]), '库龄文件.xlsx');
+    invalidAgingSheetForm.append('sheetNames', JSON.stringify(['国内库龄', '不存在']));
+    const invalidAgingSheetResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions/inventorySummaryFile16/upload`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token' },
+      body: invalidAgingSheetForm
+    });
+    assert.equal(invalidAgingSheetResponse.status, 400);
+    assert.match((await invalidAgingSheetResponse.json()).error, /工作表不存在/);
+
+    const selectedAgingSheetsForm = new FormData();
+    selectedAgingSheetsForm.append('file', new Blob([agingBuffer]), '库龄文件.xlsx');
+    selectedAgingSheetsForm.append('sheetNames', JSON.stringify(['国内库龄', '跨境库龄']));
+    const selectedAgingSheetsResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions/inventorySummaryFile16/upload`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token' },
+      body: selectedAgingSheetsForm
+    });
+    const selectedAgingSheetsPayload = await selectedAgingSheetsResponse.json();
+    assert.equal(selectedAgingSheetsResponse.status, 200, `${JSON.stringify(selectedAgingSheetsPayload)}\n${logs.join('')}`);
+    assert.deepEqual({
+      rowCount: selectedAgingSheetsPayload.rowCount,
+      selectedSheetNames: selectedAgingSheetsPayload.selectedSheetNames,
+      sheetNames: selectedAgingSheetsPayload.sheetNames
+    }, {
+      rowCount: 2,
+      selectedSheetNames: ['国内库龄', '跨境库龄'],
+      sheetNames: ['国内库龄', '跨境库龄', '说明']
+    });
+
+    const agingDimensionsResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions`, {
+      headers: { Authorization: 'Bearer admin-token' }
+    });
+    const agingRecord = (await agingDimensionsResponse.json()).rows.find((row) => row.slot_id === 'inventorySummaryFile16');
+    assert.deepEqual({
+      title: agingRecord?.title,
+      selectedSheetNames: agingRecord?.selectedSheetNames,
+      rowCount: agingRecord?.rowCount
+    }, {
+      title: '库龄文件',
+      selectedSheetNames: ['国内库龄', '跨境库龄'],
+      rowCount: 2
+    });
+
+    const agingDatabase = new SQL.Database(readFileSync(path.join(dataDir, 'gendanjindu.sqlite')));
+    const agingStatement = agingDatabase.prepare('SELECT rows_json, selected_sheet_names FROM dimension_files WHERE slot_id = ?');
+    agingStatement.bind(['inventorySummaryFile16']);
+    assert.equal(agingStatement.step(), true);
+    const storedAging = agingStatement.getAsObject();
+    agingStatement.free();
+    agingDatabase.close();
+    assert.deepEqual(JSON.parse(storedAging.selected_sheet_names), ['国内库龄', '跨境库龄']);
+    assert.deepEqual(JSON.parse(storedAging.rows_json).map((row) => row.__sourceSheet), ['国内库龄', '跨境库龄']);
+
     const inventoryDatabase = new SQL.Database(readFileSync(path.join(dataDir, 'gendanjindu.sqlite')));
     const inventoryStatement = inventoryDatabase.prepare('SELECT rows_json FROM dimension_files WHERE slot_id = ?');
     inventoryStatement.bind(['inventorySummaryFile1']);
@@ -1951,7 +2029,7 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(loggedInBootstrapPayload.dimensionSlots.inventorySummaryFile13, 'Dim-领星FBA在途&金蝶仓库');
     assert.equal(loggedInBootstrapPayload.dimensionSlots.inventorySummaryFile10, 'Dim-领星SKU对应物料编码-产品管理');
     assert.equal(loggedInBootstrapPayload.dimensionSlots.inventorySummaryFile15, '销售预测');
-    assert.equal(loggedInBootstrapPayload.dimensionSlots.inventorySummaryFile16, '库存槽位 16');
+    assert.equal(loggedInBootstrapPayload.dimensionSlots.inventorySummaryFile16, '库龄文件');
 
     const persistedDatabase = new SQL.Database(readFileSync(path.join(dataDir, 'gendanjindu.sqlite')));
     const sessionStatement = persistedDatabase.prepare('SELECT created_at, expires_at FROM sessions WHERE token = ?');

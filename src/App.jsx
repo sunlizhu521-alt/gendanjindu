@@ -255,7 +255,7 @@ const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
     ['subject', '主体'], ['storeName', '店铺'], ['kingdeeWarehouseName', '金蝶仓库名称']
   ] },
   { id: 'inventorySummaryFile15', title: '销售预测', fields: [], requiresSheetSelection: true },
-  { id: 'inventorySummaryFile16', title: '库存槽位 16', fields: [] }
+  { id: 'inventorySummaryFile16', title: '库龄文件', fields: [], requiredSheetCount: 2 }
 ];
 
 const FIRST_MILE_DATABASE_SLOTS = [
@@ -5486,6 +5486,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       file,
       columns: [],
       sheetNames: [],
+      selectedSheetNames: [],
       sheetPreviews: [],
       progress: 12,
       statusText: '正在读取文件...',
@@ -5501,6 +5502,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       const columns = payload.columns || [];
       const inspectRowCount = Number(payload.rowCount || 0);
       const requiresSheetSelection = Boolean(slot.requiresSheetSelection && (payload.sheetNames?.length || 0) > 1);
+      const requiresMultipleSheets = Number(slot.requiredSheetCount || 0) > 0;
       setLocal((prev) => {
         const prevState = prev[slot.id] || {};
         const savedMapping = prevState.savedMapping || prevState.mapping || record?.mapping || {};
@@ -5517,6 +5519,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
             file,
             columns,
             sheetNames: payload.sheetNames || [],
+            selectedSheetNames: [],
             sheetPreviews: payload.sheetPreviews || [],
             savedMapping,
             sheetMappings: { ...sheetMappings, '': mapping },
@@ -5524,20 +5527,24 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
             sheetName: '',
             inspectRowCount,
             progress: columns.length ? 100 : 70,
-            statusText: requiresSheetSelection
+            statusText: requiresMultipleSheets
+              ? `检测到 ${payload.sheetNames?.length || 0} 个工作表，请选择 ${slot.requiredSheetCount} 个工作表应用`
+              : requiresSheetSelection
               ? `检测到 ${payload.sheetNames.length} 个工作表，请先选择要使用的工作表`
               : columns.length
               ? slot.firstMile
                 ? `解析完成：识别 ${payload.recognizedSheets || payload.sheetNames?.length || 1} 个业务工作表，共 ${inspectRowCount} 行`
                 : `解析完成：识别 ${payload.sheetNames?.length || 1} 个工作表，共 ${inspectRowCount} 行，请检查字段映射`
               : '未识别到表头，请检查前10行是否包含字段名',
-            statusType: columns.length && !requiresSheetSelection ? 'success' : 'warning',
+            statusType: columns.length && !requiresSheetSelection && !requiresMultipleSheets ? 'success' : 'warning',
             busy: ''
           }
         };
       });
       if (!columns.length) {
         setMessage(`${slot.title} 未识别到表头，请检查前10行是否包含字段名`);
+      } else if (requiresMultipleSheets) {
+        setMessage(`${slot.title} 检测到 ${payload.sheetNames?.length || 0} 个工作表，请选择 ${slot.requiredSheetCount} 个工作表应用`);
       } else if (requiresSheetSelection) {
         setMessage(`${slot.title} 检测到多个工作表，请先选择要使用的工作表`);
       } else {
@@ -5584,6 +5591,29 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
     });
   }
 
+  function toggleSelectedSheet(slot, sheetName) {
+    const state = local[slot.id] || {};
+    const selected = state.selectedSheetNames || [];
+    const nextSelected = selected.includes(sheetName)
+      ? selected.filter((name) => name !== sheetName)
+      : selected.length < slot.requiredSheetCount
+        ? [...selected, sheetName]
+        : selected;
+    const selectedRows = (state.sheetPreviews || [])
+      .filter((sheet) => nextSelected.includes(sheet.sheetName))
+      .reduce((sum, sheet) => sum + Number(sheet.rowCount || 0), 0);
+    const complete = nextSelected.length === slot.requiredSheetCount;
+    setSlotState(slot.id, {
+      selectedSheetNames: nextSelected,
+      inspectRowCount: selectedRows,
+      progress: complete ? 100 : 80,
+      statusText: complete
+        ? `已选择：${nextSelected.join('、')}，共 ${selectedRows} 行`
+        : `已选择 ${nextSelected.length}/${slot.requiredSheetCount} 个工作表`,
+      statusType: complete ? 'success' : 'warning'
+    });
+  }
+
   async function uploadSlot(slot) {
     const state = local[slot.id];
     if (!state?.file) {
@@ -5600,6 +5630,16 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       setMessage(`${slot.title} 检测到多个工作表，请先选择要使用的工作表`);
       return;
     }
+    if (slot.requiredSheetCount && (state.selectedSheetNames?.length || 0) !== slot.requiredSheetCount) {
+      setSlotState(slot.id, {
+        progress: 100,
+        statusText: `请选择 ${slot.requiredSheetCount} 个工作表后再上传保存`,
+        statusType: 'warning',
+        busy: ''
+      });
+      setMessage(`${slot.title} 必须选择 ${slot.requiredSheetCount} 个工作表`);
+      return;
+    }
     setSlotState(slot.id, {
       progress: 35,
       statusText: '正在上传保存...',
@@ -5611,6 +5651,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       data.append('file', state.file);
       data.append('mapping', JSON.stringify(state.mapping || {}));
       if (state.sheetName) data.append('sheetName', state.sheetName);
+      if (slot.requiredSheetCount) data.append('sheetNames', JSON.stringify(state.selectedSheetNames || []));
       const payload = await request(`/api/dimensions/${slot.id}/upload`, { token, method: 'POST', body: data });
       const parseSummary = payload.parseSummary;
       const inventoryParseSummary = parseSummary?.parserType === 'inventorySummary' ? parseSummary : null;
@@ -5696,6 +5737,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
         file: null,
         columns: [],
         sheetNames: [],
+        selectedSheetNames: [],
         sheetPreviews: [],
         mapping: {},
         sheetName: '',
@@ -5737,6 +5779,9 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
           const hasSheets = !slot.firstMile && (state.sheetNames?.length || record?.sheetNames?.length || 0) > 1;
           const sheetNames = state.sheetNames?.length ? state.sheetNames : (record?.sheetNames || []);
           const currentSheet = state.file ? (state.sheetName || '') : (state.sheetName || record?.sheetName || '');
+          const selectedSheetNames = state.file
+            ? (state.selectedSheetNames || [])
+            : (state.selectedSheetNames?.length ? state.selectedSheetNames : (record?.selectedSheetNames || []));
           return (
             <article id={`dimension-slot-${slot.id}`} key={slot.id} className={`library-slot ${highlightSlotId === slot.id ? 'highlighted' : ''}`}>
               <div className="slot-head">
@@ -5760,6 +5805,24 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
                 </div>
               )}
               {hasSheets && (
+                slot.requiredSheetCount ? (
+                  <fieldset className="sheet-multi-selector" disabled={busy || !state.file}>
+                    <legend>选择 {slot.requiredSheetCount} 个工作表 <span>{selectedSheetNames.length}/{slot.requiredSheetCount}</span></legend>
+                    <div>
+                      {sheetNames.map((name) => (
+                        <label key={name}>
+                          <input
+                            type="checkbox"
+                            checked={selectedSheetNames.includes(name)}
+                            disabled={busy || (!selectedSheetNames.includes(name) && selectedSheetNames.length >= slot.requiredSheetCount)}
+                            onChange={() => toggleSelectedSheet(slot, name)}
+                          />
+                          <span title={name}>{name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                ) : (
                 <div className="sheet-selector">
                   <label>选择工作表
                     <select value={currentSheet} disabled={busy} onChange={(e) => selectSheet(slot, e.target.value)}>
@@ -5768,6 +5831,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
                     </select>
                   </label>
                 </div>
+                )
               )}
               {state.columns?.length > 0 && slot.fields.length > 0 && (
                 <FieldMapping
@@ -5784,6 +5848,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
               <div className="slot-info">
                 {record && <span>文件：{record.file_name}</span>}
                 {hasSheets && <span>工作表：{sheetNames.join('、')}</span>}
+                {record?.selectedSheetNames?.length > 0 && <span>已应用工作表：{record.selectedSheetNames.join('、')}</span>}
                 {state.file && <span>本次解析行数：{state.inspectRowCount || 0}</span>}
                 {record && <span>已保存行数：{record.rowCount}</span>}
                 {record?.diagnostics && diagnosticsText(slot.id, record.diagnostics) && <span>{diagnosticsText(slot.id, record.diagnostics)}</span>}

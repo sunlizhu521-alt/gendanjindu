@@ -524,12 +524,47 @@ function sheetData(sheet) {
   return { columns, rowCount: rows.length, previewRows: rows.slice(0, 8), rows, headerRow: headerIndex + 1 };
 }
 
+function workbookSheetNames(file) {
+  if (!file?.buffer) throw new Error('未收到上传文件');
+  return xlsx.read(file.buffer, { type: 'buffer', bookSheets: true, WTF: false }).SheetNames || [];
+}
+
+function workbookChoiceInspect(file) {
+  const sheetNames = workbookSheetNames(file);
+  return {
+    sheetNames,
+    sheetPreviews: sheetNames.map((sheetName) => ({
+      sheetName,
+      columns: [],
+      rowCount: null,
+      previewRows: [],
+      headerRow: 0
+    })),
+    columns: ['工作表'],
+    previewRows: [],
+    rowCount: null,
+    totalRowCount: null,
+    headerRow: 0,
+    lightweight: true
+  };
+}
+
 function workbookRows(file, sheetName = null, options = {}) {
   if (!file?.buffer) throw new Error('未收到上传文件');
-  const workbook = xlsx.read(file.buffer, { type: 'buffer', cellDates: true, dense: true });
   const selectedSheetNames = (Array.isArray(sheetName) ? sheetName : sheetName ? [sheetName] : [])
     .map(normalize)
     .filter((name, index, names) => name && names.indexOf(name) === index);
+  const workbook = xlsx.read(file.buffer, {
+    type: 'buffer',
+    cellDates: true,
+    dense: true,
+    cellFormula: false,
+    cellHTML: false,
+    cellNF: false,
+    cellStyles: false,
+    WTF: false,
+    ...(selectedSheetNames.length ? { sheets: selectedSheetNames } : {})
+  });
   const preferredSheet = !selectedSheetNames.length && options.preferredSheetPatterns?.length
     ? workbook.SheetNames.find((name) => options.preferredSheetPatterns.some((pattern) => pattern.test(name)))
     : '';
@@ -3598,8 +3633,12 @@ app.put('/api/mappings/:kind', requireAuth, (req, res) => {
 
 app.post('/api/workbook/inspect', requireAuth, upload.single('file'), (req, res) => {
   const sheetName = normalize(req.body.sheetName);
-  if (isFirstMileSlot(normalize(req.body.slotId))) {
+  const slotId = normalize(req.body.slotId);
+  if (isFirstMileSlot(slotId)) {
     return res.json(inspectFirstMileWorkbook(req.file));
+  }
+  if (['inventorySummaryFile15', 'inventorySummaryFile16'].includes(slotId)) {
+    return res.json(workbookChoiceInspect(req.file));
   }
   res.json(workbookInspect(req.file, sheetName || null));
 });
@@ -4052,14 +4091,14 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     .map(normalize)
     .filter((name, index, names) => name && names.indexOf(name) === index);
   if (slotId === 'inventorySummaryFile15') {
-    const inspection = workbookInspect(req.file, sheetName || null);
-    if (sheetName && !inspection.sheetNames.includes(sheetName)) {
+    const sheetNames = workbookSheetNames(req.file);
+    if (sheetName && !sheetNames.includes(sheetName)) {
       const error = new Error('销售预测选择的工作表不存在，请重新选择');
       error.status = 400;
       error.publicMessage = error.message;
       throw error;
     }
-    if (inspection.sheetNames.length > 1 && !sheetName) {
+    if (sheetNames.length > 1 && !sheetName) {
       const error = new Error('销售预测包含多个工作表，请先选择要使用的工作表');
       error.status = 400;
       error.publicMessage = error.message;
@@ -4067,14 +4106,14 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     }
   }
   if (slotId === 'inventorySummaryFile16') {
-    const inspection = workbookInspect(req.file);
+    const sheetNames = workbookSheetNames(req.file);
     if (selectedSheetNames.length !== 2) {
       const error = new Error('库龄文件必须选择两个工作表后才能应用');
       error.status = 400;
       error.publicMessage = error.message;
       throw error;
     }
-    const missingSheets = selectedSheetNames.filter((name) => !inspection.sheetNames.includes(name));
+    const missingSheets = selectedSheetNames.filter((name) => !sheetNames.includes(name));
     if (missingSheets.length) {
       const error = new Error(`库龄文件选择的工作表不存在：${missingSheets.join('、')}`);
       error.status = 400;
@@ -4252,6 +4291,12 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   const rows = slotId.startsWith('inventorySummaryFile')
     ? rowsWithSheetSource.map(({ raw: _raw, ...row }) => row)
     : rowsWithSheetSource;
+  if (['inventorySummaryFile15', 'inventorySummaryFile16'].includes(slotId) && !rows.length) {
+    const error = new Error(`${DIMENSION_SLOTS[slotId]}选中的工作表没有可保存的数据，已保留当前应用文件`);
+    error.status = 400;
+    error.publicMessage = error.message;
+    throw error;
+  }
   const storedMapping = firstMileParsed
     ? { ...mapping, __firstMileSummary: firstMileParsed.summary }
     : inventorySummaryParsed?.mapping || mapping;
@@ -4717,6 +4762,8 @@ app.use((err, req, res, next) => {
     error = '文件过大，请压缩到100MB以内再上传';
   } else if (err.publicMessage) {
     error = String(err.publicMessage);
+  } else if (['inventorySummaryFile15', 'inventorySummaryFile16'].includes(normalize(req.params?.slotId))) {
+    error = `${DIMENSION_SLOTS[req.params.slotId]}解析或保存失败，请重新选择工作表后上传`;
   } else if (isKingdeeMemoryError) {
     error = '采购订单文件解压体积过大，流式解析仍未完成，请将文件另存为CSV后重新上传';
   }

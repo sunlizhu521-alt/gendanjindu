@@ -1762,6 +1762,19 @@ test('inventory summary and domestic board use complete source models and enforc
       { 月份: '2026-09', SKU: 'SKU-B', 预测数量: 20 }
     ]), '预测B');
     const forecastBuffer = xlsx.write(forecastWorkbook, { type: 'buffer', bookType: 'xlsx' });
+    const forecastInspectForm = new FormData();
+    forecastInspectForm.append('slotId', 'inventorySummaryFile15');
+    forecastInspectForm.append('file', new Blob([forecastBuffer]), '销售预测.xlsx');
+    const forecastInspectResponse = await fetch(`http://127.0.0.1:${port}/api/workbook/inspect`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token' },
+      body: forecastInspectForm
+    });
+    const forecastInspection = await forecastInspectResponse.json();
+    assert.equal(forecastInspectResponse.status, 200);
+    assert.equal(forecastInspection.lightweight, true);
+    assert.deepEqual(forecastInspection.sheetNames, ['预测A', '预测B']);
+    assert.equal(forecastInspection.rowCount, null);
     const unselectedForecastForm = new FormData();
     unselectedForecastForm.append('file', new Blob([forecastBuffer]), '销售预测.xlsx');
     const unselectedForecastResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions/inventorySummaryFile15/upload`, {
@@ -1824,6 +1837,18 @@ test('inventory summary and domestic board use complete source models and enforc
       { 物料编码: 'AGING-C', 库龄: '61天以上', 数量: 30 }
     ]), '说明');
     const agingBuffer = xlsx.write(agingWorkbook, { type: 'buffer', bookType: 'xlsx' });
+    const agingInspectForm = new FormData();
+    agingInspectForm.append('slotId', 'inventorySummaryFile16');
+    agingInspectForm.append('file', new Blob([agingBuffer]), '库龄文件.xlsx');
+    const agingInspectResponse = await fetch(`http://127.0.0.1:${port}/api/workbook/inspect`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token' },
+      body: agingInspectForm
+    });
+    const agingInspection = await agingInspectResponse.json();
+    assert.equal(agingInspectResponse.status, 200);
+    assert.equal(agingInspection.lightweight, true);
+    assert.deepEqual(agingInspection.sheetNames, ['国内库龄', '跨境库龄', '说明']);
 
     const oneAgingSheetForm = new FormData();
     oneAgingSheetForm.append('file', new Blob([agingBuffer]), '库龄文件.xlsx');

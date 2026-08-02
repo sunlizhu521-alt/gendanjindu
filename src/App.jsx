@@ -5500,7 +5500,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       const payload = await request('/api/workbook/inspect', { token, method: 'POST', body: data });
       const record = records.find((item) => item.slot_id === slot.id);
       const columns = payload.columns || [];
-      const inspectRowCount = Number(payload.rowCount || 0);
+      const inspectRowCount = payload.rowCount == null ? null : Number(payload.rowCount || 0);
       const requiresSheetSelection = Boolean(slot.requiresSheetSelection && (payload.sheetNames?.length || 0) > 1);
       const requiresMultipleSheets = Number(slot.requiredSheetCount || 0) > 0;
       setLocal((prev) => {
@@ -5572,8 +5572,10 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
     const sheetMappings = { ...(state.sheetMappings || {}), [currentKey]: state.mapping || {} };
     const mapping = validMappingForColumns(sheetMappings[nextKey] || state.savedMapping || {}, nextColumns, slot.fields);
     const inspectRowCount = sheetName
-      ? Number(sheet?.rowCount || 0)
-      : (state.sheetPreviews || []).reduce((sum, item) => sum + Number(item.rowCount || 0), 0);
+      ? (sheet?.rowCount == null ? null : Number(sheet.rowCount || 0))
+      : (state.sheetPreviews || []).every((item) => item.rowCount != null)
+        ? (state.sheetPreviews || []).reduce((sum, item) => sum + Number(item.rowCount || 0), 0)
+        : null;
     const requiresSheetSelection = Boolean(slot.requiresSheetSelection && (state.sheetNames?.length || 0) > 1);
     setSlotState(slot.id, {
       sheetName,
@@ -5583,7 +5585,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       inspectRowCount,
       progress: 100,
       statusText: sheetName
-        ? `已切换到工作表：${sheetName}，共 ${inspectRowCount} 行`
+        ? `已选择工作表：${sheetName}${inspectRowCount == null ? '' : `，共 ${inspectRowCount} 行`}`
         : requiresSheetSelection
           ? '请选择要使用的工作表'
           : `已切换到全部工作表，共 ${inspectRowCount} 行`,
@@ -5599,16 +5601,17 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       : selected.length < slot.requiredSheetCount
         ? [...selected, sheetName]
         : selected;
-    const selectedRows = (state.sheetPreviews || [])
-      .filter((sheet) => nextSelected.includes(sheet.sheetName))
-      .reduce((sum, sheet) => sum + Number(sheet.rowCount || 0), 0);
+    const selectedPreviews = (state.sheetPreviews || []).filter((sheet) => nextSelected.includes(sheet.sheetName));
+    const selectedRows = selectedPreviews.every((sheet) => sheet.rowCount != null)
+      ? selectedPreviews.reduce((sum, sheet) => sum + Number(sheet.rowCount || 0), 0)
+      : null;
     const complete = nextSelected.length === slot.requiredSheetCount;
     setSlotState(slot.id, {
       selectedSheetNames: nextSelected,
       inspectRowCount: selectedRows,
       progress: complete ? 100 : 80,
       statusText: complete
-        ? `已选择：${nextSelected.join('、')}，共 ${selectedRows} 行`
+        ? `已选择：${nextSelected.join('、')}${selectedRows == null ? '' : `，共 ${selectedRows} 行`}`
         : `已选择 ${nextSelected.length}/${slot.requiredSheetCount} 个工作表`,
       statusType: complete ? 'success' : 'warning'
     });
@@ -5852,7 +5855,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
                 {hasSheets && <span>工作表：{sheetNames.join('、')}</span>}
                 {record?.sheet_name && <span>已应用工作表：{record.sheet_name}</span>}
                 {record?.selectedSheetNames?.length > 0 && <span>已应用工作表：{record.selectedSheetNames.join('、')}</span>}
-                {state.file && <span>本次解析行数：{state.inspectRowCount || 0}</span>}
+                {state.file && state.inspectRowCount != null && <span>本次解析行数：{state.inspectRowCount}</span>}
                 {record && <span>已保存行数：{record.rowCount}</span>}
                 {record?.diagnostics && diagnosticsText(slot.id, record.diagnostics) && <span>{diagnosticsText(slot.id, record.diagnostics)}</span>}
                 {slot.firstMile && record?.mapping?.__firstMileSummary && (

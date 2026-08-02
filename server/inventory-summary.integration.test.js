@@ -268,6 +268,34 @@ test('domestic inventory excludes JD central and outbound-goods warehouses befor
   assert.equal(parsed.mapping.__inventorySummary.filteredIgnoredWarehouseRows, 2);
 });
 
+test('domestic sales warehouses are assigned to sales factory without dimension mappings', () => {
+  const rowsBySlot = new Map([
+    ['productCategory', [
+      { materialCode: 'M-R', sku: 'SKU-R', materialName: 'Sales R', productLine: 'Line A', productSeries: 'Series A', pretaxPrice: '10' },
+      { materialCode: 'M-M', sku: 'SKU-M', materialName: 'Sales M', productLine: 'Line A', productSeries: 'Series A', pretaxPrice: '20' },
+      { materialCode: 'M-KEEP', sku: 'SKU-KEEP', materialName: 'Domestic', productLine: 'Line A', productSeries: 'Series A', pretaxPrice: '30' }
+    ]],
+    ['warehouseMaterialMap', [
+      { subject: 'Domestic Subject', warehouseName: 'Regular Warehouse', materialCode: 'M-KEEP', businessUnit: '国内事业部' }
+    ]],
+    ['inventorySummaryFile6', [
+      { subject: '河北瑞朗德医疗器械科技集团有限公司', warehouseName: '028-R/瑞朗德销售部/瑞朗德仓/国内医疗器械', materialCode: 'M-R', domesticStockQty: '190' },
+      { subject: '浙江迈德斯特医疗器械科技有限公司', warehouseName: '028-M/瑞朗德销售部/瑞朗德仓/国内医疗器械', materialCode: 'M-M', domesticStockQty: '182' },
+      { subject: 'Domestic Subject', warehouseName: 'Regular Warehouse', materialCode: 'M-KEEP', domesticStockQty: '30' }
+    ]]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
+  });
+  const salesFactoryRows = result.rows.filter((row) => row.businessUnit === '销售部-工厂');
+  assert.equal(salesFactoryRows.reduce((sum, row) => sum + row.domesticMainInventoryQty, 0), 372);
+  assert.deepEqual(salesFactoryRows.map((row) => row.materialCode).sort(), ['M-M', 'M-R']);
+  assert.equal(result.rows.find((row) => row.materialCode === 'M-KEEP')?.businessUnit, '国内事业部');
+  assert.equal(result.在库量.国内, 402);
+  assert.equal(result.anomalies.length, 0);
+});
+
 test('all inventory sources ignore zero quantity rows before mapping, aggregation and diagnostics', () => {
   const rowsBySlot = new Map([
     ['inventorySummaryFile1', [

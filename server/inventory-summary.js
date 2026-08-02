@@ -197,6 +197,10 @@ const IGNORED_DOMESTIC_WAREHOUSE_KEYWORDS = [
   '京东总仓',
   '发出商品仓'
 ].map(matchKey);
+const SALES_FACTORY_DOMESTIC_WAREHOUSES = new Set([
+  '028-R/瑞朗德销售部/瑞朗德仓/国内医疗器械',
+  '028-M/瑞朗德销售部/瑞朗德仓/国内医疗器械'
+].map(matchKey));
 const INVENTORY_QUANTITY_FIELDS = {
   inventorySummaryFile1: 'endingInventoryQty',
   inventorySummaryFile2: 'actualTotalQty',
@@ -262,6 +266,10 @@ function isAllowedFbmTransitDocumentStatus(value) {
 function isIgnoredDomesticWarehouse(value) {
   const warehouse = matchKey(value);
   return warehouse && IGNORED_DOMESTIC_WAREHOUSE_KEYWORDS.some((keyword) => warehouse.includes(keyword));
+}
+
+function isSalesFactoryDomesticWarehouse(value) {
+  return SALES_FACTORY_DOMESTIC_WAREHOUSES.has(matchKey(value));
 }
 
 function hasZeroInventoryQuantity(row, slotId) {
@@ -1164,8 +1172,15 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     const qty = inventoryQuantity(raw, 'inventorySummaryFile6', '国内在库', raw.materialCode, '库存量(主单位)');
     if (qty === null) return;
     const materialCode = text(raw.materialCode).replace(/\.0$/, '');
-    const warehouseResult = resolveWarehouseBusinessUnit(raw.subject, raw.warehouseName, materialCode);
-    if (warehouseResult.businessUnit !== '国内事业部') {
+    const warehouseResult = isSalesFactoryDomesticWarehouse(raw.warehouseName)
+      ? {
+          businessUnit: '销售部-工厂',
+          issue: '',
+          subject: text(raw.subject),
+          kingdeeWarehouseName: text(raw.warehouseName)
+        }
+      : resolveWarehouseBusinessUnit(raw.subject, raw.warehouseName, materialCode);
+    if (!['国内事业部', '销售部-工厂'].includes(warehouseResult.businessUnit)) {
       addAnomaly('国内在库', raw.materialCode, warehouseResult.issue || '非国内事业部数据已排除', qty, 0, {
         factId: `国内在库-${factIndex += 1}`,
         materialCode,
@@ -1181,7 +1196,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       sourceType: '国内在库',
       rawIdentifier: raw.materialCode,
       materialCode,
-      businessUnit: '国内事业部',
+      businessUnit: warehouseResult.businessUnit,
       issues: [warehouseResult.issue],
       inventorySource: '国内在库',
       inventorySubject: text(raw.subject),

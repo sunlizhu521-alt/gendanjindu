@@ -2355,8 +2355,8 @@ let inventoryRiskResultCache = { key: '', payload: null };
 
 function inventoryRiskSourceVersion() {
   return all(
-    'SELECT slot_id, updated_at, applied, length(rows_json) AS rows_size FROM dimension_files WHERE applied = 1 ORDER BY slot_id'
-  ).map((row) => [row.slot_id, row.updated_at, row.applied, row.rows_size].join(':')).join('|');
+    'SELECT slot_id, file_name, updated_at, applied, length(rows_json) AS rows_size FROM dimension_files WHERE applied = 1 ORDER BY slot_id'
+  ).map((row) => [row.slot_id, row.file_name, row.updated_at, row.applied, row.rows_size].join(':')).join('|');
 }
 
 function inventoryRiskData(input = {}, { force = false } = {}) {
@@ -2366,9 +2366,17 @@ function inventoryRiskData(input = {}, { force = false } = {}) {
   if (!force && inventoryRiskResultCache.key === key && inventoryRiskResultCache.payload) {
     return inventoryRiskResultCache.payload;
   }
+  const forecastRecord = get(
+    'SELECT file_name, rows_json, updated_at FROM dimension_files WHERE slot_id = ? AND applied = 1',
+    ['inventorySummaryFile15']
+  );
   const payload = buildInventoryRiskAnalysis({
     inventoryModel: inventorySummaryData(),
-    forecastRows: getDimensionRows('inventorySummaryFile15'),
+    forecastRows: parseJson(forecastRecord?.rows_json, []),
+    forecastSource: {
+      fileName: forecastRecord?.file_name || '',
+      updatedAt: forecastRecord?.updated_at || ''
+    },
     params,
     sourceVersion
   });

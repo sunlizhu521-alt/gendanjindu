@@ -90,6 +90,116 @@ export function forecastMonth(value) {
   return month >= 1 && month <= 12 ? `${match[1]}-${String(month).padStart(2, '0')}` : '';
 }
 
+function validYearMonth(yearValue, monthValue) {
+  const year = Number(yearValue);
+  const month = Number(monthValue);
+  if (!Number.isInteger(year) || year < 2000 || year > 2099 || !Number.isInteger(month) || month < 1 || month > 12) return '';
+  return `${year}-${String(month).padStart(2, '0')}`;
+}
+
+function sourceFileMonth(value) {
+  const normalized = text(value).normalize('NFKC');
+  const dated = [...normalized.matchAll(/(?:^|[^\d])((?:19|20)?\d{2})[年./_-](\d{1,2})[月./_-](\d{1,2})(?:日)?(?=$|[^\d])/g)]
+    .map((match) => validYearMonth(match[1].length === 2 ? 2000 + Number(match[1]) : match[1], match[2]))
+    .filter(Boolean);
+  if (dated.length) return dated.at(-1);
+  const compact = [...normalized.matchAll(/(?:^|[^\d])((?:19|20)\d{2})(\d{2})(\d{2})(?=$|[^\d])/g)]
+    .map((match) => validYearMonth(match[1], match[2]))
+    .filter(Boolean);
+  if (compact.length) return compact.at(-1);
+  const yearMonths = [...normalized.matchAll(/(?:^|[^\d])((?:19|20)\d{2})[年./_-](\d{1,2})(?:月)?(?=$|[^\d])/g)]
+    .map((match) => validYearMonth(match[1], match[2]))
+    .filter(Boolean);
+  return yearMonths.at(-1) || '';
+}
+
+function forecastAnchor(forecastSource, now) {
+  const fileMonth = sourceFileMonth(forecastSource?.fileName);
+  if (fileMonth) return { month: fileMonth, source: '文件名日期' };
+  const updatedMonth = text(forecastSource?.updatedAt).match(/((?:19|20)\d{2})-(\d{1,2})/) || [];
+  const normalizedUpdatedMonth = validYearMonth(updatedMonth[1], updatedMonth[2]);
+  if (normalizedUpdatedMonth) return { month: normalizedUpdatedMonth, source: '槽位更新时间' };
+  return { month: currentChinaMonth(now), source: '当前月份' };
+}
+
+function explicitForecastHeaderMonth(value) {
+  const direct = forecastMonth(value);
+  if (direct) return direct;
+  const normalized = text(value).normalize('NFKC').replace(/\s+/g, '');
+  const match = normalized.match(/^(\d{4})(?:年|[-/.])(\d{1,2})(?:月)?(?:预估|预测)销量$/);
+  return match ? validYearMonth(match[1], match[2]) : '';
+}
+
+function monthOnlyForecastNumber(value) {
+  const normalized = text(value).normalize('NFKC').replace(/\s+/g, '');
+  const match = normalized.match(/^(\d{1,2})月(?:预估|预测)销量$/);
+  const month = Number(match?.[1]);
+  return month >= 1 && month <= 12 ? month : 0;
+}
+
+function orderedForecastHeaders(rows) {
+  const seen = new Set();
+  const headers = [];
+  rows.forEach((row) => {
+    Object.keys(row || {}).forEach((header) => {
+      if (seen.has(header)) return;
+      seen.add(header);
+      headers.push(header);
+    });
+  });
+  return headers;
+}
+
+function inferMonthOnlyColumns(columns, anchorMonth) {
+  if (!columns.length) return [];
+  const anchor = monthIndex(anchorMonth);
+  const anchorYear = Number(anchorMonth.slice(0, 4));
+  const relative = [];
+  let yearOffset = 0;
+  let previousMonth = columns[0].monthNumber;
+  columns.forEach((column, index) => {
+    if (index > 0 && column.monthNumber < previousMonth) yearOffset += 1;
+    relative.push({ ...column, yearOffset });
+    previousMonth = column.monthNumber;
+  });
+  const candidates = [anchorYear - 1, anchorYear, anchorYear + 1].map((firstYear) => {
+    const indexes = relative.map((column) => (firstYear + column.yearOffset) * 12 + column.monthNumber - 1);
+    const distance = Math.min(...indexes.map((index) => Math.abs(index - anchor)));
+    const startDistance = Math.abs(indexes[0] - anchor);
+    return { firstYear, distance, startDistance };
+  }).sort((left, right) => left.distance - right.distance || left.startDistance - right.startDistance);
+  const firstYear = candidates[0].firstYear;
+  return relative.map((column) => ({
+    header: column.header,
+    month: validYearMonth(firstYear + column.yearOffset, column.monthNumber),
+    format: '无年份销量列'
+  }));
+}
+
+function forecastColumnPlan(forecastRows, forecastSource, now) {
+  const headers = orderedForecastHeaders(forecastRows);
+  const anchor = forecastAnchor(forecastSource, now);
+  const explicitColumns = headers
+    .map((header) => ({ header, month: explicitForecastHeaderMonth(header), format: '带年份月份列' }))
+    .filter((column) => column.month);
+  const monthOnlyColumns = inferMonthOnlyColumns(headers
+    .map((header) => ({ header, monthNumber: monthOnlyForecastNumber(header) }))
+    .filter((column) => column.monthNumber), anchor.month);
+  const headerFor = (aliases) => headers.find((header) => aliases.some((alias) => headerKey(alias) === headerKey(header))) || '';
+  return {
+    headers,
+    columns: [...explicitColumns, ...monthOnlyColumns],
+    anchor,
+    recognizedFields: {
+      businessUnit: headerFor(['事业部', '部门', '业务部门', '销售部门']),
+      materialCode: headerFor(['物料编码', '品号', '商品编码', 'materialCode']),
+      sku: headerFor(['SKU', 'sku', 'MSKU', '型号']),
+      longMonth: headerFor(['月份', '预测月份', '日期', '销售月份']),
+      longQuantity: headerFor(['预测数量', '销售预测', '预测销量', '数量'])
+    }
+  };
+}
+
 function numberParam(input, field) {
   const fallback = INVENTORY_RISK_DEFAULT_PARAMS[field];
   const value = input?.[field] === '' || input?.[field] === undefined ? fallback : Number(input[field]);
@@ -161,11 +271,20 @@ function forecastMaterialCode(row, skuMap) {
   return skuMap.get(sku) || '';
 }
 
-function buildForecastMap(forecastRows, summaryRows) {
+function buildForecastMap(forecastRows, summaryRows, forecastSource, now) {
   const skuMap = uniqueSkuMap(summaryRows);
   const regionsByMaterial = materialRegions(summaryRows);
   const forecast = new Map();
   const issues = [];
+  const columnPlan = forecastColumnPlan(forecastRows, forecastSource, now);
+  const reasonCounts = {
+    totalRows: forecastRows.length,
+    parsedRows: 0,
+    missingMaterialCode: 0,
+    missingBusinessUnit: 0,
+    invalidLongMonth: 0,
+    noValidMonthColumns: 0
+  };
   const add = (region, materialCode, month, value) => {
     const key = regionMaterialKey(region, materialCode);
     const target = forecast.get(key) || { months: new Map(), hasRecord: false };
@@ -181,26 +300,48 @@ function buildForecastMap(forecastRows, summaryRows) {
       region = [...regionsByMaterial.get(materialCode)][0];
     }
     if (!materialCode || !region) {
+      if (!materialCode) reasonCounts.missingMaterialCode += 1;
+      if (!region) reasonCounts.missingBusinessUnit += 1;
       issues.push({ id: `forecast-${index}`, row: index + 2, materialCode: materialCode || '未匹配', issue: materialCode ? '销售预测事业部缺失或无法判断国内/海外' : '销售预测物料编码或SKU未匹配' });
       return;
     }
-    const longMonth = forecastMonth(rowValue(row, ['月份', '预测月份', '日期', '销售月份']));
+    const longMonthValue = rowValue(row, ['月份', '预测月份', '日期', '销售月份']);
+    const longMonth = forecastMonth(longMonthValue);
     if (longMonth) {
       add(region, materialCode, longMonth, rowValue(row, ['预测数量', '销售预测', '预测销量', '数量']));
+      reasonCounts.parsedRows += 1;
       return;
     }
     let parsedMonths = 0;
-    Object.entries(row || {}).forEach(([header, value]) => {
-      const month = forecastMonth(header);
-      if (!month) return;
+    columnPlan.columns.forEach(({ header, month }) => {
+      if (!Object.hasOwn(row || {}, header)) return;
       parsedMonths += 1;
-      add(region, materialCode, month, value);
+      add(region, materialCode, month, row[header]);
     });
     if (!parsedMonths) {
-      issues.push({ id: `forecast-${index}`, row: index + 2, materialCode, issue: '销售预测未找到有效月份列' });
+      const issue = text(longMonthValue) ? '销售预测月份格式无法识别' : '销售预测未找到有效月份列';
+      if (text(longMonthValue)) reasonCounts.invalidLongMonth += 1;
+      else reasonCounts.noValidMonthColumns += 1;
+      issues.push({ id: `forecast-${index}`, row: index + 2, materialCode, issue });
+    } else {
+      reasonCounts.parsedRows += 1;
     }
   });
-  return { forecast, issues };
+  return {
+    forecast,
+    issues,
+    parsing: {
+      sourceFileName: text(forecastSource?.fileName),
+      sourceUpdatedAt: text(forecastSource?.updatedAt),
+      anchorMonth: columnPlan.anchor.month,
+      anchorSource: columnPlan.anchor.source,
+      headers: columnPlan.headers,
+      monthColumns: columnPlan.columns,
+      recognizedFields: columnPlan.recognizedFields,
+      parsedKeyCount: forecast.size,
+      reasonCounts
+    }
+  };
 }
 
 function addAggregate(map, row) {
@@ -247,7 +388,7 @@ function actionFor(transitDays, chainDays, limits) {
   return '正常';
 }
 
-export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows = [], params: input = {}, now = new Date(), sourceVersion = '' } = {}) {
+export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows = [], forecastSource = {}, params: input = {}, now = new Date(), sourceVersion = '' } = {}) {
   let params;
   try {
     params = normalizeInventoryRiskParams(input);
@@ -259,13 +400,16 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
   }
 
   const summaryRows = Array.isArray(inventoryModel.rows) ? inventoryModel.rows : [];
-  const forecastResult = buildForecastMap(forecastRows, summaryRows);
+  const forecastResult = buildForecastMap(forecastRows, summaryRows, forecastSource, now);
   if (forecastResult.forecast.size === 0) {
     return {
       ok: false,
       status: 'missing_data',
       error: '销售预测没有解析出有效的事业部、物料编码和月份数据',
-      diagnostics: { forecastIssues: forecastResult.issues }
+      diagnostics: {
+        forecastIssues: forecastResult.issues,
+        forecastParsing: forecastResult.parsing
+      }
     };
   }
 
@@ -371,14 +515,15 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
     stopped,
     diagnostics: {
       mappingIssues,
-      forecastIssues: forecastResult.issues
+      forecastIssues: forecastResult.issues,
+      forecastParsing: forecastResult.parsing
     }
   };
 }
 
 export function inventoryRiskCacheKey(sourceVersion, input = {}, now = new Date()) {
   return [
-    'inventory-risk-v1',
+    'inventory-risk-v2',
     currentChinaMonth(now),
     sourceVersion,
     JSON.stringify(normalizeInventoryRiskParams(input))

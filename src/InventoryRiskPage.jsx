@@ -62,8 +62,41 @@ async function apiRequest(path, token, options = {}) {
   });
   const contentType = response.headers.get('content-type') || '';
   const payload = contentType.includes('application/json') ? await response.json() : await response.text();
-  if (!response.ok) throw new Error(payload?.error || payload || `请求失败（${response.status}）`);
+  if (!response.ok) {
+    const error = new Error(payload?.error || payload || `请求失败（${response.status}）`);
+    if (payload && typeof payload === 'object') error.payload = payload;
+    throw error;
+  }
   return payload;
+}
+
+function ForecastParsingDiagnostics({ diagnostics }) {
+  const parsing = diagnostics?.forecastParsing;
+  if (!parsing) return null;
+  const reasons = parsing.reasonCounts || {};
+  const fields = parsing.recognizedFields || {};
+  return (
+    <details className="inventory-risk-diagnostics inventory-risk-failure-diagnostics" open>
+      <summary>销售预测解析诊断</summary>
+      <div className="inventory-risk-diagnostic-grid">
+        <section>
+          <h3>数据源与表头</h3>
+          <p>文件：{parsing.sourceFileName || '未识别'}</p>
+          <p>槽位更新时间：{parsing.sourceUpdatedAt || '未识别'}</p>
+          <p>年份锚点：{parsing.anchorMonth || '未识别'}（{parsing.anchorSource || '未知来源'}）</p>
+          <p>识别字段：{Object.entries(fields).filter(([, value]) => value).map(([key, value]) => `${key}=${value}`).join('；') || '无'}</p>
+          <p>全部表头：{(parsing.headers || []).join('、') || '无'}</p>
+        </section>
+        <section>
+          <h3>月份识别与失败统计</h3>
+          <p>月份列：{(parsing.monthColumns || []).map((column) => `${column.header} → ${column.month}`).join('；') || '未识别到月份销量列'}</p>
+          <p>总行数 {reasons.totalRows || 0}；成功解析 {reasons.parsedRows || 0}；有效汇总键 {parsing.parsedKeyCount || 0}</p>
+          <p>物料缺失 {reasons.missingMaterialCode || 0}；事业部缺失 {reasons.missingBusinessUnit || 0}；月份格式无效 {reasons.invalidLongMonth || 0}；无有效月份列 {reasons.noValidMonthColumns || 0}</p>
+          {(diagnostics.forecastIssues || []).slice(0, 20).map((row) => <p key={row.id}>第 {row.row} 行 · {row.materialCode} · {row.issue}</p>)}
+        </section>
+      </div>
+    </details>
+  );
 }
 
 function RiskPagination({ page, pages, onChange }) {
@@ -147,12 +180,14 @@ export default function InventoryRiskPage({ token, active }) {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [errorDiagnostics, setErrorDiagnostics] = useState(null);
   const [showLogic, setShowLogic] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   async function calculate(force = false) {
     setLoading(true);
     setError('');
+    setErrorDiagnostics(null);
     try {
       const payload = await apiRequest('/api/inventory-risk/query', token, {
         method: 'POST',
@@ -162,6 +197,7 @@ export default function InventoryRiskPage({ token, active }) {
       setLoaded(true);
     } catch (requestError) {
       setError(requestError.message);
+      setErrorDiagnostics(requestError.payload?.diagnostics || null);
     } finally {
       setLoaded(true);
       setLoading(false);
@@ -224,6 +260,7 @@ export default function InventoryRiskPage({ token, active }) {
       </section>
 
       {error && <div className="inventory-risk-alert error"><strong>计算失败</strong><span>{error}</span></div>}
+      {error && <ForecastParsingDiagnostics diagnostics={errorDiagnostics} />}
       {loading && !result && <div className="inventory-risk-loading">正在读取库存、在途、采购未交付、销售和预测数据...</div>}
 
       {result && (

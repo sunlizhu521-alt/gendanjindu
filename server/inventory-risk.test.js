@@ -55,6 +55,77 @@ test('销售预测月份兼容常用表头格式', () => {
   assert.equal(forecastMonth('合计'), '');
 });
 
+test('槽位15无年份销量列按文件日期跨年，并汇总重复渠道和店铺', () => {
+  const currentRows = [
+    {
+      事业部: '海外事业一部', 渠道: 'Amazon', 店铺: '店铺A', SKU: 'SKU-1001', 物料编码: '1001',
+      '7月预估销量': 9999, '7月预估销售金额': 999999,
+      '8月预估销量': 100, '8月预估销售金额': 999999,
+      '9月预估销量': 100, '10月预估销量': 100, '11月预估销量': 100, '12月预估销量': 100, '1月预估销量': 100
+    },
+    {
+      事业部: '海外事业一部', 渠道: 'Walmart', 店铺: '店铺B', SKU: 'SKU-1001', 物料编码: '1001',
+      '7月预估销量': 8888, '7月预估销售金额': 888888,
+      '8月预估销量': 50, '8月预估销售金额': 888888,
+      '9月预估销量': 50, '10月预估销量': 50, '11月预估销量': 50, '12月预估销量': 50, '1月预估销量': 50
+    }
+  ];
+  const payload = buildInventoryRiskAnalysis({
+    now: NOW,
+    inventoryModel: { rows: [summaryRow({ inventoryQty: 600 })], anomalies: [] },
+    forecastRows: currentRows,
+    forecastSource: {
+      fileName: '四大事业部M+6销量预测26.7.30.xlsx',
+      updatedAt: '2026-08-03 10:12:16'
+    }
+  });
+  assert.equal(payload.ok, true);
+  assert.equal(payload.restricted.length, 1);
+  assert.equal(payload.restricted[0].forecastMonthlyAverage, 150);
+  assert.deepEqual(payload.periods.forecastMonths, ['2026-08', '2026-09', '2026-10', '2026-11', '2026-12', '2027-01']);
+  assert.deepEqual(
+    payload.diagnostics.forecastParsing.monthColumns.map(({ header, month }) => [header, month]),
+    [
+      ['7月预估销量', '2026-07'], ['8月预估销量', '2026-08'], ['9月预估销量', '2026-09'],
+      ['10月预估销量', '2026-10'], ['11月预估销量', '2026-11'], ['12月预估销量', '2026-12'], ['1月预估销量', '2027-01']
+    ]
+  );
+  assert.equal(payload.diagnostics.forecastParsing.monthColumns.some(({ header }) => header.includes('金额')), false);
+  assert.equal(payload.diagnostics.forecastParsing.reasonCounts.parsedRows, 2);
+});
+
+test('无文件日期时使用槽位更新时间把年初月份归入次年', () => {
+  const payload = buildInventoryRiskAnalysis({
+    now: NOW,
+    inventoryModel: { rows: [summaryRow({ inventoryQty: 600 })], anomalies: [] },
+    forecastRows: [{
+      事业部: '海外事业一部', 物料编码: '1001',
+      '7月预测销量': 100, '8月预测销量': 100, '9月预测销量': 100, '10月预测销量': 100,
+      '11月预测销量': 100, '12月预测销量': 100, '1月预测销量': 100
+    }],
+    forecastSource: { fileName: '销售预测.xlsx', updatedAt: '2027-01-05 09:30:00' }
+  });
+  assert.equal(payload.ok, true);
+  assert.equal(payload.diagnostics.forecastParsing.anchorSource, '槽位更新时间');
+  assert.deepEqual(
+    payload.diagnostics.forecastParsing.monthColumns.map(({ month }) => month),
+    ['2026-07', '2026-08', '2026-09', '2026-10', '2026-11', '2026-12', '2027-01']
+  );
+});
+
+test('销售预测失败返回表头、月份列和原因统计', () => {
+  const payload = buildInventoryRiskAnalysis({
+    now: NOW,
+    inventoryModel: { rows: [summaryRow()], anomalies: [] },
+    forecastRows: [{ 事业部: '海外事业一部', 物料编码: '1001', '7月预估销售金额': 1000 }],
+    forecastSource: { fileName: '销售预测26.7.30.xlsx', updatedAt: '2026-08-03 10:12:16' }
+  });
+  assert.equal(payload.ok, false);
+  assert.deepEqual(payload.diagnostics.forecastParsing.headers, ['事业部', '物料编码', '7月预估销售金额']);
+  assert.deepEqual(payload.diagnostics.forecastParsing.monthColumns, []);
+  assert.equal(payload.diagnostics.forecastParsing.reasonCounts.noValidMonthColumns, 1);
+});
+
 test('同一物料按国内和海外独立计算，最近N月均销独立展示', () => {
   const payload = buildInventoryRiskAnalysis({
     now: NOW,

@@ -317,7 +317,8 @@
 
 .inventory-risk-diagnostic-grid h3,
 .inventory-risk-logic-grid h3 { margin: 0 0 8px; font-size: .86rem; }
-.inventory-risk-diagnostic-grid p { margin: 5px 0; color: #64748b; font-size: .72rem; }
+.inventory-risk-diagnostic-grid p { margin: 5px 0; color: #64748b; font-size: .72rem; overflow-wrap: anywhere; }
+.inventory-risk-failure-diagnostics { border-color: #fecaca; background: #fffafa; }
 
 .inventory-risk-logic-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));

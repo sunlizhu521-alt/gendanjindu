@@ -19,6 +19,7 @@ function summaryRow(overrides = {}) {
     materialName: '测试产品',
     productLine: '测试线',
     productSeries: '测试系列',
+    model: '测试型号',
     inventoryQty: 100,
     transitQty: 0,
     unfulfilledQty: 0,
@@ -84,6 +85,7 @@ test('槽位15无年份销量列按文件日期跨年，并汇总重复渠道和
   assert.equal(payload.restricted[0].forecastMonthlyAverage, 150);
   assert.equal(payload.restricted[0].forecastAvailability, '有预测销售');
   assert.equal(payload.restricted[0].totalInventoryQty, 600);
+  assert.equal(payload.restricted[0].model, '测试型号');
   assert.deepEqual(payload.periods.forecastMonths, ['2026-08', '2026-09', '2026-10', '2026-11', '2026-12', '2027-01']);
   assert.deepEqual(
     payload.diagnostics.forecastParsing.monthColumns.map(({ header, month }) => [header, month]),
@@ -271,12 +273,20 @@ test('库存风险页面、权限与API均注册在gendanjindu', () => {
   assert.match(client, /InventoryRiskPage/);
   assert.match(server, /json_to_sheet\(inventoryRiskExportRows\(payload\.rows\)\), '处置清单'/);
   assert.match(riskPage, /label="事业部"/);
+  assert.match(riskPage, /label="产品线"/);
+  assert.match(riskPage, /label="系列"/);
+  assert.match(riskPage, /label="型号"/);
   assert.match(riskPage, /label="库存段"/);
   assert.match(riskPage, /label="处置动作"/);
   assert.match(riskPage, /label="预测销售"/);
   assert.match(riskPage, /有预测销售/);
   assert.match(riskPage, /无预测销售/);
   assert.match(riskPage, /库存总量/);
+  assert.match(riskPage, /在库<b>/);
+  assert.match(riskPage, /在途<b>/);
+  assert.match(riskPage, /未交付<b>/);
+  const summaryMarkup = riskPage.slice(riskPage.indexOf('<section className="inventory-risk-summary">'));
+  assert.ok(summaryMarkup.indexOf('库存总量') < summaryMarkup.indexOf('className="restricted"'));
   assert.match(riskPage, /在库在途周转天数/);
   assert.match(riskPage, /'海外事业一部',[\s\S]*'海外事业二部',[\s\S]*'国内事业部',[\s\S]*'全球招商事业部'/);
   assert.match(riskPage, /sort\(compareBusinessUnitFilterOptions\)/);

@@ -62,7 +62,8 @@ const FIELD_ALIASES = {
   documentStatus: ['单据状态'],
   domesticStockQty: ['库存量(主单位)', '库存量（主单位）'],
   jdId: ['SKU', 'sku', '京东ID', '京东id', 'ID', 'id'],
-  jdStockQty: ['全国现货库存'],
+  jdRdc: ['RDC'],
+  jdStockQty: ['全国现货库存', '现货库存'],
   jdTransitQty: ['在途数量'],
   date: ['日期'],
   businessUnit: ['事业部'],
@@ -111,7 +112,7 @@ const SLOT_SCHEMAS = {
   },
   inventorySummaryFile7: {
     required: ['jdId', 'jdStockQty'],
-    fields: ['jdId', 'jdStockQty']
+    fields: ['jdId', 'jdRdc', 'jdStockQty']
   },
   inventorySummaryFile8: {
     required: ['date', 'businessUnit', 'materialCode', 'salesQty', 'salesAmount'],
@@ -414,6 +415,11 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
     const labels = missing.map((field) => FIELD_ALIASES[field]?.[0] || field);
     throw inventoryValidationError(`缺少必填列：${labels.join('、')}`);
   }
+  const jdUsesRdcFormat = slotId === 'inventorySummaryFile7'
+    && headerKey(columnMap.jdStockQty) === headerKey('现货库存');
+  if (jdUsesRdcFormat && !columnMap.jdRdc) {
+    throw inventoryValidationError('京东在库新格式使用“现货库存”时必须包含RDC列');
+  }
   const mappedRows = parsed.rows.map((row) => Object.fromEntries(schema.fields.map((field) => [
     field,
     columnMap[field] ? row[columnMap[field]] ?? '' : ''
@@ -428,7 +434,32 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
       });
     });
   }
+  if (jdUsesRdcFormat) {
+    const rowsBySku = new Map();
+    mappedRows.forEach((row) => {
+      if (isSummaryRow(row, slotId)) return;
+      const sku = text(row.jdId);
+      if (!sku) return;
+      const key = matchKey(sku);
+      if (!rowsBySku.has(key)) rowsBySku.set(key, { sku, rows: [] });
+      rowsBySku.get(key).rows.push(row);
+    });
+    const missingNational = [];
+    const duplicateNational = [];
+    rowsBySku.forEach(({ sku, rows: skuRows }) => {
+      const nationalRows = skuRows.filter((row) => matchKey(row.jdRdc) === matchKey('全国'));
+      if (nationalRows.length === 0) missingNational.push(sku);
+      if (nationalRows.length > 1) duplicateNational.push(sku);
+    });
+    if (missingNational.length) {
+      throw inventoryValidationError(`京东在库新格式存在SKU缺少RDC=全国行：${missingNational.slice(0, 10).join('、')}${missingNational.length > 10 ? '等' : ''}`);
+    }
+    if (duplicateNational.length) {
+      throw inventoryValidationError(`京东在库新格式存在SKU的RDC=全国行重复：${duplicateNational.slice(0, 10).join('、')}${duplicateNational.length > 10 ? '等' : ''}`);
+    }
+  }
   let filteredZeroQtyRows = 0;
+  let filteredJdRegionalRows = 0;
   let filteredIgnoredWarehouseRows = 0;
   let filteredFbmTransitWarehouseRows = 0;
   let filteredFbmTransitStatusRows = 0;
@@ -454,6 +485,10 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
       filteredFbmTransitStatusRows += 1;
       return false;
     }
+    if (jdUsesRdcFormat && matchKey(row.jdRdc) !== matchKey('全国')) {
+      filteredJdRegionalRows += 1;
+      return false;
+    }
     if (hasZeroInventoryQuantity(row, slotId)) {
       filteredZeroQtyRows += 1;
       return false;
@@ -464,6 +499,9 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
     ? rows.filter((row) => matchKey(row.inventoryAttribute) === matchKey('全部'))
     : [];
   const fbaBlankSkuRows = fbaScopeRows.filter((row) => !text(row.sku));
+  const jdScopeRows = slotId === 'inventorySummaryFile7'
+    ? mappedRows.filter((row) => !isSummaryRow(row, slotId) && (!jdUsesRdcFormat || matchKey(row.jdRdc) === matchKey('全国')))
+    : [];
   const quantityTotal = (items, field) => items.reduce((sum, row) => {
     const quantity = safeNumber(row[field]);
     return sum + (quantity.valid ? quantity.value : 0);
@@ -477,15 +515,21 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
       ...columnMap,
       __inventorySummary: {
         parserType: 'inventorySummary',
-        parserVersion: 4,
+        parserVersion: slotId === 'inventorySummaryFile7' ? 5 : 4,
         sheetName,
         sourceRowCount: mappedRows.length,
         rowCount: rows.length,
         filteredZeroQtyRows,
+        filteredJdRegionalRows,
         filteredIgnoredWarehouseRows,
         filteredFbmTransitWarehouseRows,
         filteredFbmTransitStatusRows,
         filteredSummaryRows,
+        jdFormat: slotId === 'inventorySummaryFile7'
+          ? (jdUsesRdcFormat ? 'RDC全国行+现货库存' : '旧版全国现货库存列')
+          : '',
+        jdScopeRows: jdScopeRows.length,
+        jdScopeQuantity: quantityTotal(jdScopeRows, 'jdStockQty'),
         fbaScopeRows: fbaScopeRows.length,
         fbaScopeQuantity: quantityTotal(fbaScopeRows, 'endingInventoryQty'),
         fbaBlankSkuRows: fbaBlankSkuRows.length,
@@ -553,6 +597,7 @@ function dimensionProduct(row) {
     materialName: text(aliasValue(row, ['materialName', '物料名称', '金蝶名称', 'SKU名称'])),
     productLine: text(aliasValue(row, ['productLine', '销售产品线', '产品线'])),
     productSeries: text(aliasValue(row, ['productSeries', '销售系列', '系列'])),
+    model: text(aliasValue(row, ['model', '型号', '产品型号', '款式', '规格型号', '规格'])),
     pretaxPrice: aliasValue(row, ['pretaxPrice', '不含税结算价'])
   };
 }
@@ -617,6 +662,7 @@ function emptySummaryRow(id, businessUnit, product, rawIdentifier) {
     businessUnit,
     productLine: product.productLine || '未匹配',
     productSeries: product.productSeries || '未匹配',
+    model: product.model || '未匹配',
     materialCode: product.materialCode || '未匹配',
     sku: product.sku || '未匹配',
     materialName: product.materialName || '未匹配',
@@ -782,7 +828,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     const material = text(materialCode).replace(/\.0$/, '');
     const result = productLookup.resolve(material);
     if (result.status !== 'ok') {
-      return { product: { materialCode: '', sku: '', materialName: '', productLine: '', productSeries: '', pretaxPrice: 0 }, issue: `商品分类${result.status === 'conflict' ? '映射冲突' : '缺失'}` };
+      return { product: { materialCode: '', sku: '', materialName: '', productLine: '', productSeries: '', model: '', pretaxPrice: 0 }, issue: `商品分类${result.status === 'conflict' ? '映射冲突' : '缺失'}` };
     }
     const price = safeNumber(result.value.pretaxPrice);
     if (!price.valid || !text(result.value.pretaxPrice)) {
@@ -1210,7 +1256,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   });
 
   source.inventorySummaryFile7.rows.forEach((raw) => {
-    const qty = inventoryQuantity(raw, 'inventorySummaryFile7', '京东在库', raw.jdId, '全国现货库存');
+    const qty = inventoryQuantity(raw, 'inventorySummaryFile7', '京东在库', raw.jdId, '京东现货库存');
     if (qty === null) return;
     const jdResult = resolveJd(raw.jdId);
     const product = resolveProduct(jdResult.materialCode, '京东在库', raw.jdId);

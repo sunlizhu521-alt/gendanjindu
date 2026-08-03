@@ -228,7 +228,7 @@ const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
     ['materialCode', '物料编码'], ['domesticStockQty', '库存量(主单位)']
   ] },
   { id: 'inventorySummaryFile7', title: '京东在库报表', fields: [
-    ['jdId', 'SKU/京东ID'], ['jdStockQty', '全国现货库存']
+    ['jdId', 'SKU/京东ID'], ['jdRdc', 'RDC（新格式）'], ['jdStockQty', '现货库存/全国现货库存']
   ] },
   { id: 'inventorySummaryFile14', title: '京东在途', fields: [
     ['materialCode', '物料编码'], ['jdTransitQty', '在途数量']
@@ -2738,6 +2738,9 @@ function FieldMapping({ fields, columns, mapping, onChange }) {
 
 const FIELD_MAPPING_ALIASES = {
   subject: ['主体', '使用组织', '库存组织'],
+  jdId: ['SKU', '京东ID'],
+  jdRdc: ['RDC'],
+  jdStockQty: ['全国现货库存', '现货库存'],
   warehouseCode: ['仓库编码', '仓库代码', '仓库编号', '金蝶仓库编码', '仓库ID'],
   warehouseName: ['仓库名称', '仓库名', '金蝶仓库名称'],
   pretaxPrice: ['不含税结算价'],
@@ -5661,13 +5664,16 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       const payload = await request(`/api/dimensions/${slot.id}/upload`, { token, method: 'POST', body: data });
       const parseSummary = payload.parseSummary;
       const inventoryParseSummary = parseSummary?.parserType === 'inventorySummary' ? parseSummary : null;
+      const jdParseSummaryText = inventoryParseSummary?.jdFormat
+        ? `，识别格式 ${inventoryParseSummary.jdFormat}，区域行过滤 ${inventoryParseSummary.filteredJdRegionalRows || 0} 行，有效库存 ${numberValue(inventoryParseSummary.jdScopeQuantity).toLocaleString(undefined, { maximumFractionDigits: 1 })}`
+        : '';
       const uploadSummaryText = inventoryParseSummary
-        ? `上传保存完成：源数据 ${inventoryParseSummary.sourceRowCount || 0} 行，有效保存 ${payload.rowCount} 行`
+        ? `上传保存完成：源数据 ${inventoryParseSummary.sourceRowCount || 0} 行，有效保存 ${payload.rowCount} 行${jdParseSummaryText}`
         : parseSummary
           ? `上传保存完成：${payload.rowCount} 行，${parseSummary.issueRows || 0} 行异常`
           : `上传保存完成：${payload.rowCount} 行`;
       const appliedSummaryText = inventoryParseSummary
-        ? `${slot.title} 已自动解析并应用 ${payload.rowCount} 行；源数据 ${inventoryParseSummary.sourceRowCount || 0} 行，零数量过滤 ${inventoryParseSummary.filteredZeroQtyRows || 0} 行，汇总行过滤 ${inventoryParseSummary.filteredSummaryRows || 0} 行。`
+        ? `${slot.title} 已自动解析并应用 ${payload.rowCount} 行；源数据 ${inventoryParseSummary.sourceRowCount || 0} 行，零数量过滤 ${inventoryParseSummary.filteredZeroQtyRows || 0} 行，汇总行过滤 ${inventoryParseSummary.filteredSummaryRows || 0} 行${jdParseSummaryText}。`
         : parseSummary
           ? `${slot.title} 已自动解析并应用 ${payload.rowCount} 行，异常 ${parseSummary.issueRows || 0} 行。`
           : slot.requiresSheetSelection && payload.sheetName
@@ -5874,6 +5880,14 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
                     有效保存 {record.mapping.__inventorySummary.rowCount ?? record.rowCount} 行，
                     零数量过滤 {record.mapping.__inventorySummary.filteredZeroQtyRows || 0} 行，
                     汇总行过滤 {record.mapping.__inventorySummary.filteredSummaryRows || 0} 行
+                  </span>
+                )}
+                {slot.id === 'inventorySummaryFile7' && record?.mapping?.__inventorySummary && (
+                  <span>
+                    京东口径：{record.mapping.__inventorySummary.jdFormat || '旧版全国现货库存列'}，
+                    区域行过滤 {record.mapping.__inventorySummary.filteredJdRegionalRows || 0} 行，
+                    全国范围 {record.mapping.__inventorySummary.jdScopeRows || 0} 行，
+                    有效库存 {numberValue(record.mapping.__inventorySummary.jdScopeQuantity).toLocaleString(undefined, { maximumFractionDigits: 1 })}
                   </span>
                 )}
                 {slot.id === 'inventorySummaryFile1' && record?.mapping?.__inventorySummary && (

@@ -46,7 +46,7 @@ async function waitForServer(url, child, logs) {
 test('inventory summary model uses inventory library facts, layered totals and stable ABC classes', () => {
   const rowsBySlot = new Map([
     ['productCategory', [
-      { materialCode: 'M1', sku: 'SKU-1', materialName: 'Material One', productLine: 'Line A', productSeries: 'Series A', pretaxPrice: '10' },
+      { materialCode: 'M1', sku: 'SKU-1', materialName: 'Material One', productLine: 'Line A', productSeries: 'Series A', model: 'Model One', pretaxPrice: '10' },
       { materialCode: 'M2', sku: 'SKU-2', materialName: 'Material Two', productLine: 'Line B', productSeries: 'Series B', pretaxPrice: '20' },
       { materialCode: 'M3', sku: 'SKU-3', materialName: 'Material Three', productLine: 'Line A', productSeries: 'Series C', pretaxPrice: '15' },
       { materialCode: 'M4', sku: 'SKU-4', materialName: 'Material Four', productLine: 'Line A', productSeries: 'Series C', pretaxPrice: '15' }
@@ -142,6 +142,7 @@ test('inventory summary model uses inventory library facts, layered totals and s
     february: crossBorderM1?.salesByMonth['2026-02'],
     quantityAbc: crossBorderM1?.quantityAbc,
     amountAbc: crossBorderM1?.amountAbc,
+    model: crossBorderM1?.model,
     deliveryStatus: crossBorderM1?.deliveryStatus
   }, {
     fba: 1000,
@@ -155,6 +156,7 @@ test('inventory summary model uses inventory library facts, layered totals and s
     february: 20,
     quantityAbc: 'B',
     amountAbc: 'B',
+    model: 'Model One',
     deliveryStatus: '是'
   });
   assert.equal(
@@ -471,6 +473,89 @@ test('all inventory workbook parsers exclude zero quantity rows from saved data'
     assert.equal(parsed.rows.length, 1, slotId);
     assert.equal(parsed.mapping.__inventorySummary.filteredZeroQtyRows, 1, slotId);
   });
+});
+
+test('JD inventory parser supports RDC national rows without double counting regional stock', () => {
+  const workbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet([
+    { SKU: 'SKU-A', RDC: '全国', 现货库存: '40', 商品状态: '上柜' },
+    { SKU: 'SKU-A', RDC: '广州', 现货库存: '10', 商品状态: '上柜' },
+    { SKU: 'SKU-A', RDC: '上海', 现货库存: '30', 商品状态: '上柜' },
+    { SKU: 'SKU-ZERO', RDC: '全国', 现货库存: '0', 商品状态: '赠品' },
+    { SKU: 'SKU-ZERO', RDC: '广州', 现货库存: '0', 商品状态: '赠品' }
+  ]), '原表');
+  const parsed = parseInventorySummaryWorkbook(
+    { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) },
+    'inventorySummaryFile7'
+  );
+  assert.deepEqual(parsed.rows, [{ jdId: 'SKU-A', jdRdc: '全国', jdStockQty: '40' }]);
+  assert.deepEqual(parsed.mapping.__inventorySummary, {
+    ...parsed.mapping.__inventorySummary,
+    parserVersion: 5,
+    sourceRowCount: 5,
+    rowCount: 1,
+    filteredZeroQtyRows: 1,
+    filteredJdRegionalRows: 3,
+    jdFormat: 'RDC全国行+现货库存',
+    jdScopeRows: 2,
+    jdScopeQuantity: 40
+  });
+});
+
+test('JD inventory parser keeps legacy national-stock format compatible', () => {
+  const workbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet([
+    { SKU: 'SKU-LEGACY', 全国现货库存: '55' },
+    { SKU: 'SKU-ZERO', 全国现货库存: '0' }
+  ]), '原表');
+  const parsed = parseInventorySummaryWorkbook(
+    { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) },
+    'inventorySummaryFile7'
+  );
+  assert.deepEqual(parsed.rows, [{ jdId: 'SKU-LEGACY', jdRdc: '', jdStockQty: '55' }]);
+  assert.equal(parsed.mapping.__inventorySummary.jdFormat, '旧版全国现货库存列');
+  assert.equal(parsed.mapping.__inventorySummary.filteredJdRegionalRows, 0);
+  assert.equal(parsed.mapping.__inventorySummary.filteredZeroQtyRows, 1);
+  assert.equal(parsed.mapping.__inventorySummary.jdScopeQuantity, 55);
+});
+
+test('JD inventory parser rejects invalid RDC national-row structures', () => {
+  const workbookWithoutRdc = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbookWithoutRdc, xlsx.utils.json_to_sheet([
+    { SKU: 'SKU-A', 现货库存: '10' }
+  ]), '原表');
+  assert.throws(
+    () => parseInventorySummaryWorkbook(
+      { buffer: xlsx.write(workbookWithoutRdc, { type: 'buffer', bookType: 'xlsx' }) },
+      'inventorySummaryFile7'
+    ),
+    /必须包含RDC列/
+  );
+
+  const workbookWithoutNational = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbookWithoutNational, xlsx.utils.json_to_sheet([
+    { SKU: 'SKU-A', RDC: '广州', 现货库存: '10' }
+  ]), '原表');
+  assert.throws(
+    () => parseInventorySummaryWorkbook(
+      { buffer: xlsx.write(workbookWithoutNational, { type: 'buffer', bookType: 'xlsx' }) },
+      'inventorySummaryFile7'
+    ),
+    /缺少RDC=全国行：SKU-A/
+  );
+
+  const workbookWithDuplicateNational = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbookWithDuplicateNational, xlsx.utils.json_to_sheet([
+    { SKU: 'SKU-A', RDC: '全国', 现货库存: '10' },
+    { SKU: 'SKU-A', RDC: '全国', 现货库存: '20' }
+  ]), '原表');
+  assert.throws(
+    () => parseInventorySummaryWorkbook(
+      { buffer: xlsx.write(workbookWithDuplicateNational, { type: 'buffer', bookType: 'xlsx' }) },
+      'inventorySummaryFile7'
+    ),
+    /RDC=全国行重复：SKU-A/
+  );
 });
 
 test('JD transit workbook parser requires one sheet and preserves zero, negative and invalid quantities', () => {

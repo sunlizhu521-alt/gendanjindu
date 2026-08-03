@@ -190,6 +190,28 @@
 .inventory-risk-summary article strong { font-size: 1.75rem; line-height: 1; }
 .inventory-risk-summary article small { color: #77869a; font-size: .72rem; }
 
+.inventory-risk-total-breakdown {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding-top: 4px;
+  border-top: 1px solid #d9e6e4;
+}
+
+.inventory-risk-total-breakdown span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.inventory-risk-total-breakdown b {
+  overflow: hidden;
+  color: #173238;
+  font-size: .82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .inventory-risk-periods {
   display: flex;
   flex-wrap: wrap;

@@ -359,6 +359,7 @@ function addAggregate(map, row) {
     materialName: row.materialName || '未匹配',
     productLine: row.productLine || '未匹配',
     productSeries: row.productSeries || '未匹配',
+    model: row.model || '未匹配',
     onHandQty: 0,
     inTransitQty: 0,
     undeliveredQty: 0,
@@ -460,6 +461,7 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
       materialName: row.materialName,
       productLine: row.productLine,
       productSeries: row.productSeries,
+      model: row.model,
       inventorySegment: row.region,
       businessUnit: row.businessUnit,
       businessUnits: row.businessUnit,
@@ -533,7 +535,7 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
 
 export function inventoryRiskCacheKey(sourceVersion, input = {}, now = new Date()) {
   return [
-    'inventory-risk-v4',
+    'inventory-risk-v5',
     currentChinaMonth(now),
     sourceVersion,
     JSON.stringify(normalizeInventoryRiskParams(input))

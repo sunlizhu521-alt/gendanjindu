@@ -5599,11 +5599,11 @@ th {
 
 @media (max-width: 1280px) {
   .inventory-five-kpis {
-    grid-template-columns: repeat(3, minmax(190px, 1fr));
+    grid-template-columns: repeat(5, minmax(185px, 1fr));
   }
 
   .inventory-stock-kpis {
-    grid-template-columns: repeat(3, minmax(190px, 1fr));
+    grid-template-columns: repeat(5, minmax(185px, 1fr));
   }
 
   .inventory-transit-kpis {
@@ -5635,9 +5635,12 @@ th {
   }
 
   .inventory-five-kpis,
-  .inventory-stock-kpis,
+  .inventory-stock-kpis {
+    grid-template-columns: repeat(5, minmax(185px, 1fr));
+  }
+
   .inventory-transit-kpis {
-    grid-template-columns: repeat(2, minmax(170px, 1fr));
+    grid-template-columns: repeat(3, minmax(185px, 1fr));
   }
 
   .inventory-chart-grid {

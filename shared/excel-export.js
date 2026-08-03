@@ -6,6 +6,7 @@ const BORDER_COLOR = 'FFCBD5E1';
 function normalizedCellValue(value) {
   if (value === null || value === undefined) return '';
   if (typeof value === 'number' && !Number.isFinite(value)) return '';
+  if (typeof value === 'number') return Math.round((value + Number.EPSILON) * 10) / 10;
   if (typeof value === 'string') return value.replace(/[\r\n]+/g, ' / ').trim();
   if (value instanceof Date || typeof value !== 'object') return value;
   return JSON.stringify(value);
@@ -54,6 +55,7 @@ export function applyStandardExcelTableFormat(worksheet, options = {}) {
       if (cell.value !== '' && cell.value !== null && cell.value !== undefined) {
         cell.border = thinBorder();
       }
+      if (typeof cell.value === 'number') cell.numFmt = '#,##0.#';
     }
   }
 

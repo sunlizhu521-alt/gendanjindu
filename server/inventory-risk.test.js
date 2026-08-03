@@ -257,7 +257,9 @@ test('处置阈值严格大于才命中，且停止采购优先于限制采购',
     }
   });
   assert.equal(equalPayload.summary.normalCount, 1);
-  assert.equal(equalPayload.rows.length, 0);
+  assert.equal(equalPayload.rows.length, 1);
+  assert.equal(equalPayload.rows[0].action, '正常');
+  assert.ok(equalPayload.rows[0].totalInventoryQty > 0);
 
   const payload = buildInventoryRiskAnalysis({
     now: NOW,

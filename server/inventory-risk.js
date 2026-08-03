@@ -445,7 +445,7 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
   const forecastMonths = monthRange(forecastStartMonth, params.forecastMonths);
   const restricted = [];
   const stopped = [];
-  let normalCount = 0;
+  const normal = [];
 
   for (const [key, row] of aggregate) {
     if (!(row.onHandQty > 0 || row.inTransitQty > 0 || row.undeliveredQty > 0)) continue;
@@ -470,10 +470,6 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
       ? (row.onHandQty + row.inTransitQty + row.undeliveredQty) / dailyForecast + channelSettings.averageLeadTimeDays
       : 999;
     const action = actionFor(transitTurnoverDays, fullChainCoverageDays, channelSettings);
-    if (action === '正常') {
-      normalCount += 1;
-      continue;
-    }
     const resultRow = {
       id: key,
       materialCode: row.materialCode,
@@ -511,7 +507,9 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
       forecastAvailability,
       action
     };
-    (action === '停止采购' ? stopped : restricted).push(resultRow);
+    if (action === '停止采购') stopped.push(resultRow);
+    else if (action === '限制采购') restricted.push(resultRow);
+    else normal.push(resultRow);
   }
 
   const sorter = (left, right) => right.fullChainCoverageDays - left.fullChainCoverageDays
@@ -520,7 +518,8 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
     || left.materialCode.localeCompare(right.materialCode, 'zh-Hans-CN', { numeric: true });
   restricted.sort(sorter);
   stopped.sort(sorter);
-  const rows = [...stopped, ...restricted];
+  normal.sort(sorter);
+  const rows = [...stopped, ...restricted, ...normal];
   const mappingIssues = (inventoryModel.anomalies || [])
     .filter((row) => RISK_SOURCE_TYPES.has(row.sourceType) && Math.abs(numberValue(row.qty)) > 0)
     .map((row) => ({
@@ -550,7 +549,7 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
     summary: {
       restrictedCount: restricted.length,
       stoppedCount: stopped.length,
-      normalCount,
+      normalCount: normal.length,
       ...channelStats,
       mappingIssueCount: mappingIssues.length,
       mappingIssueQty: mappingIssues.reduce((sum, row) => sum + Math.abs(row.qty), 0),
@@ -558,6 +557,7 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
     },
     restricted,
     stopped,
+    normal,
     rows,
     diagnostics: {
       mappingIssues,
@@ -569,7 +569,7 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
 
 export function inventoryRiskCacheKey(sourceVersion, input = {}, now = new Date()) {
   return [
-    'inventory-risk-v6',
+    'inventory-risk-v7',
     currentChinaMonth(now),
     sourceVersion,
     JSON.stringify(normalizeInventoryRiskParams(input))

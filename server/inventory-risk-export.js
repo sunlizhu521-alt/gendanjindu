@@ -12,6 +12,7 @@ export const INVENTORY_RISK_EXPORT_COLUMNS = [
   ['在库数量', 'onHandQty'],
   ['在途数量', 'inTransitQty'],
   ['待交付数量', 'undeliveredQty'],
+  ['合计数量', 'totalInventoryQty'],
   ['预测月均销量', 'forecastMonthlyAverage'],
   ['最近N月平均月销量', 'historicalMonthlyAverage'],
   ['在库在途周转天数', 'transitTurnoverDays'],

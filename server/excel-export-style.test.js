@@ -12,7 +12,7 @@ test('统一Excel格式应用到每个工作表', async () => {
   xlsx.utils.book_append_sheet(source, xlsx.utils.aoa_to_sheet([
     ['事业部', '物料编码', '物料名称', '数量'],
     ['国内事业部', '1002010248', '测试物料一', 150],
-    ['海外事业一部', '1924010005', '测试物料二', 80],
+    ['海外事业一部', '1924010005', '测试物料二', 80.26],
     ['全球招商事业部', '1007010344', '测试物料三', 30]
   ]), '明细');
   source.Sheets['明细']['!cols'] = [{ wch: 24 }];
@@ -41,6 +41,9 @@ test('统一Excel格式应用到每个工作表', async () => {
   });
   assert.equal(workbook.getWorksheet('明细').autoFilter, 'A1:D4');
   assert.ok(workbook.getWorksheet('明细').getColumn(1).width >= 24);
+  assert.equal(workbook.getWorksheet('明细').getCell('D3').value, 80.3);
+  assert.equal(workbook.getWorksheet('明细').getCell('D3').numFmt, '#,##0.#');
+  assert.equal(workbook.getWorksheet('明细').getCell('B2').value, '1002010248');
 });
 
 test('浏览器端和服务端业务导出均经过统一格式模块', () => {

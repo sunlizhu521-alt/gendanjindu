@@ -3,6 +3,9 @@ import { purchaseTrackingBusinessUnit } from './business-unit.js';
 import InventoryCalculationGuide from './InventoryCalculationGuide.jsx';
 import InventoryRiskPage from './InventoryRiskPage.jsx';
 import { writeStyledExcelFile } from '../shared/excel-export.js';
+import { getLoadingProgress, installGlobalFetchProgress, subscribeLoadingProgress } from './loading-progress.js';
+
+installGlobalFetchProgress();
 
 const API = import.meta.env.DEV ? 'http://localhost:4003' : '';
 const TOKEN_KEY = 'gendanjinduToken';
@@ -1291,6 +1294,22 @@ function inventoryProductType(row) {
   return normalize(row.baseProductType) || (normalize(row.productLine) === '其他/配件' ? '配件' : '成品');
 }
 
+function GlobalLoadingProgress({ state }) {
+  if (!state.visible) return null;
+  const value = Math.min(100, Math.max(0, Math.round(state.progress || 0)));
+  return (
+    <div className="global-loading-progress" role="status" aria-live="polite">
+      <div className="global-loading-progress-label">
+        <span>{value >= 100 ? '数据加载完成' : '正在加载数据'}</span>
+        <strong>{value}%</strong>
+      </div>
+      <div className="global-loading-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={value}>
+        <span style={{ width: `${value}%` }} />
+      </div>
+    </div>
+  );
+}
+
 function inventoryRowProductTypes(row) {
   const types = new Set([inventoryProductType(row)]);
   (row.inventorySegmentBreakdown || []).forEach((item) => {
@@ -1537,7 +1556,7 @@ function InventorySummaryVerticalGroupedBars({ title, rows }) {
       </div>
       {rows.length === 0 ? <p className="empty-chart">暂无数据</p> : (
         <div className="inventory-vertical-chart-scroll">
-          <div className="inventory-business-bars" style={{ minWidth: `${Math.max(720, rows.length * 210)}px` }}>
+          <div className="inventory-business-bars" style={{ minWidth: `${Math.max(720, rows.length * 270)}px` }}>
             {rows.map((row) => (
               <div className="inventory-business-group" key={row.id || row.name}>
                 <div className="inventory-business-series">
@@ -1719,6 +1738,7 @@ function InventorySummary({ token, active }) {
   const [showMethodology, setShowMethodology] = useState(false);
   const [showSourceBreakdown, setShowSourceBreakdown] = useState(false);
   const [showSourceWarehouses, setShowSourceWarehouses] = useState(false);
+  const [salesMonthRange, setSalesMonthRange] = useState('3');
 
   useEffect(() => {
     if (!active) return undefined;
@@ -1830,10 +1850,12 @@ function InventorySummary({ token, active }) {
     setSearchInput('');
     setFilters(inventoryDefaultFilters());
   };
-  const monthColumns = data?.months || [];
+  const allMonthColumns = [...(data?.months || [])].sort((left, right) => String(left).localeCompare(String(right)));
+  const monthColumns = salesMonthRange === 'all'
+    ? allMonthColumns
+    : allMonthColumns.slice(-Number(salesMonthRange));
   const tableColumns = [
     ...(showSourceWarehouses ? [['来源仓库', (row) => <InventorySourceWarehouseCell row={row} />]] : []),
-    ['匹配列（事业部+物料编码）', (row) => row.matchKey],
     ['事业部', (row) => row.businessUnit],
     ['产品线', (row) => row.productLine],
     ['系列', (row) => row.productSeries],
@@ -1882,7 +1904,7 @@ function InventorySummary({ token, active }) {
         tableColumns.map(([label]) => label),
         ...filteredRows.map((row) => [
           ...(showSourceWarehouses ? [inventorySourceWarehouses(row, '\n')] : []),
-          row.matchKey, row.businessUnit, row.productLine, row.productSeries, row.materialCode, row.sku, row.materialName,
+          row.businessUnit, row.productLine, row.productSeries, row.materialCode, row.sku, row.materialName,
           ...monthColumns.map((month) => numberValue(row.salesByMonth?.[month])),
           numberValue(row.salesQty), numberValue(row.salesAmount), row.quantityAbc, row.amountAbc,
           numberValue(row.inventoryQty), numberValue(row.transitQty),
@@ -1981,7 +2003,7 @@ function InventorySummary({ token, active }) {
 
           <section className="inventory-chart-grid">
             <InventorySummaryMonthlyBars title="每月销售变化趋势" rows={monthRows} />
-            <InventorySummaryGroupedBars title="销售产品线库存、在途与未交付" rows={productLineRows} />
+            <InventorySummaryVerticalGroupedBars title="销售产品线库存、在途与未交付" rows={productLineRows} />
             <InventorySummaryVerticalGroupedBars title="事业部库存、在途与未交付" rows={businessUnitRows} />
             <InventorySummaryAbc rows={filteredRows} />
           </section>
@@ -1992,6 +2014,14 @@ function InventorySummary({ token, active }) {
               <span>当前筛选 {filteredRows.length} / {rows.length} 条，异常 {filteredRows.filter((row) => row.mappingStatus !== '完整').length} 条</span>
               <button type="button" className="ghost compact-button" onClick={() => setShowSourceWarehouses((current) => !current)}>{showSourceWarehouses ? '隐藏来源仓库' : '显示来源仓库'}</button>
               <button type="button" className="ghost compact-button" onClick={() => setShowSourceBreakdown((current) => !current)}>{showSourceBreakdown ? '隐藏来源分层' : '显示来源分层'}</button>
+              <label className="inventory-page-size inventory-sales-month-range">销售月份
+                <select value={salesMonthRange} onChange={(event) => setSalesMonthRange(event.target.value)}>
+                  <option value="3">最近3个月</option>
+                  <option value="6">最近6个月</option>
+                  <option value="12">最近12个月</option>
+                  <option value="all">全部月份</option>
+                </select>
+              </label>
               <button type="button" className="ghost compact-button" disabled={exporting || !filteredRows.length} onClick={exportRows}>{exporting ? '导出中...' : '导出Excel'}</button>
               <label className="inventory-page-size">每页
                 <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
@@ -6427,6 +6457,7 @@ function PermissionsPage({ token, currentUser, pages, setMessage }) {
 }
 
 function App() {
+  const [globalLoading, setGlobalLoading] = useState(getLoadingProgress);
   const [token, setToken] = useState(() => window.localStorage.getItem(TOKEN_KEY) || '');
   const [user, setUser] = useState(null);
   const [pages, setPages] = useState(PAGE_LABELS);
@@ -6443,6 +6474,8 @@ function App() {
   const [crossBorderVersion, setCrossBorderVersion] = useState(0);
   const [firstMileVersion, setFirstMileVersion] = useState(0);
   const [highlightSlotId, setHighlightSlotId] = useState('');
+
+  useEffect(() => subscribeLoadingProgress(setGlobalLoading), []);
 
   async function reloadDemands(currentToken = token) {
     setDemandsLoading(true);
@@ -6515,7 +6548,9 @@ function App() {
     setVisitedPages(new Set());
   }
 
-  if (!token || !user) return <Login onLogin={handleLogin} />;
+  const loadingProgress = <GlobalLoadingProgress state={globalLoading} />;
+
+  if (!token || !user) return <>{loadingProgress}<Login onLogin={handleLogin} /></>;
 
   const visiblePages = visiblePagesForUser(user);
   const canView = (page) => visiblePages.includes(page);
@@ -6533,6 +6568,7 @@ function App() {
 
   return (
     <main className="app-shell" onClick={() => setMessage('')}>
+      {loadingProgress}
       <SecurityWatermark userName={user.name} />
       <aside className="sidebar" onClick={(event) => event.stopPropagation()}>
         <h1>采购跟单&头程数据</h1>

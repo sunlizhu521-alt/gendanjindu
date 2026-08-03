@@ -2318,7 +2318,7 @@ h3 {
 
 .inventory-business-group {
   display: grid;
-  flex: 0 0 198px;
+  flex: 0 0 258px;
   grid-template-rows: 184px 28px;
   min-width: 0;
 }
@@ -2343,14 +2343,61 @@ h3 {
 .inventory-business-series small {
   width: 100%;
   min-height: 20px;
-  overflow: hidden;
+  overflow: visible;
   color: #334155;
   font-size: 9px;
   font-weight: 700;
   line-height: 20px;
   text-align: center;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  z-index: 1;
+}
+
+.global-loading-progress {
+  position: fixed;
+  top: 14px;
+  right: 24px;
+  z-index: 10020;
+  width: min(360px, calc(100vw - 32px));
+  padding: 9px 12px 11px;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .98);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .16);
+  color: #1e3a5f;
+  pointer-events: none;
+}
+
+.global-loading-progress-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.global-loading-progress-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #e2e8f0;
+}
+
+.global-loading-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #1683e8;
+  transition: width .2s ease;
+}
+
+.inventory-sales-month-range select {
+  min-width: 108px;
+}
+
+.inventory-risk-action-normal {
+  color: #13735b;
+  background: #dcfce7;
 }
 
 .inventory-business-series i {

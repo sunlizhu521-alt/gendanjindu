@@ -268,7 +268,7 @@ function RiskTable({ rows }) {
           <thead>
             <tr>
               <th>渠道</th><th>销售区域</th><th>事业部</th><th>产品线</th><th>物料编码</th><th>SKU</th><th>物料名称</th><th>未交付供应商简称</th>
-              <th>在库数量</th><th>在途数量</th><th>待交付数量</th><th>预测月均销量</th><th>最近N月平均月销量</th>
+              <th>在库数量</th><th>在途数量</th><th>待交付数量</th><th>合计数量</th><th>预测月均销量</th><th>最近N月平均月销量</th>
               <th>在库在途周转天数</th><th>全链覆盖天数</th><th>预测状态</th><th>处置动作</th>
             </tr>
           </thead>
@@ -278,13 +278,13 @@ function RiskTable({ rows }) {
                 <td><span className={`inventory-risk-segment inventory-risk-segment-${row.channel === '国内' ? 'domestic' : 'overseas'}`}>{row.channel}</span></td>
                 <td>{row.salesRegion}</td><td>{row.businessUnit}</td><td>{row.productLine}</td><td>{row.materialCode}</td><td>{row.sku}</td><td>{row.materialName}</td>
                 <td>{row.unfulfilledSupplierShortName || '未匹配'}</td><td>{numberText(row.onHandQty)}</td><td>{numberText(row.inTransitQty)}</td>
-                <td>{numberText(row.undeliveredQty)}</td><td>{numberText(row.forecastMonthlyAverage)}</td>
+                <td>{numberText(row.undeliveredQty)}</td><td>{numberText(row.totalInventoryQty)}</td><td>{numberText(row.forecastMonthlyAverage)}</td>
                 <td>{numberText(row.historicalMonthlyAverage)}</td><td>{numberText(row.transitTurnoverDays)}</td>
                 <td>{numberText(row.fullChainCoverageDays)}</td><td>{row.forecastStatus}</td>
-                <td><strong className={`inventory-risk-action inventory-risk-action-${row.action === '停止采购' ? 'stopped' : 'restricted'}`}>{row.action}</strong></td>
+                <td><strong className={`inventory-risk-action inventory-risk-action-${row.action === '停止采购' ? 'stopped' : row.action === '限制采购' ? 'restricted' : 'normal'}`}>{row.action}</strong></td>
               </tr>
             ))}
-            {!visibleRows.length && <tr><td className="inventory-risk-empty" colSpan="17">当前筛选条件下没有需要处置的物料</td></tr>}
+            {!visibleRows.length && <tr><td className="inventory-risk-empty" colSpan="18">当前筛选条件下没有库存、在途或未交付数量大于 0 的物料</td></tr>}
           </tbody>
         </table>
       </div>
@@ -306,7 +306,7 @@ function InventoryRiskLogic({ onBack }) {
         <section><span>03</span><h3>销售速度</h3><p>预测月均销量取本月起连续 N 个月预测数量合计除以 N；最近 N 月平均月销量独立取销售数据最新月份向前 N 个月。</p></section>
         <section><span>04</span><h3>在库在途周转</h3><p>在库在途周转天数 =（在库数量 + 在途数量）÷（预测月均销量 ÷ 30）。超过当前渠道的限制采购阈值时限制采购。</p></section>
         <section><span>05</span><h3>全链覆盖</h3><p>全链覆盖天数 =（在库数量 + 在途数量 + 待交付数量）÷（预测月均销量 ÷ 30）+ 当前渠道平均交期。超过停止采购阈值时停止采购。</p></section>
-        <section><span>06</span><h3>异常和优先级</h3><p>无预测或预测合计为 0 时天数按 999，进入停止采购。停止采购优先于限制采购；正常物料不在结果表展示。</p></section>
+        <section><span>06</span><h3>异常和优先级</h3><p>无预测或预测合计为 0 时天数按 999，进入停止采购。停止采购优先于限制采购；处置清单展示合计数量大于 0 的全部物料，包括正常物料。</p></section>
       </div>
     </div>
   );
@@ -416,7 +416,8 @@ export default function InventoryRiskPage({ token, active }) {
   }
 
   const actionRows = useMemo(
-    () => result?.rows || [...(result?.stopped || []), ...(result?.restricted || [])],
+    () => (result?.rows || [...(result?.stopped || []), ...(result?.restricted || []), ...(result?.normal || [])])
+      .filter((row) => Number(row.totalInventoryQty ?? (Number(row.onHandQty || 0) + Number(row.inTransitQty || 0) + Number(row.undeliveredQty || 0))) > 0),
     [result]
   );
   const matchesFilters = (row, omit = '') => (
@@ -449,7 +450,7 @@ export default function InventoryRiskPage({ token, active }) {
         supplierTotals.get(right) - supplierTotals.get(left) || left.localeCompare(right, 'zh-CN')
       )),
       channels: RISK_CHANNELS.map((channel) => channel.label).filter((channel) => valuesFor('channels', 'channel').includes(channel)),
-      actions: ['限制采购', '停止采购'].filter((action) => valuesFor('actions', 'action').includes(action)),
+      actions: ['正常', '限制采购', '停止采购'].filter((action) => valuesFor('actions', 'action').includes(action)),
       forecastAvailability: ['有预测销售', '无预测销售']
         .filter((status) => valuesFor('forecastAvailability', 'forecastAvailability').includes(status))
     };
@@ -462,6 +463,7 @@ export default function InventoryRiskPage({ token, active }) {
     return {
       restrictedCount: filteredRows.filter((row) => row.action === '限制采购').length,
       stoppedCount: filteredRows.filter((row) => row.action === '停止采购').length,
+      normalCount: filteredRows.filter((row) => row.action === '正常').length,
       forecastedCount: filteredRows.filter((row) => row.forecastAvailability === '有预测销售').length,
       unforecastedCount: filteredRows.filter((row) => row.forecastAvailability === '无预测销售').length,
       onHandQty,
@@ -542,7 +544,7 @@ export default function InventoryRiskPage({ token, active }) {
             <article className="unforecasted"><span>无销售预测的物料编码数量</span><strong>{numberText(filteredSummary.unforecastedCount, 0)}</strong><small>按事业部 + 物料编码独立计数</small></article>
             <article className="restricted"><span>限制采购</span><strong>{numberText(filteredSummary.restrictedCount, 0)}</strong><small>事业部 + 物料编码数量</small></article>
             <article className="stopped"><span>停止采购</span><strong>{numberText(filteredSummary.stoppedCount, 0)}</strong><small>事业部 + 物料编码数量</small></article>
-            <article><span>正常未展示</span><strong>{numberText(summary.normalCount, 0)}</strong><small>全量事业部 + 物料编码数量</small></article>
+            <article><span>正常</span><strong>{numberText(filteredSummary.normalCount, 0)}</strong><small>事业部 + 物料编码数量</small></article>
           </section>
           <div className="inventory-risk-periods">
             <span>预测区间：{result.periods.forecastStartMonth} 至 {result.periods.forecastEndMonth}</span>

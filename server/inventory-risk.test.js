@@ -340,6 +340,7 @@ test('供应计划分析页面、权限与API均注册在gendanjindu', () => {
   const server = fs.readFileSync(path.join(root, 'server', 'app.js'), 'utf8');
   const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
   const riskPage = fs.readFileSync(path.join(root, 'src', 'InventoryRiskPage.jsx'), 'utf8');
+  const styles = fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8');
   assert.match(server, /'inventoryRisk'/);
   assert.match(server, /\/api\/inventory-risk\/query/);
   assert.match(server, /\/api\/inventory-risk\/export/);
@@ -364,6 +365,8 @@ test('供应计划分析页面、权限与API均注册在gendanjindu', () => {
   assert.match(riskPage, /className="unforecasted"/);
   assert.match(riskPage, /有销售预测的物料编码数量/);
   assert.match(riskPage, /无销售预测的物料编码数量/);
+  assert.match(styles, /\.inventory-risk-summary\s*\{[\s\S]*?grid-template-columns:\s*repeat\(6,/);
+  assert.match(styles, /\.inventory-risk-summary\s*\{[\s\S]*?overflow-x:\s*auto/);
   assert.match(riskPage, /库存总量/);
   assert.doesNotMatch(riskPage, /<span>映射待维护<\/span>/);
   assert.match(riskPage, /事业部 \+ 物料编码数量/);

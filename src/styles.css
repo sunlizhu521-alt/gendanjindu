@@ -225,8 +225,10 @@
 
 .inventory-risk-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(180px, 1fr));
   gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
 }
 
 .inventory-risk-summary article {
@@ -462,7 +464,6 @@
     grid-template-columns: minmax(0, 1fr);
     overflow-x: visible;
   }
-  .inventory-risk-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .inventory-risk-logic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
@@ -470,7 +471,6 @@
   .inventory-risk-header { flex-direction: column; }
   .inventory-risk-actions { justify-content: flex-start; }
   .inventory-risk-filter-count { width: 100%; margin-left: 0; }
-  .inventory-risk-summary,
   .inventory-risk-logic-grid,
   .inventory-risk-diagnostic-grid { grid-template-columns: 1fr; }
 }

@@ -166,6 +166,22 @@ test('inventory summary model uses inventory library facts, layered totals and s
     true
   );
   assert.deepEqual(crossBorderM1?.unfulfilledReasons, [{ name: '未填写', qty: 50, value: 500 }]);
+  assert.deepEqual(
+    crossBorderM1?.inventorySourceDetails.map((item) => ({
+      sourceTable: item.sourceTable,
+      sourceWarehouseName: item.sourceWarehouseName,
+      receivingWarehouseName: item.receivingWarehouseName,
+      mappedWarehouseName: item.mappedWarehouseName,
+      storeName: item.storeName
+    })),
+    [
+      { sourceTable: 'FBA库存报表', sourceWarehouseName: 'FBA源仓', receivingWarehouseName: '', mappedWarehouseName: 'FBA金蝶仓', storeName: '' },
+      { sourceTable: 'FBA在途报表', sourceWarehouseName: '', receivingWarehouseName: '', mappedWarehouseName: 'FBA在途金蝶仓', storeName: '店铺一' },
+      { sourceTable: 'FBM库存报表', sourceWarehouseName: 'FBM仓', receivingWarehouseName: '', mappedWarehouseName: 'FBM仓', storeName: '' },
+      { sourceTable: 'FBM在途报表', sourceWarehouseName: '102-US-海外二部-海上在途', receivingWarehouseName: '', mappedWarehouseName: '102-US-海外二部-海上在途', storeName: '' },
+      { sourceTable: 'WFS库存报表', sourceWarehouseName: 'WFS源仓', receivingWarehouseName: '', mappedWarehouseName: 'WFS仓', storeName: '' }
+    ]
+  );
 });
 
 test('inventory summary separates unsellable warehouse stock without losing normal stock', () => {

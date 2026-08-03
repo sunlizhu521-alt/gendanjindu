@@ -1340,11 +1340,16 @@ function inventoryRowForFilters(row, selectedSubjects, selectedProductTypes) {
   const inventoryValue = crossBorderInventoryValue + domesticInventoryValue;
   const transitQty = amounts.fbaTransitQty + amounts.fbmTransitQty + amounts.jdTransitQty;
   const transitValue = amounts.fbaTransitValue + amounts.fbmTransitValue + amounts.jdTransitValue;
+  const inventorySourceDetails = (row.inventorySourceDetails || []).filter((item) => (
+    (subjectSet.size === 0 || subjectSet.has(normalize(item.subject)))
+    && (typeSet.size === 0 || typeSet.has(normalize(item.productType)))
+  ));
   return {
     ...row,
     ...amounts,
     ...nonStockAmounts,
     inventorySubjects: [...new Set(selectedBreakdown.map((item) => item.subject))],
+    inventorySourceDetails,
     salesByMonth: includeBaseMeasures ? row.salesByMonth : {},
     salesAmountByMonth: includeBaseMeasures ? row.salesAmountByMonth : {},
     purchaseByMonth: includeBaseMeasures ? row.purchaseByMonth : {},
@@ -1359,6 +1364,30 @@ function inventoryRowForFilters(row, selectedSubjects, selectedProductTypes) {
     scaleQty: inventoryQty + transitQty + nonStockAmounts.unfulfilledQty,
     scaleValue: inventoryValue + transitValue + nonStockAmounts.unfulfilledValue
   };
+}
+
+function inventorySourceTables(row) {
+  return [...new Set((row.inventorySourceDetails || []).map((item) => normalize(item.sourceTable)).filter(Boolean))]
+    .join('、') || '无库存/在途来源';
+}
+
+function inventorySourceLocation(item) {
+  const sourceWarehouse = normalize(item.sourceWarehouseName);
+  const receivingWarehouse = normalize(item.receivingWarehouseName);
+  const mappedWarehouse = normalize(item.mappedWarehouseName);
+  const storeName = normalize(item.storeName);
+  const locations = [];
+  if (sourceWarehouse) locations.push(sourceWarehouse);
+  else if (storeName) locations.push(`店铺：${storeName}`);
+  if (receivingWarehouse && !locations.includes(receivingWarehouse)) locations.push(`收货：${receivingWarehouse}`);
+  if (mappedWarehouse && !locations.includes(mappedWarehouse)) locations.push(`映射：${mappedWarehouse}`);
+  return locations.join(' → ') || '无仓库字段';
+}
+
+function inventorySourceWarehouses(row) {
+  return [...new Set((row.inventorySourceDetails || []).map((item) => (
+    `${normalize(item.sourceTable) || '未知来源'}：${inventorySourceLocation(item)}`
+  )))].join('；') || '无仓库数据';
 }
 
 function inventoryDashboardGroups(rows, keyOf) {
@@ -1737,7 +1766,8 @@ function InventorySummary({ token, active }) {
     const keywordMatches = !keyword || [
       row.matchKey, row.businessUnit, row.productLine, row.productSeries, row.materialCode,
       row.sku, row.materialName, row.rawIdentifier, ...inventoryRowProductTypes(row),
-      ...(row.inventorySubjects || []), ...(row.issues || [])
+      ...(row.inventorySubjects || []), ...(row.issues || []),
+      inventorySourceTables(row), inventorySourceWarehouses(row)
     ].join(' ').toLowerCase().includes(keyword);
     return scalarMatches && sourceMatches && subjectMatches && productTypeMatches && deliveryMatches && keywordMatches;
   };
@@ -1792,6 +1822,8 @@ function InventorySummary({ token, active }) {
   };
   const monthColumns = data?.months || [];
   const tableColumns = [
+    ['来源表', (row) => inventorySourceTables(row)],
+    ['来源仓库', (row) => inventorySourceWarehouses(row)],
     ['匹配列（事业部+物料编码）', (row) => row.matchKey],
     ['事业部', (row) => row.businessUnit],
     ['产品线', (row) => row.productLine],
@@ -1840,6 +1872,7 @@ function InventorySummary({ token, active }) {
       const aoa = [
         tableColumns.map(([label]) => label),
         ...filteredRows.map((row) => [
+          inventorySourceTables(row), inventorySourceWarehouses(row),
           row.matchKey, row.businessUnit, row.productLine, row.productSeries, row.materialCode, row.sku, row.materialName,
           ...monthColumns.map((month) => numberValue(row.salesByMonth?.[month])),
           numberValue(row.salesQty), numberValue(row.salesAmount), row.quantityAbc, row.amountAbc,

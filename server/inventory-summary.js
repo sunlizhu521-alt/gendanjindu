@@ -244,6 +244,16 @@ const INVENTORY_SOURCE_TYPES = new Set([
   '库存风险',
   '供应计划分析'
 ]);
+const INVENTORY_SOURCE_TABLE_LABELS = {
+  FBA库存: 'FBA库存报表',
+  FBM库存: 'FBM库存报表',
+  WFS库存: 'WFS库存报表',
+  国内在库: '国内在库报表',
+  京东在库: '京东在库报表',
+  FBA在途: 'FBA在途报表',
+  FBM在途: 'FBM在途报表',
+  京东在途: '京东在途'
+};
 const ZERO_QUANTITY_DIAGNOSTIC_SOURCE_TYPES = new Set(['京东在途']);
 const JD_INVENTORY_SUBJECT = '浙江迈德斯特医疗器械科技有限公司';
 const INVENTORY_SUBJECT_FIELDS = new Set([
@@ -727,6 +737,7 @@ function emptySummaryRow(id, businessUnit, product, rawIdentifier) {
     inventorySubjects: new Set(),
     inventorySubjectBreakdown: {},
     inventorySegmentBreakdown: {},
+    inventorySourceDetails: {},
     deliveryStatuses: new Set(),
     unfulfilledSupplierShortNames: new Set(),
     salesByMonth: {},
@@ -1093,6 +1104,29 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       const subjectAmounts = row.inventorySubjectBreakdown[subject] || {};
       const segmentKey = combinedKey(subject, segmentType);
       const segmentAmounts = row.inventorySegmentBreakdown[segmentKey] || { subject, productType: segmentType };
+      const sourceTable = INVENTORY_SOURCE_TABLE_LABELS[sourceType];
+      if (sourceTable) {
+        const sourceDetail = {
+          sourceType,
+          sourceTable,
+          sourceWarehouseName: text(sourceContext.sourceWarehouseName),
+          receivingWarehouseName: text(sourceContext.receivingWarehouseName),
+          mappedWarehouseName: text(sourceContext.kingdeeWarehouseName),
+          storeName: text(sourceContext.storeName),
+          subject,
+          productType: segmentType
+        };
+        const detailKey = combinedKey(
+          sourceDetail.sourceTable,
+          sourceDetail.sourceWarehouseName,
+          sourceDetail.receivingWarehouseName,
+          sourceDetail.mappedWarehouseName,
+          sourceDetail.storeName,
+          sourceDetail.subject,
+          sourceDetail.productType
+        );
+        row.inventorySourceDetails[detailKey] = sourceDetail;
+      }
       Object.entries(quantities).forEach(([field, amount]) => {
         if (!INVENTORY_SUBJECT_FIELDS.has(field)) return;
         subjectAmounts[field] = (subjectAmounts[field] || 0) + amount;
@@ -1261,7 +1295,6 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       sourceContext: {
         sourceSku: text(raw.sku),
         storeName: text(raw.storeName),
-        sourceWarehouseName: text(raw.storeName),
         subject: warehouseResult.subject || '',
         kingdeeWarehouseName: warehouseResult.kingdeeWarehouseName || ''
       }
@@ -1367,7 +1400,8 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       quantities: { jdInventoryQty: qty, jdInventoryValue: qty * product.product.pretaxPrice },
       sourceContext: {
         sourceSku: text(raw.jdId),
-        jdId: text(raw.jdId)
+        jdId: text(raw.jdId),
+        sourceWarehouseName: text(raw.jdRdc) ? `RDC=${text(raw.jdRdc)}` : '全国现货库存'
       }
     });
   });
@@ -1394,7 +1428,8 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       quantities: { jdTransitQty: qty, jdTransitValue: qty * product.product.pretaxPrice },
       sourceContext: {
         sourceSku: materialCode,
-        subject: JD_INVENTORY_SUBJECT
+        subject: JD_INVENTORY_SUBJECT,
+        sourceWarehouseName: '无仓库字段'
       }
     });
   });
@@ -1485,6 +1520,12 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
         .sort((left, right) => (
           left.subject.localeCompare(right.subject, 'zh-Hans-CN')
           || left.productType.localeCompare(right.productType, 'zh-Hans-CN')
+        )),
+      inventorySourceDetails: Object.values(row.inventorySourceDetails)
+        .sort((left, right) => (
+          left.sourceTable.localeCompare(right.sourceTable, 'zh-Hans-CN')
+          || left.sourceWarehouseName.localeCompare(right.sourceWarehouseName, 'zh-Hans-CN')
+          || left.mappedWarehouseName.localeCompare(right.mappedWarehouseName, 'zh-Hans-CN')
         )),
       deliveryStatuses,
       unfulfilledSupplierShortNames: [...row.unfulfilledSupplierShortNames],

@@ -78,6 +78,71 @@
   opacity: .5;
 }
 
+.inventory-risk-export-status {
+  display: grid;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid #b8d9d5;
+  border-radius: 7px;
+  background: #f2fbf9;
+  color: #155e58;
+  font-size: .82rem;
+}
+
+.inventory-risk-export-status.success {
+  border-color: #bbdec6;
+  background: #f2fbf5;
+  color: #176437;
+}
+
+.inventory-risk-export-status.error {
+  border-color: #fecaca;
+  background: #fff6f6;
+  color: #9f2424;
+}
+
+.inventory-risk-export-status-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.inventory-risk-export-status-line span {
+  min-width: 0;
+  flex: 1;
+}
+
+.inventory-risk-export-status-line b {
+  min-width: 42px;
+  text-align: right;
+}
+
+.inventory-risk-export-progress {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #d7ebe8;
+}
+
+.inventory-risk-export-progress span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: #087f76;
+  transition: width .15s ease;
+}
+
+.inventory-risk-export-progress.indeterminate span {
+  width: 35%;
+  animation: inventory-risk-export-wait 1.2s ease-in-out infinite;
+}
+
+@keyframes inventory-risk-export-wait {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(310%); }
+}
+
 .inventory-risk-parameters {
   display: grid;
   grid-template-columns: 220px minmax(920px, 1fr) minmax(430px, .55fr);

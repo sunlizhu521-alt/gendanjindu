@@ -357,6 +357,12 @@ test('供应计划分析页面、权限与API均注册在gendanjindu', () => {
   assert.match(riskPage, /label="渠道"/);
   assert.match(riskPage, /label="处置动作"/);
   assert.match(riskPage, /label="预测销售"/);
+  assert.match(riskPage, /正在请求服务器生成 Excel/);
+  assert.match(riskPage, /response\.body\?\.getReader/);
+  assert.match(riskPage, /response\.headers\.get\('content-length'\)/);
+  assert.match(riskPage, /exporting \? '导出中\.\.\.'/);
+  assert.match(riskPage, /aria-live="polite"/);
+  assert.match(styles, /\.inventory-risk-export-progress\.indeterminate span/);
   assert.match(riskPage, /有预测销售/);
   assert.match(riskPage, /无预测销售/);
   assert.match(riskPage, /forecastedCount: filteredRows\.filter\(\(row\) => row\.forecastAvailability === '有预测销售'\)\.length/);

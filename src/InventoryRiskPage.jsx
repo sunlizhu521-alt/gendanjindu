@@ -321,6 +321,8 @@ export default function InventoryRiskPage({ token, active }) {
   const [showLogic, setShowLogic] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [filters, setFilters] = useState({ ...EMPTY_RISK_FILTERS });
+  const [exporting, setExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState(null);
 
   const setRootParam = (field, value) => setParams((current) => ({ ...current, [field]: value }));
   const setChannelParam = (channelKey, field, value) => setParams((current) => ({
@@ -358,7 +360,9 @@ export default function InventoryRiskPage({ token, active }) {
   }, [active, loaded, loading]);
 
   async function exportResult() {
-    setError('');
+    if (exporting) return;
+    setExporting(true);
+    setExportStatus({ type: 'working', message: '正在请求服务器生成 Excel，请稍候...', progress: null });
     try {
       const response = await fetch(`${API}/api/inventory-risk/export`, {
         method: 'POST',
@@ -366,10 +370,35 @@ export default function InventoryRiskPage({ token, active }) {
         body: JSON.stringify(params)
       });
       if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || '导出失败');
+        const contentType = response.headers.get('content-type') || '';
+        const payload = contentType.includes('application/json')
+          ? await response.json().catch(() => ({}))
+          : await response.text().catch(() => '');
+        throw new Error(payload?.error || payload || `导出失败（${response.status}）`);
       }
-      const blob = await response.blob();
+      const contentLength = Number(response.headers.get('content-length'));
+      let blob;
+      if (response.body?.getReader) {
+        const reader = response.body.getReader();
+        const chunks = [];
+        let receivedBytes = 0;
+        setExportStatus({ type: 'working', message: '正在下载 Excel 数据...', progress: contentLength > 0 ? 0 : null });
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          receivedBytes += value.byteLength;
+          const progress = contentLength > 0
+            ? Math.min(100, Math.round((receivedBytes / contentLength) * 100))
+            : null;
+          setExportStatus({ type: 'working', message: '正在下载 Excel 数据...', progress });
+        }
+        blob = new Blob(chunks, { type: response.headers.get('content-type') || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      } else {
+        setExportStatus({ type: 'working', message: '正在下载 Excel 数据...', progress: null });
+        blob = await response.blob();
+      }
+      setExportStatus({ type: 'working', message: '数据获取完成，正在启动下载...', progress: 100 });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -378,8 +407,11 @@ export default function InventoryRiskPage({ token, active }) {
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setExportStatus({ type: 'success', message: '导出完成，Excel 文件已开始下载。', progress: 100 });
     } catch (requestError) {
-      setError(requestError.message);
+      setExportStatus({ type: 'error', message: requestError.message || '导出失败，请稍后重试。', progress: null });
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -449,10 +481,32 @@ export default function InventoryRiskPage({ token, active }) {
         <div><span className="inventory-risk-eyebrow">SUPPLY PLANNING</span><h2>供应计划分析</h2><p>按海外-美国、海外-欧洲和国内三个渠道识别限制采购与停止采购物料。</p></div>
         <div className="inventory-risk-actions">
           <button className="inventory-risk-button secondary" type="button" onClick={() => setShowLogic(true)}>计算逻辑</button>
-          <button className="inventory-risk-button secondary" type="button" disabled={!result || loading} onClick={exportResult}>导出 Excel</button>
-          <button className="inventory-risk-button primary" type="button" disabled={loading} onClick={() => calculate(true)}>{loading ? '计算中...' : '重新计算'}</button>
+          <button className="inventory-risk-button secondary" type="button" disabled={!result || loading || exporting} onClick={exportResult}>{exporting ? '导出中...' : '导出 Excel'}</button>
+          <button className="inventory-risk-button primary" type="button" disabled={loading || exporting} onClick={() => calculate(true)}>{loading ? '计算中...' : '重新计算'}</button>
         </div>
       </header>
+
+      {exportStatus && (
+        <div className={`inventory-risk-export-status ${exportStatus.type}`} role={exportStatus.type === 'error' ? 'alert' : 'status'} aria-live="polite">
+          <div className="inventory-risk-export-status-line">
+            <strong>{exportStatus.type === 'error' ? '导出失败' : exportStatus.type === 'success' ? '导出完成' : '正在导出'}</strong>
+            <span>{exportStatus.message}</span>
+            {Number.isFinite(exportStatus.progress) && <b>{exportStatus.progress}%</b>}
+          </div>
+          {exportStatus.type === 'working' && (
+            <div
+              className={`inventory-risk-export-progress${Number.isFinite(exportStatus.progress) ? '' : ' indeterminate'}`}
+              role="progressbar"
+              aria-label="Excel 导出进度"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              {...(Number.isFinite(exportStatus.progress) ? { 'aria-valuenow': exportStatus.progress } : {})}
+            >
+              <span style={Number.isFinite(exportStatus.progress) ? { width: `${exportStatus.progress}%` } : undefined} />
+            </div>
+          )}
+        </div>
+      )}
 
       <RiskParameterMatrix params={params} onChannelChange={setChannelParam} onRootChange={setRootParam} />
 

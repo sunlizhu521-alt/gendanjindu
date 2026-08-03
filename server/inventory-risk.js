@@ -438,6 +438,9 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
     const forecastStatus = !forecast?.hasRecord || availableForecastMonths.length === 0
       ? '无销售预测'
       : forecastTotal > 0 ? '已匹配' : '销售预测为0';
+    const forecastAvailability = !forecast?.hasRecord || availableForecastMonths.length === 0
+      ? '无预测销售'
+      : '有预测销售';
     const dailyForecast = forecastMonthlyAverage / 30;
     const transitTurnoverDays = dailyForecast > 0
       ? (row.onHandQty + row.inTransitQty) / dailyForecast
@@ -464,11 +467,13 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
       inTransitQty: row.inTransitQty,
       inventoryQty: row.onHandQty + row.inTransitQty,
       undeliveredQty: row.undeliveredQty,
+      totalInventoryQty: row.onHandQty + row.inTransitQty + row.undeliveredQty,
       forecastMonthlyAverage,
       historicalMonthlyAverage,
       transitTurnoverDays,
       fullChainCoverageDays,
       forecastStatus,
+      forecastAvailability,
       action
     };
     (action === '停止采购' ? stopped : restricted).push(resultRow);
@@ -528,7 +533,7 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
 
 export function inventoryRiskCacheKey(sourceVersion, input = {}, now = new Date()) {
   return [
-    'inventory-risk-v3',
+    'inventory-risk-v4',
     currentChinaMonth(now),
     sourceVersion,
     JSON.stringify(normalizeInventoryRiskParams(input))

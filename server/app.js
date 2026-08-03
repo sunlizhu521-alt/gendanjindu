@@ -2397,9 +2397,10 @@ function inventoryRiskExportRows(rows) {
     '在途数量': row.inTransitQty,
     '待交付数量': row.undeliveredQty,
     '库存及在途数量': row.inventoryQty,
+    '库存总量': row.totalInventoryQty,
     '预测月均销量': row.forecastMonthlyAverage,
     '最近N月平均月销量': row.historicalMonthlyAverage,
-    '在途周转天数': row.transitTurnoverDays,
+    '在库在途周转天数': row.transitTurnoverDays,
     '全链覆盖天数': row.fullChainCoverageDays,
     '销售预测状态': row.forecastStatus,
     '处置动作': row.action

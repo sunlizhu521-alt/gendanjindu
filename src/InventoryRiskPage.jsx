@@ -18,7 +18,7 @@ const DEFAULT_PARAMS = {
 
 const PARAM_GROUPS = [
   {
-    title: '在途周转天数',
+    title: '在库在途周转天数',
     fields: [
       ['transitHighOverseas', '偏高线 - 海外'],
       ['transitHighDomestic', '偏高线 - 国内'],
@@ -48,7 +48,8 @@ const PARAM_GROUPS = [
 const EMPTY_RISK_FILTERS = Object.freeze({
   businessUnits: [],
   inventorySegments: [],
-  actions: []
+  actions: [],
+  forecastAvailability: []
 });
 
 const BUSINESS_UNIT_FILTER_ORDER = [
@@ -208,7 +209,7 @@ function RiskTable({ rows }) {
             <tr>
               <th>物料编码</th><th>SKU</th><th>物料名称</th><th>产品线</th><th>库存段</th><th>事业部</th>
               <th>在库数量</th><th>在途数量</th><th>待交付数量</th><th>预测月均销量</th><th>最近N月平均月销量</th>
-              <th>在途周转天数</th><th>全链覆盖天数</th><th>预测状态</th><th>处置动作</th>
+              <th>在库在途周转天数</th><th>全链覆盖天数</th><th>预测状态</th><th>处置动作</th>
             </tr>
           </thead>
           <tbody>
@@ -243,7 +244,7 @@ function InventoryRiskLogic({ onBack }) {
         <section><span>01</span><h3>数据来源</h3><p>库存、在途、待交付、商品分类和历史销售完全复用“库存汇总”的标准化结果；销售预测读取“库存汇总文件库”的槽位 15。</p></section>
         <section><span>02</span><h3>物料与库存段</h3><p>以事业部 + 物料编码为主键，SKU 仅展示。同一物料属于多个事业部时分别计算，不合并到一行。国内事业部、销售部-工厂归为国内库存段，其他已匹配事业部归为海外库存段。</p></section>
         <section><span>03</span><h3>销售速度</h3><p>预测月均销量取本月起连续 N 个月预测数量合计除以 N；最近 N 月平均月销量独立取销售数据最新月份向前 N 个月。</p></section>
-        <section><span>04</span><h3>标准一</h3><p>在途周转天数 =（在库数量 + 在途数量）÷（预测月均销量 ÷ 30）。达到严重线停止采购，达到偏高线限制采购。</p></section>
+        <section><span>04</span><h3>标准一</h3><p>在库在途周转天数 =（在库数量 + 在途数量）÷（预测月均销量 ÷ 30）。达到严重线停止采购，达到偏高线限制采购。</p></section>
         <section><span>05</span><h3>标准二</h3><p>全链覆盖天数 =（在库数量 + 在途数量 + 待交付数量）÷（预测月均销量 ÷ 30）+ 交期天数。达到干预线停止采购，达到关注线限制采购。</p></section>
         <section><span>06</span><h3>异常和优先级</h3><p>无预测或预测合计为 0 时天数按 999，进入停止采购。停止采购优先于限制采购；正常物料不在结果表展示。</p></section>
       </div>
@@ -318,16 +319,22 @@ export default function InventoryRiskPage({ token, active }) {
     businessUnits: [...new Set(actionRows.map((row) => row.businessUnit).filter(Boolean))]
       .sort(compareBusinessUnitFilterOptions),
     inventorySegments: [...new Set(actionRows.map((row) => row.inventorySegment).filter(Boolean))],
-    actions: ['限制采购', '停止采购'].filter((action) => actionRows.some((row) => row.action === action))
+    actions: ['限制采购', '停止采购'].filter((action) => actionRows.some((row) => row.action === action)),
+    forecastAvailability: ['有预测销售', '无预测销售']
+      .filter((status) => actionRows.some((row) => row.forecastAvailability === status))
   }), [actionRows]);
   const filteredRows = useMemo(() => actionRows.filter((row) => (
     (filters.businessUnits.length === 0 || filters.businessUnits.includes(row.businessUnit))
     && (filters.inventorySegments.length === 0 || filters.inventorySegments.includes(row.inventorySegment))
     && (filters.actions.length === 0 || filters.actions.includes(row.action))
+    && (filters.forecastAvailability.length === 0 || filters.forecastAvailability.includes(row.forecastAvailability))
   )), [actionRows, filters]);
   const filteredSummary = useMemo(() => ({
     restrictedCount: filteredRows.filter((row) => row.action === '限制采购').length,
-    stoppedCount: filteredRows.filter((row) => row.action === '停止采购').length
+    stoppedCount: filteredRows.filter((row) => row.action === '停止采购').length,
+    totalInventoryQty: filteredRows.reduce((sum, row) => sum + Number(
+      row.totalInventoryQty ?? (Number(row.onHandQty || 0) + Number(row.inTransitQty || 0) + Number(row.undeliveredQty || 0))
+    ), 0)
   }), [filteredRows]);
   const hasFilters = Object.values(filters).some((values) => values.length > 0);
 
@@ -368,12 +375,14 @@ export default function InventoryRiskPage({ token, active }) {
             <RiskMultiSelectFilter label="事业部" allLabel="全部事业部" value={filters.businessUnits} options={filterOptions.businessUnits} onChange={(value) => setFilters((current) => ({ ...current, businessUnits: value }))} />
             <RiskMultiSelectFilter label="库存段" allLabel="全部库存段" value={filters.inventorySegments} options={filterOptions.inventorySegments} onChange={(value) => setFilters((current) => ({ ...current, inventorySegments: value }))} />
             <RiskMultiSelectFilter label="处置动作" allLabel="全部处置动作" value={filters.actions} options={filterOptions.actions} onChange={(value) => setFilters((current) => ({ ...current, actions: value }))} />
+            <RiskMultiSelectFilter label="预测销售" allLabel="全部预测销售" value={filters.forecastAvailability} options={filterOptions.forecastAvailability} onChange={(value) => setFilters((current) => ({ ...current, forecastAvailability: value }))} />
             <button className="inventory-risk-button secondary inventory-risk-filter-clear" type="button" disabled={!hasFilters} onClick={() => setFilters({ ...EMPTY_RISK_FILTERS })}>清空筛选</button>
             <span className="inventory-risk-filter-count">筛选结果 {numberText(filteredRows.length, 0)} 条</span>
           </section>
           <section className="inventory-risk-summary">
             <article className="restricted"><span>限制采购</span><strong>{numberText(filteredSummary.restrictedCount, 0)}</strong><small>当前筛选结果</small></article>
             <article className="stopped"><span>停止采购</span><strong>{numberText(filteredSummary.stoppedCount, 0)}</strong><small>当前筛选结果</small></article>
+            <article className="inventory-total"><span>库存总量</span><strong>{numberText(filteredSummary.totalInventoryQty)}</strong><small>在库 + 在途 + 未交付</small></article>
             <article><span>正常未展示</span><strong>{numberText(summary.normalCount, 0)}</strong><small>全量正常物料</small></article>
             <article className={summary.mappingIssueCount ? 'warning' : ''}><span>映射待维护</span><strong>{numberText(summary.mappingIssueCount, 0)}</strong><small>影响数量 {numberText(summary.mappingIssueQty)}</small></article>
           </section>

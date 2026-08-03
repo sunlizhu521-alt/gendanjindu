@@ -167,7 +167,7 @@
 
 .inventory-risk-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -184,6 +184,7 @@
 
 .inventory-risk-summary article.restricted { border-top-color: #d97706; }
 .inventory-risk-summary article.stopped { border-top-color: #dc2626; }
+.inventory-risk-summary article.inventory-total { border-top-color: #087f76; }
 .inventory-risk-summary article.warning { border-top-color: #7c3aed; }
 .inventory-risk-summary article span { color: #64748b; font-size: .78rem; }
 .inventory-risk-summary article strong { font-size: 1.75rem; line-height: 1; }

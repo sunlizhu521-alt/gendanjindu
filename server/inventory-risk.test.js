@@ -82,6 +82,8 @@ test('槽位15无年份销量列按文件日期跨年，并汇总重复渠道和
   assert.equal(payload.ok, true);
   assert.equal(payload.restricted.length, 1);
   assert.equal(payload.restricted[0].forecastMonthlyAverage, 150);
+  assert.equal(payload.restricted[0].forecastAvailability, '有预测销售');
+  assert.equal(payload.restricted[0].totalInventoryQty, 600);
   assert.deepEqual(payload.periods.forecastMonths, ['2026-08', '2026-09', '2026-10', '2026-11', '2026-12', '2027-01']);
   assert.deepEqual(
     payload.diagnostics.forecastParsing.monthColumns.map(({ header, month }) => [header, month]),
@@ -220,6 +222,8 @@ test('无预测和预测为零均按999天进入停止采购', () => {
   const missing = payload.stopped.find((row) => row.materialCode === '1002');
   assert.equal(zero.forecastStatus, '销售预测为0');
   assert.equal(missing.forecastStatus, '无销售预测');
+  assert.equal(zero.forecastAvailability, '有预测销售');
+  assert.equal(missing.forecastAvailability, '无预测销售');
   assert.equal(zero.transitTurnoverDays, 999);
   assert.equal(missing.fullChainCoverageDays, 999);
 });
@@ -269,6 +273,11 @@ test('库存风险页面、权限与API均注册在gendanjindu', () => {
   assert.match(riskPage, /label="事业部"/);
   assert.match(riskPage, /label="库存段"/);
   assert.match(riskPage, /label="处置动作"/);
+  assert.match(riskPage, /label="预测销售"/);
+  assert.match(riskPage, /有预测销售/);
+  assert.match(riskPage, /无预测销售/);
+  assert.match(riskPage, /库存总量/);
+  assert.match(riskPage, /在库在途周转天数/);
   assert.match(riskPage, /'海外事业一部',[\s\S]*'海外事业二部',[\s\S]*'国内事业部',[\s\S]*'全球招商事业部'/);
   assert.match(riskPage, /sort\(compareBusinessUnitFilterOptions\)/);
   assert.equal((riskPage.match(/<RiskTable /g) || []).length, 1);

@@ -155,6 +155,6 @@ test('库存风险页面、权限与API均注册在gendanjindu', () => {
   assert.match(server, /'inventoryRisk'/);
   assert.match(server, /\/api\/inventory-risk\/query/);
   assert.match(server, /\/api\/inventory-risk\/export/);
-  assert.match(client, /库存风险分析/);
+  assert.match(client, /库存风险/);
   assert.match(client, /InventoryRiskPage/);
 });

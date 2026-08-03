@@ -188,7 +188,7 @@ export default function InventoryRiskPage({ token, active }) {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `库存风险分析_${new Date().toISOString().slice(0, 10).replaceAll('-', '')}.xlsx`;
+      link.download = `库存风险_${new Date().toISOString().slice(0, 10).replaceAll('-', '')}.xlsx`;
       link.click();
       URL.revokeObjectURL(url);
     } catch (requestError) {
@@ -202,7 +202,7 @@ export default function InventoryRiskPage({ token, active }) {
   return (
     <div className="inventory-risk-page">
       <header className="inventory-risk-header">
-        <div><span className="inventory-risk-eyebrow">INVENTORY RISK</span><h2>库存风险分析</h2><p>按国内、海外库存段识别限制采购和停止采购物料。</p></div>
+        <div><span className="inventory-risk-eyebrow">INVENTORY RISK</span><h2>库存风险</h2><p>按国内、海外库存段识别限制采购和停止采购物料。</p></div>
         <div className="inventory-risk-actions">
           <button className="inventory-risk-button secondary" type="button" onClick={() => setShowLogic(true)}>计算逻辑</button>
           <button className="inventory-risk-button secondary" type="button" disabled={!result || loading} onClick={exportResult}>导出 Excel</button>

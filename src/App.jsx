@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { purchaseTrackingBusinessUnit } from './business-unit.js';
 import InventoryCalculationGuide from './InventoryCalculationGuide.jsx';
+import InventoryRiskPage from './InventoryRiskPage.jsx';
 
 const API = import.meta.env.DEV ? 'http://localhost:4003' : '';
 const TOKEN_KEY = 'gendanjinduToken';
@@ -12,6 +13,7 @@ const PAGE_ORDER = [
   'crossBorderInventory',
   'lingxingInventory',
   'inventorySummary',
+  'inventoryRisk',
   'inventoryPurchase',
   'inventorySummaryLibrary',
   'operationBoard',
@@ -31,6 +33,7 @@ const PAGE_ORDER = [
 const PAGE_LABELS = {
   domesticBoard: '国内事业部看板',
   inventorySummary: '库存汇总',
+  inventoryRisk: '库存风险分析',
   inventoryPurchase: '采购未交付',
   inventorySummaryLibrary: '库存汇总文件库',
   operationBoard: '运营看板-未交付',
@@ -53,7 +56,7 @@ const PAGE_LABELS = {
 const NAV_GROUPS = [
   { title: '国内数据', pages: ['domesticBoard', 'wangdianData'] },
   { title: '跨境数据', pages: ['crossBorderInventory', 'lingxingInventory'] },
-  { title: '库存数据', pages: ['inventorySummary', 'inventoryPurchase', 'inventorySummaryLibrary'] },
+  { title: '库存数据', pages: ['inventorySummary', 'inventoryRisk', 'inventoryPurchase', 'inventorySummaryLibrary'] },
   { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'differenceAllocation', 'trace', 'purchaseBoard'] },
   { title: '头程数据', pages: ['firstMileBoard', 'firstMileDatabase'] },
   { title: '维护数据', pages: ['dimensionMissing', 'dimensionLibrary', 'kingdeeImport'] },
@@ -6441,6 +6444,7 @@ function App() {
         {demandsLoading && DEMAND_DATA_PAGES.has(activeTab) && <p className="section-count">正在加载采购订单数据...</p>}
         {shouldMount('domesticBoard') && <PagePane page="domesticBoard" activeTab={activeTab}><DomesticBoard token={token} setMessage={setMessage} /></PagePane>}
         {shouldMount('inventorySummary') && <PagePane page="inventorySummary" activeTab={activeTab}><InventorySummary token={token} active={activeTab === 'inventorySummary'} /></PagePane>}
+        {shouldMount('inventoryRisk') && <PagePane page="inventoryRisk" activeTab={activeTab}><InventoryRiskPage token={token} active={activeTab === 'inventoryRisk'} /></PagePane>}
         {shouldMount('inventoryPurchase') && <PagePane page="inventoryPurchase" activeTab={activeTab}><InventoryPurchaseFilePage token={token} active={activeTab === 'inventoryPurchase'} /></PagePane>}
         {shouldMount('inventorySummaryLibrary') && <PagePane page="inventorySummaryLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="库存汇总文件库" slots={INVENTORY_SUMMARY_LIBRARY_SLOTS} gridColumns={4} onDataApplied={refreshCrossBorderData} /></PagePane>}
         {shouldMount('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><Dashboard rows={demands} title="运营看板-未交付" filterKey="operationBoard" currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}

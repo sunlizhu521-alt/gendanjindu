@@ -21,6 +21,11 @@ import {
   isInventorySummarySlot,
   parseInventorySummaryWorkbook
 } from './inventory-summary.js';
+import {
+  buildInventoryRiskAnalysis,
+  inventoryRiskCacheKey,
+  normalizeInventoryRiskParams
+} from './inventory-risk.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -35,6 +40,7 @@ const ALL_PAGES = [
   'crossBorderInventory',
   'lingxingInventory',
   'inventorySummary',
+  'inventoryRisk',
   'inventoryPurchase',
   'inventorySummaryLibrary',
   'operationBoard',
@@ -53,6 +59,7 @@ const ALL_PAGES = [
 const PAGE_LABELS = {
   domesticBoard: '国内事业部看板',
   inventorySummary: '库存汇总',
+  inventoryRisk: '库存风险分析',
   inventoryPurchase: '采购未交付',
   inventorySummaryLibrary: '库存汇总文件库',
   operationBoard: '运营看板-未交付',
@@ -342,6 +349,7 @@ function auditIpAddress(req) {
 function auditPageForRequest(req) {
   const requestPath = req.path;
   if (requestPath.startsWith('/api/auth/')) return { key: 'system', label: '系统登录' };
+  if (requestPath.startsWith('/api/inventory-risk')) return { key: 'inventoryRisk', label: PAGE_LABELS.inventoryRisk };
   if (requestPath.startsWith('/api/inventory-summary')) return { key: 'inventorySummary', label: PAGE_LABELS.inventorySummary };
   if (requestPath.startsWith('/api/operation-logs')) return { key: 'operationLogs', label: PAGE_LABELS.operationLogs };
   if (requestPath.startsWith('/api/progress')) return { key: 'progressRefresh', label: PAGE_LABELS.progressRefresh };
@@ -2343,6 +2351,53 @@ function inventorySummaryData() {
   });
 }
 
+let inventoryRiskResultCache = { key: '', payload: null };
+
+function inventoryRiskSourceVersion() {
+  return all(
+    'SELECT slot_id, updated_at, applied, length(rows_json) AS rows_size FROM dimension_files WHERE applied = 1 ORDER BY slot_id'
+  ).map((row) => [row.slot_id, row.updated_at, row.applied, row.rows_size].join(':')).join('|');
+}
+
+function inventoryRiskData(input = {}, { force = false } = {}) {
+  const params = normalizeInventoryRiskParams(input);
+  const sourceVersion = inventoryRiskSourceVersion();
+  const key = inventoryRiskCacheKey(sourceVersion, params);
+  if (!force && inventoryRiskResultCache.key === key && inventoryRiskResultCache.payload) {
+    return inventoryRiskResultCache.payload;
+  }
+  const payload = buildInventoryRiskAnalysis({
+    inventoryModel: inventorySummaryData(),
+    forecastRows: getDimensionRows('inventorySummaryFile15'),
+    params,
+    sourceVersion
+  });
+  if (payload.ok) inventoryRiskResultCache = { key, payload };
+  return payload;
+}
+
+function inventoryRiskExportRows(rows) {
+  return rows.map((row) => ({
+    '物料编码': row.materialCode,
+    'SKU': row.sku,
+    '物料名称': row.materialName,
+    '产品线': row.productLine,
+    '系列': row.productSeries,
+    '库存段': row.inventorySegment,
+    '事业部': row.businessUnits,
+    '在库数量': row.onHandQty,
+    '在途数量': row.inTransitQty,
+    '待交付数量': row.undeliveredQty,
+    '库存及在途数量': row.inventoryQty,
+    '预测月均销量': row.forecastMonthlyAverage,
+    '最近N月平均月销量': row.historicalMonthlyAverage,
+    '在途周转天数': row.transitTurnoverDays,
+    '全链覆盖天数': row.fullChainCoverageDays,
+    '销售预测状态': row.forecastStatus,
+    '处置动作': row.action
+  }));
+}
+
 function enrichDemandFields(supplier, materialCode, orderCreator = '', lookups = dimensionLookups()) {
   const { productMap, supplierMap } = lookups;
   const product = productMap.get(normalize(materialCode)) || {};
@@ -3497,6 +3552,48 @@ app.get('/api/bootstrap', requireAuth, (req, res) => {
 
 app.get('/api/inventory-summary', requireAuth, requirePage('inventorySummary'), (req, res) => {
   res.json(inventorySummaryData());
+});
+
+app.post('/api/inventory-risk/query', requireAuth, requirePage('inventoryRisk'), (req, res) => {
+  try {
+    const payload = inventoryRiskData(req.body, { force: Boolean(req.body?.force) });
+    res.setHeader('Cache-Control', 'no-store');
+    if (!payload.ok) {
+      return res.status(payload.status === 'invalid_params' ? 400 : 422).json(payload);
+    }
+    return res.json(payload);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || '库存风险参数无效' });
+  }
+});
+
+app.post('/api/inventory-risk/export', requireAuth, requirePage('inventoryRisk'), (req, res) => {
+  try {
+    const payload = inventoryRiskData(req.body);
+    if (!payload.ok) {
+      return res.status(payload.status === 'invalid_params' ? 400 : 422).json(payload);
+    }
+    const workbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(inventoryRiskExportRows(payload.restricted)), '限制采购');
+    xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(inventoryRiskExportRows(payload.stopped)), '停止采购');
+    xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(payload.diagnostics.mappingIssues), '映射诊断');
+    xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(payload.diagnostics.forecastIssues), '预测诊断');
+    xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet([{
+      ...payload.params,
+      '预测开始月份': payload.periods.forecastStartMonth,
+      '预测结束月份': payload.periods.forecastEndMonth,
+      '历史开始月份': payload.periods.historicalStartMonth,
+      '历史结束月份': payload.periods.historicalEndMonth,
+      '生成时间': payload.generatedAt
+    }]), '计算参数');
+    const buffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const fileName = `库存风险分析_${nowText().slice(0, 10).replaceAll('-', '')}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="inventory-risk.xlsx"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+    return res.send(buffer);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || '库存风险参数无效' });
+  }
 });
 
 app.get('/api/inventory-purchase-summary', requireAuth, requirePage('inventoryPurchase'), (req, res) => {

@@ -2,6 +2,348 @@
   box-sizing: border-box;
 }
 
+/* Inventory risk analysis */
+.inventory-risk-page {
+  display: grid;
+  gap: 14px;
+  color: #172033;
+}
+
+.inventory-risk-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 20px;
+  border: 1px solid #dce5ef;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.inventory-risk-header h2,
+.inventory-risk-header p {
+  margin: 0;
+}
+
+.inventory-risk-header h2 {
+  margin-top: 3px;
+  font-size: 1.35rem;
+}
+
+.inventory-risk-header p {
+  margin-top: 6px;
+  color: #66758a;
+  font-size: .85rem;
+}
+
+.inventory-risk-eyebrow,
+.inventory-risk-section-kicker {
+  color: #087f76;
+  font-size: .68rem;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.inventory-risk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.inventory-risk-button {
+  min-height: 34px;
+  padding: 7px 13px;
+  border: 1px solid #cbd7e4;
+  border-radius: 6px;
+  font: inherit;
+  font-size: .82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.inventory-risk-button.primary {
+  border-color: #087f76;
+  background: #087f76;
+  color: #fff;
+}
+
+.inventory-risk-button.secondary {
+  background: #fff;
+  color: #334155;
+}
+
+.inventory-risk-button:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+.inventory-risk-parameters {
+  display: grid;
+  grid-template-columns: 1fr 1fr minmax(260px, .75fr);
+  gap: 10px;
+}
+
+.inventory-risk-parameters fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #dce5ef;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.inventory-risk-parameters legend {
+  padding: 0 5px;
+  color: #3b4a5f;
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+.inventory-risk-input-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.inventory-risk-parameters fieldset:last-child .inventory-risk-input-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.inventory-risk-input-grid label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: #64748b;
+  font-size: .72rem;
+}
+
+.inventory-risk-input-grid input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 4px 8px;
+  border: 1px solid #cbd7e4;
+  border-radius: 5px;
+  background: #fff;
+  color: #172033;
+  font: inherit;
+  font-size: .82rem;
+}
+
+.inventory-risk-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.inventory-risk-summary article {
+  display: grid;
+  gap: 5px;
+  min-height: 108px;
+  padding: 14px 16px;
+  border: 1px solid #dce5ef;
+  border-top: 3px solid #64748b;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.inventory-risk-summary article.restricted { border-top-color: #d97706; }
+.inventory-risk-summary article.stopped { border-top-color: #dc2626; }
+.inventory-risk-summary article.warning { border-top-color: #7c3aed; }
+.inventory-risk-summary article span { color: #64748b; font-size: .78rem; }
+.inventory-risk-summary article strong { font-size: 1.75rem; line-height: 1; }
+.inventory-risk-summary article small { color: #77869a; font-size: .72rem; }
+
+.inventory-risk-periods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  padding: 9px 12px;
+  border: 1px solid #d9e6e4;
+  border-radius: 6px;
+  background: #f2fbf9;
+  color: #49615f;
+  font-size: .75rem;
+}
+
+.inventory-risk-result {
+  overflow: hidden;
+  border: 1px solid #dce5ef;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.inventory-risk-result-restricted { border-top: 3px solid #d97706; }
+.inventory-risk-result-stopped { border-top: 3px solid #dc2626; }
+
+.inventory-risk-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #e5ebf2;
+}
+
+.inventory-risk-section-heading h3 { margin: 2px 0 0; font-size: 1rem; }
+.inventory-risk-section-heading > strong { color: #44536a; font-size: .8rem; }
+
+.inventory-risk-table-wrap {
+  overflow-x: auto;
+  scrollbar-gutter: stable;
+}
+
+.inventory-risk-table {
+  width: 100%;
+  min-width: 1680px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: .72rem;
+}
+
+.inventory-risk-table th,
+.inventory-risk-table td {
+  overflow: hidden;
+  padding: 8px 9px;
+  border-right: 1px solid #edf1f5;
+  border-bottom: 1px solid #edf1f5;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-risk-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f6f8fb;
+  color: #435167;
+  font-weight: 800;
+}
+
+.inventory-risk-table th:nth-child(-n+6),
+.inventory-risk-table td:nth-child(-n+6),
+.inventory-risk-table th:nth-last-child(-n+2),
+.inventory-risk-table td:nth-last-child(-n+2) {
+  text-align: left;
+}
+
+.inventory-risk-table th:nth-child(1) { width: 110px; }
+.inventory-risk-table th:nth-child(2) { width: 120px; }
+.inventory-risk-table th:nth-child(3) { width: 190px; }
+.inventory-risk-table th:nth-child(4) { width: 110px; }
+.inventory-risk-table th:nth-child(5) { width: 75px; }
+.inventory-risk-table th:nth-child(6) { width: 160px; }
+.inventory-risk-table th:nth-child(n+7) { width: 105px; }
+
+.inventory-risk-table tbody tr:hover { background: #f8fbfd; }
+.inventory-risk-empty { padding: 24px !important; color: #8290a3; text-align: center !important; }
+
+.inventory-risk-segment {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 800;
+}
+
+.inventory-risk-segment-domestic { background: #e6f7ef; color: #147a50; }
+.inventory-risk-segment-overseas { background: #e8f1ff; color: #245aa8; }
+
+.inventory-risk-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 9px 12px;
+  color: #64748b;
+  font-size: .75rem;
+}
+
+.inventory-risk-pagination button {
+  padding: 4px 10px;
+  border: 1px solid #cbd7e4;
+  border-radius: 5px;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+}
+
+.inventory-risk-pagination button:disabled { cursor: not-allowed; opacity: .45; }
+
+.inventory-risk-alert,
+.inventory-risk-loading {
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #dce5ef;
+  border-radius: 7px;
+  background: #fff;
+  font-size: .82rem;
+}
+
+.inventory-risk-alert.error { border-color: #fecaca; background: #fff6f6; color: #9f2424; }
+
+.inventory-risk-diagnostics {
+  border: 1px solid #d8e0ea;
+  border-radius: 7px;
+  background: #fff;
+}
+
+.inventory-risk-diagnostics summary {
+  padding: 12px 14px;
+  color: #46556b;
+  font-size: .8rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.inventory-risk-diagnostic-grid,
+.inventory-risk-logic-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.inventory-risk-diagnostic-grid section,
+.inventory-risk-logic-grid section {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #e1e7ef;
+  border-radius: 7px;
+  background: #f8fafc;
+}
+
+.inventory-risk-diagnostic-grid h3,
+.inventory-risk-logic-grid h3 { margin: 0 0 8px; font-size: .86rem; }
+.inventory-risk-diagnostic-grid p { margin: 5px 0; color: #64748b; font-size: .72rem; }
+
+.inventory-risk-logic-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0;
+}
+
+.inventory-risk-logic-grid section { padding: 18px; background: #fff; }
+.inventory-risk-logic-grid section > span { color: #087f76; font-size: .72rem; font-weight: 900; }
+.inventory-risk-logic-grid p { margin: 0; color: #64748b; font-size: .82rem; line-height: 1.7; }
+
+@media (max-width: 1100px) {
+  .inventory-risk-parameters { grid-template-columns: 1fr; }
+  .inventory-risk-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .inventory-risk-logic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 700px) {
+  .inventory-risk-header { flex-direction: column; }
+  .inventory-risk-actions { justify-content: flex-start; }
+  .inventory-risk-input-grid,
+  .inventory-risk-parameters fieldset:last-child .inventory-risk-input-grid,
+  .inventory-risk-summary,
+  .inventory-risk-logic-grid,
+  .inventory-risk-diagnostic-grid { grid-template-columns: 1fr; }
+}
+
 body {
   margin: 0;
   font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
@@ -4500,4 +4842,16 @@ th {
   .inventory-five-kpis .inventory-kpi:last-child {
     border-right: 0;
   }
+}
+
+.inventory-risk-page .inventory-risk-button:hover {
+  box-shadow: none;
+}
+
+.inventory-risk-page .inventory-risk-button.secondary:hover,
+.inventory-risk-page .inventory-risk-pagination button:hover:not(:disabled) {
+  border-color: #087f76;
+  background: #eef8f6;
+  color: #0b6b64;
+  box-shadow: none;
 }

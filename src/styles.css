@@ -2379,6 +2379,7 @@ h3 {
 }
 
 .inventory-detail-table {
+  --inventory-source-warehouse-width: clamp(360px, 34vw, 720px);
   width: max-content;
   min-width: 100%;
   border-collapse: separate;
@@ -2423,70 +2424,82 @@ h3 {
 .inventory-detail-table th:nth-child(1),
 .inventory-detail-table td:nth-child(1) {
   left: 0;
-  min-width: 190px;
-  width: 190px;
+  min-width: var(--inventory-source-warehouse-width);
+  width: var(--inventory-source-warehouse-width);
+  max-width: var(--inventory-source-warehouse-width);
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  vertical-align: top;
 }
 
 .inventory-detail-table th:nth-child(2),
 .inventory-detail-table td:nth-child(2) {
-  left: 190px;
+  left: var(--inventory-source-warehouse-width);
   min-width: 130px;
   width: 130px;
 }
 
 .inventory-detail-table th:nth-child(3),
 .inventory-detail-table td:nth-child(3) {
-  left: 320px;
-  min-width: 130px;
-  width: 130px;
+  left: calc(var(--inventory-source-warehouse-width) + 130px);
+  min-width: 120px;
+  width: 120px;
 }
 
 .inventory-detail-table th:nth-child(4),
 .inventory-detail-table td:nth-child(4) {
-  left: 450px;
+  left: calc(var(--inventory-source-warehouse-width) + 250px);
   min-width: 120px;
   width: 120px;
 }
 
 .inventory-detail-table th:nth-child(5),
 .inventory-detail-table td:nth-child(5) {
-  left: 570px;
+  left: calc(var(--inventory-source-warehouse-width) + 370px);
   min-width: 120px;
   width: 120px;
 }
 
 .inventory-detail-table th:nth-child(6),
 .inventory-detail-table td:nth-child(6) {
-  left: 690px;
-  min-width: 120px;
-  width: 120px;
-}
-
-.inventory-detail-table th:nth-child(7),
-.inventory-detail-table td:nth-child(7) {
-  left: 810px;
+  left: calc(var(--inventory-source-warehouse-width) + 490px);
   min-width: 180px;
   width: 180px;
   box-shadow: 3px 0 4px rgb(15 23 42 / 8%);
 }
 
-.inventory-detail-table th:nth-child(-n + 7),
-.inventory-detail-table td:nth-child(-n + 7) {
+.inventory-detail-table th:nth-child(-n + 6),
+.inventory-detail-table td:nth-child(-n + 6) {
   position: sticky;
   z-index: 10;
 }
 
-.inventory-detail-table th:nth-child(-n + 7) {
+.inventory-detail-table th:nth-child(-n + 6) {
   z-index: 30;
   background: #eaf6f5;
 }
 
-.inventory-detail-table tbody tr:nth-child(even) td:nth-child(-n + 7) {
+.inventory-detail-table tbody tr:nth-child(even) td:nth-child(-n + 6) {
   background: #fafcfd;
 }
 
-.inventory-detail-table tbody tr.mapping-conflict td:nth-child(-n + 7) {
+.inventory-detail-table tbody tr.mapping-conflict td:nth-child(-n + 6) {
   background: #fff7ed;
+}
+
+.inventory-source-warehouse-cell {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  white-space: normal;
+}
+
+.inventory-source-warehouse-cell span {
+  display: block;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .inventory-purchase-file-filters {

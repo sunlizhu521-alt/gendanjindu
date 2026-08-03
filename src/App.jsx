@@ -1366,11 +1366,6 @@ function inventoryRowForFilters(row, selectedSubjects, selectedProductTypes) {
   };
 }
 
-function inventorySourceTables(row) {
-  return [...new Set((row.inventorySourceDetails || []).map((item) => normalize(item.sourceTable)).filter(Boolean))]
-    .join('、') || '无库存/在途来源';
-}
-
 function inventorySourceLocation(item) {
   const sourceWarehouse = normalize(item.sourceWarehouseName);
   const receivingWarehouse = normalize(item.receivingWarehouseName);
@@ -1384,10 +1379,23 @@ function inventorySourceLocation(item) {
   return locations.join(' → ') || '无仓库字段';
 }
 
-function inventorySourceWarehouses(row) {
-  return [...new Set((row.inventorySourceDetails || []).map((item) => (
+function inventorySourceWarehouseItems(row) {
+  const items = [...new Set((row.inventorySourceDetails || []).map((item) => (
     `${normalize(item.sourceTable) || '未知来源'}：${inventorySourceLocation(item)}`
-  )))].join('；') || '无仓库数据';
+  )))];
+  return items.length ? items : ['无仓库数据'];
+}
+
+function inventorySourceWarehouses(row, separator = '；') {
+  return inventorySourceWarehouseItems(row).join(separator);
+}
+
+function InventorySourceWarehouseCell({ row }) {
+  return (
+    <div className="inventory-source-warehouse-cell">
+      {inventorySourceWarehouseItems(row).map((item) => <span key={item}>{item}</span>)}
+    </div>
+  );
 }
 
 function inventoryDashboardGroups(rows, keyOf) {
@@ -1767,7 +1775,7 @@ function InventorySummary({ token, active }) {
       row.matchKey, row.businessUnit, row.productLine, row.productSeries, row.materialCode,
       row.sku, row.materialName, row.rawIdentifier, ...inventoryRowProductTypes(row),
       ...(row.inventorySubjects || []), ...(row.issues || []),
-      inventorySourceTables(row), inventorySourceWarehouses(row)
+      inventorySourceWarehouses(row)
     ].join(' ').toLowerCase().includes(keyword);
     return scalarMatches && sourceMatches && subjectMatches && productTypeMatches && deliveryMatches && keywordMatches;
   };
@@ -1822,8 +1830,7 @@ function InventorySummary({ token, active }) {
   };
   const monthColumns = data?.months || [];
   const tableColumns = [
-    ['来源表', (row) => inventorySourceTables(row)],
-    ['来源仓库', (row) => inventorySourceWarehouses(row)],
+    ['来源仓库', (row) => <InventorySourceWarehouseCell row={row} />],
     ['匹配列（事业部+物料编码）', (row) => row.matchKey],
     ['事业部', (row) => row.businessUnit],
     ['产品线', (row) => row.productLine],
@@ -1872,7 +1879,7 @@ function InventorySummary({ token, active }) {
       const aoa = [
         tableColumns.map(([label]) => label),
         ...filteredRows.map((row) => [
-          inventorySourceTables(row), inventorySourceWarehouses(row),
+          inventorySourceWarehouses(row, '\n'),
           row.matchKey, row.businessUnit, row.productLine, row.productSeries, row.materialCode, row.sku, row.materialName,
           ...monthColumns.map((month) => numberValue(row.salesByMonth?.[month])),
           numberValue(row.salesQty), numberValue(row.salesAmount), row.quantityAbc, row.amountAbc,
@@ -1891,6 +1898,7 @@ function InventorySummary({ token, active }) {
       ];
       const workbook = XLSX.utils.book_new();
       const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+      worksheet['!cols'] = tableColumns.map(([label]) => ({ wch: label === '来源仓库' ? 64 : Math.max(12, label.length + 2) }));
       XLSX.utils.book_append_sheet(workbook, worksheet, '库存汇总');
       XLSX.writeFile(workbook, `库存汇总_${todayText()}.xlsx`);
     } finally {
@@ -1997,7 +2005,9 @@ function InventorySummary({ token, active }) {
                   <tr><td colSpan={tableColumns.length}>暂无数据</td></tr>
                 ) : pageRows.map((row) => (
                   <tr key={row.id} className={row.mappingStatus !== '完整' ? 'mapping-conflict' : ''}>
-                    {tableColumns.map(([label, valueOf]) => <td key={label} title={String(valueOf(row) ?? '')}>{valueOf(row)}</td>)}
+                    {tableColumns.map(([label, valueOf]) => (
+                      <td key={label} title={label === '来源仓库' ? inventorySourceWarehouses(row, '\n') : String(valueOf(row) ?? '')}>{valueOf(row)}</td>
+                    ))}
                   </tr>
                 ))}
               </tbody>

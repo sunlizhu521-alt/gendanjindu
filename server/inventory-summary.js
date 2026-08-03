@@ -44,6 +44,7 @@ const FIELD_ALIASES = {
   sku: ['SKU', 'sku', 'MSKU', 'Seller SKU', '卖家SKU', '商品SKU'],
   identifier: ['识别码', '物料编码', '品号'],
   warehouseName: ['仓库名称', '仓库名', '仓库', '收货仓库', '发货仓库（单据）', '发货仓库(单据)'],
+  receivingWarehouseName: ['收货仓库'],
   inventoryAttribute: ['库存属性', '库存筛选'],
   endingInventoryQty: [
     '期末库存(含移仓)-数量',
@@ -104,8 +105,8 @@ const SLOT_SCHEMAS = {
     fields: ['storeName', 'marketplace', 'sku', 'shipmentStatus', 'dispatchQty', 'shippedQty', 'signedQty']
   },
   inventorySummaryFile5: {
-    required: ['sku', 'warehouseName', 'documentStatus', 'stockupQty', 'receivedQty'],
-    fields: ['storeName', 'marketplace', 'sku', 'warehouseName', 'documentStatus', 'stockupQty', 'receivedQty']
+    required: ['sku', 'warehouseName', 'receivingWarehouseName', 'documentStatus', 'stockupQty', 'receivedQty'],
+    fields: ['storeName', 'marketplace', 'sku', 'warehouseName', 'receivingWarehouseName', 'documentStatus', 'stockupQty', 'receivedQty']
   },
   inventorySummaryFile6: {
     required: ['subject', 'warehouseName', 'materialCode', 'domesticStockQty'],
@@ -289,14 +290,31 @@ function baseInventoryProductType(product) {
   return matchKey(product?.productLine) === matchKey('其他/配件') ? '配件' : '成品';
 }
 
+function normalizedWarehouse(value) {
+  return text(value).normalize('NFKC').replace(/\s+/g, '').toLowerCase();
+}
+
+function hasWarehouseCodePrefix(value, prefixes = ['555', '777']) {
+  const warehouse = normalizedWarehouse(value);
+  return prefixes.some((prefix) => new RegExp(`^${prefix}(?:[-/\\\\])`).test(warehouse));
+}
+
 function isUnsellableWarehouse(value) {
-  const warehouse = text(value).normalize('NFKC').replace(/\s+/g, '').toLowerCase();
-  if (/^(555|777)(?:[-/\\])/.test(warehouse)) return true;
+  const warehouse = normalizedWarehouse(value);
+  if (hasWarehouseCodePrefix(warehouse)) return true;
   return warehouse.replace(/[()（）]/g, '').includes('待退货仓');
 }
 
-function inventoryFactProductType(product, warehouse) {
-  if (UNSELLABLE_PRODUCT_TYPES.has(matchKey(product?.productType)) && isUnsellableWarehouse(warehouse)) {
+function isFbmReturnWarehouse(value) {
+  return normalizedWarehouse(value).replace(/[()（）]/g, '').includes('退货');
+}
+
+function unsellableProductType(product, matchesWarehouse) {
+  return UNSELLABLE_PRODUCT_TYPES.has(matchKey(product?.productType)) && matchesWarehouse ? '不可售' : '';
+}
+
+function inventoryFactProductType(product, ...warehouses) {
+  if (unsellableProductType(product, warehouses.some(isUnsellableWarehouse))) {
     return '不可售';
   }
   return baseInventoryProductType(product);
@@ -1038,6 +1056,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     inventorySource = '',
     inventorySubject = '',
     inventoryWarehouseName = '',
+    inventoryProductType = '',
     deliveryStatus = '',
     month = '',
     distribution = null,
@@ -1067,9 +1086,9 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     if (Object.keys(quantities).some((field) => INVENTORY_SUBJECT_FIELDS.has(field))) {
       const subject = text(inventorySubject) || '未匹配';
       const hasStock = Object.keys(quantities).some((field) => INVENTORY_STOCK_FIELDS.has(field));
-      const segmentType = hasStock
+      const segmentType = text(inventoryProductType) || (hasStock
         ? inventoryFactProductType(productResult.product, inventoryWarehouseName)
-        : baseInventoryProductType(productResult.product);
+        : baseInventoryProductType(productResult.product));
       row.inventorySubjects.add(subject);
       const subjectAmounts = row.inventorySubjectBreakdown[subject] || {};
       const segmentKey = combinedKey(subject, segmentType);
@@ -1179,6 +1198,10 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       inventorySource: 'FBM库存',
       inventorySubject: warehouseResult.subject,
       inventoryWarehouseName: warehouseResult.kingdeeWarehouseName,
+      inventoryProductType: unsellableProductType(
+        product.product,
+        isUnsellableWarehouse(warehouseResult.kingdeeWarehouseName) || isFbmReturnWarehouse(raw.warehouseName)
+      ),
       quantities: { fbmInventoryQty: qty, fbmInventoryValue: qty * product.product.pretaxPrice },
       sourceContext: {
         sourceSku: text(raw.identifier),
@@ -1260,10 +1283,16 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       businessUnit: warehouseResult.businessUnit,
       issues: [skuResult.issue, warehouseResult.issue],
       inventorySubject: warehouseResult.subject,
+      inventoryWarehouseName: text(raw.receivingWarehouseName),
+      inventoryProductType: unsellableProductType(
+        product.product,
+        hasWarehouseCodePrefix(raw.receivingWarehouseName, ['777'])
+      ),
       quantities: { fbmTransitQty: qty, fbmTransitValue: qty * product.product.pretaxPrice },
       sourceContext: {
         sourceSku: text(raw.sku),
         sourceWarehouseName: text(raw.warehouseName),
+        receivingWarehouseName: text(raw.receivingWarehouseName),
         subject: warehouseResult.subject || '',
         kingdeeWarehouseName: warehouseResult.kingdeeWarehouseName || ''
       }
@@ -1275,6 +1304,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     const qty = inventoryQuantity(raw, 'inventorySummaryFile6', '国内在库', raw.materialCode, '库存量(主单位)');
     if (qty === null) return;
     const materialCode = text(raw.materialCode).replace(/\.0$/, '');
+    const product = resolveProduct(materialCode, '国内在库', raw.materialCode);
     const warehouseResult = isSalesFactoryDomesticWarehouse(raw.warehouseName)
       ? {
           businessUnit: '销售部-工厂',
@@ -1283,7 +1313,12 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
           kingdeeWarehouseName: text(raw.warehouseName)
         }
       : resolveWarehouseBusinessUnit(raw.subject, raw.warehouseName, materialCode);
-    if (!['国内事业部', '销售部-工厂'].includes(warehouseResult.businessUnit)) {
+    const directUnsellableWarehouse = hasWarehouseCodePrefix(raw.warehouseName);
+    const directUnsellableProduct = Boolean(unsellableProductType(product.product, directUnsellableWarehouse));
+    const domesticBusinessUnit = ['国内事业部', '销售部-工厂'].includes(warehouseResult.businessUnit)
+      ? warehouseResult.businessUnit
+      : directUnsellableProduct ? '国内事业部' : warehouseResult.businessUnit;
+    if (!['国内事业部', '销售部-工厂'].includes(domesticBusinessUnit)) {
       addAnomaly('国内在库', raw.materialCode, warehouseResult.issue || '非国内事业部数据已排除', qty, 0, {
         factId: `国内在库-${factIndex += 1}`,
         materialCode,
@@ -1294,16 +1329,19 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       });
       return;
     }
-    const product = resolveProduct(materialCode, '国内在库', raw.materialCode);
     addFact({
       sourceType: '国内在库',
       rawIdentifier: raw.materialCode,
       materialCode,
-      businessUnit: warehouseResult.businessUnit,
-      issues: [warehouseResult.issue],
+      businessUnit: domesticBusinessUnit,
+      issues: [directUnsellableProduct ? '' : warehouseResult.issue],
       inventorySource: '国内在库',
       inventorySubject: text(raw.subject),
-      inventoryWarehouseName: warehouseResult.kingdeeWarehouseName,
+      inventoryWarehouseName: text(raw.warehouseName),
+      inventoryProductType: unsellableProductType(
+        product.product,
+        isUnsellableWarehouse(warehouseResult.kingdeeWarehouseName) || directUnsellableWarehouse
+      ),
       quantities: { domesticMainInventoryQty: qty, domesticMainInventoryValue: qty * product.product.pretaxPrice },
       sourceContext: {
         subject: text(raw.subject),

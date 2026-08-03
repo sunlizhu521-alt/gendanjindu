@@ -180,7 +180,11 @@ test('inventory summary separates unsellable warehouse stock without losing norm
         productSeries: 'Series B', productType: '其他/配件', pretaxPrice: '20'
       }
     ]],
-    ['spare1', [{ subject: '主体一', warehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境' }]],
+    ['spare1', [
+      { subject: '主体一', warehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境' },
+      { subject: '主体一', warehouseName: '浙江仓（退货）' },
+      { subject: '主体一', warehouseName: '106-G-国内事业部-海上在途' }
+    ]],
     ['warehouseMaterialMap', [
       ...[
         '555-M/退货仓/瑞朗德仓/医疗器械/国内&跨境',
@@ -189,6 +193,8 @@ test('inventory summary separates unsellable warehouse stock without losing norm
         '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境',
         '777-R/售后配件仓/瑞朗德仓/医疗器械/国内',
         '001-M/待（退货）仓/瑞朗德仓/国内医疗器械',
+        '浙江仓（退货）',
+        '106-G-国内事业部-海上在途',
         '正常仓'
       ].map((warehouseName) => ({
         subject: '主体一', warehouseName, materialCode: 'M1', businessUnit: '国内事业部'
@@ -202,17 +208,23 @@ test('inventory summary separates unsellable warehouse stock without losing norm
       { sku: 'SKU-1', warehouseName: 'FBA-555', inventoryAttribute: '全部', endingInventoryQty: '10' },
       { sku: 'SKU-2', warehouseName: 'FBA-555-PART', inventoryAttribute: '全部', endingInventoryQty: '5' }
     ]],
-    ['inventorySummaryFile2', [{
-      identifier: 'M1', warehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境', actualTotalQty: '20'
-    }]],
+    ['inventorySummaryFile2', [
+      { identifier: 'M1', warehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境', actualTotalQty: '20' },
+      { identifier: 'M1', warehouseName: '浙江仓（退货）', actualTotalQty: '7' }
+    ]],
     ['inventorySummaryFile3', [{ sku: 'SKU-1', warehouseName: 'WFS-RETURN', totalInventoryQty: '30' }]],
     ['inventorySummaryFile6', [
       { subject: '主体一', warehouseName: '555-G/退货仓/瑞朗德仓/医疗器械/国内&跨境', materialCode: 'M1', domesticStockQty: '1' },
       { subject: '主体一', warehouseName: '555-O/退货仓/瑞朗德仓/医疗器械/国内&跨境', materialCode: 'M1', domesticStockQty: '2' },
       { subject: '主体一', warehouseName: '777-R/售后配件仓/瑞朗德仓/医疗器械/国内', materialCode: 'M1', domesticStockQty: '3' },
       { subject: '主体一', warehouseName: '001-M/待（退货）仓/瑞朗德仓/国内医疗器械', materialCode: 'M1', domesticStockQty: '4' },
+      { subject: '未维护主体', warehouseName: '555-X/原始退货仓', materialCode: 'M1', domesticStockQty: '5' },
       { subject: '主体一', warehouseName: '正常仓', materialCode: 'M1', domesticStockQty: '40' }
     ]],
+    ['inventorySummaryFile5', [{
+      sku: 'SKU-1', warehouseName: '106-G-国内事业部-海上在途', receivingWarehouseName: '777-M/售后配件仓',
+      documentStatus: '待收货', stockupQty: '10', receivedQty: '2'
+    }]],
     ['inventorySummaryFile7', [{ jdId: 'JD-1', jdStockQty: '50' }]],
     ['inventorySummaryFile9', [
       { subject: '主体一', lingxingWarehouseName: 'FBA-555', kingdeeWarehouseName: '555-M/退货仓/瑞朗德仓/医疗器械/国内&跨境' },
@@ -231,7 +243,8 @@ test('inventory summary separates unsellable warehouse stock without losing norm
   });
   const finished = result.rows.find((row) => row.matchKey === '国内事业部+M1');
   const sparePart = result.rows.find((row) => row.matchKey === '国内事业部+M2');
-  const unsellable = finished?.inventorySegmentBreakdown.find((row) => row.productType === '不可售');
+  const unsellableSegments = finished?.inventorySegmentBreakdown.filter((row) => row.productType === '不可售') || [];
+  const unsellableTotal = (field) => unsellableSegments.reduce((sum, row) => sum + Number(row[field] || 0), 0);
   const finishedSegments = finished?.inventorySegmentBreakdown.filter((row) => row.productType === '成品') || [];
   const segmentedQty = finished?.inventorySegmentBreakdown.reduce((sum, row) => (
     sum + Number(row.fbaInventoryQty || 0)
@@ -243,14 +256,15 @@ test('inventory summary separates unsellable warehouse stock without losing norm
 
   assert.equal(finished?.productType, '全新品');
   assert.equal(finished?.baseProductType, '成品');
-  assert.equal(finished?.inventoryQty, 160);
+  assert.equal(finished?.inventoryQty, 172);
   assert.equal(segmentedQty, finished?.inventoryQty);
   assert.deepEqual({
-    fba: unsellable?.fbaInventoryQty,
-    fbm: unsellable?.fbmInventoryQty,
-    wfs: unsellable?.wfsInventoryQty,
-    domestic: unsellable?.domesticMainInventoryQty
-  }, { fba: 10, fbm: 20, wfs: 30, domestic: 10 });
+    fba: unsellableTotal('fbaInventoryQty'),
+    fbm: unsellableTotal('fbmInventoryQty'),
+    wfs: unsellableTotal('wfsInventoryQty'),
+    domestic: unsellableTotal('domesticMainInventoryQty'),
+    fbmTransit: unsellableTotal('fbmTransitQty')
+  }, { fba: 10, fbm: 27, wfs: 30, domestic: 15, fbmTransit: 8 });
   assert.equal(finishedSegments.reduce((sum, row) => sum + Number(row.domesticMainInventoryQty || 0), 0), 40);
   assert.equal(finishedSegments.reduce((sum, row) => sum + Number(row.jdInventoryQty || 0), 0), 50);
   assert.equal(sparePart?.baseProductType, '配件');
@@ -1316,12 +1330,13 @@ test('FBM transit parser and model keep only approved document warehouses and st
     ...allowedWarehouses.map((warehouseName, index) => ({
       SKU: `SKU-${index + 1}`,
       '发货仓库（单据）': warehouseName,
+      收货仓库: index === 0 ? '777-M/售后配件仓' : '正常收货仓',
       单据状态: index % 2 ? '待配货' : '待收货',
       备货数量: 10,
       收货数量: 2
     })),
-    { SKU: 'SKU-BAD-WAREHOUSE', '发货仓库（单据）': '其他仓库', 单据状态: '待收货', 备货数量: 100, 收货数量: 0 },
-    { SKU: 'SKU-BAD-STATUS', '发货仓库（单据）': allowedWarehouses[0], 单据状态: '已完成', 备货数量: 100, 收货数量: 0 }
+    { SKU: 'SKU-BAD-WAREHOUSE', '发货仓库（单据）': '其他仓库', 收货仓库: '777-M/售后配件仓', 单据状态: '待收货', 备货数量: 100, 收货数量: 0 },
+    { SKU: 'SKU-BAD-STATUS', '发货仓库（单据）': allowedWarehouses[0], 收货仓库: '777-M/售后配件仓', 单据状态: '已完成', 备货数量: 100, 收货数量: 0 }
   ];
   const workbook = xlsx.utils.book_new();
   xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(sourceRows), '备货单详情');
@@ -1333,12 +1348,13 @@ test('FBM transit parser and model keep only approved document warehouses and st
 
   assert.equal(parsed.rows.length, 8);
   assert.deepEqual(new Set(parsed.rows.map((row) => row.warehouseName)), new Set(allowedWarehouses));
+  assert.equal(parsed.rows.filter((row) => row.receivingWarehouseName.startsWith('777-')).length, 1);
   assert.deepEqual(new Set(parsed.rows.map((row) => row.documentStatus)), new Set(['待收货', '待配货']));
   assert.equal(parsed.mapping.__inventorySummary.filteredFbmTransitWarehouseRows, 1);
   assert.equal(parsed.mapping.__inventorySummary.filteredFbmTransitStatusRows, 1);
 
   const rowsBySlot = new Map([
-    ['productCategory', [{ materialCode: 'M1', pretaxPrice: 10 }]],
+    ['productCategory', [{ materialCode: 'M1', productType: '全新品', pretaxPrice: 10 }]],
     ['inventorySummaryFile10', sourceRows.map((row) => ({ lingxingSku: row.SKU, identifier: 'M1' }))],
     ['spare1', allowedWarehouses.map((warehouseName) => ({ subject: '主体一', warehouseName }))],
     ['warehouseMaterialMap', allowedWarehouses.map((warehouseName) => ({
@@ -1346,8 +1362,8 @@ test('FBM transit parser and model keep only approved document warehouses and st
     }))],
     ['inventorySummaryFile5', [
       ...parsed.rows,
-      { sku: 'SKU-BAD-WAREHOUSE', warehouseName: '其他仓库', documentStatus: '待收货', stockupQty: 100, receivedQty: 0 },
-      { sku: 'SKU-BAD-STATUS', warehouseName: allowedWarehouses[0], documentStatus: '已完成', stockupQty: 100, receivedQty: 0 }
+      { sku: 'SKU-BAD-WAREHOUSE', warehouseName: '其他仓库', receivingWarehouseName: '777-M/售后配件仓', documentStatus: '待收货', stockupQty: 100, receivedQty: 0 },
+      { sku: 'SKU-BAD-STATUS', warehouseName: allowedWarehouses[0], receivingWarehouseName: '777-M/售后配件仓', documentStatus: '已完成', stockupQty: 100, receivedQty: 0 }
     ]]
   ]);
   const model = buildInventorySummaryModel({
@@ -1356,6 +1372,11 @@ test('FBM transit parser and model keep only approved document warehouses and st
   });
   assert.equal(model.totals.fbmTransitQty, 64);
   assert.equal(model.totals.fbmTransitValue, 640);
+  const transitRow = model.rows.find((row) => row.materialCode === 'M1');
+  assert.equal(
+    transitRow.inventorySegmentBreakdown.find((row) => row.productType === '不可售')?.fbmTransitQty,
+    8
+  );
 });
 
 test('inventory summary and domestic board use complete source models and enforce page access', async () => {

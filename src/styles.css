@@ -80,7 +80,7 @@
 
 .inventory-risk-parameters {
   display: grid;
-  grid-template-columns: minmax(500px, 1fr) minmax(500px, 1fr) minmax(370px, .75fr);
+  grid-template-columns: 220px minmax(920px, 1fr) minmax(430px, .55fr);
   gap: 10px;
   overflow-x: auto;
   padding-bottom: 4px;
@@ -105,12 +105,8 @@
 
 .inventory-risk-input-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-}
-
-.inventory-risk-parameters fieldset:last-child .inventory-risk-input-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .inventory-risk-input-grid label {
@@ -133,6 +129,68 @@
   color: #172033;
   font: inherit;
   font-size: .82rem;
+}
+
+.inventory-risk-matrix-wrap {
+  overflow-x: auto;
+  scrollbar-gutter: stable;
+}
+
+.inventory-risk-parameter-matrix {
+  display: grid;
+  align-items: center;
+  gap: 6px;
+  min-width: max-content;
+}
+
+.inventory-risk-period-matrix { grid-template-columns: 112px repeat(7, 108px); }
+.inventory-risk-rule-matrix { grid-template-columns: 112px repeat(2, 140px); }
+
+.inventory-risk-parameter-matrix .matrix-heading {
+  color: #64748b;
+  font-size: .7rem;
+  font-weight: 800;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.inventory-risk-parameter-matrix .matrix-heading.calculated { color: #087f76; }
+
+.inventory-risk-parameter-matrix .matrix-channel {
+  color: #334155;
+  font-size: .76rem;
+  white-space: nowrap;
+}
+
+.inventory-risk-parameter-matrix input,
+.inventory-risk-parameter-matrix output {
+  width: 100%;
+  height: 32px;
+  padding: 5px 7px;
+  border: 1px solid #cbd7e4;
+  border-radius: 5px;
+  background: #fff;
+  color: #172033;
+  font: inherit;
+  font-size: .8rem;
+  text-align: right;
+}
+
+.inventory-risk-parameter-matrix output {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  border-color: #b9ddd7;
+  background: #effaf8;
+  color: #087f76;
+  font-weight: 800;
+}
+
+.inventory-risk-parameter-note {
+  margin: 8px 0 0;
+  color: #6b7789;
+  font-size: .68rem;
+  line-height: 1.45;
 }
 
 .inventory-risk-filters {
@@ -278,8 +336,8 @@
   font-weight: 800;
 }
 
-.inventory-risk-table th:nth-child(-n+6),
-.inventory-risk-table td:nth-child(-n+6),
+.inventory-risk-table th:nth-child(-n+7),
+.inventory-risk-table td:nth-child(-n+7),
 .inventory-risk-table th:nth-last-child(-n+2),
 .inventory-risk-table td:nth-last-child(-n+2) {
   text-align: left;
@@ -289,9 +347,10 @@
 .inventory-risk-table th:nth-child(2) { width: 120px; }
 .inventory-risk-table th:nth-child(3) { width: 190px; }
 .inventory-risk-table th:nth-child(4) { width: 110px; }
-.inventory-risk-table th:nth-child(5) { width: 75px; }
-.inventory-risk-table th:nth-child(6) { width: 160px; }
-.inventory-risk-table th:nth-child(n+7) { width: 105px; }
+.inventory-risk-table th:nth-child(5) { width: 85px; }
+.inventory-risk-table th:nth-child(6) { width: 100px; }
+.inventory-risk-table th:nth-child(7) { width: 160px; }
+.inventory-risk-table th:nth-child(n+8) { width: 105px; }
 
 .inventory-risk-table tbody tr:hover { background: #f8fbfd; }
 .inventory-risk-empty { padding: 24px !important; color: #8290a3; text-align: center !important; }
@@ -396,6 +455,10 @@
 .inventory-risk-logic-grid p { margin: 0; color: #64748b; font-size: .82rem; line-height: 1.7; }
 
 @media (max-width: 1100px) {
+  .inventory-risk-parameters {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-x: visible;
+  }
   .inventory-risk-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .inventory-risk-logic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

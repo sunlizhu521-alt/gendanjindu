@@ -2,47 +2,32 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 const API = import.meta.env.DEV ? 'http://localhost:4003' : '';
 
+const RISK_CHANNELS = [
+  { key: 'overseasUs', label: '海外-美国' },
+  { key: 'overseasEurope', label: '海外-欧洲' },
+  { key: 'domestic', label: '国内' }
+];
+const DEFAULT_CHANNEL_PARAMS = {
+  onHandSellableDays: 10,
+  dispatchToShelfDays: 10,
+  transportDays: 10,
+  bookingDays: 10,
+  averageLeadTimeDays: 10,
+  restrictThresholdDays: 40,
+  stopThresholdDays: 50
+};
 const DEFAULT_PARAMS = {
-  transitHighOverseas: 120,
-  transitHighDomestic: 38,
-  transitSevereOverseas: 180,
-  transitSevereDomestic: 83,
-  chainAttentionOverseas: 165,
-  chainAttentionDomestic: 83,
-  chainInterventionOverseas: 200,
-  chainInterventionDomestic: 120,
-  deliveryPeriod: 45,
   forecastMonths: 6,
-  historicalMonths: 6
+  historicalMonths: 6,
+  channels: Object.fromEntries(RISK_CHANNELS.map(({ key }) => [key, { ...DEFAULT_CHANNEL_PARAMS }]))
 };
 
-const PARAM_GROUPS = [
-  {
-    title: '在库在途周转天数',
-    fields: [
-      ['transitHighOverseas', '偏高线 - 海外'],
-      ['transitHighDomestic', '偏高线 - 国内'],
-      ['transitSevereOverseas', '严重线 - 海外'],
-      ['transitSevereDomestic', '严重线 - 国内']
-    ]
-  },
-  {
-    title: '全链覆盖天数',
-    fields: [
-      ['chainAttentionOverseas', '关注线 - 海外'],
-      ['chainAttentionDomestic', '关注线 - 国内'],
-      ['chainInterventionOverseas', '干预线 - 海外'],
-      ['chainInterventionDomestic', '干预线 - 国内']
-    ]
-  },
-  {
-    title: '计算周期',
-    fields: [
-      ['deliveryPeriod', '交期天数'],
-      ['forecastMonths', '预测月数'],
-      ['historicalMonths', '历史月数']
-    ]
-  }
+const PERIOD_FIELDS = [
+  ['onHandSellableDays', '在库量可销天数'],
+  ['dispatchToShelfDays', '发货到上架'],
+  ['transportDays', '海运/运输'],
+  ['bookingDays', '订舱/预约'],
+  ['averageLeadTimeDays', '平均交期']
 ];
 
 const EMPTY_RISK_FILTERS = Object.freeze({
@@ -50,7 +35,7 @@ const EMPTY_RISK_FILTERS = Object.freeze({
   productLines: [],
   productSeries: [],
   models: [],
-  inventorySegments: [],
+  channels: [],
   actions: [],
   forecastAvailability: []
 });
@@ -77,6 +62,71 @@ function numberText(value, maximumFractionDigits = 1) {
   const number = Number(value);
   if (!Number.isFinite(number)) return '-';
   return number.toLocaleString('zh-CN', { maximumFractionDigits });
+}
+
+function derivedChannelDays(settings) {
+  const value = (field) => {
+    const number = Number(settings?.[field]);
+    return Number.isFinite(number) ? number : 0;
+  };
+  const spotDays = value('onHandSellableDays') + value('dispatchToShelfDays') + value('transportDays') + value('bookingDays');
+  return { spotDays, fullChainDays: spotDays + value('averageLeadTimeDays') };
+}
+
+function RiskParameterMatrix({ params, onChannelChange, onRootChange }) {
+  return (
+    <section className="inventory-risk-parameters">
+      <fieldset className="inventory-risk-range-settings">
+        <legend>计算范围</legend>
+        <div className="inventory-risk-input-grid">
+          <label><span>预测月数</span><input type="number" min="1" max="24" step="1" value={params.forecastMonths} onChange={(event) => onRootChange('forecastMonths', event.target.value)} /></label>
+          <label><span>历史月数</span><input type="number" min="1" max="24" step="1" value={params.historicalMonths} onChange={(event) => onRootChange('historicalMonths', event.target.value)} /></label>
+        </div>
+      </fieldset>
+
+      <fieldset className="inventory-risk-matrix-fieldset">
+        <legend>计算周期</legend>
+        <div className="inventory-risk-matrix-wrap">
+          <div className="inventory-risk-parameter-matrix inventory-risk-period-matrix">
+            <div className="matrix-heading">渠道</div>
+            {PERIOD_FIELDS.slice(0, 4).map(([, label]) => <div className="matrix-heading" key={label}>{label}</div>)}
+            <div className="matrix-heading calculated">现货天数</div>
+            <div className="matrix-heading">平均交期</div>
+            <div className="matrix-heading calculated">全链路天数</div>
+            {RISK_CHANNELS.flatMap(({ key, label }) => {
+              const settings = params.channels[key];
+              const derived = derivedChannelDays(settings);
+              return [
+                <strong className="matrix-channel" key={`${key}-label`}>{label}</strong>,
+                ...PERIOD_FIELDS.slice(0, 4).map(([field]) => <input key={`${key}-${field}`} aria-label={`${label}${field}`} type="number" min="0" step="1" value={settings[field]} onChange={(event) => onChannelChange(key, field, event.target.value)} />),
+                <output className="matrix-output" key={`${key}-spot`}>{numberText(derived.spotDays)}</output>,
+                <input key={`${key}-averageLeadTimeDays`} aria-label={`${label}averageLeadTimeDays`} type="number" min="0" step="1" value={settings.averageLeadTimeDays} onChange={(event) => onChannelChange(key, 'averageLeadTimeDays', event.target.value)} />,
+                <output className="matrix-output" key={`${key}-full`}>{numberText(derived.fullChainDays)}</output>
+              ];
+            })}
+          </div>
+        </div>
+        <p className="inventory-risk-parameter-note">现货天数 = 在库量可销天数 + 发货到上架 + 海运/运输 + 订舱/预约；全链路天数 = 现货天数 + 平均交期。</p>
+      </fieldset>
+
+      <fieldset className="inventory-risk-matrix-fieldset">
+        <legend>处置规则</legend>
+        <div className="inventory-risk-matrix-wrap">
+          <div className="inventory-risk-parameter-matrix inventory-risk-rule-matrix">
+            <div className="matrix-heading">渠道</div>
+            <div className="matrix-heading">限制采购阈值</div>
+            <div className="matrix-heading">停止采购阈值</div>
+            {RISK_CHANNELS.flatMap(({ key, label }) => [
+              <strong className="matrix-channel" key={`${key}-rule-label`}>{label}</strong>,
+              <input key={`${key}-restrict`} aria-label={`${label}限制采购阈值`} type="number" min="0" step="1" value={params.channels[key].restrictThresholdDays} onChange={(event) => onChannelChange(key, 'restrictThresholdDays', event.target.value)} />,
+              <input key={`${key}-stop`} aria-label={`${label}停止采购阈值`} type="number" min="0" step="1" value={params.channels[key].stopThresholdDays} onChange={(event) => onChannelChange(key, 'stopThresholdDays', event.target.value)} />
+            ])}
+          </div>
+        </div>
+        <p className="inventory-risk-parameter-note">在库+在途周转天数超过限制阈值时限制采购；全链覆盖天数超过停止阈值时停止采购，停止采购优先。</p>
+      </fieldset>
+    </section>
+  );
 }
 
 async function apiRequest(path, token, options = {}) {
@@ -210,7 +260,7 @@ function RiskTable({ rows }) {
         <table className="inventory-risk-table">
           <thead>
             <tr>
-              <th>物料编码</th><th>SKU</th><th>物料名称</th><th>产品线</th><th>库存段</th><th>事业部</th>
+              <th>物料编码</th><th>SKU</th><th>物料名称</th><th>产品线</th><th>销售区域</th><th>渠道</th><th>事业部</th>
               <th>在库数量</th><th>在途数量</th><th>待交付数量</th><th>预测月均销量</th><th>最近N月平均月销量</th>
               <th>在库在途周转天数</th><th>全链覆盖天数</th><th>预测状态</th><th>处置动作</th>
             </tr>
@@ -218,8 +268,8 @@ function RiskTable({ rows }) {
           <tbody>
             {visibleRows.map((row) => (
               <tr key={row.id}>
-                <td>{row.materialCode}</td><td>{row.sku}</td><td>{row.materialName}</td><td>{row.productLine}</td>
-                <td><span className={`inventory-risk-segment inventory-risk-segment-${row.inventorySegment === '国内' ? 'domestic' : 'overseas'}`}>{row.inventorySegment}</span></td>
+                <td>{row.materialCode}</td><td>{row.sku}</td><td>{row.materialName}</td><td>{row.productLine}</td><td>{row.salesRegion}</td>
+                <td><span className={`inventory-risk-segment inventory-risk-segment-${row.channel === '国内' ? 'domestic' : 'overseas'}`}>{row.channel}</span></td>
                 <td>{row.businessUnit}</td><td>{numberText(row.onHandQty)}</td><td>{numberText(row.inTransitQty)}</td>
                 <td>{numberText(row.undeliveredQty)}</td><td>{numberText(row.forecastMonthlyAverage)}</td>
                 <td>{numberText(row.historicalMonthlyAverage)}</td><td>{numberText(row.transitTurnoverDays)}</td>
@@ -227,7 +277,7 @@ function RiskTable({ rows }) {
                 <td><strong className={`inventory-risk-action inventory-risk-action-${row.action === '停止采购' ? 'stopped' : 'restricted'}`}>{row.action}</strong></td>
               </tr>
             ))}
-            {!visibleRows.length && <tr><td className="inventory-risk-empty" colSpan="15">当前筛选条件下没有需要处置的物料</td></tr>}
+            {!visibleRows.length && <tr><td className="inventory-risk-empty" colSpan="16">当前筛选条件下没有需要处置的物料</td></tr>}
           </tbody>
         </table>
       </div>
@@ -245,10 +295,10 @@ function InventoryRiskLogic({ onBack }) {
       </header>
       <div className="inventory-risk-logic-grid">
         <section><span>01</span><h3>数据来源</h3><p>库存、在途、待交付、商品分类和历史销售完全复用“库存汇总”的标准化结果；销售预测读取“库存汇总文件库”的槽位 15。</p></section>
-        <section><span>02</span><h3>物料与库存段</h3><p>以事业部 + 物料编码为主键，SKU 仅展示。同一物料属于多个事业部时分别计算，不合并到一行。国内事业部、销售部-工厂归为国内库存段，其他已匹配事业部归为海外库存段。</p></section>
+        <section><span>02</span><h3>物料与渠道</h3><p>以事业部 + 物料编码为主键，SKU 仅展示。渠道只取商品分类的销售区域：中国为国内，美国为海外-美国，欧洲为海外-欧洲；其他已确认区域按2B排除，缺失或无法区分进入维度表缺失。</p></section>
         <section><span>03</span><h3>销售速度</h3><p>预测月均销量取本月起连续 N 个月预测数量合计除以 N；最近 N 月平均月销量独立取销售数据最新月份向前 N 个月。</p></section>
-        <section><span>04</span><h3>标准一</h3><p>在库在途周转天数 =（在库数量 + 在途数量）÷（预测月均销量 ÷ 30）。达到严重线停止采购，达到偏高线限制采购。</p></section>
-        <section><span>05</span><h3>标准二</h3><p>全链覆盖天数 =（在库数量 + 在途数量 + 待交付数量）÷（预测月均销量 ÷ 30）+ 交期天数。达到干预线停止采购，达到关注线限制采购。</p></section>
+        <section><span>04</span><h3>在库在途周转</h3><p>在库在途周转天数 =（在库数量 + 在途数量）÷（预测月均销量 ÷ 30）。超过当前渠道的限制采购阈值时限制采购。</p></section>
+        <section><span>05</span><h3>全链覆盖</h3><p>全链覆盖天数 =（在库数量 + 在途数量 + 待交付数量）÷（预测月均销量 ÷ 30）+ 当前渠道平均交期。超过停止采购阈值时停止采购。</p></section>
         <section><span>06</span><h3>异常和优先级</h3><p>无预测或预测合计为 0 时天数按 999，进入停止采购。停止采购优先于限制采购；正常物料不在结果表展示。</p></section>
       </div>
     </div>
@@ -264,6 +314,15 @@ export default function InventoryRiskPage({ token, active }) {
   const [showLogic, setShowLogic] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [filters, setFilters] = useState({ ...EMPTY_RISK_FILTERS });
+
+  const setRootParam = (field, value) => setParams((current) => ({ ...current, [field]: value }));
+  const setChannelParam = (channelKey, field, value) => setParams((current) => ({
+    ...current,
+    channels: {
+      ...current.channels,
+      [channelKey]: { ...current.channels[channelKey], [field]: value }
+    }
+  }));
 
   async function calculate(force = false) {
     setLoading(true);
@@ -323,7 +382,7 @@ export default function InventoryRiskPage({ token, active }) {
     && (omit === 'productLines' || filters.productLines.length === 0 || filters.productLines.includes(row.productLine))
     && (omit === 'productSeries' || filters.productSeries.length === 0 || filters.productSeries.includes(row.productSeries))
     && (omit === 'models' || filters.models.length === 0 || filters.models.includes(row.model))
-    && (omit === 'inventorySegments' || filters.inventorySegments.length === 0 || filters.inventorySegments.includes(row.inventorySegment))
+    && (omit === 'channels' || filters.channels.length === 0 || filters.channels.includes(row.channel))
     && (omit === 'actions' || filters.actions.length === 0 || filters.actions.includes(row.action))
     && (omit === 'forecastAvailability' || filters.forecastAvailability.length === 0 || filters.forecastAvailability.includes(row.forecastAvailability))
   );
@@ -337,7 +396,7 @@ export default function InventoryRiskPage({ token, active }) {
       productLines: valuesFor('productLines', 'productLine').sort((a, b) => a.localeCompare(b, 'zh-CN')),
       productSeries: valuesFor('productSeries', 'productSeries').sort((a, b) => a.localeCompare(b, 'zh-CN')),
       models: valuesFor('models', 'model').sort((a, b) => a.localeCompare(b, 'zh-CN', { numeric: true })),
-      inventorySegments: valuesFor('inventorySegments', 'inventorySegment'),
+      channels: RISK_CHANNELS.map((channel) => channel.label).filter((channel) => valuesFor('channels', 'channel').includes(channel)),
       actions: ['限制采购', '停止采购'].filter((action) => valuesFor('actions', 'action').includes(action)),
       forecastAvailability: ['有预测销售', '无预测销售']
         .filter((status) => valuesFor('forecastAvailability', 'forecastAvailability').includes(status))
@@ -365,7 +424,7 @@ export default function InventoryRiskPage({ token, active }) {
   return (
     <div className="inventory-risk-page">
       <header className="inventory-risk-header">
-        <div><span className="inventory-risk-eyebrow">INVENTORY RISK</span><h2>库存风险</h2><p>按国内、海外库存段识别限制采购和停止采购物料。</p></div>
+        <div><span className="inventory-risk-eyebrow">INVENTORY RISK</span><h2>库存风险</h2><p>按海外-美国、海外-欧洲和国内三个渠道识别限制采购与停止采购物料。</p></div>
         <div className="inventory-risk-actions">
           <button className="inventory-risk-button secondary" type="button" onClick={() => setShowLogic(true)}>计算逻辑</button>
           <button className="inventory-risk-button secondary" type="button" disabled={!result || loading} onClick={exportResult}>导出 Excel</button>
@@ -373,18 +432,7 @@ export default function InventoryRiskPage({ token, active }) {
         </div>
       </header>
 
-      <section className="inventory-risk-parameters">
-        {PARAM_GROUPS.map((group) => (
-          <fieldset key={group.title}>
-            <legend>{group.title}</legend>
-            <div className="inventory-risk-input-grid">
-              {group.fields.map(([key, label]) => (
-                <label key={key}><span>{label}</span><input type="number" min="0" max={key.includes('Months') ? 24 : undefined} step="1" value={params[key]} onChange={(event) => setParams((current) => ({ ...current, [key]: event.target.value }))} /></label>
-              ))}
-            </div>
-          </fieldset>
-        ))}
-      </section>
+      <RiskParameterMatrix params={params} onChannelChange={setChannelParam} onRootChange={setRootParam} />
 
       {error && <div className="inventory-risk-alert error"><strong>计算失败</strong><span>{error}</span></div>}
       {error && <ForecastParsingDiagnostics diagnostics={errorDiagnostics} />}
@@ -397,7 +445,7 @@ export default function InventoryRiskPage({ token, active }) {
             <RiskMultiSelectFilter label="产品线" allLabel="全部产品线" value={filters.productLines} options={filterOptions.productLines} onChange={(value) => setFilters((current) => ({ ...current, productLines: value }))} />
             <RiskMultiSelectFilter label="系列" allLabel="全部系列" value={filters.productSeries} options={filterOptions.productSeries} onChange={(value) => setFilters((current) => ({ ...current, productSeries: value }))} />
             <RiskMultiSelectFilter label="型号" allLabel="全部型号" value={filters.models} options={filterOptions.models} onChange={(value) => setFilters((current) => ({ ...current, models: value }))} />
-            <RiskMultiSelectFilter label="库存段" allLabel="全部库存段" value={filters.inventorySegments} options={filterOptions.inventorySegments} onChange={(value) => setFilters((current) => ({ ...current, inventorySegments: value }))} />
+            <RiskMultiSelectFilter label="渠道" allLabel="全部渠道" value={filters.channels} options={filterOptions.channels} onChange={(value) => setFilters((current) => ({ ...current, channels: value }))} />
             <RiskMultiSelectFilter label="处置动作" allLabel="全部处置动作" value={filters.actions} options={filterOptions.actions} onChange={(value) => setFilters((current) => ({ ...current, actions: value }))} />
             <RiskMultiSelectFilter label="预测销售" allLabel="全部预测销售" value={filters.forecastAvailability} options={filterOptions.forecastAvailability} onChange={(value) => setFilters((current) => ({ ...current, forecastAvailability: value }))} />
             <button className="inventory-risk-button secondary inventory-risk-filter-clear" type="button" disabled={!hasFilters} onClick={() => setFilters({ ...EMPTY_RISK_FILTERS })}>清空筛选</button>
@@ -422,6 +470,8 @@ export default function InventoryRiskPage({ token, active }) {
             <span>预测区间：{result.periods.forecastStartMonth} 至 {result.periods.forecastEndMonth}</span>
             <span>历史销量区间：{result.periods.historicalStartMonth || '暂无'} 至 {result.periods.historicalEndMonth || '暂无'}</span>
             <span>生成时间：{new Date(result.generatedAt).toLocaleString('zh-CN')}</span>
+            <span>2B渠道排除：{numberText(summary.b2bExcludedCount, 0)} 条</span>
+            <span>销售区域待维护：{numberText(summary.channelMissingCount, 0)} 条</span>
           </div>
           <RiskTable rows={filteredRows} />
           {(result.diagnostics.mappingIssues.length > 0 || result.diagnostics.forecastIssues.length > 0) && (

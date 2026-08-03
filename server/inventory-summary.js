@@ -237,7 +237,8 @@ const INVENTORY_SOURCE_TYPES = new Set([
   '京东在库',
   'FBA在途',
   'FBM在途',
-  '京东在途'
+  '京东在途',
+  '库存风险'
 ]);
 const ZERO_QUANTITY_DIAGNOSTIC_SOURCE_TYPES = new Set(['京东在途']);
 const JD_INVENTORY_SUBJECT = '浙江迈德斯特医疗器械科技有限公司';
@@ -598,6 +599,7 @@ function dimensionProduct(row) {
     productLine: text(aliasValue(row, ['productLine', '销售产品线', '产品线'])),
     productSeries: text(aliasValue(row, ['productSeries', '销售系列', '系列'])),
     model: text(aliasValue(row, ['model', '型号', '产品型号', '款式', '规格型号', '规格'])),
+    salesRegion: text(aliasValue(row, ['salesRegion', '销售区域'])),
     pretaxPrice: aliasValue(row, ['pretaxPrice', '不含税结算价'])
   };
 }
@@ -663,6 +665,7 @@ function emptySummaryRow(id, businessUnit, product, rawIdentifier) {
     productLine: product.productLine || '未匹配',
     productSeries: product.productSeries || '未匹配',
     model: product.model || '未匹配',
+    salesRegion: product.salesRegion || '',
     materialCode: product.materialCode || '未匹配',
     sku: product.sku || '未匹配',
     materialName: product.materialName || '未匹配',
@@ -738,8 +741,10 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     const slotId = `inventorySummaryFile${index + 1}`;
     return [slotId, rowsRecord(getRecord, slotId)];
   }));
+  const productRows = getRows('productCategory');
+  const salesRegionConfigured = productRows.some((row) => text(aliasValue(row, ['salesRegion', '销售区域'])));
   const productLookup = exactLookup(
-    getRows('productCategory'),
+    productRows,
     (row) => matchKey(aliasValue(row, ['materialCode', '物料编码', '品号'])),
     dimensionProduct
   );
@@ -828,7 +833,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     const material = text(materialCode).replace(/\.0$/, '');
     const result = productLookup.resolve(material);
     if (result.status !== 'ok') {
-      return { product: { materialCode: '', sku: '', materialName: '', productLine: '', productSeries: '', model: '', pretaxPrice: 0 }, issue: `商品分类${result.status === 'conflict' ? '映射冲突' : '缺失'}` };
+      return { product: { materialCode: '', sku: '', materialName: '', productLine: '', productSeries: '', model: '', salesRegion: '', pretaxPrice: 0 }, issue: `商品分类${result.status === 'conflict' ? '映射冲突' : '缺失'}` };
     }
     const price = safeNumber(result.value.pretaxPrice);
     if (!price.valid || !text(result.value.pretaxPrice)) {
@@ -1403,6 +1408,25 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       scaleValue
     };
   });
+  if (salesRegionConfigured) {
+    const supportedSalesRegions = new Set(['美国', '欧洲', '中国', '沙特', '印度', '马来西亚', '越南', '新加坡', '韩国']);
+    rows.forEach((row) => {
+      const affectedQty = Math.abs(Number(row.inventoryQty || 0))
+        + Math.abs(Number(row.transitQty || 0))
+        + Math.abs(Number(row.unfulfilledQty || 0));
+      const salesRegion = text(row.salesRegion);
+      if (affectedQty <= 0.000001 || supportedSalesRegions.has(salesRegion)) return;
+      addAnomaly('库存风险', `${row.businessUnit}+${row.materialCode}`, '销售区域缺失或无法识别', affectedQty, Math.abs(Number(row.scaleValue || 0)), {
+        materialCode: row.materialCode,
+        sku: row.sku,
+        materialName: row.materialName,
+        productLine: row.productLine,
+        productSeries: row.productSeries,
+        businessUnit: row.businessUnit,
+        salesRegion: salesRegion || '未填写'
+      });
+    });
+  }
   applyAbc(rows, 'salesQty', 'quantityAbc');
   applyAbc(rows, 'salesAmount', 'amountAbc');
   rows.sort((left, right) => (
@@ -1496,7 +1520,7 @@ const INVENTORY_DIMENSION_TARGETS = {
     slotId: 'productCategory',
     title: '商品分类',
     page: 'dimensionLibrary',
-    fields: ['物料编码', 'SKU', '物料名称', '销售产品线', '销售系列', '不含税结算价']
+    fields: ['物料编码', 'SKU', '物料名称', '销售产品线', '销售系列', '销售区域', '不含税结算价']
   },
   fbmSource: {
     slotId: 'inventorySummaryFile2',
@@ -1529,7 +1553,7 @@ function inventoryMaintenanceTarget(anomaly) {
   if (anomaly.sourceType === '京东在途' && (issue === '在途数量不是有效数量' || issue === '物料编码为空')) {
     return INVENTORY_DIMENSION_TARGETS.jdTransitSource;
   }
-  if ((issue.startsWith('商品分类') || issue.startsWith('不含税结算价')) && text(anomaly.materialCode)) {
+  if ((issue.startsWith('商品分类') || issue.startsWith('不含税结算价') || issue.startsWith('销售区域')) && text(anomaly.materialCode)) {
     return INVENTORY_DIMENSION_TARGETS.product;
   }
   return null;

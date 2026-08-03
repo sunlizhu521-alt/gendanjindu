@@ -1,21 +1,30 @@
 const DOMESTIC_BUSINESS_UNITS = new Set(['国内事业部', '销售部-工厂']);
 const RISK_SOURCE_TYPES = new Set([
   'FBA库存', 'FBM库存', 'WFS库存', '国内在库', '京东在库',
-  'FBA在途', 'FBM在途', '京东在途', '采购跟单'
+  'FBA在途', 'FBM在途', '京东在途', '采购跟单', '库存风险'
 ]);
 
+export const INVENTORY_RISK_CHANNELS = Object.freeze([
+  { key: 'overseasUs', label: '海外-美国', salesRegion: '美国' },
+  { key: 'overseasEurope', label: '海外-欧洲', salesRegion: '欧洲' },
+  { key: 'domestic', label: '国内', salesRegion: '中国' }
+]);
+const CHANNEL_BY_SALES_REGION = new Map(INVENTORY_RISK_CHANNELS.map((channel) => [channel.salesRegion, channel]));
+const B2B_SALES_REGIONS = new Set(['沙特', '印度', '马来西亚', '越南', '新加坡', '韩国']);
+const DEFAULT_CHANNEL_PARAMS = Object.freeze({
+  onHandSellableDays: 10,
+  dispatchToShelfDays: 10,
+  transportDays: 10,
+  bookingDays: 10,
+  averageLeadTimeDays: 10,
+  restrictThresholdDays: 40,
+  stopThresholdDays: 50
+});
+
 export const INVENTORY_RISK_DEFAULT_PARAMS = Object.freeze({
-  transitHighOverseas: 120,
-  transitHighDomestic: 38,
-  transitSevereOverseas: 180,
-  transitSevereDomestic: 83,
-  chainAttentionOverseas: 165,
-  chainAttentionDomestic: 83,
-  chainInterventionOverseas: 200,
-  chainInterventionDomestic: 120,
-  deliveryPeriod: 45,
   forecastMonths: 6,
-  historicalMonths: 6
+  historicalMonths: 6,
+  channels: Object.freeze(Object.fromEntries(INVENTORY_RISK_CHANNELS.map(({ key }) => [key, Object.freeze({ ...DEFAULT_CHANNEL_PARAMS })])))
 });
 
 function text(value) {
@@ -49,6 +58,13 @@ function businessUnitRegion(value) {
   const businessUnit = normalizedBusinessUnit(value);
   if (!businessUnit || businessUnit === '未匹配') return '';
   return DOMESTIC_BUSINESS_UNITS.has(businessUnit) ? '国内' : '海外';
+}
+
+function riskChannel(value) {
+  const salesRegion = text(value);
+  if (CHANNEL_BY_SALES_REGION.has(salesRegion)) return { status: 'included', ...CHANNEL_BY_SALES_REGION.get(salesRegion) };
+  if (B2B_SALES_REGIONS.has(salesRegion)) return { status: 'b2b', salesRegion };
+  return { status: 'missing', salesRegion };
 }
 
 function businessUnitMaterialKey(businessUnit, materialCode) {
@@ -200,42 +216,37 @@ function forecastColumnPlan(forecastRows, forecastSource, now) {
   };
 }
 
-function numberParam(input, field) {
-  const fallback = INVENTORY_RISK_DEFAULT_PARAMS[field];
+function numberParam(input, field, fallback, label = field) {
   const value = input?.[field] === '' || input?.[field] === undefined ? fallback : Number(input[field]);
-  if (!Number.isFinite(value) || value < 0) throw new Error(`${field} 必须是非负数字`);
+  if (!Number.isFinite(value) || value < 0) throw new Error(`${label} 必须是非负数字`);
   return value;
 }
 
 function monthParam(input, field) {
-  const value = numberParam(input, field);
+  const value = numberParam(input, field, INVENTORY_RISK_DEFAULT_PARAMS[field], field);
   if (!Number.isInteger(value) || value < 1 || value > 24) throw new Error(`${field} 必须是1到24之间的整数`);
   return value;
 }
 
 export function normalizeInventoryRiskParams(input = {}) {
-  const params = {
-    transitHighOverseas: numberParam(input, 'transitHighOverseas'),
-    transitHighDomestic: numberParam(input, 'transitHighDomestic'),
-    transitSevereOverseas: numberParam(input, 'transitSevereOverseas'),
-    transitSevereDomestic: numberParam(input, 'transitSevereDomestic'),
-    chainAttentionOverseas: numberParam(input, 'chainAttentionOverseas'),
-    chainAttentionDomestic: numberParam(input, 'chainAttentionDomestic'),
-    chainInterventionOverseas: numberParam(input, 'chainInterventionOverseas'),
-    chainInterventionDomestic: numberParam(input, 'chainInterventionDomestic'),
-    deliveryPeriod: numberParam(input, 'deliveryPeriod'),
+  const channels = Object.fromEntries(INVENTORY_RISK_CHANNELS.map(({ key, label }) => {
+    const source = input?.channels?.[key] || {};
+    const normalized = Object.fromEntries(Object.keys(DEFAULT_CHANNEL_PARAMS).map((field) => [
+      field,
+      numberParam(source, field, DEFAULT_CHANNEL_PARAMS[field], `${label}${field}`)
+    ]));
+    normalized.spotDays = normalized.onHandSellableDays
+      + normalized.dispatchToShelfDays
+      + normalized.transportDays
+      + normalized.bookingDays;
+    normalized.fullChainDays = normalized.spotDays + normalized.averageLeadTimeDays;
+    return [key, normalized];
+  }));
+  return {
     forecastMonths: monthParam(input, 'forecastMonths'),
-    historicalMonths: monthParam(input, 'historicalMonths')
+    historicalMonths: monthParam(input, 'historicalMonths'),
+    channels
   };
-  for (const region of ['Overseas', 'Domestic']) {
-    if (params[`transitSevere${region}`] < params[`transitHigh${region}`]) {
-      throw new Error(`${region === 'Overseas' ? '海外' : '国内'}在途严重线不得低于偏高线`);
-    }
-    if (params[`chainIntervention${region}`] < params[`chainAttention${region}`]) {
-      throw new Error(`${region === 'Overseas' ? '海外' : '国内'}全链干预线不得低于关注线`);
-    }
-  }
-  return params;
 }
 
 function uniqueSkuMap(rows) {
@@ -347,13 +358,17 @@ function buildForecastMap(forecastRows, summaryRows, forecastSource, now) {
 
 function addAggregate(map, row) {
   const businessUnit = normalizedBusinessUnit(row.businessUnit);
-  const region = businessUnitRegion(businessUnit);
   const materialCode = materialCodeValue(row.materialCode);
-  if (!businessUnit || businessUnit === '未匹配' || !region || !materialCode || materialCode === '未匹配') return;
+  const channel = riskChannel(row.salesRegion);
+  if (!businessUnit || businessUnit === '未匹配' || !materialCode || materialCode === '未匹配') return 'invalid-key';
+  if (channel.status !== 'included') return channel.status;
   const key = businessUnitMaterialKey(businessUnit, materialCode);
   const current = map.get(key) || {
     businessUnit,
-    region,
+    inventorySegment: channel.key === 'domestic' ? '国内' : '海外',
+    salesRegion: channel.salesRegion,
+    channelKey: channel.key,
+    channel: channel.label,
     materialCode,
     sku: row.sku || '未匹配',
     materialName: row.materialName || '未匹配',
@@ -372,21 +387,12 @@ function addAggregate(map, row) {
     current.salesByMonth.set(month, (current.salesByMonth.get(month) || 0) + numberValue(qty));
   });
   map.set(key, current);
+  return 'included';
 }
 
-function thresholds(params, region) {
-  const suffix = region === '国内' ? 'Domestic' : 'Overseas';
-  return {
-    transitHigh: params[`transitHigh${suffix}`],
-    transitSevere: params[`transitSevere${suffix}`],
-    chainAttention: params[`chainAttention${suffix}`],
-    chainIntervention: params[`chainIntervention${suffix}`]
-  };
-}
-
-function actionFor(transitDays, chainDays, limits) {
-  if (transitDays >= limits.transitSevere || chainDays >= limits.chainIntervention) return '停止采购';
-  if (transitDays >= limits.transitHigh || chainDays >= limits.chainAttention) return '限制采购';
+function actionFor(transitDays, chainDays, settings) {
+  if (chainDays > settings.stopThresholdDays) return '停止采购';
+  if (transitDays > settings.restrictThresholdDays) return '限制采购';
   return '正常';
 }
 
@@ -416,7 +422,13 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
   }
 
   const aggregate = new Map();
-  summaryRows.forEach((row) => addAggregate(aggregate, row));
+  const channelStats = { includedCount: 0, b2bExcludedCount: 0, channelMissingCount: 0 };
+  summaryRows.forEach((row) => {
+    const status = addAggregate(aggregate, row);
+    if (status === 'included') channelStats.includedCount += 1;
+    else if (status === 'b2b') channelStats.b2bExcludedCount += 1;
+    else if (status === 'missing') channelStats.channelMissingCount += 1;
+  });
   const allSalesMonths = [...new Set([...aggregate.values()].flatMap((row) => [...row.salesByMonth.keys()]))].sort();
   const historicalEndMonth = allSalesMonths.at(-1) || '';
   const historicalMonths = historicalEndMonth
@@ -446,10 +458,11 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
     const transitTurnoverDays = dailyForecast > 0
       ? (row.onHandQty + row.inTransitQty) / dailyForecast
       : 999;
+    const channelSettings = params.channels[row.channelKey];
     const fullChainCoverageDays = dailyForecast > 0
-      ? (row.onHandQty + row.inTransitQty + row.undeliveredQty) / dailyForecast + params.deliveryPeriod
+      ? (row.onHandQty + row.inTransitQty + row.undeliveredQty) / dailyForecast + channelSettings.averageLeadTimeDays
       : 999;
-    const action = actionFor(transitTurnoverDays, fullChainCoverageDays, thresholds(params, row.region));
+    const action = actionFor(transitTurnoverDays, fullChainCoverageDays, channelSettings);
     if (action === '正常') {
       normalCount += 1;
       continue;
@@ -462,7 +475,10 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
       productLine: row.productLine,
       productSeries: row.productSeries,
       model: row.model,
-      inventorySegment: row.region,
+      inventorySegment: row.inventorySegment,
+      salesRegion: row.salesRegion,
+      channelKey: row.channelKey,
+      channel: row.channel,
       businessUnit: row.businessUnit,
       businessUnits: row.businessUnit,
       onHandQty: row.onHandQty,
@@ -474,6 +490,15 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
       historicalMonthlyAverage,
       transitTurnoverDays,
       fullChainCoverageDays,
+      onHandSellableDays: channelSettings.onHandSellableDays,
+      dispatchToShelfDays: channelSettings.dispatchToShelfDays,
+      transportDays: channelSettings.transportDays,
+      bookingDays: channelSettings.bookingDays,
+      spotDays: channelSettings.spotDays,
+      averageLeadTimeDays: channelSettings.averageLeadTimeDays,
+      fullChainDays: channelSettings.fullChainDays,
+      restrictThresholdDays: channelSettings.restrictThresholdDays,
+      stopThresholdDays: channelSettings.stopThresholdDays,
       forecastStatus,
       forecastAvailability,
       action
@@ -518,6 +543,7 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
       restrictedCount: restricted.length,
       stoppedCount: stopped.length,
       normalCount,
+      ...channelStats,
       mappingIssueCount: mappingIssues.length,
       mappingIssueQty: mappingIssues.reduce((sum, row) => sum + Math.abs(row.qty), 0),
       forecastIssueCount: forecastResult.issues.length
@@ -535,7 +561,7 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
 
 export function inventoryRiskCacheKey(sourceVersion, input = {}, now = new Date()) {
   return [
-    'inventory-risk-v5',
+    'inventory-risk-v6',
     currentChinaMonth(now),
     sourceVersion,
     JSON.stringify(normalizeInventoryRiskParams(input))

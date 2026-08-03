@@ -180,7 +180,7 @@ export default function InventoryCalculationGuide({ onBack }) {
         <div className="inventory-rule-grid">
           <article>
             <strong>商品分类映射</strong>
-            <p>物料编码匹配“商品分类”，取得 SKU、物料名称、销售产品线、销售系列和不含税结算价。</p>
+            <p>物料编码匹配“商品分类”，取得 SKU、物料名称、销售产品线、销售系列、销售区域和不含税结算价。库存风险仅按销售区域区分海外-美国、海外-欧洲和国内三个渠道。</p>
           </article>
           <article>
             <strong>仓库事业部映射</strong>

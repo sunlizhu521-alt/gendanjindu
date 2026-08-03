@@ -166,6 +166,36 @@ test('inventory summary model uses inventory library facts, layered totals and s
   assert.deepEqual(crossBorderM1?.unfulfilledReasons, [{ name: '未填写', qty: 50, value: 500 }]);
 });
 
+test('销售区域随商品分类进入汇总，未知区域进入维度缺失而2B区域不报错', () => {
+  const rowsBySlot = new Map([
+    ['productCategory', [
+      { materialCode: 'M-US', sku: 'SKU-US', salesRegion: '美国', pretaxPrice: 10 },
+      { materialCode: 'M-B2B', sku: 'SKU-B2B', salesRegion: '沙特', pretaxPrice: 10 },
+      { materialCode: 'M-MISSING', sku: 'SKU-MISSING', salesRegion: '无法区分', pretaxPrice: 10 }
+    ]],
+    ['inventorySummaryFile12', [
+      { businessUnit: '海外事业一部', materialCode: 'M-US', remainingQty: 5, deliveryStatus: '是' },
+      { businessUnit: '全球招商事业部', materialCode: 'M-B2B', remainingQty: 6, deliveryStatus: '是' },
+      { businessUnit: '海外事业二部', materialCode: 'M-MISSING', remainingQty: 7, deliveryStatus: '是' }
+    ]]
+  ]);
+  const model = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
+  });
+  assert.equal(model.rows.find((row) => row.materialCode === 'M-US')?.salesRegion, '美国');
+  assert.equal(model.rows.find((row) => row.materialCode === 'M-B2B')?.salesRegion, '沙特');
+  const regionIssues = model.anomalies.filter((row) => row.sourceType === '库存风险');
+  assert.equal(regionIssues.length, 1);
+  assert.equal(regionIssues[0].materialCode, 'M-MISSING');
+  assert.equal(regionIssues[0].qty, 7);
+  const diagnostics = buildInventoryDimensionDiagnostics(model);
+  const issue = diagnostics.issues.find((row) => row.materialCode === 'M-MISSING');
+  assert.equal(issue?.targetSlotId, 'productCategory');
+  assert.equal(issue?.requiredFields.includes('销售区域'), true);
+  assert.equal(diagnostics.issues.some((row) => row.materialCode === 'M-B2B'), false);
+});
+
 test('FBM inventory ignores zero quantities and excluded warehouse rows before mapping and aggregation', () => {
   const rowsBySlot = new Map([
     ['inventorySummaryFile2', [

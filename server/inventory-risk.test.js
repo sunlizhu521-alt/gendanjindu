@@ -20,6 +20,7 @@ function summaryRow(overrides = {}) {
     productLine: '测试线',
     productSeries: '测试系列',
     model: '测试型号',
+    salesRegion: '美国',
     inventoryQty: 100,
     transitQty: 0,
     unfulfilledQty: 0,
@@ -81,11 +82,11 @@ test('槽位15无年份销量列按文件日期跨年，并汇总重复渠道和
     }
   });
   assert.equal(payload.ok, true);
-  assert.equal(payload.restricted.length, 1);
-  assert.equal(payload.restricted[0].forecastMonthlyAverage, 150);
-  assert.equal(payload.restricted[0].forecastAvailability, '有预测销售');
-  assert.equal(payload.restricted[0].totalInventoryQty, 600);
-  assert.equal(payload.restricted[0].model, '测试型号');
+  assert.equal(payload.stopped.length, 1);
+  assert.equal(payload.stopped[0].forecastMonthlyAverage, 150);
+  assert.equal(payload.stopped[0].forecastAvailability, '有预测销售');
+  assert.equal(payload.stopped[0].totalInventoryQty, 600);
+  assert.equal(payload.stopped[0].model, '测试型号');
   assert.deepEqual(payload.periods.forecastMonths, ['2026-08', '2026-09', '2026-10', '2026-11', '2026-12', '2027-01']);
   assert.deepEqual(
     payload.diagnostics.forecastParsing.monthColumns.map(({ header, month }) => [header, month]),
@@ -147,10 +148,10 @@ test('同一物料按国内和海外独立计算，最近N月均销独立展示'
   });
   assert.equal(payload.ok, true);
   assert.equal(payload.summary.normalCount, 1);
-  assert.equal(payload.restricted.length, 1);
-  assert.equal(payload.restricted[0].inventorySegment, '海外');
-  assert.equal(payload.restricted[0].transitTurnoverDays, 120);
-  assert.equal(payload.restricted[0].historicalMonthlyAverage, 35);
+  assert.equal(payload.stopped.length, 1);
+  assert.equal(payload.stopped[0].channel, '海外-美国');
+  assert.equal(payload.stopped[0].transitTurnoverDays, 120);
+  assert.equal(payload.stopped[0].historicalMonthlyAverage, 35);
   assert.equal(payload.periods.historicalStartMonth, '2026-02');
   assert.equal(payload.periods.historicalEndMonth, '2026-07');
 });
@@ -179,7 +180,7 @@ test('同一物料的不同海外事业部独立计算，不合并事业部或�
     ]
   });
   assert.equal(payload.ok, true);
-  assert.equal(payload.restricted.length, 2);
+  assert.equal(payload.stopped.length, 2);
   assert.equal(payload.rows.length, 2);
   const first = payload.rows.find((row) => row.businessUnit === '海外事业一部');
   const second = payload.rows.find((row) => row.businessUnit === '海外事业二部');
@@ -191,12 +192,64 @@ test('同一物料的不同海外事业部独立计算，不合并事业部或�
   assert.equal(new Set(payload.rows.map((row) => row.id)).size, 2);
 });
 
-test('阈值相等时命中且停止采购优先于限制采购', () => {
+test('销售区域映射三个渠道，2B和无法区分不进入风险计算', () => {
+  const payload = buildInventoryRiskAnalysis({
+    now: NOW,
+    inventoryModel: {
+      rows: [
+        summaryRow({ materialCode: '1001', sku: 'SKU-1001', salesRegion: '美国' }),
+        summaryRow({ materialCode: '1002', sku: 'SKU-1002', salesRegion: '欧洲' }),
+        summaryRow({ materialCode: '1003', sku: 'SKU-1003', salesRegion: '中国', businessUnit: '国内事业部' }),
+        summaryRow({ materialCode: '1004', sku: 'SKU-1004', salesRegion: '沙特' }),
+        summaryRow({ materialCode: '1005', sku: 'SKU-1005', salesRegion: '无法区分' })
+      ],
+      anomalies: [{ id: 'risk-1005', sourceType: '库存风险', materialCode: '1005', businessUnit: '海外事业一部', qty: 100, issue: '销售区域缺失或无法识别' }]
+    },
+    forecastRows: [
+      wideForecast({ 物料编码: '1001' }),
+      wideForecast({ 物料编码: '1002' }),
+      wideForecast({ 物料编码: '1003', 事业部: '国内事业部' }),
+      wideForecast({ 物料编码: '1004' }),
+      wideForecast({ 物料编码: '1005' })
+    ],
+    params: {
+      channels: {
+        overseasUs: { restrictThresholdDays: 20, stopThresholdDays: 100 },
+        overseasEurope: { restrictThresholdDays: 20, stopThresholdDays: 100 },
+        domestic: { restrictThresholdDays: 20, stopThresholdDays: 100 }
+      }
+    }
+  });
+  assert.deepEqual(new Set(payload.rows.map((row) => row.channel)), new Set(['海外-美国', '海外-欧洲', '国内']));
+  assert.equal(payload.restricted.length, 3);
+  assert.equal(payload.summary.b2bExcludedCount, 1);
+  assert.equal(payload.summary.channelMissingCount, 1);
+  assert.equal(payload.diagnostics.mappingIssues.some((row) => row.materialCode === '1005'), true);
+});
+
+test('处置阈值严格大于才命中，且停止采购优先于限制采购', () => {
+  const equalPayload = buildInventoryRiskAnalysis({
+    now: NOW,
+    inventoryModel: { rows: [summaryRow({ inventoryQty: 100 })], anomalies: [] },
+    forecastRows: [wideForecast()],
+    params: {
+      channels: {
+        overseasUs: { restrictThresholdDays: 30, stopThresholdDays: 40 }
+      }
+    }
+  });
+  assert.equal(equalPayload.summary.normalCount, 1);
+  assert.equal(equalPayload.rows.length, 0);
+
   const payload = buildInventoryRiskAnalysis({
     now: NOW,
     inventoryModel: { rows: [summaryRow({ inventoryQty: 600 })], anomalies: [] },
     forecastRows: [wideForecast()],
-    params: { transitSevereOverseas: 180, chainInterventionOverseas: 300 }
+    params: {
+      channels: {
+        overseasUs: { restrictThresholdDays: 100, stopThresholdDays: 100 }
+      }
+    }
   });
   assert.equal(payload.stopped.length, 1);
   assert.equal(payload.stopped[0].transitTurnoverDays, 180);
@@ -243,8 +296,8 @@ test('长表预测支持唯一SKU回退到物料编码', () => {
     forecastRows
   });
   assert.equal(payload.ok, true);
-  assert.equal(payload.restricted[0].materialCode, '1001');
-  assert.equal(payload.restricted[0].forecastMonthlyAverage, 100);
+  assert.equal(payload.stopped[0].materialCode, '1001');
+  assert.equal(payload.stopped[0].forecastMonthlyAverage, 100);
 });
 
 test('销售预测文件缺失时阻止计算', () => {
@@ -257,8 +310,11 @@ test('销售预测文件缺失时阻止计算', () => {
   assert.equal(payload.status, 'missing_data');
 });
 
-test('参数边界校验阻止严重线低于偏高线', () => {
-  assert.throws(() => normalizeInventoryRiskParams({ transitHighDomestic: 100, transitSevereDomestic: 99 }), /不得低于/);
+test('参数归一化计算渠道周期并阻止负数', () => {
+  const params = normalizeInventoryRiskParams({});
+  assert.equal(params.channels.overseasUs.spotDays, 40);
+  assert.equal(params.channels.overseasUs.fullChainDays, 50);
+  assert.throws(() => normalizeInventoryRiskParams({ channels: { domestic: { bookingDays: -1 } } }), /非负数字/);
 });
 
 test('库存风险页面、权限与API均注册在gendanjindu', () => {
@@ -276,7 +332,7 @@ test('库存风险页面、权限与API均注册在gendanjindu', () => {
   assert.match(riskPage, /label="产品线"/);
   assert.match(riskPage, /label="系列"/);
   assert.match(riskPage, /label="型号"/);
-  assert.match(riskPage, /label="库存段"/);
+  assert.match(riskPage, /label="渠道"/);
   assert.match(riskPage, /label="处置动作"/);
   assert.match(riskPage, /label="预测销售"/);
   assert.match(riskPage, /有预测销售/);
@@ -288,6 +344,10 @@ test('库存风险页面、权限与API均注册在gendanjindu', () => {
   const summaryMarkup = riskPage.slice(riskPage.indexOf('<section className="inventory-risk-summary">'));
   assert.ok(summaryMarkup.indexOf('库存总量') < summaryMarkup.indexOf('className="restricted"'));
   assert.match(riskPage, /在库在途周转天数/);
+  assert.match(riskPage, /在库量可销天数/);
+  assert.match(riskPage, /全链路天数/);
+  assert.match(riskPage, /海外-美国/);
+  assert.match(riskPage, /海外-欧洲/);
   assert.match(riskPage, /'海外事业一部',[\s\S]*'海外事业二部',[\s\S]*'国内事业部',[\s\S]*'全球招商事业部'/);
   assert.match(riskPage, /sort\(compareBusinessUnitFilterOptions\)/);
   assert.equal((riskPage.match(/<RiskTable /g) || []).length, 1);

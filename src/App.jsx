@@ -96,6 +96,7 @@ const DIMENSION_SLOTS = [
     ['productLine', '销售产品线'],
     ['productSeries', '销售系列'],
     ['model', '型号'],
+    ['salesRegion', '销售区域'],
     ['pretaxPrice', '不含税结算价']
   ] },
   { id: 'purchaseAssignment', title: '采购分工', fields: [
@@ -2744,6 +2745,7 @@ const FIELD_MAPPING_ALIASES = {
   warehouseCode: ['仓库编码', '仓库代码', '仓库编号', '金蝶仓库编码', '仓库ID'],
   warehouseName: ['仓库名称', '仓库名', '金蝶仓库名称'],
   pretaxPrice: ['不含税结算价'],
+  salesRegion: ['销售区域'],
   marketplace: ['站点', '站点名称', '国家站点', '销售站点', '国家/地区'],
   level1WarehouseCategory: ['一级仓库分类', '仓库一级分类', '一级分类', '仓库大类', '一级仓库类型'],
   level2WarehouseCategory: ['二级仓库分类', '仓库二级分类', '二级分类', '仓库小类', '二级仓库类型']

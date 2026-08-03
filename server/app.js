@@ -27,6 +27,7 @@ import {
   normalizeInventoryRiskParams
 } from './inventory-risk.js';
 import { buildInventoryRiskWorkbook } from './inventory-risk-export.js';
+import { buildStyledExcelBuffer } from '../shared/excel-export.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -3554,14 +3555,14 @@ app.post('/api/inventory-risk/query', requireAuth, requirePage('inventoryRisk'),
   }
 });
 
-app.post('/api/inventory-risk/export', requireAuth, requirePage('inventoryRisk'), (req, res) => {
+app.post('/api/inventory-risk/export', requireAuth, requirePage('inventoryRisk'), async (req, res) => {
   try {
     const payload = inventoryRiskData(req.body);
     if (!payload.ok) {
       return res.status(payload.status === 'invalid_params' ? 400 : 422).json(payload);
     }
     const workbook = buildInventoryRiskWorkbook(payload);
-    const buffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const buffer = Buffer.from(await buildStyledExcelBuffer(xlsx, workbook));
     const fileName = `供应计划分析_${nowText().slice(0, 10).replaceAll('-', '')}.xlsx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="inventory-risk.xlsx"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
@@ -3596,7 +3597,7 @@ app.get('/api/first-mile-board', requireAuth, requirePage('firstMileBoard'), (re
   res.json(firstMileBoardModel());
 });
 
-app.post('/api/first-mile-board/export', requireAuth, requirePage('firstMileBoard'), (req, res) => {
+app.post('/api/first-mile-board/export', requireAuth, requirePage('firstMileBoard'), async (req, res) => {
   const rows = filterFirstMileRows(firstMileBoardModel().rows, req.body?.filters || {});
   const headers = [
     '运输方式', '货物状态', '事业部', '店铺', '运营', '销售产品线', '销售系列',
@@ -3615,7 +3616,7 @@ app.post('/api/first-mile-board/export', requireAuth, requirePage('firstMileBoar
   const worksheet = xlsx.utils.aoa_to_sheet([headers, ...data]);
   worksheet['!cols'] = headers.map((header) => ({ wch: Math.max(12, Math.min(30, header.length * 2 + 4)) }));
   xlsx.utils.book_append_sheet(workbook, worksheet, '头程数据明细');
-  const buffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+  const buffer = Buffer.from(await buildStyledExcelBuffer(xlsx, workbook));
   const fileName = `头程数据看板_${nowText().slice(0, 10).replace(/-/g, '')}.xlsx`;
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="first-mile-board.xlsx"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
@@ -4016,7 +4017,7 @@ app.get('/api/difference-allocations/unassigned-purchase-orders', requireAuth, r
   });
 });
 
-app.get('/api/difference-allocations/unassigned-purchase-orders/export', requireAuth, requirePage('differenceAllocation'), (req, res) => {
+app.get('/api/difference-allocations/unassigned-purchase-orders/export', requireAuth, requirePage('differenceAllocation'), async (req, res) => {
   const rows = unassignedPurchaseOrderRows();
   const headers = ['采购组织', '供应商', '创建人', '采购日期', '采购订单号', '物料编码', '物料名称', '原采购数量', '新采购数量'];
   const aoa = [headers, ...rows.map((row) => [
@@ -4034,7 +4035,7 @@ app.get('/api/difference-allocations/unassigned-purchase-orders/export', require
   const worksheet = xlsx.utils.aoa_to_sheet(aoa);
   worksheet['!cols'] = [18, 36, 14, 16, 18, 18, 42, 14, 14].map((wch) => ({ wch }));
   xlsx.utils.book_append_sheet(workbook, worksheet, '未分配采购下单人明细');
-  const buffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+  const buffer = Buffer.from(await buildStyledExcelBuffer(xlsx, workbook));
   const fileName = '未分配采购下单人明细.xlsx';
   res.setHeader('Content-Disposition', `attachment; filename="unassigned-purchase-owner-details.xlsx"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -4486,7 +4487,7 @@ app.post('/api/inventory', requireAuth, requirePage('inventory'), (req, res) => 
   res.json({ rows: all('SELECT * FROM inventory ORDER BY business_unit, supplier, material_code') });
 });
 
-app.get('/api/progress/export', requireAuth, (req, res) => {
+app.get('/api/progress/export', requireAuth, async (req, res) => {
   const rows = demandRows(false, req.user).filter((row) => numberValue(row.remainingInboundQty) > 0);
   const headers = ['demandKey', '采购组', '采购下单人', '月份', '采购订单号', '创建人', 'OA备货流程号', '采购组织', '事业部', '供应商', '产品线', '系列', '物料编码', '物料', '物流编码', 'SKU', '未交付数量', '在产品', '完工产品', '已发货数量', '备注'];
   const aoa = [headers];
@@ -4502,7 +4503,7 @@ app.get('/api/progress/export', requireAuth, (req, res) => {
   const wb = xlsx.utils.book_new();
   const ws = xlsx.utils.aoa_to_sheet(aoa);
   xlsx.utils.book_append_sheet(wb, ws, '生产跟进');
-  const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const buf = Buffer.from(await buildStyledExcelBuffer(xlsx, wb));
   res.setHeader('Content-Disposition', `attachment; filename="progress-export.xlsx"; filename*=UTF-8''${encodeURIComponent('生产跟进导出.xlsx')}`);
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.send(buf);
@@ -4789,7 +4790,7 @@ app.get('/api/operation-logs', requireAuth, requirePage('operationLogs'), (req, 
   });
 });
 
-app.post('/api/operation-logs/export', requireAuth, requirePage('operationLogs'), (req, res) => {
+app.post('/api/operation-logs/export', requireAuth, requirePage('operationLogs'), async (req, res) => {
   const rows = filteredOperationLogs(req.body?.filters || {});
   const headers = ['操作时间', '登录人', '角色', '事件类型', '页面', '操作类型', '操作内容/对象', '补充信息', '结果', '状态码', '登录位置(IP)', '设备/浏览器', '请求方式', '请求路径'];
   const data = rows.map((row) => [
@@ -4800,7 +4801,7 @@ app.post('/api/operation-logs/export', requireAuth, requirePage('operationLogs')
   const workbook = xlsx.utils.book_new();
   const worksheet = xlsx.utils.aoa_to_sheet([headers, ...data]);
   xlsx.utils.book_append_sheet(workbook, worksheet, '操作日常');
-  const buffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+  const buffer = Buffer.from(await buildStyledExcelBuffer(xlsx, workbook));
   const fileName = `操作日常_${nowText().slice(0, 10).replaceAll('-', '')}.xlsx`;
   res.setHeader('Content-Disposition', `attachment; filename="operation-logs.xlsx"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

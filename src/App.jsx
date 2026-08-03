@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { purchaseTrackingBusinessUnit } from './business-unit.js';
 import InventoryCalculationGuide from './InventoryCalculationGuide.jsx';
 import InventoryRiskPage from './InventoryRiskPage.jsx';
+import { writeStyledExcelFile } from '../shared/excel-export.js';
 
 const API = import.meta.env.DEV ? 'http://localhost:4003' : '';
 const TOKEN_KEY = 'gendanjinduToken';
@@ -944,7 +945,7 @@ function InventoryPurchaseDashboard({ rows, loading }) {
       const workbook = XLSX.utils.book_new();
       const worksheet = XLSX.utils.aoa_to_sheet([columns, ...filteredRows.map(renderRow)]);
       XLSX.utils.book_append_sheet(workbook, worksheet, '采购未交付');
-      XLSX.writeFile(workbook, `采购未交付_${todayText()}.xlsx`);
+      await writeStyledExcelFile(XLSX, workbook, `采购未交付_${todayText()}.xlsx`);
     } finally {
       setExporting(false);
     }
@@ -1136,7 +1137,7 @@ function LegacyInventorySummary({ token, active }) {
       const workbook = XLSX.utils.book_new();
       const worksheet = XLSX.utils.aoa_to_sheet(aoa);
       XLSX.utils.book_append_sheet(workbook, worksheet, '库存汇总');
-      XLSX.writeFile(workbook, `库存汇总_${todayText()}.xlsx`);
+      await writeStyledExcelFile(XLSX, workbook, `库存汇总_${todayText()}.xlsx`);
     } finally {
       setExporting(false);
     }
@@ -1900,7 +1901,7 @@ function InventorySummary({ token, active }) {
       const worksheet = XLSX.utils.aoa_to_sheet(aoa);
       worksheet['!cols'] = tableColumns.map(([label]) => ({ wch: label === '来源仓库' ? 64 : Math.max(12, label.length + 2) }));
       XLSX.utils.book_append_sheet(workbook, worksheet, '库存汇总');
-      XLSX.writeFile(workbook, `库存汇总_${todayText()}.xlsx`);
+      await writeStyledExcelFile(XLSX, workbook, `库存汇总_${todayText()}.xlsx`);
     } finally {
       setExporting(false);
     }
@@ -2233,7 +2234,7 @@ function InventoryPurchaseFilePage({ token, active }) {
       ]);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([columns, ...rawRows]), '采购未交付');
-      XLSX.writeFile(workbook, `采购未交付_${todayText()}.xlsx`);
+      await writeStyledExcelFile(XLSX, workbook, `采购未交付_${todayText()}.xlsx`);
     } finally {
       setExporting(false);
     }
@@ -3192,7 +3193,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     const worksheet = XLSX.utils.aoa_to_sheet(aoa);
     worksheet['!cols'] = headers.map((header) => ({ wch: Math.max(12, header.length + 4) }));
     XLSX.utils.book_append_sheet(workbook, worksheet, '采购总览');
-    XLSX.writeFile(workbook, `采购总览_${todayText()}.xlsx`);
+    await writeStyledExcelFile(XLSX, workbook, `采购总览_${todayText()}.xlsx`);
   }
 
   return (
@@ -3404,7 +3405,7 @@ function CrossBorderInventoryBoard({ token, setMessage, refreshVersion = 0, onOp
       const worksheet = XLSX.utils.aoa_to_sheet(aoa);
       worksheet['!cols'] = headers.map((header) => ({ wch: Math.max(12, header.length + 4) }));
       XLSX.utils.book_append_sheet(workbook, worksheet, '跨境库存看板');
-      XLSX.writeFile(workbook, `跨境库存看板_${todayText()}.xlsx`);
+      await writeStyledExcelFile(XLSX, workbook, `跨境库存看板_${todayText()}.xlsx`);
       setMessage(`已导出当前筛选的 ${filteredRows.length} 行跨境库存数据。`);
     } catch (err) {
       setMessage(`导出失败：${err.message}`);
@@ -3698,7 +3699,7 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, act
         来源键: row.sourceKey, 店铺: row.storeName, 站点: row.marketplace, 仓库: row.warehouseName, 库存数量: row.inventoryQty, 更新时间: row.updatedAt
       }))), '源文件异常');
       if (!workbook.SheetNames.length) XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([['当前筛选无待维护数据']]), '摘要');
-      XLSX.writeFile(workbook, `维度表缺失_${todayText()}.xlsx`);
+      await writeStyledExcelFile(XLSX, workbook, `维度表缺失_${todayText()}.xlsx`);
       setMessage('维度表缺失明细已按目标维表导出。');
     } catch (err) {
       setMessage(`导出失败：${err.message}`);
@@ -4466,7 +4467,7 @@ function DomesticBoard({ token, setMessage }) {
       const workbook = XLSX.utils.book_new();
       const worksheet = XLSX.utils.aoa_to_sheet(aoa);
       XLSX.utils.book_append_sheet(workbook, worksheet, '国内事业部看板');
-      XLSX.writeFile(workbook, `国内事业部看板_${selectedSet.size ? '已选择' : '当前筛选'}_${todayText()}.xlsx`);
+      await writeStyledExcelFile(XLSX, workbook, `国内事业部看板_${selectedSet.size ? '已选择' : '当前筛选'}_${todayText()}.xlsx`);
       setMessage(`已导出 ${exportRows.length} 行国内事业部看板数据。`);
     } catch (err) {
       setMessage(`导出失败：${err.message}`);
@@ -4845,7 +4846,7 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
       const worksheet = XLSX.utils.aoa_to_sheet(aoa);
       worksheet['!cols'] = headers.map((header) => ({ wch: Math.max(12, header.length + 4) }));
       XLSX.utils.book_append_sheet(workbook, worksheet, '生产跟进');
-      XLSX.writeFile(workbook, `生产跟进_${todayText()}.xlsx`);
+      await writeStyledExcelFile(XLSX, workbook, `生产跟进_${todayText()}.xlsx`);
       setMessage(`已导出当前筛选 ${displayRows.length} 条生产跟进。`);
     } catch (err) {
       setMessage('导出失败：' + err.message);

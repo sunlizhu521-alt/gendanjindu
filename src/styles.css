@@ -2489,6 +2489,61 @@ h3 {
 .inventory-detail-table th:nth-child(1),
 .inventory-detail-table td:nth-child(1) {
   left: 0;
+  min-width: 130px;
+  width: 130px;
+}
+
+.inventory-detail-table th:nth-child(2),
+.inventory-detail-table td:nth-child(2) {
+  left: 130px;
+  min-width: 120px;
+  width: 120px;
+}
+
+.inventory-detail-table th:nth-child(3),
+.inventory-detail-table td:nth-child(3) {
+  left: 250px;
+  min-width: 120px;
+  width: 120px;
+}
+
+.inventory-detail-table th:nth-child(4),
+.inventory-detail-table td:nth-child(4) {
+  left: 370px;
+  min-width: 120px;
+  width: 120px;
+}
+
+.inventory-detail-table th:nth-child(5),
+.inventory-detail-table td:nth-child(5) {
+  left: 490px;
+  min-width: 180px;
+  width: 180px;
+  box-shadow: 3px 0 4px rgb(15 23 42 / 8%);
+}
+
+.inventory-detail-table th:nth-child(-n + 5),
+.inventory-detail-table td:nth-child(-n + 5) {
+  position: sticky;
+  z-index: 10;
+}
+
+.inventory-detail-table th:nth-child(-n + 5) {
+  z-index: 30;
+  background: #eaf6f5;
+}
+
+.inventory-detail-table tbody tr:nth-child(even) td:nth-child(-n + 5) {
+  background: #fafcfd;
+}
+
+.inventory-detail-table tbody tr.mapping-conflict td:nth-child(-n + 5) {
+  background: #fff7ed;
+}
+
+.inventory-detail-table.show-source-warehouses th:nth-child(1),
+.inventory-detail-table.show-source-warehouses td:nth-child(1) {
+  left: 0;
   min-width: var(--inventory-source-warehouse-width);
   width: var(--inventory-source-warehouse-width);
   max-width: var(--inventory-source-warehouse-width);
@@ -2498,58 +2553,59 @@ h3 {
   vertical-align: top;
 }
 
-.inventory-detail-table th:nth-child(2),
-.inventory-detail-table td:nth-child(2) {
+.inventory-detail-table.show-source-warehouses th:nth-child(2),
+.inventory-detail-table.show-source-warehouses td:nth-child(2) {
   left: var(--inventory-source-warehouse-width);
   min-width: 130px;
   width: 130px;
 }
 
-.inventory-detail-table th:nth-child(3),
-.inventory-detail-table td:nth-child(3) {
+.inventory-detail-table.show-source-warehouses th:nth-child(3),
+.inventory-detail-table.show-source-warehouses td:nth-child(3) {
   left: calc(var(--inventory-source-warehouse-width) + 130px);
   min-width: 120px;
   width: 120px;
 }
 
-.inventory-detail-table th:nth-child(4),
-.inventory-detail-table td:nth-child(4) {
+.inventory-detail-table.show-source-warehouses th:nth-child(4),
+.inventory-detail-table.show-source-warehouses td:nth-child(4) {
   left: calc(var(--inventory-source-warehouse-width) + 250px);
   min-width: 120px;
   width: 120px;
 }
 
-.inventory-detail-table th:nth-child(5),
-.inventory-detail-table td:nth-child(5) {
+.inventory-detail-table.show-source-warehouses th:nth-child(5),
+.inventory-detail-table.show-source-warehouses td:nth-child(5) {
   left: calc(var(--inventory-source-warehouse-width) + 370px);
   min-width: 120px;
   width: 120px;
+  box-shadow: none;
 }
 
-.inventory-detail-table th:nth-child(6),
-.inventory-detail-table td:nth-child(6) {
+.inventory-detail-table.show-source-warehouses th:nth-child(6),
+.inventory-detail-table.show-source-warehouses td:nth-child(6) {
   left: calc(var(--inventory-source-warehouse-width) + 490px);
   min-width: 180px;
   width: 180px;
   box-shadow: 3px 0 4px rgb(15 23 42 / 8%);
 }
 
-.inventory-detail-table th:nth-child(-n + 6),
-.inventory-detail-table td:nth-child(-n + 6) {
+.inventory-detail-table.show-source-warehouses th:nth-child(6),
+.inventory-detail-table.show-source-warehouses td:nth-child(6) {
   position: sticky;
   z-index: 10;
 }
 
-.inventory-detail-table th:nth-child(-n + 6) {
+.inventory-detail-table.show-source-warehouses th:nth-child(6) {
   z-index: 30;
   background: #eaf6f5;
 }
 
-.inventory-detail-table tbody tr:nth-child(even) td:nth-child(-n + 6) {
+.inventory-detail-table.show-source-warehouses tbody tr:nth-child(even) td:nth-child(6) {
   background: #fafcfd;
 }
 
-.inventory-detail-table tbody tr.mapping-conflict td:nth-child(-n + 6) {
+.inventory-detail-table.show-source-warehouses tbody tr.mapping-conflict td:nth-child(6) {
   background: #fff7ed;
 }
 

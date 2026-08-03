@@ -1718,6 +1718,7 @@ function InventorySummary({ token, active }) {
   const [exporting, setExporting] = useState(false);
   const [showMethodology, setShowMethodology] = useState(false);
   const [showSourceBreakdown, setShowSourceBreakdown] = useState(false);
+  const [showSourceWarehouses, setShowSourceWarehouses] = useState(false);
 
   useEffect(() => {
     if (!active) return undefined;
@@ -1831,7 +1832,7 @@ function InventorySummary({ token, active }) {
   };
   const monthColumns = data?.months || [];
   const tableColumns = [
-    ['来源仓库', (row) => <InventorySourceWarehouseCell row={row} />],
+    ...(showSourceWarehouses ? [['来源仓库', (row) => <InventorySourceWarehouseCell row={row} />]] : []),
     ['匹配列（事业部+物料编码）', (row) => row.matchKey],
     ['事业部', (row) => row.businessUnit],
     ['产品线', (row) => row.productLine],
@@ -1880,7 +1881,7 @@ function InventorySummary({ token, active }) {
       const aoa = [
         tableColumns.map(([label]) => label),
         ...filteredRows.map((row) => [
-          inventorySourceWarehouses(row, '\n'),
+          ...(showSourceWarehouses ? [inventorySourceWarehouses(row, '\n')] : []),
           row.matchKey, row.businessUnit, row.productLine, row.productSeries, row.materialCode, row.sku, row.materialName,
           ...monthColumns.map((month) => numberValue(row.salesByMonth?.[month])),
           numberValue(row.salesQty), numberValue(row.salesAmount), row.quantityAbc, row.amountAbc,
@@ -1989,6 +1990,7 @@ function InventorySummary({ token, active }) {
             <strong>事业部订单库存明细</strong>
             <div className="inventory-table-actions">
               <span>当前筛选 {filteredRows.length} / {rows.length} 条，异常 {filteredRows.filter((row) => row.mappingStatus !== '完整').length} 条</span>
+              <button type="button" className="ghost compact-button" onClick={() => setShowSourceWarehouses((current) => !current)}>{showSourceWarehouses ? '隐藏来源仓库' : '显示来源仓库'}</button>
               <button type="button" className="ghost compact-button" onClick={() => setShowSourceBreakdown((current) => !current)}>{showSourceBreakdown ? '隐藏来源分层' : '显示来源分层'}</button>
               <button type="button" className="ghost compact-button" disabled={exporting || !filteredRows.length} onClick={exportRows}>{exporting ? '导出中...' : '导出Excel'}</button>
               <label className="inventory-page-size">每页
@@ -1999,7 +2001,7 @@ function InventorySummary({ token, active }) {
             </div>
           </div>
           <div className="inventory-detail-scroll">
-            <table className="inventory-detail-table">
+            <table className={`inventory-detail-table${showSourceWarehouses ? ' show-source-warehouses' : ''}`}>
               <thead><tr>{tableColumns.map(([label]) => <th key={label}>{label}</th>)}</tr></thead>
               <tbody>
                 {pageRows.length === 0 ? (

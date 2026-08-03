@@ -5315,7 +5315,22 @@ th {
 }
 
 .inventory-kpi strong {
-  font-size: 29px;
+  overflow-wrap: normal;
+  white-space: nowrap;
+  font-size: 26px;
+}
+
+.inventory-purchase-kpi-row {
+  grid-template-columns: minmax(34px, auto) minmax(0, 1fr);
+  column-gap: 6px;
+}
+
+.inventory-purchase-kpi-row strong {
+  text-align: right;
+}
+
+.inventory-purchase-kpi-row.value strong {
+  font-size: 15px;
 }
 
 .inventory-kpi small,

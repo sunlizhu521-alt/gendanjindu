@@ -80,8 +80,11 @@
 
 .inventory-risk-parameters {
   display: grid;
-  grid-template-columns: 1fr 1fr minmax(260px, .75fr);
+  grid-template-columns: minmax(500px, 1fr) minmax(500px, 1fr) minmax(370px, .75fr);
   gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-gutter: stable;
 }
 
 .inventory-risk-parameters fieldset {
@@ -102,7 +105,7 @@
 
 .inventory-risk-input-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -116,6 +119,7 @@
   min-width: 0;
   color: #64748b;
   font-size: .72rem;
+  white-space: nowrap;
 }
 
 .inventory-risk-input-grid input {
@@ -330,7 +334,6 @@
 .inventory-risk-logic-grid p { margin: 0; color: #64748b; font-size: .82rem; line-height: 1.7; }
 
 @media (max-width: 1100px) {
-  .inventory-risk-parameters { grid-template-columns: 1fr; }
   .inventory-risk-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .inventory-risk-logic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -338,8 +341,6 @@
 @media (max-width: 700px) {
   .inventory-risk-header { flex-direction: column; }
   .inventory-risk-actions { justify-content: flex-start; }
-  .inventory-risk-input-grid,
-  .inventory-risk-parameters fieldset:last-child .inventory-risk-input-grid,
   .inventory-risk-summary,
   .inventory-risk-logic-grid,
   .inventory-risk-diagnostic-grid { grid-template-columns: 1fr; }

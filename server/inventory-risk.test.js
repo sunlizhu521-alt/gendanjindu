@@ -151,6 +151,42 @@ test('同一物料按国内和海外独立计算，最近N月均销独立展示'
   assert.equal(payload.periods.historicalEndMonth, '2026-07');
 });
 
+test('同一物料的不同海外事业部独立计算，不合并事业部或销售预测', () => {
+  const payload = buildInventoryRiskAnalysis({
+    now: NOW,
+    inventoryModel: {
+      rows: [
+        summaryRow({ businessUnit: '海外事业一部', inventoryQty: 400 }),
+        summaryRow({ businessUnit: '海外事业二部', inventoryQty: 800 })
+      ],
+      anomalies: []
+    },
+    forecastRows: [
+      wideForecast({ 事业部: '海外事业一部' }),
+      wideForecast({
+        事业部: '海外事业二部',
+        '2026年8月': 200,
+        '2026-09': 200,
+        '2026/10': 200,
+        '2026.11': 200,
+        '2026年12月': 200,
+        '2027-01': 200
+      })
+    ]
+  });
+  assert.equal(payload.ok, true);
+  assert.equal(payload.restricted.length, 2);
+  assert.equal(payload.rows.length, 2);
+  const first = payload.rows.find((row) => row.businessUnit === '海外事业一部');
+  const second = payload.rows.find((row) => row.businessUnit === '海外事业二部');
+  assert.equal(first.forecastMonthlyAverage, 100);
+  assert.equal(second.forecastMonthlyAverage, 200);
+  assert.equal(first.onHandQty, 400);
+  assert.equal(second.onHandQty, 800);
+  assert.equal(payload.rows.some((row) => row.businessUnit.includes('&')), false);
+  assert.equal(new Set(payload.rows.map((row) => row.id)).size, 2);
+});
+
 test('阈值相等时命中且停止采购优先于限制采购', () => {
   const payload = buildInventoryRiskAnalysis({
     now: NOW,
@@ -223,9 +259,15 @@ test('库存风险页面、权限与API均注册在gendanjindu', () => {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const server = fs.readFileSync(path.join(root, 'server', 'app.js'), 'utf8');
   const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
+  const riskPage = fs.readFileSync(path.join(root, 'src', 'InventoryRiskPage.jsx'), 'utf8');
   assert.match(server, /'inventoryRisk'/);
   assert.match(server, /\/api\/inventory-risk\/query/);
   assert.match(server, /\/api\/inventory-risk\/export/);
   assert.match(client, /库存风险/);
   assert.match(client, /InventoryRiskPage/);
+  assert.match(server, /json_to_sheet\(inventoryRiskExportRows\(payload\.rows\)\), '处置清单'/);
+  assert.match(riskPage, /label="事业部"/);
+  assert.match(riskPage, /label="库存段"/);
+  assert.match(riskPage, /label="处置动作"/);
+  assert.equal((riskPage.match(/<RiskTable /g) || []).length, 1);
 });

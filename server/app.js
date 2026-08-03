@@ -2392,7 +2392,7 @@ function inventoryRiskExportRows(rows) {
     '产品线': row.productLine,
     '系列': row.productSeries,
     '库存段': row.inventorySegment,
-    '事业部': row.businessUnits,
+    '事业部': row.businessUnit,
     '在库数量': row.onHandQty,
     '在途数量': row.inTransitQty,
     '待交付数量': row.undeliveredQty,
@@ -3582,8 +3582,7 @@ app.post('/api/inventory-risk/export', requireAuth, requirePage('inventoryRisk')
       return res.status(payload.status === 'invalid_params' ? 400 : 422).json(payload);
     }
     const workbook = xlsx.utils.book_new();
-    xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(inventoryRiskExportRows(payload.restricted)), '限制采购');
-    xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(inventoryRiskExportRows(payload.stopped)), '停止采购');
+    xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(inventoryRiskExportRows(payload.rows)), '处置清单');
     xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(payload.diagnostics.mappingIssues), '映射诊断');
     xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(payload.diagnostics.forecastIssues), '预测诊断');
     xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet([{

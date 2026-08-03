@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 const API = import.meta.env.DEV ? 'http://localhost:4003' : '';
 
@@ -45,6 +45,12 @@ const PARAM_GROUPS = [
   }
 ];
 
+const EMPTY_RISK_FILTERS = Object.freeze({
+  businessUnits: [],
+  inventorySegments: [],
+  actions: []
+});
+
 function numberText(value, maximumFractionDigits = 1) {
   const number = Number(value);
   if (!Number.isFinite(number)) return '-';
@@ -68,6 +74,57 @@ async function apiRequest(path, token, options = {}) {
     throw error;
   }
   return payload;
+}
+
+function RiskMultiSelectFilter({ label, allLabel, value = [], options = [], onChange }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  const availableOptions = useMemo(
+    () => [...new Set(options.map((option) => String(option || '').trim()).filter(Boolean))],
+    [options]
+  );
+  const selected = value.filter((item) => availableOptions.includes(item));
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (rootRef.current && !rootRef.current.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick);
+  }, [open]);
+
+  const buttonLabel = selected.length === 0
+    ? allLabel
+    : selected.length <= 2
+      ? selected.join('、')
+      : `已选${selected.length}项`;
+  const toggle = (option) => onChange(selected.includes(option)
+    ? selected.filter((item) => item !== option)
+    : [...selected, option]);
+
+  return (
+    <div className="multi-filter" ref={rootRef}>
+      <span className="multi-filter-label">{label}</span>
+      <button type="button" className="multi-filter-button" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+        <span>{buttonLabel}</span><b aria-hidden="true">⌄</b>
+      </button>
+      {open && (
+        <div className="multi-filter-menu">
+          <label className="multi-filter-option">
+            <input type="checkbox" checked={selected.length === 0} onChange={() => onChange([])} />
+            <span>{allLabel}</span>
+          </label>
+          {availableOptions.map((option) => (
+            <label key={option} className="multi-filter-option">
+              <input type="checkbox" checked={selected.includes(option)} onChange={() => toggle(option)} />
+              <span>{option}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ForecastParsingDiagnostics({ diagnostics }) {
@@ -110,7 +167,7 @@ function RiskPagination({ page, pages, onChange }) {
   );
 }
 
-function RiskTable({ title, tone, rows }) {
+function RiskTable({ rows }) {
   const pageSize = 20;
   const [page, setPage] = useState(1);
   const pages = Math.max(1, Math.ceil(rows.length / pageSize));
@@ -119,11 +176,11 @@ function RiskTable({ title, tone, rows }) {
   useEffect(() => setPage(1), [rows]);
 
   return (
-    <section className={`inventory-risk-result inventory-risk-result-${tone}`}>
+    <section className="inventory-risk-result inventory-risk-result-combined">
       <div className="inventory-risk-section-heading">
         <div>
           <span className="inventory-risk-section-kicker">处置清单</span>
-          <h3>{title}</h3>
+          <h3>库存风险处置清单</h3>
         </div>
         <strong>{numberText(rows.length, 0)} 个物料</strong>
       </div>
@@ -141,13 +198,14 @@ function RiskTable({ title, tone, rows }) {
               <tr key={row.id}>
                 <td>{row.materialCode}</td><td>{row.sku}</td><td>{row.materialName}</td><td>{row.productLine}</td>
                 <td><span className={`inventory-risk-segment inventory-risk-segment-${row.inventorySegment === '国内' ? 'domestic' : 'overseas'}`}>{row.inventorySegment}</span></td>
-                <td>{row.businessUnits}</td><td>{numberText(row.onHandQty)}</td><td>{numberText(row.inTransitQty)}</td>
+                <td>{row.businessUnit}</td><td>{numberText(row.onHandQty)}</td><td>{numberText(row.inTransitQty)}</td>
                 <td>{numberText(row.undeliveredQty)}</td><td>{numberText(row.forecastMonthlyAverage)}</td>
                 <td>{numberText(row.historicalMonthlyAverage)}</td><td>{numberText(row.transitTurnoverDays)}</td>
-                <td>{numberText(row.fullChainCoverageDays)}</td><td>{row.forecastStatus}</td><td><strong>{row.action}</strong></td>
+                <td>{numberText(row.fullChainCoverageDays)}</td><td>{row.forecastStatus}</td>
+                <td><strong className={`inventory-risk-action inventory-risk-action-${row.action === '停止采购' ? 'stopped' : 'restricted'}`}>{row.action}</strong></td>
               </tr>
             ))}
-            {!visibleRows.length && <tr><td className="inventory-risk-empty" colSpan="15">当前没有需要{title}的物料</td></tr>}
+            {!visibleRows.length && <tr><td className="inventory-risk-empty" colSpan="15">当前筛选条件下没有需要处置的物料</td></tr>}
           </tbody>
         </table>
       </div>
@@ -165,7 +223,7 @@ function InventoryRiskLogic({ onBack }) {
       </header>
       <div className="inventory-risk-logic-grid">
         <section><span>01</span><h3>数据来源</h3><p>库存、在途、待交付、商品分类和历史销售完全复用“库存汇总”的标准化结果；销售预测读取“库存汇总文件库”的槽位 15。</p></section>
-        <section><span>02</span><h3>物料与库存段</h3><p>以物料编码为主键，SKU 仅展示。国内事业部、销售部-工厂归为国内；其他已匹配事业部归为海外。同一物料按国内、海外分别判断。</p></section>
+        <section><span>02</span><h3>物料与库存段</h3><p>以事业部 + 物料编码为主键，SKU 仅展示。同一物料属于多个事业部时分别计算，不合并到一行。国内事业部、销售部-工厂归为国内库存段，其他已匹配事业部归为海外库存段。</p></section>
         <section><span>03</span><h3>销售速度</h3><p>预测月均销量取本月起连续 N 个月预测数量合计除以 N；最近 N 月平均月销量独立取销售数据最新月份向前 N 个月。</p></section>
         <section><span>04</span><h3>标准一</h3><p>在途周转天数 =（在库数量 + 在途数量）÷（预测月均销量 ÷ 30）。达到严重线停止采购，达到偏高线限制采购。</p></section>
         <section><span>05</span><h3>标准二</h3><p>全链覆盖天数 =（在库数量 + 在途数量 + 待交付数量）÷（预测月均销量 ÷ 30）+ 交期天数。达到干预线停止采购，达到关注线限制采购。</p></section>
@@ -183,6 +241,7 @@ export default function InventoryRiskPage({ token, active }) {
   const [errorDiagnostics, setErrorDiagnostics] = useState(null);
   const [showLogic, setShowLogic] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [filters, setFilters] = useState({ ...EMPTY_RISK_FILTERS });
 
   async function calculate(force = false) {
     setLoading(true);
@@ -194,6 +253,7 @@ export default function InventoryRiskPage({ token, active }) {
         body: JSON.stringify({ ...params, force })
       });
       setResult(payload);
+      setFilters({ ...EMPTY_RISK_FILTERS });
       setLoaded(true);
     } catch (requestError) {
       setError(requestError.message);
@@ -232,6 +292,27 @@ export default function InventoryRiskPage({ token, active }) {
     }
   }
 
+  const actionRows = useMemo(
+    () => result?.rows || [...(result?.stopped || []), ...(result?.restricted || [])],
+    [result]
+  );
+  const filterOptions = useMemo(() => ({
+    businessUnits: [...new Set(actionRows.map((row) => row.businessUnit).filter(Boolean))]
+      .sort((left, right) => left.localeCompare(right, 'zh-CN')),
+    inventorySegments: [...new Set(actionRows.map((row) => row.inventorySegment).filter(Boolean))],
+    actions: ['限制采购', '停止采购'].filter((action) => actionRows.some((row) => row.action === action))
+  }), [actionRows]);
+  const filteredRows = useMemo(() => actionRows.filter((row) => (
+    (filters.businessUnits.length === 0 || filters.businessUnits.includes(row.businessUnit))
+    && (filters.inventorySegments.length === 0 || filters.inventorySegments.includes(row.inventorySegment))
+    && (filters.actions.length === 0 || filters.actions.includes(row.action))
+  )), [actionRows, filters]);
+  const filteredSummary = useMemo(() => ({
+    restrictedCount: filteredRows.filter((row) => row.action === '限制采购').length,
+    stoppedCount: filteredRows.filter((row) => row.action === '停止采购').length
+  }), [filteredRows]);
+  const hasFilters = Object.values(filters).some((values) => values.length > 0);
+
   if (showLogic) return <InventoryRiskLogic onBack={() => setShowLogic(false)} />;
 
   const summary = result?.summary || {};
@@ -265,10 +346,17 @@ export default function InventoryRiskPage({ token, active }) {
 
       {result && (
         <>
+          <section className="inventory-risk-filters" aria-label="库存风险筛选器">
+            <RiskMultiSelectFilter label="事业部" allLabel="全部事业部" value={filters.businessUnits} options={filterOptions.businessUnits} onChange={(value) => setFilters((current) => ({ ...current, businessUnits: value }))} />
+            <RiskMultiSelectFilter label="库存段" allLabel="全部库存段" value={filters.inventorySegments} options={filterOptions.inventorySegments} onChange={(value) => setFilters((current) => ({ ...current, inventorySegments: value }))} />
+            <RiskMultiSelectFilter label="处置动作" allLabel="全部处置动作" value={filters.actions} options={filterOptions.actions} onChange={(value) => setFilters((current) => ({ ...current, actions: value }))} />
+            <button className="inventory-risk-button secondary inventory-risk-filter-clear" type="button" disabled={!hasFilters} onClick={() => setFilters({ ...EMPTY_RISK_FILTERS })}>清空筛选</button>
+            <span className="inventory-risk-filter-count">筛选结果 {numberText(filteredRows.length, 0)} 条</span>
+          </section>
           <section className="inventory-risk-summary">
-            <article className="restricted"><span>限制采购</span><strong>{numberText(summary.restrictedCount, 0)}</strong><small>达到偏高或关注线</small></article>
-            <article className="stopped"><span>停止采购</span><strong>{numberText(summary.stoppedCount, 0)}</strong><small>达到严重或干预线</small></article>
-            <article><span>正常未展示</span><strong>{numberText(summary.normalCount, 0)}</strong><small>两个标准均在安全范围</small></article>
+            <article className="restricted"><span>限制采购</span><strong>{numberText(filteredSummary.restrictedCount, 0)}</strong><small>当前筛选结果</small></article>
+            <article className="stopped"><span>停止采购</span><strong>{numberText(filteredSummary.stoppedCount, 0)}</strong><small>当前筛选结果</small></article>
+            <article><span>正常未展示</span><strong>{numberText(summary.normalCount, 0)}</strong><small>全量正常物料</small></article>
             <article className={summary.mappingIssueCount ? 'warning' : ''}><span>映射待维护</span><strong>{numberText(summary.mappingIssueCount, 0)}</strong><small>影响数量 {numberText(summary.mappingIssueQty)}</small></article>
           </section>
           <div className="inventory-risk-periods">
@@ -276,8 +364,7 @@ export default function InventoryRiskPage({ token, active }) {
             <span>历史销量区间：{result.periods.historicalStartMonth || '暂无'} 至 {result.periods.historicalEndMonth || '暂无'}</span>
             <span>生成时间：{new Date(result.generatedAt).toLocaleString('zh-CN')}</span>
           </div>
-          <RiskTable title="限制采购" tone="restricted" rows={result.restricted || []} />
-          <RiskTable title="停止采购" tone="stopped" rows={result.stopped || []} />
+          <RiskTable rows={filteredRows} />
           {(result.diagnostics.mappingIssues.length > 0 || result.diagnostics.forecastIssues.length > 0) && (
             <details className="inventory-risk-diagnostics">
               <summary>数据诊断：映射问题 {result.diagnostics.mappingIssues.length} 条，预测问题 {result.diagnostics.forecastIssues.length} 条</summary>

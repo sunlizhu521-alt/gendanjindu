@@ -135,6 +135,36 @@
   font-size: .82rem;
 }
 
+.inventory-risk-filters {
+  position: relative;
+  z-index: 80;
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  overflow: visible;
+  padding: 11px 12px;
+  border: 1px solid #dce5ef;
+  border-radius: 7px;
+  background: #f8fafc;
+}
+
+.inventory-risk-filters .multi-filter {
+  flex-basis: 190px;
+  width: 190px;
+}
+
+.inventory-risk-filters .multi-filter-menu { z-index: 120; }
+.inventory-risk-filter-clear { height: 34px; }
+
+.inventory-risk-filter-count {
+  align-self: center;
+  margin-left: auto;
+  color: #64748b;
+  font-size: .76rem;
+  font-weight: 700;
+}
+
 .inventory-risk-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -178,8 +208,7 @@
   background: #fff;
 }
 
-.inventory-risk-result-restricted { border-top: 3px solid #d97706; }
-.inventory-risk-result-stopped { border-top: 3px solid #dc2626; }
+.inventory-risk-result-combined { border-top: 3px solid #087f76; }
 
 .inventory-risk-section-heading {
   display: flex;
@@ -253,6 +282,16 @@
 
 .inventory-risk-segment-domestic { background: #e6f7ef; color: #147a50; }
 .inventory-risk-segment-overseas { background: #e8f1ff; color: #245aa8; }
+
+.inventory-risk-action {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: .7rem;
+}
+
+.inventory-risk-action-restricted { background: #fff2db; color: #a85b00; }
+.inventory-risk-action-stopped { background: #feecec; color: #b42318; }
 
 .inventory-risk-pagination {
   display: flex;
@@ -341,6 +380,7 @@
 @media (max-width: 700px) {
   .inventory-risk-header { flex-direction: column; }
   .inventory-risk-actions { justify-content: flex-start; }
+  .inventory-risk-filter-count { width: 100%; margin-left: 0; }
   .inventory-risk-summary,
   .inventory-risk-logic-grid,
   .inventory-risk-diagnostic-grid { grid-template-columns: 1fr; }

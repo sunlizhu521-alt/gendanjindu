@@ -51,8 +51,8 @@ function businessUnitRegion(value) {
   return DOMESTIC_BUSINESS_UNITS.has(businessUnit) ? '国内' : '海外';
 }
 
-function regionMaterialKey(region, materialCode) {
-  return `${region}\u001f${materialCode}`;
+function businessUnitMaterialKey(businessUnit, materialCode) {
+  return `${businessUnit}\u001f${materialCode}`;
 }
 
 function monthIndex(month) {
@@ -252,16 +252,16 @@ function uniqueSkuMap(rows) {
     .map(([sku, values]) => [sku, [...values][0]]));
 }
 
-function materialRegions(rows) {
-  const regions = new Map();
+function materialBusinessUnits(rows) {
+  const businessUnits = new Map();
   for (const row of rows) {
     const materialCode = materialCodeValue(row.materialCode);
-    const region = businessUnitRegion(row.businessUnit);
-    if (!materialCode || materialCode === '未匹配' || !region) continue;
-    if (!regions.has(materialCode)) regions.set(materialCode, new Set());
-    regions.get(materialCode).add(region);
+    const businessUnit = normalizedBusinessUnit(row.businessUnit);
+    if (!materialCode || materialCode === '未匹配' || !businessUnit || businessUnit === '未匹配') continue;
+    if (!businessUnits.has(materialCode)) businessUnits.set(materialCode, new Set());
+    businessUnits.get(materialCode).add(businessUnit);
   }
-  return regions;
+  return businessUnits;
 }
 
 function forecastMaterialCode(row, skuMap) {
@@ -273,7 +273,7 @@ function forecastMaterialCode(row, skuMap) {
 
 function buildForecastMap(forecastRows, summaryRows, forecastSource, now) {
   const skuMap = uniqueSkuMap(summaryRows);
-  const regionsByMaterial = materialRegions(summaryRows);
+  const businessUnitsByMaterial = materialBusinessUnits(summaryRows);
   const forecast = new Map();
   const issues = [];
   const columnPlan = forecastColumnPlan(forecastRows, forecastSource, now);
@@ -285,8 +285,8 @@ function buildForecastMap(forecastRows, summaryRows, forecastSource, now) {
     invalidLongMonth: 0,
     noValidMonthColumns: 0
   };
-  const add = (region, materialCode, month, value) => {
-    const key = regionMaterialKey(region, materialCode);
+  const add = (businessUnit, materialCode, month, value) => {
+    const key = businessUnitMaterialKey(businessUnit, materialCode);
     const target = forecast.get(key) || { months: new Map(), hasRecord: false };
     target.hasRecord = true;
     target.months.set(month, (target.months.get(month) || 0) + numberValue(value));
@@ -295,20 +295,21 @@ function buildForecastMap(forecastRows, summaryRows, forecastSource, now) {
 
   forecastRows.forEach((row, index) => {
     const materialCode = forecastMaterialCode(row, skuMap);
-    let region = businessUnitRegion(rowValue(row, ['事业部', '部门', '业务部门', '销售部门']));
-    if (!region && materialCode && regionsByMaterial.get(materialCode)?.size === 1) {
-      region = [...regionsByMaterial.get(materialCode)][0];
+    let businessUnit = normalizedBusinessUnit(rowValue(row, ['事业部', '部门', '业务部门', '销售部门']));
+    if ((!businessUnit || businessUnit === '未匹配') && materialCode && businessUnitsByMaterial.get(materialCode)?.size === 1) {
+      businessUnit = [...businessUnitsByMaterial.get(materialCode)][0];
     }
-    if (!materialCode || !region) {
+    const region = businessUnitRegion(businessUnit);
+    if (!materialCode || !businessUnit || businessUnit === '未匹配' || !region) {
       if (!materialCode) reasonCounts.missingMaterialCode += 1;
-      if (!region) reasonCounts.missingBusinessUnit += 1;
-      issues.push({ id: `forecast-${index}`, row: index + 2, materialCode: materialCode || '未匹配', issue: materialCode ? '销售预测事业部缺失或无法判断国内/海外' : '销售预测物料编码或SKU未匹配' });
+      if (!businessUnit || businessUnit === '未匹配' || !region) reasonCounts.missingBusinessUnit += 1;
+      issues.push({ id: `forecast-${index}`, row: index + 2, materialCode: materialCode || '未匹配', issue: materialCode ? '销售预测事业部缺失或无法匹配到唯一事业部' : '销售预测物料编码或SKU未匹配' });
       return;
     }
     const longMonthValue = rowValue(row, ['月份', '预测月份', '日期', '销售月份']);
     const longMonth = forecastMonth(longMonthValue);
     if (longMonth) {
-      add(region, materialCode, longMonth, rowValue(row, ['预测数量', '销售预测', '预测销量', '数量']));
+      add(businessUnit, materialCode, longMonth, rowValue(row, ['预测数量', '销售预测', '预测销量', '数量']));
       reasonCounts.parsedRows += 1;
       return;
     }
@@ -316,7 +317,7 @@ function buildForecastMap(forecastRows, summaryRows, forecastSource, now) {
     columnPlan.columns.forEach(({ header, month }) => {
       if (!Object.hasOwn(row || {}, header)) return;
       parsedMonths += 1;
-      add(region, materialCode, month, row[header]);
+      add(businessUnit, materialCode, month, row[header]);
     });
     if (!parsedMonths) {
       const issue = text(longMonthValue) ? '销售预测月份格式无法识别' : '销售预测未找到有效月份列';
@@ -345,24 +346,24 @@ function buildForecastMap(forecastRows, summaryRows, forecastSource, now) {
 }
 
 function addAggregate(map, row) {
-  const region = businessUnitRegion(row.businessUnit);
+  const businessUnit = normalizedBusinessUnit(row.businessUnit);
+  const region = businessUnitRegion(businessUnit);
   const materialCode = materialCodeValue(row.materialCode);
-  if (!region || !materialCode || materialCode === '未匹配') return;
-  const key = regionMaterialKey(region, materialCode);
+  if (!businessUnit || businessUnit === '未匹配' || !region || !materialCode || materialCode === '未匹配') return;
+  const key = businessUnitMaterialKey(businessUnit, materialCode);
   const current = map.get(key) || {
+    businessUnit,
     region,
     materialCode,
     sku: row.sku || '未匹配',
     materialName: row.materialName || '未匹配',
     productLine: row.productLine || '未匹配',
     productSeries: row.productSeries || '未匹配',
-    businessUnits: new Set(),
     onHandQty: 0,
     inTransitQty: 0,
     undeliveredQty: 0,
     salesByMonth: new Map()
   };
-  current.businessUnits.add(normalizedBusinessUnit(row.businessUnit));
   current.onHandQty += numberValue(row.inventoryQty);
   current.inTransitQty += numberValue(row.transitQty);
   current.undeliveredQty += numberValue(row.unfulfilledQty);
@@ -457,7 +458,8 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
       productLine: row.productLine,
       productSeries: row.productSeries,
       inventorySegment: row.region,
-      businessUnits: [...row.businessUnits].sort((left, right) => left.localeCompare(right, 'zh-Hans-CN')).join('&'),
+      businessUnit: row.businessUnit,
+      businessUnits: row.businessUnit,
       onHandQty: row.onHandQty,
       inTransitQty: row.inTransitQty,
       inventoryQty: row.onHandQty + row.inTransitQty,
@@ -474,9 +476,11 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
 
   const sorter = (left, right) => right.fullChainCoverageDays - left.fullChainCoverageDays
     || right.transitTurnoverDays - left.transitTurnoverDays
+    || left.businessUnit.localeCompare(right.businessUnit, 'zh-Hans-CN')
     || left.materialCode.localeCompare(right.materialCode, 'zh-Hans-CN', { numeric: true });
   restricted.sort(sorter);
   stopped.sort(sorter);
+  const rows = [...stopped, ...restricted];
   const mappingIssues = (inventoryModel.anomalies || [])
     .filter((row) => RISK_SOURCE_TYPES.has(row.sourceType) && Math.abs(numberValue(row.qty)) > 0)
     .map((row) => ({
@@ -513,6 +517,7 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
     },
     restricted,
     stopped,
+    rows,
     diagnostics: {
       mappingIssues,
       forecastIssues: forecastResult.issues,
@@ -523,7 +528,7 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
 
 export function inventoryRiskCacheKey(sourceVersion, input = {}, now = new Date()) {
   return [
-    'inventory-risk-v2',
+    'inventory-risk-v3',
     currentChinaMonth(now),
     sourceVersion,
     JSON.stringify(normalizeInventoryRiskParams(input))

@@ -38,3 +38,24 @@ test('事业部订单库存明细默认隐藏来源仓库并可同步展示和�
   assert.match(loadingProgress, /progress = 100/);
   assert.match(styles, /\.global-loading-progress-track/);
 });
+
+test('销售与库存看板展示仅数量的来源校准和遗漏重叠提醒', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
+  const styles = fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8');
+  const reconciliation = client.slice(
+    client.indexOf('function InventoryQuantityReconciliation('),
+    client.indexOf('function InventorySummary(')
+  );
+
+  assert.match(reconciliation, /库存数量校准/);
+  assert.match(reconciliation, /遗漏/);
+  assert.match(reconciliation, /重叠/);
+  assert.match(reconciliation, /来源计算量/);
+  assert.match(reconciliation, /看板展示量/);
+  assert.match(reconciliation, /仅校验数量/);
+  assert.doesNotMatch(reconciliation, /货值|金额|元/);
+  assert.match(client, /<InventoryQuantityReconciliation data=\{data\?\.quantityReconciliation\}/);
+  assert.match(styles, /\.inventory-quantity-reconciliation\.warning/);
+  assert.match(styles, /\.inventory-reconciliation-table/);
+});

@@ -5333,6 +5333,161 @@ th {
   font-size: 15px;
 }
 
+.inventory-quantity-reconciliation {
+  overflow: hidden;
+  border: 1px solid #b8ddce;
+  border-left: 4px solid #198754;
+  border-radius: 7px;
+  background: #f4fbf7;
+}
+
+.inventory-quantity-reconciliation.warning {
+  border-color: #f2c0b8;
+  border-left-color: #d94b3d;
+  background: #fff8f6;
+}
+
+.inventory-reconciliation-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 13px;
+}
+
+.inventory-reconciliation-head > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.inventory-reconciliation-head > div:first-child strong {
+  color: #183047;
+  font-size: 14px;
+}
+
+.inventory-reconciliation-head > div:first-child span {
+  color: #5f7082;
+  font-size: 12px;
+}
+
+.inventory-reconciliation-metrics {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.inventory-reconciliation-metrics > span {
+  padding: 5px 8px;
+  border: 1px solid #d7e5de;
+  border-radius: 5px;
+  background: #fff;
+  color: #5f7082;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.inventory-reconciliation-metrics > span strong {
+  margin-left: 4px;
+  color: #176b46;
+  font-variant-numeric: tabular-nums;
+}
+
+.inventory-reconciliation-metrics > span.has-issue {
+  border-color: #efb2a8;
+  background: #fff1ee;
+}
+
+.inventory-reconciliation-metrics > span.has-issue strong {
+  color: #c73c2f;
+}
+
+.inventory-reconciliation-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 0 13px 10px;
+}
+
+.inventory-reconciliation-groups span {
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #e7f5ed;
+  color: #276448;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.inventory-reconciliation-groups span.warning {
+  background: #ffe8e4;
+  color: #a9362c;
+}
+
+.inventory-reconciliation-table-wrap {
+  overflow-x: auto;
+  border-top: 1px solid #dce8e2;
+  background: #fff;
+}
+
+.inventory-reconciliation-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.inventory-reconciliation-table th,
+.inventory-reconciliation-table td {
+  padding: 7px 10px;
+  border-right: 1px solid #e6edf2;
+  border-bottom: 1px solid #e6edf2;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.inventory-reconciliation-table th {
+  background: #edf4f7;
+  color: #34495e;
+  font-weight: 800;
+}
+
+.inventory-reconciliation-table tbody tr:nth-child(even) {
+  background: #f8fafb;
+}
+
+.inventory-reconciliation-table tbody tr.has-issue {
+  background: #fff1ee;
+}
+
+.inventory-reconciliation-status {
+  display: inline-block;
+  min-width: 58px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: #e5f4eb;
+  color: #176b46;
+  font-weight: 800;
+}
+
+.inventory-reconciliation-status.warning {
+  background: #ffe0db;
+  color: #b4362b;
+}
+
+.inventory-reconciliation-table-wrap > p {
+  margin: 0;
+  padding: 8px 12px;
+  color: #708090;
+  font-size: 11px;
+}
+
+@media (max-width: 900px) {
+  .inventory-reconciliation-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 .inventory-kpi small,
 .inventory-risk-summary article small {
   color: #718096;

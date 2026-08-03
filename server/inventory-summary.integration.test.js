@@ -11,6 +11,7 @@ import initSqlJs from 'sql.js';
 import xlsx from 'xlsx';
 import {
   buildInventoryDimensionDiagnostics,
+  buildInventoryQuantityReconciliation,
   buildInventorySummaryModel,
   parseInventorySummaryWorkbook
 } from './inventory-summary.js';
@@ -166,6 +167,28 @@ test('inventory summary model uses inventory library facts, layered totals and s
     true
   );
   assert.deepEqual(crossBorderM1?.unfulfilledReasons, [{ name: '未填写', qty: 50, value: 500 }]);
+  assert.deepEqual(result.quantityReconciliation.summary, {
+    sourceCount: 9,
+    checkedQuantity: 2200,
+    missingQuantity: 0,
+    overlapQuantity: 0,
+    issueSourceCount: 0,
+    unappliedSourceCount: 0
+  });
+  assert.deepEqual(
+    result.quantityReconciliation.groups.map((row) => ({
+      group: row.group,
+      expectedQuantity: row.expectedQuantity,
+      dashboardQuantity: row.dashboardQuantity,
+      status: row.status
+    })),
+    [
+      { group: '在库', expectedQuantity: 1580, dashboardQuantity: 1580, status: '校准通过' },
+      { group: '在途', expectedQuantity: 550, dashboardQuantity: 550, status: '校准通过' },
+      { group: '未交付', expectedQuantity: 70, dashboardQuantity: 70, status: '校准通过' }
+    ]
+  );
+  assert.equal(result.quantityReconciliation.sources.every((row) => row.status === '校准通过'), true);
   assert.deepEqual(
     crossBorderM1?.inventorySourceDetails.map((item) => ({
       sourceTable: item.sourceTable,
@@ -181,6 +204,44 @@ test('inventory summary model uses inventory library facts, layered totals and s
       { sourceTable: 'FBM在途报表', sourceWarehouseName: '102-US-海外二部-海上在途', receivingWarehouseName: '', mappedWarehouseName: '102-US-海外二部-海上在途', storeName: '' },
       { sourceTable: 'WFS库存报表', sourceWarehouseName: 'WFS源仓', receivingWarehouseName: '', mappedWarehouseName: 'WFS仓', storeName: '' }
     ]
+  );
+});
+
+test('quantity reconciliation reports missing and overlapping quantities independently', () => {
+  const source = Object.fromEntries(Array.from({ length: 14 }, (_, index) => [
+    `inventorySummaryFile${index + 1}`,
+    { updatedAt: now }
+  ]));
+  const result = buildInventoryQuantityReconciliation({
+    source,
+    facts: [
+      { sourceType: 'FBA库存', expectedQuantity: 100, countedQuantity: 70, countedTimes: 1 },
+      { sourceType: 'FBM库存', expectedQuantity: 50, countedQuantity: 100, countedTimes: 2 }
+    ],
+    totals: {
+      fbaInventoryQty: 70,
+      fbmInventoryQty: 100,
+      inventoryQty: 170,
+      transitQty: 0,
+      unfulfilledQty: 0
+    }
+  });
+  assert.equal(result.status, 'warning');
+  assert.equal(result.summary.missingQuantity, 30);
+  assert.equal(result.summary.overlapQuantity, 50);
+  assert.equal(result.sources.find((row) => row.sourceType === 'FBA库存')?.status, '数量遗漏');
+  assert.equal(result.sources.find((row) => row.sourceType === 'FBM库存')?.status, '数量重叠');
+  assert.deepEqual(
+    result.groups.find((row) => row.group === '在库'),
+    {
+      group: '在库',
+      expectedQuantity: 150,
+      dashboardQuantity: 170,
+      differenceQuantity: 20,
+      missingQuantity: 0,
+      overlapQuantity: 20,
+      status: '数量重叠'
+    }
   );
 });
 
@@ -1093,6 +1154,17 @@ test('inventory business unit mapping reads legacy raw dimensions and stays inde
   assert.equal(legacyFbaWarehouseRow?.fbaInventoryQty, 7);
   assert.equal(legacyFbaWarehouseRow?.fbaInventoryValue, 70);
   assert.equal(legacyFbaWarehouseRow?.mappingStatus, '完整');
+  assert.equal(result.quantityReconciliation.summary.missingQuantity, 0);
+  assert.equal(result.quantityReconciliation.summary.overlapQuantity, 0);
+  assert.deepEqual(
+    result.quantityReconciliation.sources
+      .filter((row) => ['FBA库存', 'FBM库存'].includes(row.sourceType))
+      .map((row) => [row.sourceType, row.expectedQuantity, row.dashboardQuantity, row.status]),
+    [
+      ['FBA库存', 7, 7, '校准通过'],
+      ['FBM库存', 5, 5, '校准通过']
+    ]
+  );
 });
 
 test('inventory dimension diagnostics identifies the exact maintenance table and affected quantity', () => {
@@ -1772,6 +1844,11 @@ test('inventory summary and domestic board use complete source models and enforc
     });
     assert.ok(Array.isArray(summary.rows));
     assert.equal(summary.rows.length, 0);
+    assert.equal(summary.quantityReconciliation.summary.sourceCount, 9);
+    assert.equal(summary.quantityReconciliation.summary.missingQuantity, 0);
+    assert.equal(summary.quantityReconciliation.summary.overlapQuantity, 0);
+    assert.ok(Array.isArray(summary.quantityReconciliation.sources));
+    assert.ok(Array.isArray(summary.quantityReconciliation.groups));
     assert.deepEqual((await purchaseSummaryResponse.json()).rows, []);
     const domesticRows = (await domesticResponse.json()).rows;
     assert.equal(domesticRows.length, 4);

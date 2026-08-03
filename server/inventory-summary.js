@@ -254,6 +254,25 @@ const INVENTORY_SOURCE_TABLE_LABELS = {
   FBM在途: 'FBM在途报表',
   京东在途: '京东在途'
 };
+const QUANTITY_RECONCILIATION_SOURCES = [
+  { sourceType: 'FBA库存', label: 'FBA在库', slotId: 'inventorySummaryFile1', group: '在库', field: 'fbaInventoryQty' },
+  { sourceType: 'FBM库存', label: 'FBM在库', slotId: 'inventorySummaryFile2', group: '在库', field: 'fbmInventoryQty' },
+  { sourceType: 'WFS库存', label: 'WFS在库', slotId: 'inventorySummaryFile3', group: '在库', field: 'wfsInventoryQty' },
+  { sourceType: '国内在库', label: '国内在库', slotId: 'inventorySummaryFile6', group: '在库', field: 'domesticMainInventoryQty' },
+  { sourceType: '京东在库', label: '京东在库', slotId: 'inventorySummaryFile7', group: '在库', field: 'jdInventoryQty' },
+  { sourceType: 'FBA在途', label: 'FBA在途', slotId: 'inventorySummaryFile4', group: '在途', field: 'fbaTransitQty' },
+  { sourceType: 'FBM在途', label: 'FBM在途', slotId: 'inventorySummaryFile5', group: '在途', field: 'fbmTransitQty' },
+  { sourceType: '京东在途', label: '京东在途', slotId: 'inventorySummaryFile14', group: '在途', field: 'jdTransitQty' },
+  { sourceType: '采购跟单', label: '采购未交付', slotId: 'inventorySummaryFile12', group: '未交付', field: 'unfulfilledQty' }
+];
+const QUANTITY_RECONCILIATION_SOURCE_MAP = new Map(
+  QUANTITY_RECONCILIATION_SOURCES.map((config) => [config.sourceType, config])
+);
+const QUANTITY_RECONCILIATION_GROUP_FIELDS = {
+  在库: 'inventoryQty',
+  在途: 'transitQty',
+  未交付: 'unfulfilledQty'
+};
 const ZERO_QUANTITY_DIAGNOSTIC_SOURCE_TYPES = new Set(['京东在途']);
 const JD_INVENTORY_SUBJECT = '浙江迈德斯特医疗器械科技有限公司';
 const INVENTORY_SUBJECT_FIELDS = new Set([
@@ -802,6 +821,95 @@ function rowsRecord(getRecord, slotId) {
   };
 }
 
+function normalizeQuantityDifference(value) {
+  return Math.abs(Number(value || 0)) <= 0.000001 ? 0 : Number(Number(value).toFixed(6));
+}
+
+export function buildInventoryQuantityReconciliation({ source = {}, facts = [], totals = {} } = {}) {
+  const factRows = Array.isArray(facts) ? facts : [...facts.values()];
+  const sources = QUANTITY_RECONCILIATION_SOURCES.map((config) => {
+    const sourceFacts = factRows.filter((fact) => fact.sourceType === config.sourceType);
+    const expectedQuantity = sourceFacts.reduce((sum, fact) => sum + Number(fact.expectedQuantity || 0), 0);
+    const countedQuantity = sourceFacts.reduce((sum, fact) => sum + Number(fact.countedQuantity || 0), 0);
+    const dashboardQuantity = Number(totals[config.field] || 0);
+    let factMissingQuantity = 0;
+    let factOverlapQuantity = 0;
+    sourceFacts.forEach((fact) => {
+      if (Number(fact.countedTimes || 0) === 0) {
+        factMissingQuantity += Math.abs(Number(fact.expectedQuantity || 0));
+        return;
+      }
+      if (Math.sign(fact.countedQuantity) !== Math.sign(fact.expectedQuantity)
+        && Math.abs(Number(fact.countedQuantity || 0)) > 0.000001
+        && Math.abs(Number(fact.expectedQuantity || 0)) > 0.000001) {
+        factMissingQuantity += Math.abs(Number(fact.expectedQuantity || 0));
+        factOverlapQuantity += Math.abs(Number(fact.countedQuantity || 0));
+        return;
+      }
+      const magnitudeDifference = Math.abs(Number(fact.countedQuantity || 0)) - Math.abs(Number(fact.expectedQuantity || 0));
+      if (magnitudeDifference < -0.000001) factMissingQuantity += Math.abs(magnitudeDifference);
+      if (magnitudeDifference > 0.000001) factOverlapQuantity += magnitudeDifference;
+    });
+    const aggregateDifference = dashboardQuantity - expectedQuantity;
+    const aggregateMissingQuantity = aggregateDifference < -0.000001 ? Math.abs(aggregateDifference) : 0;
+    const aggregateOverlapQuantity = aggregateDifference > 0.000001 ? aggregateDifference : 0;
+    const missingQuantity = normalizeQuantityDifference(Math.max(factMissingQuantity, aggregateMissingQuantity));
+    const overlapQuantity = normalizeQuantityDifference(Math.max(factOverlapQuantity, aggregateOverlapQuantity));
+    const appliedAt = source[config.slotId]?.updatedAt || '';
+    return {
+      ...config,
+      applied: Boolean(appliedAt),
+      appliedAt,
+      sourceRowCount: sourceFacts.length,
+      countedRowCount: sourceFacts.filter((fact) => Number(fact.countedTimes || 0) > 0).length,
+      expectedQuantity: normalizeQuantityDifference(expectedQuantity),
+      countedQuantity: normalizeQuantityDifference(countedQuantity),
+      dashboardQuantity: normalizeQuantityDifference(dashboardQuantity),
+      differenceQuantity: normalizeQuantityDifference(dashboardQuantity - expectedQuantity),
+      missingQuantity,
+      overlapQuantity,
+      status: !appliedAt ? '未应用' : missingQuantity > 0 ? '数量遗漏' : overlapQuantity > 0 ? '数量重叠' : '校准通过'
+    };
+  });
+  const groups = Object.entries(QUANTITY_RECONCILIATION_GROUP_FIELDS).map(([group, field]) => {
+    const groupSources = sources.filter((sourceRow) => sourceRow.group === group);
+    const expectedQuantity = groupSources.reduce((sum, sourceRow) => sum + sourceRow.expectedQuantity, 0);
+    const dashboardQuantity = Number(totals[field] || 0);
+    const differenceQuantity = normalizeQuantityDifference(dashboardQuantity - expectedQuantity);
+    const missingQuantity = differenceQuantity < 0 ? Math.abs(differenceQuantity) : 0;
+    const overlapQuantity = differenceQuantity > 0 ? differenceQuantity : 0;
+    return {
+      group,
+      expectedQuantity: normalizeQuantityDifference(expectedQuantity),
+      dashboardQuantity: normalizeQuantityDifference(dashboardQuantity),
+      differenceQuantity,
+      missingQuantity,
+      overlapQuantity,
+      status: missingQuantity > 0 ? '数量遗漏' : overlapQuantity > 0 ? '数量重叠' : '校准通过'
+    };
+  });
+  const sourceMissingQuantity = sources.reduce((sum, sourceRow) => sum + sourceRow.missingQuantity, 0);
+  const sourceOverlapQuantity = sources.reduce((sum, sourceRow) => sum + sourceRow.overlapQuantity, 0);
+  const groupMissingQuantity = Math.max(0, ...groups.map((groupRow) => groupRow.missingQuantity));
+  const groupOverlapQuantity = Math.max(0, ...groups.map((groupRow) => groupRow.overlapQuantity));
+  const missingQuantity = normalizeQuantityDifference(Math.max(sourceMissingQuantity, groupMissingQuantity));
+  const overlapQuantity = normalizeQuantityDifference(Math.max(sourceOverlapQuantity, groupOverlapQuantity));
+  const unappliedSourceCount = sources.filter((sourceRow) => !sourceRow.applied).length;
+  return {
+    status: missingQuantity > 0 || overlapQuantity > 0 || unappliedSourceCount > 0 ? 'warning' : 'ok',
+    summary: {
+      sourceCount: sources.length,
+      checkedQuantity: normalizeQuantityDifference(sources.reduce((sum, sourceRow) => sum + Math.abs(sourceRow.expectedQuantity), 0)),
+      missingQuantity,
+      overlapQuantity,
+      issueSourceCount: sources.filter((sourceRow) => sourceRow.status !== '校准通过').length,
+      unappliedSourceCount
+    },
+    sources,
+    groups
+  };
+}
+
 export function buildInventorySummaryModel({ getRows, getRecord }) {
   const source = Object.fromEntries(Array.from({ length: 14 }, (_, index) => {
     const slotId = `inventorySummaryFile${index + 1}`;
@@ -861,8 +969,33 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   );
   const rowMap = new Map();
   const anomalies = [];
+  const quantityFactLedger = new Map();
   let sourceIndex = 0;
   let factIndex = 0;
+  let quantityFactIndex = 0;
+
+  const expectQuantity = (sourceType, quantity, sourceKey) => {
+    if (!QUANTITY_RECONCILIATION_SOURCE_MAP.has(sourceType)) return '';
+    const id = `${sourceType}-${quantityFactIndex += 1}`;
+    quantityFactLedger.set(id, {
+      id,
+      sourceType,
+      sourceKey: text(sourceKey),
+      expectedQuantity: Number(quantity || 0),
+      countedQuantity: 0,
+      countedTimes: 0
+    });
+    return id;
+  };
+
+  const countQuantity = (reconciliationId, sourceType, quantities) => {
+    if (!reconciliationId) return;
+    const ledgerEntry = quantityFactLedger.get(reconciliationId);
+    const config = QUANTITY_RECONCILIATION_SOURCE_MAP.get(sourceType);
+    if (!ledgerEntry || !config) return;
+    ledgerEntry.countedQuantity += Number(quantities[config.field] || 0);
+    ledgerEntry.countedTimes += 1;
+  };
 
   const diagnosticProduct = (materialCode) => {
     const result = productLookup.resolve(text(materialCode).replace(/\.0$/, ''));
@@ -1071,7 +1204,8 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     deliveryStatus = '',
     month = '',
     distribution = null,
-    sourceContext = {}
+    sourceContext = {},
+    reconciliationId = ''
   }) => {
     const factId = `${sourceType}-${factIndex += 1}`;
     const productResult = resolveProduct(materialCode, sourceType, rawIdentifier);
@@ -1139,6 +1273,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     Object.entries(quantities).forEach(([field, amount]) => {
       row[field] += amount;
     });
+    countQuantity(reconciliationId, sourceType, quantities);
     if (month && (quantities.salesQty || quantities.salesAmount)) {
       row.salesByMonth[month] = (row.salesByMonth[month] || 0) + quantities.salesQty;
       row.salesAmountByMonth[month] = (row.salesAmountByMonth[month] || 0) + quantities.salesAmount;
@@ -1194,6 +1329,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     if (text(raw.inventoryAttribute).toLowerCase() !== '全部'.toLowerCase()) return;
     const qty = inventoryQuantity(raw, 'inventorySummaryFile1', 'FBA库存', raw.sku, '期末库存(含移仓)-数量');
     if (qty === null) return;
+    const reconciliationId = expectQuantity('FBA库存', qty, raw.sku);
     const skuResult = resolveSku(raw.sku);
     const warehouseResult = skuResult.materialCode ? resolveSpecialWarehouse(fbaWarehouseLookup, raw.warehouseName, skuResult.materialCode) : { businessUnit: '', issue: '' };
     const product = resolveProduct(skuResult.materialCode, 'FBA库存', raw.sku);
@@ -1206,6 +1342,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       inventorySource: 'FBA库存',
       inventorySubject: warehouseResult.subject,
       inventoryWarehouseName: warehouseResult.kingdeeWarehouseName,
+      reconciliationId,
       quantities: { fbaInventoryQty: qty, fbaInventoryValue: qty * product.product.pretaxPrice },
       sourceContext: {
         sourceSku: text(raw.sku),
@@ -1220,6 +1357,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     if (isIgnoredFbmWarehouse(raw.warehouseName)) return;
     const qty = inventoryQuantity(raw, 'inventorySummaryFile2', 'FBM库存', raw.identifier, '实际总量');
     if (qty === null) return;
+    const reconciliationId = expectQuantity('FBM库存', qty, raw.identifier);
     const materialCode = text(raw.identifier).replace(/\.0$/, '');
     const warehouseResult = resolveGeneralWarehouse(raw.warehouseName, materialCode);
     const product = resolveProduct(materialCode, 'FBM库存', raw.identifier);
@@ -1232,6 +1370,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       inventorySource: 'FBM库存',
       inventorySubject: warehouseResult.subject,
       inventoryWarehouseName: warehouseResult.kingdeeWarehouseName,
+      reconciliationId,
       inventoryProductType: unsellableProductType(
         product.product,
         isUnsellableWarehouse(warehouseResult.kingdeeWarehouseName) || isFbmReturnWarehouse(raw.warehouseName)
@@ -1251,6 +1390,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   source.inventorySummaryFile3.rows.forEach((raw) => {
     const qty = inventoryQuantity(raw, 'inventorySummaryFile3', 'WFS库存', raw.sku, '总库存数量');
     if (qty === null) return;
+    const reconciliationId = expectQuantity('WFS库存', qty, raw.sku);
     const skuResult = resolveSku(raw.sku);
     const warehouseResult = skuResult.materialCode ? resolveWfsWarehouse(raw.warehouseName, skuResult.materialCode) : { businessUnit: '', issue: '' };
     const product = resolveProduct(skuResult.materialCode, 'WFS库存', raw.sku);
@@ -1263,6 +1403,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       inventorySource: 'WFS库存',
       inventorySubject: warehouseResult.subject,
       inventoryWarehouseName: warehouseResult.kingdeeWarehouseName,
+      reconciliationId,
       quantities: { wfsInventoryQty: qty, wfsInventoryValue: qty * product.product.pretaxPrice },
       sourceContext: {
         sourceSku: text(raw.sku),
@@ -1281,6 +1422,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     const signed = numeric(raw.signedQty, 'FBA在途', raw.sku, '签收量');
     const qty = Math.max(shipped - signed, 0);
     if (Math.abs(qty) <= 0.000001) return;
+    const reconciliationId = expectQuantity('FBA在途', qty, raw.sku);
     const skuResult = resolveSku(raw.sku);
     const warehouseResult = skuResult.materialCode ? resolveSpecialWarehouse(transitWarehouseLookup, raw.storeName, skuResult.materialCode) : { businessUnit: '', issue: '' };
     const product = resolveProduct(skuResult.materialCode, 'FBA在途', raw.sku);
@@ -1291,6 +1433,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       businessUnit: warehouseResult.businessUnit,
       issues: [skuResult.issue, warehouseResult.issue],
       inventorySubject: warehouseResult.subject,
+      reconciliationId,
       quantities: { fbaTransitQty: qty, fbaTransitValue: qty * product.product.pretaxPrice },
       sourceContext: {
         sourceSku: text(raw.sku),
@@ -1306,6 +1449,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     if (!isAllowedFbmTransitDocumentStatus(raw.documentStatus)) return;
     const qty = numeric(raw.stockupQty, 'FBM在途', raw.sku, '备货数量') - numeric(raw.receivedQty, 'FBM在途', raw.sku, '收货数量');
     if (Math.abs(qty) <= 0.000001) return;
+    const reconciliationId = expectQuantity('FBM在途', qty, raw.sku);
     const skuResult = resolveSku(raw.sku);
     const warehouseResult = skuResult.materialCode ? resolveGeneralWarehouse(raw.warehouseName, skuResult.materialCode) : { businessUnit: '', issue: '' };
     const product = resolveProduct(skuResult.materialCode, 'FBM在途', raw.sku);
@@ -1317,6 +1461,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       issues: [skuResult.issue, warehouseResult.issue],
       inventorySubject: warehouseResult.subject,
       inventoryWarehouseName: text(raw.receivingWarehouseName),
+      reconciliationId,
       inventoryProductType: unsellableProductType(
         product.product,
         hasWarehouseCodePrefix(raw.receivingWarehouseName, ['777'])
@@ -1362,6 +1507,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       });
       return;
     }
+    const reconciliationId = expectQuantity('国内在库', qty, raw.materialCode);
     addFact({
       sourceType: '国内在库',
       rawIdentifier: raw.materialCode,
@@ -1371,6 +1517,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       inventorySource: '国内在库',
       inventorySubject: text(raw.subject),
       inventoryWarehouseName: text(raw.warehouseName),
+      reconciliationId,
       inventoryProductType: unsellableProductType(
         product.product,
         isUnsellableWarehouse(warehouseResult.kingdeeWarehouseName) || directUnsellableWarehouse
@@ -1387,6 +1534,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   source.inventorySummaryFile7.rows.forEach((raw) => {
     const qty = inventoryQuantity(raw, 'inventorySummaryFile7', '京东在库', raw.jdId, '京东现货库存');
     if (qty === null) return;
+    const reconciliationId = expectQuantity('京东在库', qty, raw.jdId);
     const jdResult = resolveJd(raw.jdId);
     const product = resolveProduct(jdResult.materialCode, '京东在库', raw.jdId);
     addFact({
@@ -1397,6 +1545,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       issues: [jdResult.issue],
       inventorySource: '京东在库',
       inventorySubject: JD_INVENTORY_SUBJECT,
+      reconciliationId,
       quantities: { jdInventoryQty: qty, jdInventoryValue: qty * product.product.pretaxPrice },
       sourceContext: {
         sourceSku: text(raw.jdId),
@@ -1417,6 +1566,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       });
     }
     const qty = quantity.valid ? quantity.value : 0;
+    const reconciliationId = expectQuantity('京东在途', qty, materialCode);
     const product = resolveProduct(materialCode, '京东在途', materialCode);
     addFact({
       sourceType: '京东在途',
@@ -1425,6 +1575,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       businessUnit: '国内事业部',
       issues: [materialCode ? '' : '物料编码为空'],
       inventorySubject: JD_INVENTORY_SUBJECT,
+      reconciliationId,
       quantities: { jdTransitQty: qty, jdTransitValue: qty * product.product.pretaxPrice },
       sourceContext: {
         sourceSku: materialCode,
@@ -1455,6 +1606,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     const status = text(raw.deliveryStatus);
     const recognized = status === '是' || status === '否';
     const qty = recognized ? numeric(raw.remainingQty, '采购跟单', raw.materialCode, '备货剩余数量') : 0;
+    const reconciliationId = recognized ? expectQuantity('采购跟单', qty, raw.materialCode) : '';
     const product = resolveProduct(raw.materialCode, '采购跟单', raw.materialCode);
     const value = qty * product.product.pretaxPrice;
     const quantities = {
@@ -1481,6 +1633,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       issues: [month ? '' : '下单月份无法识别'],
       deliveryStatus: recognized ? status : '无未交付',
       month,
+      reconciliationId,
       quantities,
       distribution: {
         purchase: true,
@@ -1601,6 +1754,11 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     });
     return result;
   }, {});
+  const quantityReconciliation = buildInventoryQuantityReconciliation({
+    source,
+    facts: quantityFactLedger,
+    totals
+  });
   const months = [...new Set(rows.flatMap((row) => Object.keys(row.salesByMonth)))].sort();
   const updatedAt = Object.values(source).map((record) => record.updatedAt).filter(Boolean).sort().at(-1) || '';
   return {
@@ -1614,6 +1772,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     updatedAt,
     months,
     totals,
+    quantityReconciliation,
     anomalies,
     rows
   };

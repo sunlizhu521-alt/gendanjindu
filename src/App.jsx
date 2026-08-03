@@ -1726,6 +1726,74 @@ function InventorySummaryAbc({ rows }) {
   );
 }
 
+function InventoryQuantityReconciliation({ data }) {
+  const [expanded, setExpanded] = useState(false);
+  const summary = data?.summary || {};
+  const sources = data?.sources || [];
+  const groups = data?.groups || [];
+  const warning = data?.status === 'warning';
+
+  useEffect(() => {
+    if (warning) setExpanded(true);
+  }, [warning]);
+
+  if (!data) return null;
+  return (
+    <section className={`inventory-quantity-reconciliation ${warning ? 'warning' : 'ok'}`} aria-label="库存数量校准">
+      <div className="inventory-reconciliation-head">
+        <div>
+          <strong>库存数量校准</strong>
+          <span>
+            {warning
+              ? `发现数量异常来源 ${summary.issueSourceCount || 0} 个，请核对遗漏或重叠数量`
+              : `已核对 ${summary.sourceCount || 0} 个数量来源，全部完整进入销售与库存看板`}
+          </span>
+        </div>
+        <div className="inventory-reconciliation-metrics">
+          <span>核对数量 <strong>{formatDashboardNumber(summary.checkedQuantity)}</strong></span>
+          <span className={summary.missingQuantity ? 'has-issue' : ''}>遗漏 <strong>{formatDashboardNumber(summary.missingQuantity)}</strong></span>
+          <span className={summary.overlapQuantity ? 'has-issue' : ''}>重叠 <strong>{formatDashboardNumber(summary.overlapQuantity)}</strong></span>
+          <button type="button" className="ghost compact-button" onClick={() => setExpanded((current) => !current)}>
+            {expanded ? '收起校准明细' : '查看校准明细'}
+          </button>
+        </div>
+      </div>
+      {groups.length > 0 && (
+        <div className="inventory-reconciliation-groups">
+          {groups.map((row) => (
+            <span key={row.group} className={row.status === '校准通过' ? 'ok' : 'warning'}>
+              {row.group}：来源 {formatDashboardNumber(row.expectedQuantity)} / 看板 {formatDashboardNumber(row.dashboardQuantity)}
+            </span>
+          ))}
+        </div>
+      )}
+      {expanded && (
+        <div className="inventory-reconciliation-table-wrap">
+          <table className="inventory-reconciliation-table">
+            <thead>
+              <tr><th>数量来源</th><th>分组</th><th>来源计算量</th><th>看板展示量</th><th>遗漏数量</th><th>重叠数量</th><th>状态</th></tr>
+            </thead>
+            <tbody>
+              {sources.map((row) => (
+                <tr key={row.slotId} className={row.status === '校准通过' ? '' : 'has-issue'}>
+                  <td>{row.label}</td>
+                  <td>{row.group}</td>
+                  <td>{formatDashboardNumber(row.expectedQuantity)}</td>
+                  <td>{formatDashboardNumber(row.dashboardQuantity)}</td>
+                  <td>{formatDashboardNumber(row.missingQuantity)}</td>
+                  <td>{formatDashboardNumber(row.overlapQuantity)}</td>
+                  <td><span className={`inventory-reconciliation-status ${row.status === '校准通过' ? 'ok' : 'warning'}`}>{row.status}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p>仅校验数量；库存为 0 的记录按现有规则剔除，不计入遗漏提醒。</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function InventorySummary({ token, active }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1966,6 +2034,8 @@ function InventorySummary({ token, active }) {
             <input className="search-input" placeholder="搜索事业部、物料编码、SKU或名称" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
             <button type="button" className="ghost compact-button" onClick={clearFilters}>清除筛选</button>
           </div>
+
+          <InventoryQuantityReconciliation data={data?.quantityReconciliation} />
 
           <section className="inventory-kpi-grid inventory-five-kpis" aria-label="销售与库存指标">
             <InventoryPurchaseMetric label="销售" quantity={totals.salesQty} value={formatDashboardWan(totals.salesAmount)} note="当前筛选/全量" share={share(totals.salesQty, fullTotals.salesQty)} tone="total" />

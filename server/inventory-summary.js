@@ -74,7 +74,7 @@ const FIELD_ALIASES = {
   kingdeeWarehouseName: ['金蝶仓库名称', '金蝶仓库', '金蝶名称'],
   lingxingSku: ['*SKU', 'SKU', '领星SKU', '领星MSKU', 'MSKU'],
   month: ['下单月份'],
-  remainingQty: ['备货剩余数量'],
+  remainingQty: ['备货剩余数量', '未交付数量'],
   finishedQty: ['完工未发产品'],
   unpreparedQty: ['已下单未备料未生产'],
   preparedNotStartedQty: ['已备料未生产'],
@@ -518,7 +518,7 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
       ...columnMap,
       __inventorySummary: {
         parserType: 'inventorySummary',
-        parserVersion: slotId === 'inventorySummaryFile7' ? 5 : 4,
+        parserVersion: ['inventorySummaryFile7', 'inventorySummaryFile12'].includes(slotId) ? 5 : 4,
         sheetName,
         sourceRowCount: mappedRows.length,
         rowCount: rows.length,

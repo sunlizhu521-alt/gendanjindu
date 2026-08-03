@@ -1170,6 +1170,47 @@ test('inventory workbook parser expands every merged FBA transit field and rejec
   );
 });
 
+test('purchase tracking parser recognizes 未交付数量 and preserves supplier short names', () => {
+  const workbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet([{
+    下单月份: '2026-07',
+    事业部: '全球招商事业部',
+    物料编码: 'M-SUPPLIER',
+    未交付数量: 12,
+    完工未发产品: 2,
+    已下单未备料未生产: 3,
+    已备料未生产: 4,
+    生产中产品: 3,
+    是否需正常交货: '是',
+    供应商简称: '迈锐',
+    未履约原因: '未填写',
+    原因详情: '未填写',
+    备注: ''
+  }]), '订单明细');
+
+  const parsed = parseInventorySummaryWorkbook(
+    { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) },
+    'inventorySummaryFile12'
+  );
+  assert.equal(parsed.mapping.remainingQty, '未交付数量');
+  assert.equal(parsed.mapping.supplierShortName, '供应商简称');
+  assert.equal(parsed.mapping.__inventorySummary.parserVersion, 5);
+  assert.equal(parsed.rows[0].remainingQty, 12);
+  assert.equal(parsed.rows[0].supplierShortName, '迈锐');
+
+  const rowsBySlot = new Map([
+    ['productCategory', [{ materialCode: 'M-SUPPLIER', sku: 'SKU-SUPPLIER', salesRegion: '美国', pretaxPrice: 10 }]],
+    ['inventorySummaryFile12', parsed.rows]
+  ]);
+  const model = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
+  });
+  const row = model.rows.find((item) => item.materialCode === 'M-SUPPLIER');
+  assert.equal(row?.unfulfilledQty, 12);
+  assert.equal(row?.unfulfilledSupplierShortName, '迈锐');
+});
+
 test('FBM transit parser and model keep only approved document warehouses and statuses', () => {
   const allowedWarehouses = [
     '102-US-海外二部-海上在途',

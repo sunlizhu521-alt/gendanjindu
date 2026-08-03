@@ -33,7 +33,7 @@ const PAGE_ORDER = [
 const PAGE_LABELS = {
   domesticBoard: '国内事业部看板',
   inventorySummary: '库存汇总',
-  inventoryRisk: '库存风险',
+  inventoryRisk: '供应计划分析',
   inventoryPurchase: '采购未交付',
   inventorySummaryLibrary: '库存汇总文件库',
   operationBoard: '运营看板-未交付',

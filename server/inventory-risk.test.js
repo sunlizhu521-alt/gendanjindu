@@ -335,7 +335,7 @@ test('参数归一化计算渠道周期并阻止负数', () => {
   assert.throws(() => normalizeInventoryRiskParams({ channels: { domestic: { bookingDays: -1 } } }), /非负数字/);
 });
 
-test('库存风险页面、权限与API均注册在gendanjindu', () => {
+test('供应计划分析页面、权限与API均注册在gendanjindu', () => {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const server = fs.readFileSync(path.join(root, 'server', 'app.js'), 'utf8');
   const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
@@ -343,7 +343,7 @@ test('库存风险页面、权限与API均注册在gendanjindu', () => {
   assert.match(server, /'inventoryRisk'/);
   assert.match(server, /\/api\/inventory-risk\/query/);
   assert.match(server, /\/api\/inventory-risk\/export/);
-  assert.match(client, /库存风险/);
+  assert.match(client, /供应计划分析/);
   assert.match(client, /InventoryRiskPage/);
   assert.match(server, /buildInventoryRiskWorkbook\(payload\)/);
   assert.doesNotMatch(server, /inventoryRiskSupplierContext/);
@@ -367,6 +367,9 @@ test('库存风险页面、权限与API均注册在gendanjindu', () => {
   const summaryMarkup = riskPage.slice(riskPage.indexOf('<section className="inventory-risk-summary">'));
   assert.ok(summaryMarkup.indexOf('库存总量') < summaryMarkup.indexOf('className="restricted"'));
   assert.match(riskPage, /在库在途周转天数/);
+  assert.match(riskPage, /供应计划分析/);
+  assert.match(riskPage, /loadInventoryRiskParams\(DEFAULT_PARAMS\)/);
+  assert.match(riskPage, /saveInventoryRiskParams\(payload\.params \|\| params, DEFAULT_PARAMS\)/);
   assert.match(riskPage, /未交付供应商简称/);
   assert.match(riskPage, /在库量可销天数/);
   assert.match(riskPage, /全链路天数/);

@@ -240,7 +240,8 @@ const INVENTORY_SOURCE_TYPES = new Set([
   'FBA在途',
   'FBM在途',
   '京东在途',
-  '库存风险'
+  '库存风险',
+  '供应计划分析'
 ]);
 const ZERO_QUANTITY_DIAGNOSTIC_SOURCE_TYPES = new Set(['京东在途']);
 const JD_INVENTORY_SUBJECT = '浙江迈德斯特医疗器械科技有限公司';
@@ -1476,7 +1477,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
         + Math.abs(Number(row.unfulfilledQty || 0));
       const salesRegion = text(row.salesRegion);
       if (affectedQty <= 0.000001 || supportedSalesRegions.has(salesRegion)) return;
-      addAnomaly('库存风险', `${row.businessUnit}+${row.materialCode}`, '销售区域缺失或无法识别', affectedQty, Math.abs(Number(row.scaleValue || 0)), {
+      addAnomaly('供应计划分析', `${row.businessUnit}+${row.materialCode}`, '销售区域缺失或无法识别', affectedQty, Math.abs(Number(row.scaleValue || 0)), {
         materialCode: row.materialCode,
         sku: row.sku,
         materialName: row.materialName,

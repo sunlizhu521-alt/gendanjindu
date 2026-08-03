@@ -277,7 +277,7 @@ test('销售区域随商品分类进入汇总，未知区域进入维度缺失�
   });
   assert.equal(model.rows.find((row) => row.materialCode === 'M-US')?.salesRegion, '美国');
   assert.equal(model.rows.find((row) => row.materialCode === 'M-B2B')?.salesRegion, '沙特');
-  const regionIssues = model.anomalies.filter((row) => row.sourceType === '库存风险');
+  const regionIssues = model.anomalies.filter((row) => row.sourceType === '供应计划分析');
   assert.equal(regionIssues.length, 1);
   assert.equal(regionIssues[0].materialCode, 'M-MISSING');
   assert.equal(regionIssues[0].qty, 7);

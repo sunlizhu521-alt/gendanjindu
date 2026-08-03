@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { loadInventoryRiskParams, saveInventoryRiskParams } from './inventory-risk-params.js';
 
 const API = import.meta.env.DEV ? 'http://localhost:4003' : '';
 
@@ -258,7 +259,7 @@ function RiskTable({ rows }) {
       <div className="inventory-risk-section-heading">
         <div>
           <span className="inventory-risk-section-kicker">处置清单</span>
-          <h3>库存风险处置清单</h3>
+          <h3>供应计划分析处置清单</h3>
         </div>
         <strong>{numberText(rows.length, 0)} 个物料</strong>
       </div>
@@ -296,8 +297,8 @@ function InventoryRiskLogic({ onBack }) {
   return (
     <div className="inventory-risk-page inventory-risk-logic-page">
       <header className="inventory-risk-header">
-        <div><span className="inventory-risk-eyebrow">INVENTORY RISK</span><h2>库存风险计算逻辑</h2><p>用于核对数据来源、计算公式和处置边界。</p></div>
-        <button className="inventory-risk-button secondary" type="button" onClick={onBack}>返回风险分析</button>
+        <div><span className="inventory-risk-eyebrow">SUPPLY PLANNING</span><h2>供应计划分析计算逻辑</h2><p>用于核对数据来源、计算公式和处置边界。</p></div>
+        <button className="inventory-risk-button secondary" type="button" onClick={onBack}>返回供应计划分析</button>
       </header>
       <div className="inventory-risk-logic-grid">
         <section><span>01</span><h3>数据来源</h3><p>库存、在途、待交付、商品分类和历史销售完全复用“库存汇总”的标准化结果；销售预测读取“库存汇总文件库”的槽位 15。</p></section>
@@ -312,7 +313,7 @@ function InventoryRiskLogic({ onBack }) {
 }
 
 export default function InventoryRiskPage({ token, active }) {
-  const [params, setParams] = useState(DEFAULT_PARAMS);
+  const [params, setParams] = useState(() => loadInventoryRiskParams(DEFAULT_PARAMS));
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -340,6 +341,7 @@ export default function InventoryRiskPage({ token, active }) {
         body: JSON.stringify({ ...params, force })
       });
       setResult(payload);
+      setParams(saveInventoryRiskParams(payload.params || params, DEFAULT_PARAMS));
       setFilters({ ...EMPTY_RISK_FILTERS });
       setLoaded(true);
     } catch (requestError) {
@@ -371,7 +373,7 @@ export default function InventoryRiskPage({ token, active }) {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `库存风险_${new Date().toISOString().slice(0, 10).replaceAll('-', '')}.xlsx`;
+      link.download = `供应计划分析_${new Date().toISOString().slice(0, 10).replaceAll('-', '')}.xlsx`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -442,7 +444,7 @@ export default function InventoryRiskPage({ token, active }) {
   return (
     <div className="inventory-risk-page">
       <header className="inventory-risk-header">
-        <div><span className="inventory-risk-eyebrow">INVENTORY RISK</span><h2>库存风险</h2><p>按海外-美国、海外-欧洲和国内三个渠道识别限制采购与停止采购物料。</p></div>
+        <div><span className="inventory-risk-eyebrow">SUPPLY PLANNING</span><h2>供应计划分析</h2><p>按海外-美国、海外-欧洲和国内三个渠道识别限制采购与停止采购物料。</p></div>
         <div className="inventory-risk-actions">
           <button className="inventory-risk-button secondary" type="button" onClick={() => setShowLogic(true)}>计算逻辑</button>
           <button className="inventory-risk-button secondary" type="button" disabled={!result || loading} onClick={exportResult}>导出 Excel</button>
@@ -458,7 +460,7 @@ export default function InventoryRiskPage({ token, active }) {
 
       {result && (
         <>
-          <section className="inventory-risk-filters" aria-label="库存风险筛选器">
+          <section className="inventory-risk-filters" aria-label="供应计划分析筛选器">
             <RiskMultiSelectFilter label="事业部" allLabel="全部事业部" value={filters.businessUnits} options={filterOptions.businessUnits} onChange={(value) => setFilters((current) => ({ ...current, businessUnits: value }))} />
             <RiskMultiSelectFilter label="产品线" allLabel="全部产品线" value={filters.productLines} options={filterOptions.productLines} onChange={(value) => setFilters((current) => ({ ...current, productLines: value }))} />
             <RiskMultiSelectFilter label="系列" allLabel="全部系列" value={filters.productSeries} options={filterOptions.productSeries} onChange={(value) => setFilters((current) => ({ ...current, productSeries: value }))} />

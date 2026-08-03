@@ -60,7 +60,7 @@ const ALL_PAGES = [
 const PAGE_LABELS = {
   domesticBoard: '国内事业部看板',
   inventorySummary: '库存汇总',
-  inventoryRisk: '库存风险',
+  inventoryRisk: '供应计划分析',
   inventoryPurchase: '采购未交付',
   inventorySummaryLibrary: '库存汇总文件库',
   operationBoard: '运营看板-未交付',
@@ -3550,7 +3550,7 @@ app.post('/api/inventory-risk/query', requireAuth, requirePage('inventoryRisk'),
     }
     return res.json(payload);
   } catch (error) {
-    return res.status(400).json({ error: error.message || '库存风险参数无效' });
+    return res.status(400).json({ error: error.message || '供应计划分析参数无效' });
   }
 });
 
@@ -3562,12 +3562,12 @@ app.post('/api/inventory-risk/export', requireAuth, requirePage('inventoryRisk')
     }
     const workbook = buildInventoryRiskWorkbook(payload);
     const buffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-    const fileName = `库存风险_${nowText().slice(0, 10).replaceAll('-', '')}.xlsx`;
+    const fileName = `供应计划分析_${nowText().slice(0, 10).replaceAll('-', '')}.xlsx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="inventory-risk.xlsx"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
     return res.send(buffer);
   } catch (error) {
-    return res.status(400).json({ error: error.message || '库存风险参数无效' });
+    return res.status(400).json({ error: error.message || '供应计划分析参数无效' });
   }
 });
 

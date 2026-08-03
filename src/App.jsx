@@ -1258,6 +1258,17 @@ const INVENTORY_SUBJECT_MEASURE_FIELDS = [
   'fbmTransitQty', 'fbmTransitValue',
   'jdTransitQty', 'jdTransitValue'
 ];
+const INVENTORY_PRODUCT_TYPE_OPTIONS = ['成品', '配件', '不可售'];
+const INVENTORY_NON_STOCK_FIELDS = [
+  'salesQty', 'salesAmount',
+  'finishedNotShippedQty', 'finishedNotShippedValue',
+  'unpreparedQty', 'unpreparedValue',
+  'preparedNotStartedQty', 'preparedNotStartedValue',
+  'inProductionQty', 'inProductionValue',
+  'unfulfilledQty', 'unfulfilledValue',
+  'normalOrderQty', 'normalOrderValue',
+  'abnormalOrderQty', 'abnormalOrderValue'
+];
 
 function inventoryDefaultFilters() {
   return {
@@ -1276,17 +1287,50 @@ function inventoryDefaultFilters() {
 }
 
 function inventoryProductType(row) {
-  return normalize(row.productLine) === '其他/配件' ? '配件' : '成品';
+  return normalize(row.baseProductType) || (normalize(row.productLine) === '其他/配件' ? '配件' : '成品');
 }
 
-function inventoryRowForSubjects(row, selectedSubjects) {
-  if (!selectedSubjects.length) return row;
-  const selected = new Set(selectedSubjects);
-  const selectedBreakdown = (row.inventorySubjectBreakdown || [])
-    .filter((item) => selected.has(normalize(item.subject)));
+function inventoryRowProductTypes(row) {
+  const types = new Set([inventoryProductType(row)]);
+  (row.inventorySegmentBreakdown || []).forEach((item) => {
+    const quantity = INVENTORY_SUBJECT_MEASURE_FIELDS.reduce((sum, field) => (
+      field.endsWith('Qty') ? sum + Math.abs(numberValue(item[field])) : sum
+    ), 0);
+    if (quantity > 0) types.add(normalize(item.productType));
+  });
+  return [...types].filter(Boolean);
+}
+
+function inventorySegmentMatches(item, selectedSubjects, selectedProductTypes) {
+  return (selectedSubjects.length === 0 || selectedSubjects.includes(normalize(item.subject)))
+    && (selectedProductTypes.length === 0 || selectedProductTypes.includes(normalize(item.productType)));
+}
+
+function inventoryRowMatchesProductTypes(row, selectedSubjects, selectedProductTypes) {
+  if (selectedProductTypes.length === 0) return true;
+  if (selectedProductTypes.includes(inventoryProductType(row))) return true;
+  return (row.inventorySegmentBreakdown || []).some((item) => (
+    inventorySegmentMatches(item, selectedSubjects, selectedProductTypes)
+    && INVENTORY_SUBJECT_MEASURE_FIELDS.some((field) => field.endsWith('Qty') && Math.abs(numberValue(item[field])) > 0)
+  ));
+}
+
+function inventoryRowForFilters(row, selectedSubjects, selectedProductTypes) {
+  const subjectSet = new Set(selectedSubjects);
+  const typeSet = new Set(selectedProductTypes);
+  const baseProductType = inventoryProductType(row);
+  const selectedBreakdown = (row.inventorySegmentBreakdown || []).filter((item) => (
+    (subjectSet.size === 0 || subjectSet.has(normalize(item.subject)))
+    && (typeSet.size === 0 || typeSet.has(normalize(item.productType)))
+  ));
   const amounts = Object.fromEntries(INVENTORY_SUBJECT_MEASURE_FIELDS.map((field) => [
     field,
     selectedBreakdown.reduce((sum, item) => sum + numberValue(item[field]), 0)
+  ]));
+  const includeBaseMeasures = typeSet.size === 0 || typeSet.has(baseProductType);
+  const nonStockAmounts = Object.fromEntries(INVENTORY_NON_STOCK_FIELDS.map((field) => [
+    field,
+    includeBaseMeasures ? numberValue(row[field]) : 0
   ]));
   const crossBorderInventoryQty = amounts.fbaInventoryQty + amounts.fbmInventoryQty + amounts.wfsInventoryQty;
   const crossBorderInventoryValue = amounts.fbaInventoryValue + amounts.fbmInventoryValue + amounts.wfsInventoryValue;
@@ -1299,7 +1343,11 @@ function inventoryRowForSubjects(row, selectedSubjects) {
   return {
     ...row,
     ...amounts,
-    inventorySubjects: selectedBreakdown.map((item) => item.subject),
+    ...nonStockAmounts,
+    inventorySubjects: [...new Set(selectedBreakdown.map((item) => item.subject))],
+    salesByMonth: includeBaseMeasures ? row.salesByMonth : {},
+    salesAmountByMonth: includeBaseMeasures ? row.salesAmountByMonth : {},
+    purchaseByMonth: includeBaseMeasures ? row.purchaseByMonth : {},
     crossBorderInventoryQty,
     crossBorderInventoryValue,
     domesticInventoryQty,
@@ -1308,8 +1356,8 @@ function inventoryRowForSubjects(row, selectedSubjects) {
     inventoryValue,
     transitQty,
     transitValue,
-    scaleQty: inventoryQty + transitQty + numberValue(row.unfulfilledQty),
-    scaleValue: inventoryValue + transitValue + numberValue(row.unfulfilledValue)
+    scaleQty: inventoryQty + transitQty + nonStockAmounts.unfulfilledQty,
+    scaleValue: inventoryValue + transitValue + nonStockAmounts.unfulfilledValue
   };
 }
 
@@ -1681,14 +1729,14 @@ function InventorySummary({ token, active }) {
       || (row.inventorySubjects || []).some((value) => filters.inventorySubjects.includes(value));
     const productTypeMatches = omitted === 'productTypes'
       || filters.productTypes.length === 0
-      || filters.productTypes.includes(inventoryProductType(row));
+      || inventoryRowMatchesProductTypes(row, filters.inventorySubjects, filters.productTypes);
     const deliveryMatches = omitted === 'deliveryStatuses'
       || filters.deliveryStatuses.length === 0
       || (row.deliveryStatuses || [row.deliveryStatus]).some((value) => filters.deliveryStatuses.includes(value));
     const keyword = normalize(filters.keyword).toLowerCase();
     const keywordMatches = !keyword || [
       row.matchKey, row.businessUnit, row.productLine, row.productSeries, row.materialCode,
-      row.sku, row.materialName, row.rawIdentifier, inventoryProductType(row),
+      row.sku, row.materialName, row.rawIdentifier, ...inventoryRowProductTypes(row),
       ...(row.inventorySubjects || []), ...(row.issues || [])
     ].join(' ').toLowerCase().includes(keyword);
     return scalarMatches && sourceMatches && subjectMatches && productTypeMatches && deliveryMatches && keywordMatches;
@@ -1698,8 +1746,14 @@ function InventorySummary({ token, active }) {
     const rowsFor = (key) => rows.filter((row) => rowMatches(row, key));
     return {
       businessUnits: unique(rowsFor('businessUnits').map((row) => row.businessUnit)),
-      inventorySubjects: unique(rowsFor('inventorySubjects').map((row) => row.inventorySubjects || [])),
-      productTypes: unique(rowsFor('productTypes').map((row) => inventoryProductType(row))),
+      inventorySubjects: unique(rowsFor('inventorySubjects').map((row) => (
+        filters.productTypes.length === 0
+          ? row.inventorySubjects || []
+          : (row.inventorySegmentBreakdown || [])
+            .filter((item) => inventorySegmentMatches(item, [], filters.productTypes))
+            .map((item) => item.subject)
+      ))),
+      productTypes: INVENTORY_PRODUCT_TYPE_OPTIONS,
       productLines: unique(rowsFor('productLines').map((row) => row.productLine)),
       productSeries: unique(rowsFor('productSeries').map((row) => row.productSeries)),
       skus: unique(rowsFor('skus').map((row) => row.sku)),
@@ -1711,7 +1765,7 @@ function InventorySummary({ token, active }) {
   }, [rows, filters]);
   const filteredRows = useMemo(() => rows
     .filter((row) => rowMatches(row))
-    .map((row) => inventoryRowForSubjects(row, filters.inventorySubjects)), [rows, filters]);
+    .map((row) => inventoryRowForFilters(row, filters.inventorySubjects, filters.productTypes)), [rows, filters]);
   const totals = useMemo(() => inventoryDashboardTotals(filteredRows), [filteredRows]);
   const fullTotals = useMemo(() => inventoryDashboardTotals(rows), [rows]);
   const businessUnitRows = useMemo(() => inventoryDashboardGroups(filteredRows, (row) => row.businessUnit), [filteredRows]);

@@ -254,6 +254,14 @@ const INVENTORY_SUBJECT_FIELDS = new Set([
   'fbmTransitQty', 'fbmTransitValue',
   'jdTransitQty', 'jdTransitValue'
 ]);
+const INVENTORY_STOCK_FIELDS = new Set([
+  'fbaInventoryQty', 'fbaInventoryValue',
+  'fbmInventoryQty', 'fbmInventoryValue',
+  'wfsInventoryQty', 'wfsInventoryValue',
+  'domesticMainInventoryQty', 'domesticMainInventoryValue',
+  'jdInventoryQty', 'jdInventoryValue'
+]);
+const UNSELLABLE_PRODUCT_TYPES = new Set(['其他/成品', '全新品'].map(matchKey));
 
 function isIgnoredFbmWarehouse(value) {
   return IGNORED_FBM_WAREHOUSES.has(matchKey(value));
@@ -274,6 +282,23 @@ function isIgnoredDomesticWarehouse(value) {
 
 function isSalesFactoryDomesticWarehouse(value) {
   return SALES_FACTORY_DOMESTIC_WAREHOUSES.has(matchKey(value));
+}
+
+function baseInventoryProductType(product) {
+  return matchKey(product?.productLine) === matchKey('其他/配件') ? '配件' : '成品';
+}
+
+function isUnsellableWarehouse(value) {
+  const warehouse = text(value).normalize('NFKC').replace(/\s+/g, '').toLowerCase();
+  if (/^(555|777)(?:[-/\\])/.test(warehouse)) return true;
+  return warehouse.replace(/[()（）]/g, '').includes('待退货仓');
+}
+
+function inventoryFactProductType(product, warehouse) {
+  if (UNSELLABLE_PRODUCT_TYPES.has(matchKey(product?.productType)) && isUnsellableWarehouse(warehouse)) {
+    return '不可售';
+  }
+  return baseInventoryProductType(product);
 }
 
 function hasZeroInventoryQuantity(row, slotId) {
@@ -601,6 +626,7 @@ function dimensionProduct(row) {
     productLine: text(aliasValue(row, ['productLine', '销售产品线', '产品线'])),
     productSeries: text(aliasValue(row, ['productSeries', '销售系列', '系列'])),
     model: text(aliasValue(row, ['model', '型号', '产品型号', '款式', '规格型号', '规格'])),
+    productType: text(aliasValue(row, ['productType', '销售产品分类', '产品类型', '商品类型'])),
     salesRegion: text(aliasValue(row, ['salesRegion', '销售区域'])),
     pretaxPrice: aliasValue(row, ['pretaxPrice', '不含税结算价'])
   };
@@ -667,6 +693,8 @@ function emptySummaryRow(id, businessUnit, product, rawIdentifier) {
     productLine: product.productLine || '未匹配',
     productSeries: product.productSeries || '未匹配',
     model: product.model || '未匹配',
+    productType: product.productType || '',
+    baseProductType: baseInventoryProductType(product),
     salesRegion: product.salesRegion || '',
     materialCode: product.materialCode || '未匹配',
     sku: product.sku || '未匹配',
@@ -679,6 +707,7 @@ function emptySummaryRow(id, businessUnit, product, rawIdentifier) {
     inventorySources: new Set(),
     inventorySubjects: new Set(),
     inventorySubjectBreakdown: {},
+    inventorySegmentBreakdown: {},
     deliveryStatuses: new Set(),
     unfulfilledSupplierShortNames: new Set(),
     salesByMonth: {},
@@ -840,7 +869,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     const material = text(materialCode).replace(/\.0$/, '');
     const result = productLookup.resolve(material);
     if (result.status !== 'ok') {
-      return { product: { materialCode: '', sku: '', materialName: '', productLine: '', productSeries: '', model: '', salesRegion: '', pretaxPrice: 0 }, issue: `商品分类${result.status === 'conflict' ? '映射冲突' : '缺失'}` };
+      return { product: { materialCode: '', sku: '', materialName: '', productLine: '', productSeries: '', model: '', productType: '', salesRegion: '', pretaxPrice: 0 }, issue: `商品分类${result.status === 'conflict' ? '映射冲突' : '缺失'}` };
     }
     const price = safeNumber(result.value.pretaxPrice);
     if (!price.valid || !text(result.value.pretaxPrice)) {
@@ -1007,6 +1036,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     quantities = {},
     inventorySource = '',
     inventorySubject = '',
+    inventoryWarehouseName = '',
     deliveryStatus = '',
     month = '',
     distribution = null,
@@ -1035,13 +1065,21 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     if (inventorySource) row.inventorySources.add(inventorySource);
     if (Object.keys(quantities).some((field) => INVENTORY_SUBJECT_FIELDS.has(field))) {
       const subject = text(inventorySubject) || '未匹配';
+      const hasStock = Object.keys(quantities).some((field) => INVENTORY_STOCK_FIELDS.has(field));
+      const segmentType = hasStock
+        ? inventoryFactProductType(productResult.product, inventoryWarehouseName)
+        : baseInventoryProductType(productResult.product);
       row.inventorySubjects.add(subject);
       const subjectAmounts = row.inventorySubjectBreakdown[subject] || {};
+      const segmentKey = combinedKey(subject, segmentType);
+      const segmentAmounts = row.inventorySegmentBreakdown[segmentKey] || { subject, productType: segmentType };
       Object.entries(quantities).forEach(([field, amount]) => {
         if (!INVENTORY_SUBJECT_FIELDS.has(field)) return;
         subjectAmounts[field] = (subjectAmounts[field] || 0) + amount;
+        segmentAmounts[field] = (segmentAmounts[field] || 0) + amount;
       });
       row.inventorySubjectBreakdown[subject] = subjectAmounts;
+      row.inventorySegmentBreakdown[segmentKey] = segmentAmounts;
     }
     if (deliveryStatus) row.deliveryStatuses.add(deliveryStatus);
     Object.entries(quantities).forEach(([field, amount]) => {
@@ -1113,6 +1151,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       issues: [skuResult.issue, warehouseResult.issue],
       inventorySource: 'FBA库存',
       inventorySubject: warehouseResult.subject,
+      inventoryWarehouseName: warehouseResult.kingdeeWarehouseName,
       quantities: { fbaInventoryQty: qty, fbaInventoryValue: qty * product.product.pretaxPrice },
       sourceContext: {
         sourceSku: text(raw.sku),
@@ -1138,6 +1177,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       issues: [materialCode ? '' : '识别码为空', warehouseResult.issue],
       inventorySource: 'FBM库存',
       inventorySubject: warehouseResult.subject,
+      inventoryWarehouseName: warehouseResult.kingdeeWarehouseName,
       quantities: { fbmInventoryQty: qty, fbmInventoryValue: qty * product.product.pretaxPrice },
       sourceContext: {
         sourceSku: text(raw.identifier),
@@ -1164,6 +1204,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       issues: [skuResult.issue, warehouseResult.issue],
       inventorySource: 'WFS库存',
       inventorySubject: warehouseResult.subject,
+      inventoryWarehouseName: warehouseResult.kingdeeWarehouseName,
       quantities: { wfsInventoryQty: qty, wfsInventoryValue: qty * product.product.pretaxPrice },
       sourceContext: {
         sourceSku: text(raw.sku),
@@ -1261,6 +1302,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       issues: [warehouseResult.issue],
       inventorySource: '国内在库',
       inventorySubject: text(raw.subject),
+      inventoryWarehouseName: warehouseResult.kingdeeWarehouseName,
       quantities: { domesticMainInventoryQty: qty, domesticMainInventoryValue: qty * product.product.pretaxPrice },
       sourceContext: {
         subject: text(raw.subject),
@@ -1400,6 +1442,11 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       inventorySubjectBreakdown: Object.entries(row.inventorySubjectBreakdown)
         .map(([subject, values]) => ({ subject, ...values }))
         .sort((left, right) => left.subject.localeCompare(right.subject, 'zh-Hans-CN')),
+      inventorySegmentBreakdown: Object.values(row.inventorySegmentBreakdown)
+        .sort((left, right) => (
+          left.subject.localeCompare(right.subject, 'zh-Hans-CN')
+          || left.productType.localeCompare(right.productType, 'zh-Hans-CN')
+        )),
       deliveryStatuses,
       unfulfilledSupplierShortNames: [...row.unfulfilledSupplierShortNames],
       unfulfilledSupplierShortName: [...row.unfulfilledSupplierShortNames].join('&') || '未匹配',

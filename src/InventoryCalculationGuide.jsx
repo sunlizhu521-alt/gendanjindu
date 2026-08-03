@@ -112,12 +112,12 @@ export default function InventoryCalculationGuide({ onBack }) {
         </div>
       </header>
 
-      <aside className="inventory-methodology-pending" aria-label="待确认库存口径">
-        <span>待确认</span>
+      <aside className="inventory-methodology-pending" aria-label="不可售库存口径">
+        <span>已确认</span>
         <div>
-          <strong>退货仓中的全新成品是否计入正常在库量</strong>
-          <p>需与同事确认。判断标准应以商品是否全新、完整且可正常销售为准，不因仓库名称包含“退货”就自动剔除。</p>
-          <p><b>当前系统处理：</b>仍计入在库量；确认前不修改现有库存计算逻辑。</p>
+          <strong>不可售库存分类</strong>
+          <p>销售产品分类为“其他/成品”或“全新品”，且映射后的金蝶仓库属于555、777或待（退货）仓时，归入不可售库存。</p>
+          <p><b>当前系统处理：</b>不可售库存从默认成品口径中剔除，可通过“成品/配件”筛选器单独查看数量和货值。</p>
         </div>
       </aside>
 

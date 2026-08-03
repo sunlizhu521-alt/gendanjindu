@@ -168,6 +168,96 @@ test('inventory summary model uses inventory library facts, layered totals and s
   assert.deepEqual(crossBorderM1?.unfulfilledReasons, [{ name: '未填写', qty: 50, value: 500 }]);
 });
 
+test('inventory summary separates unsellable warehouse stock without losing normal stock', () => {
+  const rowsBySlot = new Map([
+    ['productCategory', [
+      {
+        materialCode: 'M1', sku: 'SKU-1', materialName: 'Finished Product', productLine: 'Line A',
+        productSeries: 'Series A', productType: '全新品', pretaxPrice: '10'
+      },
+      {
+        materialCode: 'M2', sku: 'SKU-2', materialName: 'Spare Part', productLine: '其他/配件',
+        productSeries: 'Series B', productType: '其他/配件', pretaxPrice: '20'
+      }
+    ]],
+    ['spare1', [{ subject: '主体一', warehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境' }]],
+    ['warehouseMaterialMap', [
+      ...[
+        '555-M/退货仓/瑞朗德仓/医疗器械/国内&跨境',
+        '555-G/退货仓/瑞朗德仓/医疗器械/国内&跨境',
+        '555-O/退货仓/瑞朗德仓/医疗器械/国内&跨境',
+        '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境',
+        '777-R/售后配件仓/瑞朗德仓/医疗器械/国内',
+        '001-M/待（退货）仓/瑞朗德仓/国内医疗器械',
+        '正常仓'
+      ].map((warehouseName) => ({
+        subject: '主体一', warehouseName, materialCode: 'M1', businessUnit: '国内事业部'
+      })),
+      {
+        subject: '主体一', warehouseName: '555-G/退货仓/瑞朗德仓/医疗器械/国内&跨境',
+        materialCode: 'M2', businessUnit: '国内事业部'
+      }
+    ]],
+    ['inventorySummaryFile1', [
+      { sku: 'SKU-1', warehouseName: 'FBA-555', inventoryAttribute: '全部', endingInventoryQty: '10' },
+      { sku: 'SKU-2', warehouseName: 'FBA-555-PART', inventoryAttribute: '全部', endingInventoryQty: '5' }
+    ]],
+    ['inventorySummaryFile2', [{
+      identifier: 'M1', warehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境', actualTotalQty: '20'
+    }]],
+    ['inventorySummaryFile3', [{ sku: 'SKU-1', warehouseName: 'WFS-RETURN', totalInventoryQty: '30' }]],
+    ['inventorySummaryFile6', [
+      { subject: '主体一', warehouseName: '555-G/退货仓/瑞朗德仓/医疗器械/国内&跨境', materialCode: 'M1', domesticStockQty: '1' },
+      { subject: '主体一', warehouseName: '555-O/退货仓/瑞朗德仓/医疗器械/国内&跨境', materialCode: 'M1', domesticStockQty: '2' },
+      { subject: '主体一', warehouseName: '777-R/售后配件仓/瑞朗德仓/医疗器械/国内', materialCode: 'M1', domesticStockQty: '3' },
+      { subject: '主体一', warehouseName: '001-M/待（退货）仓/瑞朗德仓/国内医疗器械', materialCode: 'M1', domesticStockQty: '4' },
+      { subject: '主体一', warehouseName: '正常仓', materialCode: 'M1', domesticStockQty: '40' }
+    ]],
+    ['inventorySummaryFile7', [{ jdId: 'JD-1', jdStockQty: '50' }]],
+    ['inventorySummaryFile9', [
+      { subject: '主体一', lingxingWarehouseName: 'FBA-555', kingdeeWarehouseName: '555-M/退货仓/瑞朗德仓/医疗器械/国内&跨境' },
+      { subject: '主体一', lingxingWarehouseName: 'FBA-555-PART', kingdeeWarehouseName: '555-G/退货仓/瑞朗德仓/医疗器械/国内&跨境' },
+      { subject: '主体一', lingxingWarehouseName: 'WFS-RETURN', kingdeeWarehouseName: '001-M/待（退货）仓/瑞朗德仓/国内医疗器械' }
+    ]],
+    ['inventorySummaryFile10', [
+      { lingxingSku: 'SKU-1', identifier: 'M1' },
+      { lingxingSku: 'SKU-2', identifier: 'M2' }
+    ]],
+    ['inventorySummaryFile11', [{ jdId: 'JD-1', materialCode: 'M1' }]]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
+  });
+  const finished = result.rows.find((row) => row.matchKey === '国内事业部+M1');
+  const sparePart = result.rows.find((row) => row.matchKey === '国内事业部+M2');
+  const unsellable = finished?.inventorySegmentBreakdown.find((row) => row.productType === '不可售');
+  const finishedSegments = finished?.inventorySegmentBreakdown.filter((row) => row.productType === '成品') || [];
+  const segmentedQty = finished?.inventorySegmentBreakdown.reduce((sum, row) => (
+    sum + Number(row.fbaInventoryQty || 0)
+    + Number(row.fbmInventoryQty || 0)
+    + Number(row.wfsInventoryQty || 0)
+    + Number(row.domesticMainInventoryQty || 0)
+    + Number(row.jdInventoryQty || 0)
+  ), 0);
+
+  assert.equal(finished?.productType, '全新品');
+  assert.equal(finished?.baseProductType, '成品');
+  assert.equal(finished?.inventoryQty, 160);
+  assert.equal(segmentedQty, finished?.inventoryQty);
+  assert.deepEqual({
+    fba: unsellable?.fbaInventoryQty,
+    fbm: unsellable?.fbmInventoryQty,
+    wfs: unsellable?.wfsInventoryQty,
+    domestic: unsellable?.domesticMainInventoryQty
+  }, { fba: 10, fbm: 20, wfs: 30, domestic: 10 });
+  assert.equal(finishedSegments.reduce((sum, row) => sum + Number(row.domesticMainInventoryQty || 0), 0), 40);
+  assert.equal(finishedSegments.reduce((sum, row) => sum + Number(row.jdInventoryQty || 0), 0), 50);
+  assert.equal(sparePart?.baseProductType, '配件');
+  assert.equal(sparePart?.inventorySegmentBreakdown.some((row) => row.productType === '不可售'), false);
+  assert.equal(sparePart?.inventorySegmentBreakdown[0]?.productType, '配件');
+});
+
 test('销售区域随商品分类进入汇总，未知区域进入维度缺失而2B区域不报错', () => {
   const rowsBySlot = new Map([
     ['productCategory', [

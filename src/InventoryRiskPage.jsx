@@ -51,6 +51,24 @@ const EMPTY_RISK_FILTERS = Object.freeze({
   actions: []
 });
 
+const BUSINESS_UNIT_FILTER_ORDER = [
+  '海外事业一部',
+  '海外事业二部',
+  '国内事业部',
+  '全球招商事业部'
+];
+
+function compareBusinessUnitFilterOptions(left, right) {
+  const leftIndex = BUSINESS_UNIT_FILTER_ORDER.indexOf(left);
+  const rightIndex = BUSINESS_UNIT_FILTER_ORDER.indexOf(right);
+  if (leftIndex >= 0 || rightIndex >= 0) {
+    if (leftIndex < 0) return 1;
+    if (rightIndex < 0) return -1;
+    return leftIndex - rightIndex;
+  }
+  return left.localeCompare(right, 'zh-CN');
+}
+
 function numberText(value, maximumFractionDigits = 1) {
   const number = Number(value);
   if (!Number.isFinite(number)) return '-';
@@ -298,7 +316,7 @@ export default function InventoryRiskPage({ token, active }) {
   );
   const filterOptions = useMemo(() => ({
     businessUnits: [...new Set(actionRows.map((row) => row.businessUnit).filter(Boolean))]
-      .sort((left, right) => left.localeCompare(right, 'zh-CN')),
+      .sort(compareBusinessUnitFilterOptions),
     inventorySegments: [...new Set(actionRows.map((row) => row.inventorySegment).filter(Boolean))],
     actions: ['限制采购', '停止采购'].filter((action) => actionRows.some((row) => row.action === action))
   }), [actionRows]);

@@ -269,5 +269,7 @@ test('库存风险页面、权限与API均注册在gendanjindu', () => {
   assert.match(riskPage, /label="事业部"/);
   assert.match(riskPage, /label="库存段"/);
   assert.match(riskPage, /label="处置动作"/);
+  assert.match(riskPage, /'海外事业一部',[\s\S]*'海外事业二部',[\s\S]*'国内事业部',[\s\S]*'全球招商事业部'/);
+  assert.match(riskPage, /sort\(compareBusinessUnitFilterOptions\)/);
   assert.equal((riskPage.match(/<RiskTable /g) || []).length, 1);
 });

@@ -253,6 +253,7 @@ const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
     ['remainingQty', '备货剩余数量'], ['finishedQty', '完工未发产品'],
     ['unpreparedQty', '已下单未备料未生产'], ['preparedNotStartedQty', '已备料未生产'],
     ['inProductionQty', '生产中产品'], ['deliveryStatus', '是否需正常交货'],
+    ['supplierShortName', '供应商简称'],
     ['unfulfilledReason', '未履约原因'], ['reasonDetail', '原因详情'], ['remark', '备注']
   ] },
   { id: 'inventorySummaryFile13', title: 'Dim-领星FBA在途&金蝶仓库', fields: [

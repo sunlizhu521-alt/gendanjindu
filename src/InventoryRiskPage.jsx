@@ -260,7 +260,7 @@ function RiskTable({ rows }) {
         <table className="inventory-risk-table">
           <thead>
             <tr>
-              <th>物料编码</th><th>SKU</th><th>物料名称</th><th>产品线</th><th>销售区域</th><th>渠道</th><th>事业部</th>
+              <th>渠道</th><th>销售区域</th><th>事业部</th><th>产品线</th><th>物料编码</th><th>SKU</th><th>物料名称</th><th>未交付供应商简称</th>
               <th>在库数量</th><th>在途数量</th><th>待交付数量</th><th>预测月均销量</th><th>最近N月平均月销量</th>
               <th>在库在途周转天数</th><th>全链覆盖天数</th><th>预测状态</th><th>处置动作</th>
             </tr>
@@ -268,16 +268,16 @@ function RiskTable({ rows }) {
           <tbody>
             {visibleRows.map((row) => (
               <tr key={row.id}>
-                <td>{row.materialCode}</td><td>{row.sku}</td><td>{row.materialName}</td><td>{row.productLine}</td><td>{row.salesRegion}</td>
                 <td><span className={`inventory-risk-segment inventory-risk-segment-${row.channel === '国内' ? 'domestic' : 'overseas'}`}>{row.channel}</span></td>
-                <td>{row.businessUnit}</td><td>{numberText(row.onHandQty)}</td><td>{numberText(row.inTransitQty)}</td>
+                <td>{row.salesRegion}</td><td>{row.businessUnit}</td><td>{row.productLine}</td><td>{row.materialCode}</td><td>{row.sku}</td><td>{row.materialName}</td>
+                <td>{row.unfulfilledSupplierShortName || '未匹配'}</td><td>{numberText(row.onHandQty)}</td><td>{numberText(row.inTransitQty)}</td>
                 <td>{numberText(row.undeliveredQty)}</td><td>{numberText(row.forecastMonthlyAverage)}</td>
                 <td>{numberText(row.historicalMonthlyAverage)}</td><td>{numberText(row.transitTurnoverDays)}</td>
                 <td>{numberText(row.fullChainCoverageDays)}</td><td>{row.forecastStatus}</td>
                 <td><strong className={`inventory-risk-action inventory-risk-action-${row.action === '停止采购' ? 'stopped' : 'restricted'}`}>{row.action}</strong></td>
               </tr>
             ))}
-            {!visibleRows.length && <tr><td className="inventory-risk-empty" colSpan="16">当前筛选条件下没有需要处置的物料</td></tr>}
+            {!visibleRows.length && <tr><td className="inventory-risk-empty" colSpan="17">当前筛选条件下没有需要处置的物料</td></tr>}
           </tbody>
         </table>
       </div>
@@ -366,8 +366,10 @@ export default function InventoryRiskPage({ token, active }) {
       const link = document.createElement('a');
       link.href = url;
       link.download = `库存风险_${new Date().toISOString().slice(0, 10).replaceAll('-', '')}.xlsx`;
+      document.body.appendChild(link);
       link.click();
-      URL.revokeObjectURL(url);
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (requestError) {
       setError(requestError.message);
     }
@@ -461,10 +463,9 @@ export default function InventoryRiskPage({ token, active }) {
                 <span>未交付<b>{numberText(filteredSummary.undeliveredQty)}</b></span>
               </div>
             </article>
-            <article className="restricted"><span>限制采购</span><strong>{numberText(filteredSummary.restrictedCount, 0)}</strong><small>当前筛选结果</small></article>
-            <article className="stopped"><span>停止采购</span><strong>{numberText(filteredSummary.stoppedCount, 0)}</strong><small>当前筛选结果</small></article>
-            <article><span>正常未展示</span><strong>{numberText(summary.normalCount, 0)}</strong><small>全量正常物料</small></article>
-            <article className={summary.mappingIssueCount ? 'warning' : ''}><span>映射待维护</span><strong>{numberText(summary.mappingIssueCount, 0)}</strong><small>影响数量 {numberText(summary.mappingIssueQty)}</small></article>
+            <article className="restricted"><span>限制采购</span><strong>{numberText(filteredSummary.restrictedCount, 0)}</strong><small>事业部 + 物料编码数量</small></article>
+            <article className="stopped"><span>停止采购</span><strong>{numberText(filteredSummary.stoppedCount, 0)}</strong><small>事业部 + 物料编码数量</small></article>
+            <article><span>正常未展示</span><strong>{numberText(summary.normalCount, 0)}</strong><small>全量事业部 + 物料编码数量</small></article>
           </section>
           <div className="inventory-risk-periods">
             <span>预测区间：{result.periods.forecastStartMonth} 至 {result.periods.forecastEndMonth}</span>

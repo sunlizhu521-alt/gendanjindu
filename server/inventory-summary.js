@@ -80,6 +80,7 @@ const FIELD_ALIASES = {
   preparedNotStartedQty: ['已备料未生产'],
   inProductionQty: ['生产中产品'],
   deliveryStatus: ['是否需正常交货'],
+  supplierShortName: ['供应商简称', '未交付供应商简称'],
   unfulfilledReason: ['未履约原因'],
   reasonDetail: ['原因详情'],
   remark: ['备注']
@@ -155,6 +156,7 @@ const SLOT_SCHEMAS = {
       'preparedNotStartedQty',
       'inProductionQty',
       'deliveryStatus',
+      'supplierShortName',
       'unfulfilledReason',
       'reasonDetail',
       'remark'
@@ -678,6 +680,7 @@ function emptySummaryRow(id, businessUnit, product, rawIdentifier) {
     inventorySubjects: new Set(),
     inventorySubjectBreakdown: {},
     deliveryStatuses: new Set(),
+    unfulfilledSupplierShortNames: new Set(),
     salesByMonth: {},
     salesAmountByMonth: {},
     purchaseByMonth: {},
@@ -725,6 +728,10 @@ function sumBucket(target, name, qty, value) {
   current.qty += qty;
   current.value += value;
   target[key] = current;
+}
+
+function splitSupplierShortNames(value) {
+  return text(value).split(/[&+、,，;；]/).map(text).filter(Boolean);
 }
 
 function rowsRecord(getRecord, slotId) {
@@ -1050,6 +1057,9 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       target.unfulfilledValue += quantities.unfulfilledValue || 0;
       row.purchaseByMonth[month] = target;
     }
+    if (distribution?.purchase && Math.abs(Number(quantities.unfulfilledQty || 0)) > 0.000001) {
+      splitSupplierShortNames(distribution.supplierShortName).forEach((name) => row.unfulfilledSupplierShortNames.add(name));
+    }
     if (distribution) {
       sumBucket(row.unfulfilledReasons, distribution.reason, distribution.qty, distribution.value);
       sumBucket(row.reasonDetails, distribution.detail, distribution.qty, distribution.value);
@@ -1362,7 +1372,8 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
         value,
         reason: raw.unfulfilledReason,
         detail: raw.reasonDetail,
-        remark: raw.remark
+        remark: raw.remark,
+        supplierShortName: raw.supplierShortName
       },
       sourceContext: { sourceSku: text(raw.materialCode) }
     });
@@ -1390,6 +1401,8 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
         .map(([subject, values]) => ({ subject, ...values }))
         .sort((left, right) => left.subject.localeCompare(right.subject, 'zh-Hans-CN')),
       deliveryStatuses,
+      unfulfilledSupplierShortNames: [...row.unfulfilledSupplierShortNames],
+      unfulfilledSupplierShortName: [...row.unfulfilledSupplierShortNames].join('&') || '未匹配',
       deliveryStatus: deliveryStatuses.includes('是') && deliveryStatuses.includes('否')
         ? '是&否'
         : deliveryStatuses[0] || '无未交付',

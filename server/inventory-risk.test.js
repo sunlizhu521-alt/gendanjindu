@@ -24,6 +24,7 @@ function summaryRow(overrides = {}) {
     inventoryQty: 100,
     transitQty: 0,
     unfulfilledQty: 0,
+    unfulfilledSupplierShortName: '供应商甲&供应商乙&供应商甲',
     salesByMonth: {
       '2026-02': 10,
       '2026-03': 20,
@@ -97,6 +98,23 @@ test('槽位15无年份销量列按文件日期跨年，并汇总重复渠道和
   );
   assert.equal(payload.diagnostics.forecastParsing.monthColumns.some(({ header }) => header.includes('金额')), false);
   assert.equal(payload.diagnostics.forecastParsing.reasonCounts.parsedRows, 2);
+});
+
+test('未交付供应商简称按事业部和物料去重汇总', () => {
+  const payload = buildInventoryRiskAnalysis({
+    now: NOW,
+    inventoryModel: {
+      rows: [
+        summaryRow({ inventoryQty: 300, unfulfilledQty: 10, unfulfilledSupplierShortName: '供应商甲&供应商乙' }),
+        summaryRow({ inventoryQty: 300, unfulfilledQty: 20, unfulfilledSupplierShortName: '供应商乙&供应商丙' })
+      ],
+      anomalies: []
+    },
+    forecastRows: [wideForecast()]
+  });
+  assert.equal(payload.stopped.length, 1);
+  assert.equal(payload.stopped[0].undeliveredQty, 30);
+  assert.equal(payload.stopped[0].unfulfilledSupplierShortName, '供应商甲&供应商乙&供应商丙');
 });
 
 test('无文件日期时使用槽位更新时间把年初月份归入次年', () => {
@@ -327,7 +345,7 @@ test('库存风险页面、权限与API均注册在gendanjindu', () => {
   assert.match(server, /\/api\/inventory-risk\/export/);
   assert.match(client, /库存风险/);
   assert.match(client, /InventoryRiskPage/);
-  assert.match(server, /json_to_sheet\(inventoryRiskExportRows\(payload\.rows\)\), '处置清单'/);
+  assert.match(server, /buildInventoryRiskWorkbook\(payload\)/);
   assert.match(riskPage, /label="事业部"/);
   assert.match(riskPage, /label="产品线"/);
   assert.match(riskPage, /label="系列"/);
@@ -338,12 +356,15 @@ test('库存风险页面、权限与API均注册在gendanjindu', () => {
   assert.match(riskPage, /有预测销售/);
   assert.match(riskPage, /无预测销售/);
   assert.match(riskPage, /库存总量/);
+  assert.doesNotMatch(riskPage, /<span>映射待维护<\/span>/);
+  assert.match(riskPage, /事业部 \+ 物料编码数量/);
   assert.match(riskPage, /在库<b>/);
   assert.match(riskPage, /在途<b>/);
   assert.match(riskPage, /未交付<b>/);
   const summaryMarkup = riskPage.slice(riskPage.indexOf('<section className="inventory-risk-summary">'));
   assert.ok(summaryMarkup.indexOf('库存总量') < summaryMarkup.indexOf('className="restricted"'));
   assert.match(riskPage, /在库在途周转天数/);
+  assert.match(riskPage, /未交付供应商简称/);
   assert.match(riskPage, /在库量可销天数/);
   assert.match(riskPage, /全链路天数/);
   assert.match(riskPage, /海外-美国/);

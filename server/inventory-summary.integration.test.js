@@ -107,7 +107,7 @@ test('inventory summary model uses inventory library facts, layered totals and s
       {
         month: '2026年2月', businessUnit: '跨境事业部', materialCode: 'M1', remainingQty: '50',
         finishedQty: '10', unpreparedQty: '15', preparedNotStartedQty: '5', inProductionQty: '20',
-        deliveryStatus: '是', unfulfilledReason: '', reasonDetail: '材料延迟', remark: ''
+        deliveryStatus: '是', supplierShortName: '供应商甲&供应商乙&供应商甲', unfulfilledReason: '', reasonDetail: '材料延迟', remark: ''
       },
       {
         month: '2026-02', businessUnit: '国内事业部', materialCode: 'M2', remainingQty: '20',
@@ -143,7 +143,8 @@ test('inventory summary model uses inventory library facts, layered totals and s
     quantityAbc: crossBorderM1?.quantityAbc,
     amountAbc: crossBorderM1?.amountAbc,
     model: crossBorderM1?.model,
-    deliveryStatus: crossBorderM1?.deliveryStatus
+    deliveryStatus: crossBorderM1?.deliveryStatus,
+    supplierShortName: crossBorderM1?.unfulfilledSupplierShortName
   }, {
     fba: 1000,
     fbm: 200,
@@ -157,7 +158,8 @@ test('inventory summary model uses inventory library facts, layered totals and s
     quantityAbc: 'B',
     amountAbc: 'B',
     model: 'Model One',
-    deliveryStatus: '是'
+    deliveryStatus: '是',
+    supplierShortName: '供应商甲&供应商乙'
   });
   assert.equal(
     result.rows.filter((row) => ['M3', 'M4'].includes(row.materialCode)).every((row) => row.quantityAbc === 'C'),

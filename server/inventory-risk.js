@@ -378,11 +378,18 @@ function addAggregate(map, row) {
     onHandQty: 0,
     inTransitQty: 0,
     undeliveredQty: 0,
+    unfulfilledSupplierShortNames: new Set(),
     salesByMonth: new Map()
   };
   current.onHandQty += numberValue(row.inventoryQty);
   current.inTransitQty += numberValue(row.transitQty);
   current.undeliveredQty += numberValue(row.unfulfilledQty);
+  if (numberValue(row.unfulfilledQty) > 0) {
+    const supplierValues = Array.isArray(row.unfulfilledSupplierShortNames)
+      ? row.unfulfilledSupplierShortNames
+      : String(row.unfulfilledSupplierShortName || '').split(/[&+、,，;；]/);
+    supplierValues.map(text).filter((name) => name && name !== '未匹配').forEach((name) => current.unfulfilledSupplierShortNames.add(name));
+  }
   Object.entries(row.salesByMonth || {}).forEach(([month, qty]) => {
     current.salesByMonth.set(month, (current.salesByMonth.get(month) || 0) + numberValue(qty));
   });
@@ -485,6 +492,7 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
       inTransitQty: row.inTransitQty,
       inventoryQty: row.onHandQty + row.inTransitQty,
       undeliveredQty: row.undeliveredQty,
+      unfulfilledSupplierShortName: [...row.unfulfilledSupplierShortNames].join('&') || '未匹配',
       totalInventoryQty: row.onHandQty + row.inTransitQty + row.undeliveredQty,
       forecastMonthlyAverage,
       historicalMonthlyAverage,

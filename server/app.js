@@ -10,7 +10,7 @@ import unzipper from 'unzipper';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import xlsx from 'xlsx';
 import { all, get, initDatabase, run, runMany, saveDatabase, transaction } from './database.js';
@@ -26,6 +26,7 @@ import {
   inventoryRiskCacheKey,
   normalizeInventoryRiskParams
 } from './inventory-risk.js';
+import { buildInventoryRiskWorkbook } from './inventory-risk-export.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -2359,9 +2360,51 @@ function inventoryRiskSourceVersion() {
   ).map((row) => [row.slot_id, row.file_name, row.updated_at, row.applied, row.rows_size].join(':')).join('|');
 }
 
+function inventoryRiskSupplierContext() {
+  const lookups = dimensionLookups();
+  const supplierNamesByKey = new Map();
+  const signatureRows = [];
+  all(
+    `SELECT business_unit, material_code, supplier, tracking_remaining_qty
+     FROM order_demands
+     WHERE active = 1 AND tracking_remaining_qty > 0
+     ORDER BY business_unit, material_code, supplier`
+  ).forEach((row) => {
+    const key = [normalize(row.business_unit).split('*')[0], normalize(row.material_code)].join('|');
+    if (!key || key === '|') return;
+    const matchedName = orderSupplierShortName(lookups, row.supplier, row.material_code);
+    const names = matchedName === UNMATCHED_SUPPLIER_SHORT_NAME ? [] : splitSupplierNames(matchedName);
+    if (!supplierNamesByKey.has(key)) supplierNamesByKey.set(key, []);
+    names.forEach((name) => {
+      if (!supplierNamesByKey.get(key).includes(name)) supplierNamesByKey.get(key).push(name);
+    });
+    signatureRows.push([key, normalize(row.supplier), names.join('&'), numberValue(row.tracking_remaining_qty)]);
+  });
+  const supplierMap = new Map([...supplierNamesByKey].map(([key, names]) => [key, names.join('&')]));
+  return {
+    supplierMap,
+    version: createHash('sha1').update(JSON.stringify(signatureRows)).digest('hex')
+  };
+}
+
+function inventoryRiskModelWithSuppliers(supplierMap) {
+  const model = inventorySummaryData();
+  return {
+    ...model,
+    rows: model.rows.map((row) => {
+      const key = [normalize(row.businessUnit).split('*')[0], normalize(row.materialCode)].join('|');
+      return {
+        ...row,
+        unfulfilledSupplierShortName: supplierMap.get(key) || row.unfulfilledSupplierShortName || '未匹配'
+      };
+    })
+  };
+}
+
 function inventoryRiskData(input = {}, { force = false } = {}) {
   const params = normalizeInventoryRiskParams(input);
-  const sourceVersion = inventoryRiskSourceVersion();
+  const supplierContext = inventoryRiskSupplierContext();
+  const sourceVersion = `${inventoryRiskSourceVersion()}|suppliers:${supplierContext.version}`;
   const key = inventoryRiskCacheKey(sourceVersion, params);
   if (!force && inventoryRiskResultCache.key === key && inventoryRiskResultCache.payload) {
     return inventoryRiskResultCache.payload;
@@ -2371,7 +2414,7 @@ function inventoryRiskData(input = {}, { force = false } = {}) {
     ['inventorySummaryFile15']
   );
   const payload = buildInventoryRiskAnalysis({
-    inventoryModel: inventorySummaryData(),
+    inventoryModel: inventoryRiskModelWithSuppliers(supplierContext.supplierMap),
     forecastRows: parseJson(forecastRecord?.rows_json, []),
     forecastSource: {
       fileName: forecastRecord?.file_name || '',
@@ -2382,62 +2425,6 @@ function inventoryRiskData(input = {}, { force = false } = {}) {
   });
   if (payload.ok) inventoryRiskResultCache = { key, payload };
   return payload;
-}
-
-function inventoryRiskExportRows(rows) {
-  return rows.map((row) => ({
-    '物料编码': row.materialCode,
-    'SKU': row.sku,
-    '物料名称': row.materialName,
-    '产品线': row.productLine,
-    '系列': row.productSeries,
-    '销售区域': row.salesRegion,
-    '渠道': row.channel,
-    '事业部': row.businessUnit,
-    '在库数量': row.onHandQty,
-    '在途数量': row.inTransitQty,
-    '待交付数量': row.undeliveredQty,
-    '库存及在途数量': row.inventoryQty,
-    '库存总量': row.totalInventoryQty,
-    '预测月均销量': row.forecastMonthlyAverage,
-    '最近N月平均月销量': row.historicalMonthlyAverage,
-    '在库在途周转天数': row.transitTurnoverDays,
-    '全链覆盖天数': row.fullChainCoverageDays,
-    '在库量可销天数': row.onHandSellableDays,
-    '发货到上架': row.dispatchToShelfDays,
-    '海运/运输': row.transportDays,
-    '订舱/预约': row.bookingDays,
-    '现货天数': row.spotDays,
-    '平均交期': row.averageLeadTimeDays,
-    '全链路天数': row.fullChainDays,
-    '限制采购阈值': row.restrictThresholdDays,
-    '停止采购阈值': row.stopThresholdDays,
-    '销售预测状态': row.forecastStatus,
-    '处置动作': row.action
-  }));
-}
-
-function inventoryRiskParameterRows(payload) {
-  const labels = { overseasUs: '海外-美国', overseasEurope: '海外-欧洲', domestic: '国内' };
-  return Object.entries(payload.params.channels).map(([key, settings]) => ({
-    '渠道': labels[key] || key,
-    '在库量可销天数': settings.onHandSellableDays,
-    '发货到上架': settings.dispatchToShelfDays,
-    '海运/运输': settings.transportDays,
-    '订舱/预约': settings.bookingDays,
-    '现货天数': settings.spotDays,
-    '平均交期': settings.averageLeadTimeDays,
-    '全链路天数': settings.fullChainDays,
-    '限制采购阈值': settings.restrictThresholdDays,
-    '停止采购阈值': settings.stopThresholdDays,
-    '预测月数': payload.params.forecastMonths,
-    '历史月数': payload.params.historicalMonths,
-    '预测开始月份': payload.periods.forecastStartMonth,
-    '预测结束月份': payload.periods.forecastEndMonth,
-    '历史开始月份': payload.periods.historicalStartMonth,
-    '历史结束月份': payload.periods.historicalEndMonth,
-    '生成时间': payload.generatedAt
-  }));
 }
 
 function enrichDemandFields(supplier, materialCode, orderCreator = '', lookups = dimensionLookups()) {
@@ -3615,11 +3602,7 @@ app.post('/api/inventory-risk/export', requireAuth, requirePage('inventoryRisk')
     if (!payload.ok) {
       return res.status(payload.status === 'invalid_params' ? 400 : 422).json(payload);
     }
-    const workbook = xlsx.utils.book_new();
-    xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(inventoryRiskExportRows(payload.rows)), '处置清单');
-    xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(payload.diagnostics.mappingIssues), '映射诊断');
-    xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(payload.diagnostics.forecastIssues), '预测诊断');
-    xlsx.utils.book_append_sheet(workbook, xlsx.utils.json_to_sheet(inventoryRiskParameterRows(payload)), '计算参数');
+    const workbook = buildInventoryRiskWorkbook(payload);
     const buffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
     const fileName = `库存风险_${nowText().slice(0, 10).replaceAll('-', '')}.xlsx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

@@ -358,6 +358,12 @@ test('供应计划分析页面、权限与API均注册在gendanjindu', () => {
   assert.match(riskPage, /label="预测销售"/);
   assert.match(riskPage, /有预测销售/);
   assert.match(riskPage, /无预测销售/);
+  assert.match(riskPage, /forecastedCount: filteredRows\.filter\(\(row\) => row\.forecastAvailability === '有预测销售'\)\.length/);
+  assert.match(riskPage, /unforecastedCount: filteredRows\.filter\(\(row\) => row\.forecastAvailability === '无预测销售'\)\.length/);
+  assert.match(riskPage, /className="forecasted"/);
+  assert.match(riskPage, /className="unforecasted"/);
+  assert.match(riskPage, /有销售预测的物料编码数量/);
+  assert.match(riskPage, /无销售预测的物料编码数量/);
   assert.match(riskPage, /库存总量/);
   assert.doesNotMatch(riskPage, /<span>映射待维护<\/span>/);
   assert.match(riskPage, /事业部 \+ 物料编码数量/);

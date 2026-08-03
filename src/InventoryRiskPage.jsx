@@ -430,6 +430,8 @@ export default function InventoryRiskPage({ token, active }) {
     return {
       restrictedCount: filteredRows.filter((row) => row.action === '限制采购').length,
       stoppedCount: filteredRows.filter((row) => row.action === '停止采购').length,
+      forecastedCount: filteredRows.filter((row) => row.forecastAvailability === '有预测销售').length,
+      unforecastedCount: filteredRows.filter((row) => row.forecastAvailability === '无预测销售').length,
       onHandQty,
       inTransitQty,
       undeliveredQty,
@@ -482,6 +484,8 @@ export default function InventoryRiskPage({ token, active }) {
                 <span>未交付<b>{numberText(filteredSummary.undeliveredQty)}</b></span>
               </div>
             </article>
+            <article className="forecasted"><span>有销售预测的物料编码数量</span><strong>{numberText(filteredSummary.forecastedCount, 0)}</strong><small>按事业部 + 物料编码独立计数</small></article>
+            <article className="unforecasted"><span>无销售预测的物料编码数量</span><strong>{numberText(filteredSummary.unforecastedCount, 0)}</strong><small>按事业部 + 物料编码独立计数</small></article>
             <article className="restricted"><span>限制采购</span><strong>{numberText(filteredSummary.restrictedCount, 0)}</strong><small>事业部 + 物料编码数量</small></article>
             <article className="stopped"><span>停止采购</span><strong>{numberText(filteredSummary.stoppedCount, 0)}</strong><small>事业部 + 物料编码数量</small></article>
             <article><span>正常未展示</span><strong>{numberText(summary.normalCount, 0)}</strong><small>全量事业部 + 物料编码数量</small></article>

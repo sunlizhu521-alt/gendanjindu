@@ -346,10 +346,13 @@ test('库存风险页面、权限与API均注册在gendanjindu', () => {
   assert.match(client, /库存风险/);
   assert.match(client, /InventoryRiskPage/);
   assert.match(server, /buildInventoryRiskWorkbook\(payload\)/);
+  assert.doesNotMatch(server, /inventoryRiskSupplierContext/);
   assert.match(riskPage, /label="事业部"/);
   assert.match(riskPage, /label="产品线"/);
   assert.match(riskPage, /label="系列"/);
   assert.match(riskPage, /label="型号"/);
+  assert.match(riskPage, /label="供应商简称"/);
+  assert.match(riskPage, /supplierTotals\.get\(right\) - supplierTotals\.get\(left\)/);
   assert.match(riskPage, /label="渠道"/);
   assert.match(riskPage, /label="处置动作"/);
   assert.match(riskPage, /label="预测销售"/);

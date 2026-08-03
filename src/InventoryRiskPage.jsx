@@ -35,6 +35,7 @@ const EMPTY_RISK_FILTERS = Object.freeze({
   productLines: [],
   productSeries: [],
   models: [],
+  supplierShortNames: [],
   channels: [],
   actions: [],
   forecastAvailability: []
@@ -62,6 +63,11 @@ function numberText(value, maximumFractionDigits = 1) {
   const number = Number(value);
   if (!Number.isFinite(number)) return '-';
   return number.toLocaleString('zh-CN', { maximumFractionDigits });
+}
+
+function splitSupplierShortNames(value) {
+  const names = String(value || '').split(/[&+、,，;；]/).map((item) => item.trim()).filter(Boolean);
+  return names.length ? [...new Set(names)] : ['未匹配'];
 }
 
 function derivedChannelDays(settings) {
@@ -384,6 +390,7 @@ export default function InventoryRiskPage({ token, active }) {
     && (omit === 'productLines' || filters.productLines.length === 0 || filters.productLines.includes(row.productLine))
     && (omit === 'productSeries' || filters.productSeries.length === 0 || filters.productSeries.includes(row.productSeries))
     && (omit === 'models' || filters.models.length === 0 || filters.models.includes(row.model))
+    && (omit === 'supplierShortNames' || filters.supplierShortNames.length === 0 || splitSupplierShortNames(row.unfulfilledSupplierShortName).some((name) => filters.supplierShortNames.includes(name)))
     && (omit === 'channels' || filters.channels.length === 0 || filters.channels.includes(row.channel))
     && (omit === 'actions' || filters.actions.length === 0 || filters.actions.includes(row.action))
     && (omit === 'forecastAvailability' || filters.forecastAvailability.length === 0 || filters.forecastAvailability.includes(row.forecastAvailability))
@@ -393,11 +400,20 @@ export default function InventoryRiskPage({ token, active }) {
       .filter((row) => matchesFilters(row, key))
       .map((row) => row[valueKey])
       .filter(Boolean))];
+    const supplierTotals = new Map();
+    actionRows.filter((row) => matchesFilters(row, 'supplierShortNames')).forEach((row) => {
+      splitSupplierShortNames(row.unfulfilledSupplierShortName).forEach((name) => {
+        supplierTotals.set(name, (supplierTotals.get(name) || 0) + Number(row.undeliveredQty || 0));
+      });
+    });
     return {
       businessUnits: valuesFor('businessUnits', 'businessUnit').sort(compareBusinessUnitFilterOptions),
       productLines: valuesFor('productLines', 'productLine').sort((a, b) => a.localeCompare(b, 'zh-CN')),
       productSeries: valuesFor('productSeries', 'productSeries').sort((a, b) => a.localeCompare(b, 'zh-CN')),
       models: valuesFor('models', 'model').sort((a, b) => a.localeCompare(b, 'zh-CN', { numeric: true })),
+      supplierShortNames: [...supplierTotals.keys()].sort((left, right) => (
+        supplierTotals.get(right) - supplierTotals.get(left) || left.localeCompare(right, 'zh-CN')
+      )),
       channels: RISK_CHANNELS.map((channel) => channel.label).filter((channel) => valuesFor('channels', 'channel').includes(channel)),
       actions: ['限制采购', '停止采购'].filter((action) => valuesFor('actions', 'action').includes(action)),
       forecastAvailability: ['有预测销售', '无预测销售']
@@ -447,6 +463,7 @@ export default function InventoryRiskPage({ token, active }) {
             <RiskMultiSelectFilter label="产品线" allLabel="全部产品线" value={filters.productLines} options={filterOptions.productLines} onChange={(value) => setFilters((current) => ({ ...current, productLines: value }))} />
             <RiskMultiSelectFilter label="系列" allLabel="全部系列" value={filters.productSeries} options={filterOptions.productSeries} onChange={(value) => setFilters((current) => ({ ...current, productSeries: value }))} />
             <RiskMultiSelectFilter label="型号" allLabel="全部型号" value={filters.models} options={filterOptions.models} onChange={(value) => setFilters((current) => ({ ...current, models: value }))} />
+            <RiskMultiSelectFilter label="供应商简称" allLabel="全部供应商简称" value={filters.supplierShortNames} options={filterOptions.supplierShortNames} onChange={(value) => setFilters((current) => ({ ...current, supplierShortNames: value }))} />
             <RiskMultiSelectFilter label="渠道" allLabel="全部渠道" value={filters.channels} options={filterOptions.channels} onChange={(value) => setFilters((current) => ({ ...current, channels: value }))} />
             <RiskMultiSelectFilter label="处置动作" allLabel="全部处置动作" value={filters.actions} options={filterOptions.actions} onChange={(value) => setFilters((current) => ({ ...current, actions: value }))} />
             <RiskMultiSelectFilter label="预测销售" allLabel="全部预测销售" value={filters.forecastAvailability} options={filterOptions.forecastAvailability} onChange={(value) => setFilters((current) => ({ ...current, forecastAvailability: value }))} />

@@ -10,7 +10,7 @@ import unzipper from 'unzipper';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import xlsx from 'xlsx';
 import { all, get, initDatabase, run, runMany, saveDatabase, transaction } from './database.js';
@@ -2360,51 +2360,9 @@ function inventoryRiskSourceVersion() {
   ).map((row) => [row.slot_id, row.file_name, row.updated_at, row.applied, row.rows_size].join(':')).join('|');
 }
 
-function inventoryRiskSupplierContext() {
-  const lookups = dimensionLookups();
-  const supplierNamesByKey = new Map();
-  const signatureRows = [];
-  all(
-    `SELECT business_unit, material_code, supplier, tracking_remaining_qty
-     FROM order_demands
-     WHERE active = 1 AND tracking_remaining_qty > 0
-     ORDER BY business_unit, material_code, supplier`
-  ).forEach((row) => {
-    const key = [normalize(row.business_unit).split('*')[0], normalize(row.material_code)].join('|');
-    if (!key || key === '|') return;
-    const matchedName = orderSupplierShortName(lookups, row.supplier, row.material_code);
-    const names = matchedName === UNMATCHED_SUPPLIER_SHORT_NAME ? [] : splitSupplierNames(matchedName);
-    if (!supplierNamesByKey.has(key)) supplierNamesByKey.set(key, []);
-    names.forEach((name) => {
-      if (!supplierNamesByKey.get(key).includes(name)) supplierNamesByKey.get(key).push(name);
-    });
-    signatureRows.push([key, normalize(row.supplier), names.join('&'), numberValue(row.tracking_remaining_qty)]);
-  });
-  const supplierMap = new Map([...supplierNamesByKey].map(([key, names]) => [key, names.join('&')]));
-  return {
-    supplierMap,
-    version: createHash('sha1').update(JSON.stringify(signatureRows)).digest('hex')
-  };
-}
-
-function inventoryRiskModelWithSuppliers(supplierMap) {
-  const model = inventorySummaryData();
-  return {
-    ...model,
-    rows: model.rows.map((row) => {
-      const key = [normalize(row.businessUnit).split('*')[0], normalize(row.materialCode)].join('|');
-      return {
-        ...row,
-        unfulfilledSupplierShortName: supplierMap.get(key) || row.unfulfilledSupplierShortName || '未匹配'
-      };
-    })
-  };
-}
-
 function inventoryRiskData(input = {}, { force = false } = {}) {
   const params = normalizeInventoryRiskParams(input);
-  const supplierContext = inventoryRiskSupplierContext();
-  const sourceVersion = `${inventoryRiskSourceVersion()}|suppliers:${supplierContext.version}`;
+  const sourceVersion = inventoryRiskSourceVersion();
   const key = inventoryRiskCacheKey(sourceVersion, params);
   if (!force && inventoryRiskResultCache.key === key && inventoryRiskResultCache.payload) {
     return inventoryRiskResultCache.payload;
@@ -2414,7 +2372,7 @@ function inventoryRiskData(input = {}, { force = false } = {}) {
     ['inventorySummaryFile15']
   );
   const payload = buildInventoryRiskAnalysis({
-    inventoryModel: inventoryRiskModelWithSuppliers(supplierContext.supplierMap),
+    inventoryModel: inventorySummaryData(),
     forecastRows: parseJson(forecastRecord?.rows_json, []),
     forecastSource: {
       fileName: forecastRecord?.file_name || '',

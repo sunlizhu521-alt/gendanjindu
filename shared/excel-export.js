@@ -2,7 +2,12 @@ const HEADER_FILL = 'FFD9EAF7';
 const HEADER_FONT = 'FF17324D';
 const ALTERNATE_FILL = 'FFF3F6FA';
 const BORDER_COLOR = 'FFCBD5E1';
-export const STANDARD_EXCEL_NUMBER_FORMAT = '#,##0.#';
+export const STANDARD_EXCEL_INTEGER_FORMAT = '#,##0';
+export const STANDARD_EXCEL_DECIMAL_FORMAT = '#,##0.0';
+
+export function standardExcelNumberFormat(value) {
+  return Number.isInteger(value) ? STANDARD_EXCEL_INTEGER_FORMAT : STANDARD_EXCEL_DECIMAL_FORMAT;
+}
 
 const NUMERIC_HEADER_PATTERN = /(数量|金额|货值|占比|天数|销量|销售额|单价|结算价|差异|库存|在途|未交付|已发货|入库|生产|完工|需求|合计|记录数|物料数|影响|qty|amount|price|value|count|days|rate|percent)/i;
 const TEXT_HEADER_PATTERN = /(编码|编号|单号|订单号|sku|id|日期|时间|月份|状态|名称|事业部|产品线|系列|型号|仓库|主体|供应商|创建人|备注|原因|来源|分类|类型|组织|店铺|站点|渠道|区域|动作|角色|页面|路径|方式)/i;
@@ -77,7 +82,7 @@ export function applyStandardExcelTableFormat(worksheet, options = {}) {
       if (cell.value !== '' && cell.value !== null && cell.value !== undefined) {
         cell.border = thinBorder();
       }
-      if (typeof cell.value === 'number') cell.numFmt = STANDARD_EXCEL_NUMBER_FORMAT;
+      if (typeof cell.value === 'number') cell.numFmt = standardExcelNumberFormat(cell.value);
     }
   }
 

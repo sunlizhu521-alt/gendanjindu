@@ -5,7 +5,11 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import ExcelJS from 'exceljs';
 import xlsx from 'xlsx';
-import { buildStyledExcelBuffer, STANDARD_EXCEL_NUMBER_FORMAT } from '../shared/excel-export.js';
+import {
+  buildStyledExcelBuffer,
+  STANDARD_EXCEL_DECIMAL_FORMAT,
+  STANDARD_EXCEL_INTEGER_FORMAT
+} from '../shared/excel-export.js';
 
 test('统一Excel格式应用到每个工作表', async () => {
   const source = xlsx.utils.book_new();
@@ -42,13 +46,13 @@ test('统一Excel格式应用到每个工作表', async () => {
   assert.equal(workbook.getWorksheet('明细').autoFilter, 'A1:D4');
   assert.ok(workbook.getWorksheet('明细').getColumn(1).width >= 24);
   assert.equal(workbook.getWorksheet('明细').getCell('D2').value, 150);
-  assert.equal(workbook.getWorksheet('明细').getCell('D2').numFmt, STANDARD_EXCEL_NUMBER_FORMAT);
+  assert.equal(workbook.getWorksheet('明细').getCell('D2').numFmt, STANDARD_EXCEL_INTEGER_FORMAT);
   assert.equal(workbook.getWorksheet('明细').getCell('D3').value, 80.3);
-  assert.equal(workbook.getWorksheet('明细').getCell('D3').numFmt, STANDARD_EXCEL_NUMBER_FORMAT);
+  assert.equal(workbook.getWorksheet('明细').getCell('D3').numFmt, STANDARD_EXCEL_DECIMAL_FORMAT);
   assert.equal(workbook.getWorksheet('明细').getCell('B2').value, '1002010248');
 });
 
-test('numeric text uses optional decimals while identifier text is preserved', async () => {
+test('numeric text uses explicit integer or decimal formats while identifier text is preserved', async () => {
   const source = xlsx.utils.book_new();
   xlsx.utils.book_append_sheet(source, xlsx.utils.aoa_to_sheet([
     ['materialCode', 'qty', 'amount'],
@@ -63,10 +67,13 @@ test('numeric text uses optional decimals while identifier text is preserved', a
 
   assert.equal(worksheet.getCell('A2').value, '0010248');
   assert.equal(worksheet.getCell('B2').value, 1200);
-  assert.equal(worksheet.getCell('B2').numFmt, STANDARD_EXCEL_NUMBER_FORMAT);
+  assert.equal(worksheet.getCell('B2').numFmt, STANDARD_EXCEL_INTEGER_FORMAT);
   assert.equal(worksheet.getCell('B3').value, 8.6);
+  assert.equal(worksheet.getCell('B3').numFmt, STANDARD_EXCEL_DECIMAL_FORMAT);
   assert.equal(worksheet.getCell('C2').value, 36.3);
+  assert.equal(worksheet.getCell('C2').numFmt, STANDARD_EXCEL_DECIMAL_FORMAT);
   assert.equal(worksheet.getCell('C3').value, 10);
+  assert.equal(worksheet.getCell('C3').numFmt, STANDARD_EXCEL_INTEGER_FORMAT);
 });
 
 test('浏览器端和服务端业务导出均经过统一格式模块', () => {

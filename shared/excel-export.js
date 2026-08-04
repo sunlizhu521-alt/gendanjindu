@@ -2,12 +2,34 @@ const HEADER_FILL = 'FFD9EAF7';
 const HEADER_FONT = 'FF17324D';
 const ALTERNATE_FILL = 'FFF3F6FA';
 const BORDER_COLOR = 'FFCBD5E1';
+export const STANDARD_EXCEL_NUMBER_FORMAT = '#,##0.#';
 
-function normalizedCellValue(value) {
+const NUMERIC_HEADER_PATTERN = /(数量|金额|货值|占比|天数|销量|销售额|单价|结算价|差异|库存|在途|未交付|已发货|入库|生产|完工|需求|合计|记录数|物料数|影响|qty|amount|price|value|count|days|rate|percent)/i;
+const TEXT_HEADER_PATTERN = /(编码|编号|单号|订单号|sku|id|日期|时间|月份|状态|名称|事业部|产品线|系列|型号|仓库|主体|供应商|创建人|备注|原因|来源|分类|类型|组织|店铺|站点|渠道|区域|动作|角色|页面|路径|方式)/i;
+
+function roundedNumber(value) {
+  const rounded = Math.round((value + Number.EPSILON) * 10) / 10;
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
+
+function numericTextValue(value, header) {
+  if (typeof value !== 'string') return null;
+  const headerText = String(header ?? '').trim();
+  if (!NUMERIC_HEADER_PATTERN.test(headerText) || TEXT_HEADER_PATTERN.test(headerText)) return null;
+  const normalized = value.trim().replace(/,/g, '');
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? roundedNumber(parsed) : null;
+}
+
+function normalizedCellValue(value, header) {
   if (value === null || value === undefined) return '';
   if (typeof value === 'number' && !Number.isFinite(value)) return '';
-  if (typeof value === 'number') return Math.round((value + Number.EPSILON) * 10) / 10;
-  if (typeof value === 'string') return value.replace(/[\r\n]+/g, ' / ').trim();
+  if (typeof value === 'number') return roundedNumber(value);
+  if (typeof value === 'string') {
+    const cleaned = value.replace(/[\r\n]+/g, ' / ').trim();
+    return numericTextValue(cleaned, header) ?? cleaned;
+  }
   if (value instanceof Date || typeof value !== 'object') return value;
   return JSON.stringify(value);
 }
@@ -55,7 +77,7 @@ export function applyStandardExcelTableFormat(worksheet, options = {}) {
       if (cell.value !== '' && cell.value !== null && cell.value !== undefined) {
         cell.border = thinBorder();
       }
-      if (typeof cell.value === 'number') cell.numFmt = '#,##0.#';
+      if (typeof cell.value === 'number') cell.numFmt = STANDARD_EXCEL_NUMBER_FORMAT;
     }
   }
 
@@ -83,12 +105,14 @@ export async function buildStyledExcelBuffer(sheetJs, sourceWorkbook, options = 
 
   sourceWorkbook.SheetNames.forEach((sheetName) => {
     const sourceSheet = sourceWorkbook.Sheets[sheetName];
-    const rows = sheetJs.utils.sheet_to_json(sourceSheet, {
+    const sourceRows = sheetJs.utils.sheet_to_json(sourceSheet, {
       header: 1,
       defval: '',
       raw: true,
       blankrows: true
-    }).map((row) => row.map(normalizedCellValue));
+    });
+    const headers = sourceRows[0] || [];
+    const rows = sourceRows.map((row) => row.map((value, columnIndex) => normalizedCellValue(value, headers[columnIndex])));
     const worksheet = workbook.addWorksheet(sheetName);
     worksheet.addRows(rows.length ? rows : [['']]);
     applyStandardExcelTableFormat(worksheet, {

@@ -5,7 +5,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import ExcelJS from 'exceljs';
 import xlsx from 'xlsx';
-import { buildStyledExcelBuffer } from '../shared/excel-export.js';
+import { buildStyledExcelBuffer, STANDARD_EXCEL_NUMBER_FORMAT } from '../shared/excel-export.js';
 
 test('统一Excel格式应用到每个工作表', async () => {
   const source = xlsx.utils.book_new();
@@ -41,9 +41,32 @@ test('统一Excel格式应用到每个工作表', async () => {
   });
   assert.equal(workbook.getWorksheet('明细').autoFilter, 'A1:D4');
   assert.ok(workbook.getWorksheet('明细').getColumn(1).width >= 24);
+  assert.equal(workbook.getWorksheet('明细').getCell('D2').value, 150);
+  assert.equal(workbook.getWorksheet('明细').getCell('D2').numFmt, STANDARD_EXCEL_NUMBER_FORMAT);
   assert.equal(workbook.getWorksheet('明细').getCell('D3').value, 80.3);
-  assert.equal(workbook.getWorksheet('明细').getCell('D3').numFmt, '#,##0.#');
+  assert.equal(workbook.getWorksheet('明细').getCell('D3').numFmt, STANDARD_EXCEL_NUMBER_FORMAT);
   assert.equal(workbook.getWorksheet('明细').getCell('B2').value, '1002010248');
+});
+
+test('numeric text uses optional decimals while identifier text is preserved', async () => {
+  const source = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(source, xlsx.utils.aoa_to_sheet([
+    ['materialCode', 'qty', 'amount'],
+    ['0010248', '1,200.0', '36.25'],
+    ['1924010005', '8.6', '10']
+  ]), 'Number format');
+
+  const buffer = await buildStyledExcelBuffer(xlsx, source);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const worksheet = workbook.getWorksheet('Number format');
+
+  assert.equal(worksheet.getCell('A2').value, '0010248');
+  assert.equal(worksheet.getCell('B2').value, 1200);
+  assert.equal(worksheet.getCell('B2').numFmt, STANDARD_EXCEL_NUMBER_FORMAT);
+  assert.equal(worksheet.getCell('B3').value, 8.6);
+  assert.equal(worksheet.getCell('C2').value, 36.3);
+  assert.equal(worksheet.getCell('C3').value, 10);
 });
 
 test('浏览器端和服务端业务导出均经过统一格式模块', () => {

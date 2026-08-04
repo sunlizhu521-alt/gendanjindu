@@ -99,7 +99,7 @@ test('inventory summary model uses inventory library facts, layered totals and s
       { materialCode: 'M4', sku: 'SKU-4', materialName: 'Material Four', productLine: 'Line A', productSeries: 'Series C', pretaxPrice: '15' }
     ]],
     ['spare1', [
-      { subject: '主体一', warehouseName: 'FBM仓', marketplace: '中国' },
+      { subject: '主体一', warehouseName: 'FBM仓', marketplace: '美国' },
       { subject: '主体一', warehouseName: 'WFS仓' },
       { subject: '主体一', warehouseName: '102-US-海外二部-海上在途' },
       { subject: '国内主体', warehouseName: '国内仓', marketplace: '中国' }
@@ -488,7 +488,7 @@ test('inventory summary separates unsellable warehouse stock without losing norm
 
   assert.equal(finished?.productType, '全新品');
   assert.equal(finished?.baseProductType, '成品');
-  assert.equal(finished?.inventoryQty, 172);
+  assert.equal(finished?.inventoryQty, 167);
   assert.equal(segmentedQty, finished?.inventoryQty);
   assert.deepEqual({
     fba: unsellableTotal('fbaInventoryQty'),
@@ -496,7 +496,7 @@ test('inventory summary separates unsellable warehouse stock without losing norm
     wfs: unsellableTotal('wfsInventoryQty'),
     domestic: unsellableTotal('domesticMainInventoryQty'),
     fbmTransit: unsellableTotal('fbmTransitQty')
-  }, { fba: 10, fbm: 27, wfs: 30, domestic: 15, fbmTransit: 8 });
+  }, { fba: 10, fbm: 27, wfs: 30, domestic: 10, fbmTransit: 8 });
   assert.equal(finishedSegments.reduce((sum, row) => sum + Number(row.domesticMainInventoryQty || 0), 0), 40);
   assert.equal(finishedSegments.reduce((sum, row) => sum + Number(row.jdInventoryQty || 0), 0), 50);
   assert.equal(sparePart?.baseProductType, '配件');
@@ -641,9 +641,10 @@ test('domestic inventory excludes JD central and outbound-goods warehouses befor
   assert.equal(parsed.mapping.__inventorySummary.filteredIgnoredWarehouseRows, 2);
 });
 
-test('domestic inventory only includes warehouses uniquely mapped to the China site', () => {
+test('domestic inventory includes every mapped business unit after filtering to the China site', () => {
   const warehouseRows = [
     { subject: '主体一', warehouseName: '中国仓', marketplace: '中国' },
+    { subject: '主体一', warehouseName: '中国其他事业部仓', marketplace: '中国' },
     { subject: '主体一', warehouseName: '美国仓', marketplace: '美国' },
     { subject: '主体一', warehouseName: '空站点仓', marketplace: '' },
     { subject: '主体一', warehouseName: '冲突仓', marketplace: '中国' },
@@ -651,6 +652,7 @@ test('domestic inventory only includes warehouses uniquely mapped to the China s
   ];
   const facts = [
     ['M-CN', '中国仓', 10],
+    ['M-OTHER', '中国其他事业部仓', 60],
     ['M-US', '美国仓', 20],
     ['M-BLANK', '空站点仓', 30],
     ['M-MISSING', '维度缺失仓', 40],
@@ -659,15 +661,23 @@ test('domestic inventory only includes warehouses uniquely mapped to the China s
   const rowsBySlot = new Map([
     ['productCategory', facts.map(([materialCode]) => ({ materialCode, sku: `SKU-${materialCode}`, materialName: materialCode, productLine: 'Line A', productSeries: 'Series A', pretaxPrice: '10' }))],
     ['spare1', warehouseRows],
-    ['warehouseMaterialMap', facts.map(([materialCode, warehouseName]) => ({ subject: '主体一', warehouseName, materialCode, businessUnit: '国内事业部' }))],
+    ['warehouseMaterialMap', facts.map(([materialCode, warehouseName]) => ({
+      subject: '主体一',
+      warehouseName,
+      materialCode,
+      businessUnit: materialCode === 'M-OTHER' ? '海外事业一部' : '国内事业部'
+    }))],
     ['inventorySummaryFile6', facts.map(([materialCode, warehouseName, domesticStockQty]) => ({ subject: '主体一', warehouseName, materialCode, domesticStockQty }))]
   ]);
   const result = buildInventorySummaryModel({
     getRows: (slotId) => rowsBySlot.get(slotId) || [],
     getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
   });
-  assert.equal(result.在库量.国内, 10);
-  assert.deepEqual(result.rows.map((row) => row.materialCode), ['M-CN']);
+  assert.equal(result.在库量.国内, 70);
+  assert.deepEqual(result.rows.map((row) => [row.businessUnit, row.materialCode]), [
+    ['国内事业部', 'M-CN'],
+    ['海外事业一部', 'M-OTHER']
+  ]);
   assert.equal(result.anomalies.length, 0);
 });
 

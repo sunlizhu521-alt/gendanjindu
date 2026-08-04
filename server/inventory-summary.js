@@ -1876,11 +1876,9 @@ export function buildInventorySummaryModel({
       : resolveWarehouseBusinessUnit(raw.subject, raw.warehouseName, materialCode);
     const directUnsellableWarehouse = hasWarehouseCodePrefix(raw.warehouseName);
     const directUnsellableProduct = Boolean(unsellableProductType(product.product, directUnsellableWarehouse));
-    const domesticBusinessUnit = ['国内事业部', '销售部-工厂'].includes(warehouseResult.businessUnit)
-      ? warehouseResult.businessUnit
-      : directUnsellableProduct ? '国内事业部' : warehouseResult.businessUnit;
-    if (!['国内事业部', '销售部-工厂'].includes(domesticBusinessUnit)) {
-      addAnomaly('国内在库', raw.materialCode, warehouseResult.issue || '非国内事业部数据已排除', qty, 0, {
+    const inventoryBusinessUnit = warehouseResult.businessUnit;
+    if (!inventoryBusinessUnit) {
+      addAnomaly('国内在库', raw.materialCode, warehouseResult.issue || '事业部映射缺失', qty, 0, {
         factId: `国内在库-${factIndex += 1}`,
         materialCode,
         businessUnit: warehouseResult.businessUnit || '未匹配',
@@ -1895,7 +1893,7 @@ export function buildInventorySummaryModel({
       sourceType: '国内在库',
       rawIdentifier: raw.materialCode,
       materialCode,
-      businessUnit: domesticBusinessUnit,
+      businessUnit: inventoryBusinessUnit,
       issues: [directUnsellableProduct ? '' : warehouseResult.issue],
       inventorySource: '国内在库',
       inventorySubject: text(raw.subject),

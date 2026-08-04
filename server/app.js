@@ -4363,7 +4363,8 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   const inventorySummaryParsed = isInventorySummarySlot(baseSlotId)
     ? parseInventorySummaryWorkbook(inventorySummaryFile, baseSlotId, mapping, {
       strictMapping: isInventoryManualSlot(slotId),
-      allowIncompleteMapping: isInventoryManualSlot(slotId)
+      allowIncompleteMapping: isInventoryManualSlot(slotId),
+      inferUnmappedFields: isInventoryManualSlot(slotId)
     })
     : null;
   const parsed = firstMileParsed || inventorySummaryParsed || (

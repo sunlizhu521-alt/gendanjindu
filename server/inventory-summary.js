@@ -436,9 +436,12 @@ function worksheetRows(sheet, schema) {
   return { rows, columns };
 }
 
-function mappedColumn(field, mapping, columns, slotId, strictMapping = false) {
+function mappedColumn(field, mapping, columns, slotId, strictMapping = false, inferUnmappedFields = false) {
   const configured = text(mapping?.[field]);
-  if (strictMapping) return configured && columns.includes(configured) ? configured : '';
+  if (strictMapping) {
+    if (configured) return columns.includes(configured) ? configured : '';
+    if (!inferUnmappedFields) return '';
+  }
   if (slotId === 'inventorySummaryFile1' && field === 'endingInventoryQty') {
     const canonicalAliases = new Set(FIELD_ALIASES.endingInventoryQty.map(headerKey));
     const canonicalColumn = columns.find((column) => canonicalAliases.has(headerKey(column)));
@@ -488,10 +491,15 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}, option
   const parsed = worksheetRows(sheet, schema);
   const strictMapping = Boolean(options.strictMapping);
   const allowIncompleteMapping = Boolean(options.allowIncompleteMapping);
+  const inferUnmappedFields = Boolean(options.inferUnmappedFields);
   const columnMap = Object.fromEntries(schema.fields.map((field) => [
     field,
-    mappedColumn(field, mapping, parsed.columns, slotId, strictMapping)
+    mappedColumn(field, mapping, parsed.columns, slotId, strictMapping, inferUnmappedFields)
   ]));
+  if (allowIncompleteMapping && !Object.values(columnMap).some(Boolean)) {
+    const headers = parsed.columns.filter(Boolean).slice(0, 12);
+    throw inventoryValidationError(`手工表未识别到可用字段。识别到的表头：${headers.join('、') || '无'}`);
+  }
   const missing = schema.required.filter((field) => !columnMap[field]);
   if (missing.length && !allowIncompleteMapping) {
     const labels = missing.map((field) => FIELD_ALIASES[field]?.[0] || field);

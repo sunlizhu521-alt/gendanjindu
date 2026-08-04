@@ -2979,7 +2979,7 @@ function FieldMapping({ fields, columns, mapping, onChange, requiredFields = [],
   const required = new Set(requiredFields);
   return (
     <div className="mapping-grid">
-      {manual && <p className="mapping-grid-note">请按需要手动选择原表字段，未选择的字段按空值处理，不会自动匹配。</p>}
+      {manual && <p className="mapping-grid-note">可按需要手动选择原表字段；未选择的字段将按标准列名自动识别。</p>}
       {fields.map(([key, label]) => (
         <label key={key}>
           {label}{required.has(key) ? '（必选）' : ''}

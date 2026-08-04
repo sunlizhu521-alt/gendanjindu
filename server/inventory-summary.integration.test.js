@@ -44,7 +44,7 @@ async function waitForServer(url, child, logs) {
   throw new Error(`Server did not become ready.\n${logs.join('')}`);
 }
 
-test('手工库存表字段均为可选且未选字段不自动推断', () => {
+test('手工库存表字段均为可选，手选优先且未选字段按标准列名推断', () => {
   const workbook = xlsx.utils.book_new();
   xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet([
     ['自定义SKU列', '自定义仓库列', '自定义库存属性列', '自定义数量列'],
@@ -64,12 +64,13 @@ test('手工库存表字段均为可选且未选字段不自动推断', () => {
   assert.equal(partial.rows[0].endingInventoryQty, 25);
   assert.equal(partial.rows[0].sku, '');
   assert.equal(partial.rows[0].warehouseName, '');
-  assert.equal(
-    parseInventorySummaryWorkbook(file, 'inventorySummaryFile1', {}, {
+  assert.throws(
+    () => parseInventorySummaryWorkbook(file, 'inventorySummaryFile1', {}, {
       strictMapping: true,
-      allowIncompleteMapping: true
-    }).rows.length,
-    0
+      allowIncompleteMapping: true,
+      inferUnmappedFields: true
+    }),
+    /手工表未识别到可用字段.*自定义SKU列/
   );
 
   const parsed = parseInventorySummaryWorkbook(file, 'inventorySummaryFile1', {
@@ -80,6 +81,22 @@ test('手工库存表字段均为可选且未选字段不自动推断', () => {
   }, { strictMapping: true });
   assert.equal(parsed.rows.length, 1);
   assert.equal(parsed.rows[0].endingInventoryQty, 25);
+
+  const standardWorkbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(standardWorkbook, xlsx.utils.aoa_to_sheet([
+    ['识别码', '仓库名称', '实际总量'],
+    ['M-1', 'FBM仓库', 80]
+  ]), '库存明细');
+  const standardFile = { buffer: xlsx.write(standardWorkbook, { type: 'buffer', bookType: 'xlsx' }) };
+  const inferred = parseInventorySummaryWorkbook(standardFile, 'inventorySummaryFile2', {}, {
+    strictMapping: true,
+    allowIncompleteMapping: true,
+    inferUnmappedFields: true
+  });
+  assert.equal(inferred.rows.length, 1);
+  assert.equal(inferred.rows[0].identifier, 'M-1');
+  assert.equal(inferred.rows[0].warehouseName, 'FBM仓库');
+  assert.equal(inferred.rows[0].actualTotalQty, 80);
 });
 
 test('inventory summary model uses inventory library facts, layered totals and stable ABC classes', () => {

@@ -19,6 +19,7 @@ import {
   buildInventoryDimensionDiagnostics,
   buildInventorySummaryModel,
   isInventorySummarySlot,
+  parseInventoryManualWorkbook,
   parseInventorySummaryWorkbook
 } from './inventory-summary.js';
 import {
@@ -4323,7 +4324,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   const selectedSheetNames = parseJson(req.body.sheetNames, [])
     .map(normalize)
     .filter((name, index, names) => name && names.indexOf(name) === index);
-  if (baseSlotId === 'inventorySummaryFile15') {
+  if (!isInventoryManualSlot(slotId) && baseSlotId === 'inventorySummaryFile15') {
     const sheetNames = await workbookSheetNamesFromUpload(req.file);
     if (sheetName && !sheetNames.includes(sheetName)) {
       const error = new Error('销售预测选择的工作表不存在，请重新选择');
@@ -4338,7 +4339,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
       throw error;
     }
   }
-  if (baseSlotId === 'inventorySummaryFile16') {
+  if (!isInventoryManualSlot(slotId) && baseSlotId === 'inventorySummaryFile16') {
     const sheetNames = await workbookSheetNamesFromUpload(req.file);
     if (selectedSheetNames.length !== 2) {
       const error = new Error('库龄文件必须选择两个工作表后才能应用');
@@ -4357,17 +4358,17 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   const firstMileParsed = isFirstMileSlot(slotId)
     ? parseFirstMileWorkbook(req.file, { slotId, fileName: safeFilename(req.file) })
     : null;
-  const inventorySummaryFile = isInventorySummarySlot(baseSlotId) && !req.file?.buffer
+  const inventorySummaryFile = (isInventorySummarySlot(baseSlotId) || isInventoryManualSlot(slotId)) && !req.file?.buffer
     ? { ...req.file, buffer: await fs.promises.readFile(req.file.path) }
     : req.file;
-  const inventorySummaryParsed = isInventorySummarySlot(baseSlotId)
-    ? parseInventorySummaryWorkbook(inventorySummaryFile, baseSlotId, mapping, {
-      strictMapping: isInventoryManualSlot(slotId),
-      allowIncompleteMapping: isInventoryManualSlot(slotId),
-      inferUnmappedFields: isInventoryManualSlot(slotId)
-    })
+  const inventoryManualParsed = isInventoryManualSlot(slotId)
+    ? parseInventoryManualWorkbook(inventorySummaryFile, mapping, { sheetName })
     : null;
-  const parsed = firstMileParsed || inventorySummaryParsed || (
+  const inventorySummaryParsed = !inventoryManualParsed && isInventorySummarySlot(baseSlotId)
+    ? parseInventorySummaryWorkbook(inventorySummaryFile, baseSlotId, mapping)
+    : null;
+  const inventoryParsed = inventoryManualParsed || inventorySummaryParsed;
+  const parsed = firstMileParsed || inventoryParsed || (
     ['inventorySummaryFile15', 'inventorySummaryFile16'].includes(baseSlotId)
       ? await streamingKingdeeWorkbookRows(
         req.file,
@@ -4376,7 +4377,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
       )
       : workbookRows(req.file, sheetName || null, { includePreviews: false })
   );
-  const parsedRows = firstMileParsed || inventorySummaryParsed ? parsed.rows : parsed.rows.map((row) => {
+  const parsedRows = firstMileParsed || inventoryParsed ? parsed.rows : parsed.rows.map((row) => {
     if (['inventorySummaryFile4', 'inventorySummaryFile5'].includes(slotId)) {
       return {
         storeName: pick(row, mapping.storeName) || pickAny(row, ['店铺', '店铺名称', '账号', '账号名称']),
@@ -4530,7 +4531,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     }
     return row;
   });
-  const rowsWithSheetSource = baseSlotId === 'inventorySummaryFile16'
+  const rowsWithSheetSource = !isInventoryManualSlot(slotId) && baseSlotId === 'inventorySummaryFile16'
     ? parsed.sheets.flatMap((sheet) => sheet.rows.map((row) => ({ ...row, __sourceSheet: sheet.sheetName })))
     : parsedRows;
   const rows = isInventoryLibrarySlot(slotId)
@@ -4544,7 +4545,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   }
   const storedMapping = firstMileParsed
     ? { ...mapping, __firstMileSummary: firstMileParsed.summary }
-    : inventorySummaryParsed?.mapping || mapping;
+    : inventoryParsed?.mapping || mapping;
   const now = nowText();
   const beforeOrderCounts = orderDataCounts();
   transaction(() => {
@@ -4552,19 +4553,19 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
       `INSERT INTO dimension_files (slot_id, title, file_name, sheet_name, sheet_names, selected_sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
       ON CONFLICT(slot_id) DO UPDATE SET title = excluded.title, file_name = excluded.file_name, sheet_name = excluded.sheet_name, sheet_names = excluded.sheet_names, selected_sheet_names = excluded.selected_sheet_names, mapping_json = excluded.mapping_json, rows_json = excluded.rows_json, applied = 1, uploaded_by = excluded.uploaded_by, updated_at = excluded.updated_at`,
-      [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), firstMileParsed ? '' : inventorySummaryParsed?.sheetName || sheetName, JSON.stringify(parsed.sheetNames), JSON.stringify(baseSlotId === 'inventorySummaryFile16' ? selectedSheetNames : []), JSON.stringify(storedMapping), JSON.stringify(rows), req.user.name, now]
+      [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), firstMileParsed ? '' : inventoryParsed?.sheetName || sheetName, JSON.stringify(parsed.sheetNames), JSON.stringify(!isInventoryManualSlot(slotId) && baseSlotId === 'inventorySummaryFile16' ? selectedSheetNames : []), JSON.stringify(storedMapping), JSON.stringify(rows), req.user.name, now]
     );
     if (slotId === 'productCategory' || slotId === 'purchaseAssignment') applyDimensionEnrichment();
     assertOrderDataUnchanged(beforeOrderCounts);
   });
   res.json({
     rowCount: rows.length,
-    sheetName: firstMileParsed ? '' : inventorySummaryParsed?.sheetName || sheetName,
+    sheetName: firstMileParsed ? '' : inventoryParsed?.sheetName || sheetName,
     sheetNames: parsed.sheetNames,
-    selectedSheetNames: baseSlotId === 'inventorySummaryFile16' ? selectedSheetNames : [],
+    selectedSheetNames: !isInventoryManualSlot(slotId) && baseSlotId === 'inventorySummaryFile16' ? selectedSheetNames : [],
     applied: true,
     diagnostics: dimensionDiagnostics(slotId, rows),
-    parseSummary: firstMileParsed?.summary || inventorySummaryParsed?.mapping?.__inventorySummary || null,
+    parseSummary: firstMileParsed?.summary || inventoryParsed?.mapping?.__inventorySummary || inventoryParsed?.mapping?.__inventoryManual || null,
     ...(isInventoryLibrarySlot(slotId) ? {} : { rows: demandRows(false, req.user) })
   });
 });

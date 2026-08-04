@@ -254,6 +254,11 @@ const INVENTORY_SOURCE_TABLE_LABELS = {
   FBM在途: 'FBM在途报表',
   京东在途: '京东在途'
 };
+
+const INVENTORY_MANUAL_SCHEMA = {
+  required: [],
+  fields: ['businessUnit', 'warehouseName', 'subject', 'quantity']
+};
 const QUANTITY_RECONCILIATION_SOURCES = [
   { sourceType: 'FBA库存', label: 'FBA在库', slotId: 'inventorySummaryFile1', group: '在库', field: 'fbaInventoryQty' },
   { sourceType: 'FBM库存', label: 'FBM在库', slotId: 'inventorySummaryFile2', group: '在库', field: 'fbmInventoryQty' },
@@ -415,10 +420,11 @@ function headerAliases(schema) {
   return new Set(schema.fields.flatMap((field) => FIELD_ALIASES[field] || []).map(headerKey));
 }
 
-function worksheetRows(sheet, schema) {
+function worksheetRows(sheet, schema, additionalHeaders = []) {
   const aoa = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true, blankrows: false });
   if (!aoa.length) return { rows: [], columns: [] };
   const aliases = headerAliases(schema);
+  additionalHeaders.map(headerKey).filter(Boolean).forEach((header) => aliases.add(header));
   const headerIndex = aoa.slice(0, 30)
     .map((row, index) => ({
       index,
@@ -693,6 +699,48 @@ function dimensionProduct(row) {
     productType: text(aliasValue(row, ['productType', '销售产品分类', '产品类型', '商品类型'])),
     salesRegion: text(aliasValue(row, ['salesRegion', '销售区域'])),
     pretaxPrice: aliasValue(row, ['pretaxPrice', '不含税结算价'])
+  };
+}
+
+export function parseInventoryManualWorkbook(file, mapping = {}, options = {}) {
+  if (!file?.buffer) throw inventoryValidationError('未收到上传文件');
+  const workbook = xlsx.read(file.buffer, { type: 'buffer', cellDates: true, dense: true });
+  const requestedSheetName = text(options.sheetName);
+  if (requestedSheetName && !workbook.SheetNames.includes(requestedSheetName)) {
+    throw inventoryValidationError('手工表选择的工作表不存在，请重新选择');
+  }
+  const sheetName = requestedSheetName || workbook.SheetNames[0];
+  if (!sheetName) throw inventoryValidationError('手工表中没有可读取的工作表');
+  const parsed = worksheetRows(
+    workbook.Sheets[sheetName],
+    INVENTORY_MANUAL_SCHEMA,
+    Object.values(mapping)
+  );
+  const columnMap = Object.fromEntries(INVENTORY_MANUAL_SCHEMA.fields.map((field) => {
+    const configured = text(mapping?.[field]);
+    return [field, configured && parsed.columns.includes(configured) ? configured : ''];
+  }));
+  if (!Object.values(columnMap).some(Boolean)) {
+    throw inventoryValidationError('手工表请至少选择一个映射字段：事业部、仓库、主体、数量');
+  }
+  const rows = parsed.rows.map((row) => Object.fromEntries(INVENTORY_MANUAL_SCHEMA.fields.map((field) => [
+    field,
+    columnMap[field] ? row[columnMap[field]] ?? '' : ''
+  ]))).filter((row) => INVENTORY_MANUAL_SCHEMA.fields.some((field) => text(row[field])));
+  return {
+    rows,
+    sheetName,
+    sheetNames: workbook.SheetNames,
+    mapping: {
+      ...columnMap,
+      __inventoryManual: {
+        parserType: 'inventoryManual',
+        parserVersion: 1,
+        sheetName,
+        sourceRowCount: parsed.rows.length,
+        rowCount: rows.length
+      }
+    }
   };
 }
 

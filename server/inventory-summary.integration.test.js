@@ -13,6 +13,7 @@ import {
   buildInventoryDimensionDiagnostics,
   buildInventoryQuantityReconciliation,
   buildInventorySummaryModel,
+  parseInventoryManualWorkbook,
   parseInventorySummaryWorkbook
 } from './inventory-summary.js';
 
@@ -44,7 +45,7 @@ async function waitForServer(url, child, logs) {
   throw new Error(`Server did not become ready.\n${logs.join('')}`);
 }
 
-test('手工库存表字段均为可选，手选优先且未选字段按标准列名推断', () => {
+test('手工库存表只保存手动选择的事业部、仓库、主体和数量', () => {
   const workbook = xlsx.utils.book_new();
   xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet([
     ['自定义SKU列', '自定义仓库列', '自定义库存属性列', '自定义数量列'],
@@ -52,51 +53,23 @@ test('手工库存表字段均为可选，手选优先且未选字段按标准�
   ]), '手工表');
   const file = { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) };
 
-  assert.throws(
-    () => parseInventorySummaryWorkbook(file, 'inventorySummaryFile1', {}, { strictMapping: true }),
-    /手工表必须手动选择必填字段/
-  );
-
-  const partial = parseInventorySummaryWorkbook(file, 'inventorySummaryFile1', {
-    endingInventoryQty: '自定义数量列'
-  }, { strictMapping: true, allowIncompleteMapping: true });
-  assert.equal(partial.rows.length, 1);
-  assert.equal(partial.rows[0].endingInventoryQty, 25);
-  assert.equal(partial.rows[0].sku, '');
-  assert.equal(partial.rows[0].warehouseName, '');
-  assert.throws(
-    () => parseInventorySummaryWorkbook(file, 'inventorySummaryFile1', {}, {
-      strictMapping: true,
-      allowIncompleteMapping: true,
-      inferUnmappedFields: true
-    }),
-    /手工表未识别到可用字段.*自定义SKU列/
-  );
-
-  const parsed = parseInventorySummaryWorkbook(file, 'inventorySummaryFile1', {
-    sku: '自定义SKU列',
+  const partial = parseInventoryManualWorkbook(file, {
     warehouseName: '自定义仓库列',
-    inventoryAttribute: '自定义库存属性列',
-    endingInventoryQty: '自定义数量列'
-  }, { strictMapping: true });
-  assert.equal(parsed.rows.length, 1);
-  assert.equal(parsed.rows[0].endingInventoryQty, 25);
-
-  const standardWorkbook = xlsx.utils.book_new();
-  xlsx.utils.book_append_sheet(standardWorkbook, xlsx.utils.aoa_to_sheet([
-    ['识别码', '仓库名称', '实际总量'],
-    ['M-1', 'FBM仓库', 80]
-  ]), '库存明细');
-  const standardFile = { buffer: xlsx.write(standardWorkbook, { type: 'buffer', bookType: 'xlsx' }) };
-  const inferred = parseInventorySummaryWorkbook(standardFile, 'inventorySummaryFile2', {}, {
-    strictMapping: true,
-    allowIncompleteMapping: true,
-    inferUnmappedFields: true
+    quantity: '自定义数量列'
   });
-  assert.equal(inferred.rows.length, 1);
-  assert.equal(inferred.rows[0].identifier, 'M-1');
-  assert.equal(inferred.rows[0].warehouseName, 'FBM仓库');
-  assert.equal(inferred.rows[0].actualTotalQty, 80);
+  assert.equal(partial.rows.length, 1);
+  assert.deepEqual(partial.rows[0], {
+    businessUnit: '',
+    warehouseName: '仓库一',
+    subject: '',
+    quantity: 25
+  });
+  assert.throws(
+    () => parseInventoryManualWorkbook(file, {}),
+    /请至少选择一个映射字段：事业部、仓库、主体、数量/
+  );
+  assert.equal(Object.hasOwn(partial.rows[0], 'sku'), false);
+  assert.equal(Object.hasOwn(partial.rows[0], 'endingInventoryQty'), false);
 });
 
 test('inventory summary model uses inventory library facts, layered totals and stable ABC classes', () => {
@@ -2175,7 +2148,8 @@ test('inventory summary and domestic board use complete source models and enforc
       'FBA库存报表手工.xlsx'
     );
     manualInventoryForm.append('mapping', JSON.stringify({
-      endingInventoryQty: '期末库存(含移仓)-数量'
+      warehouseName: '仓库名称',
+      quantity: '期末库存(含移仓)-数量'
     }));
     const manualInventoryUploadResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions/inventoryManualFile1/upload`, {
       method: 'POST',
@@ -2249,6 +2223,16 @@ test('inventory summary and domestic board use complete source models and enforc
       { title: manualInventoryRecord?.title, rowCount: manualInventoryRecord?.rowCount, fileName: manualInventoryRecord?.file_name },
       { title: 'FBA库存报表手工', rowCount: 1, fileName: 'FBA库存报表手工.xlsx' }
     );
+    assert.deepEqual(
+      {
+        businessUnit: manualInventoryRecord?.mapping?.businessUnit,
+        warehouseName: manualInventoryRecord?.mapping?.warehouseName,
+        subject: manualInventoryRecord?.mapping?.subject,
+        quantity: manualInventoryRecord?.mapping?.quantity
+      },
+      { businessUnit: '', warehouseName: '仓库名称', subject: '', quantity: '期末库存(含移仓)-数量' }
+    );
+    assert.equal(Object.hasOwn(manualInventoryRecord?.mapping || {}, 'endingInventoryQty'), false);
     const transitWarehouseRecord = inventoryDimensionRows.find((row) => row.slot_id === 'inventorySummaryFile13');
     assert.deepEqual(
       { title: transitWarehouseRecord?.title, rowCount: transitWarehouseRecord?.rowCount },

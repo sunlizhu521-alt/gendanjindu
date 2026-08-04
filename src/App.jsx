@@ -278,7 +278,15 @@ const INVENTORY_MANUAL_LIBRARY_SLOTS = INVENTORY_SUMMARY_LIBRARY_SLOTS.map((slot
   title: /^inventorySummaryFile1[0-6]$/.test(slot.id)
     ? '备用'
     : slot.id === 'inventorySummaryFile8' ? '不可售手工' : `${slot.title}手工`,
+  fields: [
+    ['businessUnit', '事业部'],
+    ['warehouseName', '仓库'],
+    ['subject', '主体'],
+    ['quantity', '数量']
+  ],
   requiredFields: [],
+  requiresSheetSelection: false,
+  requiredSheetCount: 0,
   manualFieldSelection: true
 }));
 
@@ -2979,7 +2987,7 @@ function FieldMapping({ fields, columns, mapping, onChange, requiredFields = [],
   const required = new Set(requiredFields);
   return (
     <div className="mapping-grid">
-      {manual && <p className="mapping-grid-note">可按需要手动选择原表字段；未选择的字段将按标准列名自动识别。</p>}
+      {manual && <p className="mapping-grid-note">请按需要手动选择事业部、仓库、主体、数量；未选择的字段按空值保存。</p>}
       {fields.map(([key, label]) => (
         <label key={key}>
           {label}{required.has(key) ? '（必选）' : ''}

@@ -91,12 +91,13 @@ test('库存数据提供独立的底表文件和手工表库', () => {
   assert.match(server, /DIMENSION_SLOTS\.inventoryManualFile8 = '不可售手工'/);
   assert.match(server, /for \(let slotNumber = 10; slotNumber <= 16; slotNumber \+= 1\)[\s\S]*?DIMENSION_SLOTS\[`inventoryManualFile\$\{slotNumber\}`\] = '备用'/);
   assert.match(client, /manualFieldSelection: true/);
-  assert.match(client, /可按需要手动选择原表字段；未选择的字段将按标准列名自动识别/);
+  assert.match(client, /\['businessUnit', '事业部'\][\s\S]*?\['warehouseName', '仓库'\][\s\S]*?\['subject', '主体'\][\s\S]*?\['quantity', '数量'\]/);
+  assert.match(client, /请按需要手动选择事业部、仓库、主体、数量；未选择的字段按空值保存/);
   assert.doesNotMatch(client, /请手动选择必填字段/);
   assert.match(client, /validMappingForColumns\(mapping = \{\}, columns = \[\], fields = \[\], inferMissing = true\)/);
   assert.match(client, /title="手工表库" slots=\{INVENTORY_MANUAL_LIBRARY_SLOTS\} gridColumns=\{4\}/);
   assert.match(server, /function inventoryLibraryBaseSlotId/);
-  assert.match(server, /strictMapping: isInventoryManualSlot\(slotId\),[\s\S]*?allowIncompleteMapping: isInventoryManualSlot\(slotId\),[\s\S]*?inferUnmappedFields: isInventoryManualSlot\(slotId\)/);
+  assert.match(server, /parseInventoryManualWorkbook\(inventorySummaryFile, mapping, \{ sheetName \}\)/);
   assert.match(server, /return res\.json\(await streamingWorkbookInspect\(req\.file, sheetName \|\| null\)\)/);
   assert.match(server, /serializeInventoryUpload, async \(req, res\)/);
 });

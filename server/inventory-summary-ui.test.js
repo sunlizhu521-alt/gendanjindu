@@ -102,3 +102,17 @@ test('库存数据提供独立的底表文件和手工表库', () => {
   assert.match(server, /return res\.json\(await streamingWorkbookInspect\(req\.file, sheetName \|\| null\)\)/);
   assert.match(server, /serializeInventoryUpload, async \(req, res\)/);
 });
+
+test('file library slots stay responsive without clipping', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const styles = fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8');
+
+  assert.match(styles, /\.library-slot\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;/);
+  assert.match(styles, /\.library-slot \.mapping-grid\s*\{[\s\S]*?repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /@container \(max-width:\s*420px\)[\s\S]*?\.library-slot \.mapping-grid[\s\S]*?minmax\(0, 1fr\)/);
+  assert.match(styles, /\.drop-zone strong\s*\{[\s\S]*?overflow-wrap:\s*anywhere/);
+  assert.match(styles, /\.slot-info span\s*\{[\s\S]*?overflow-wrap:\s*anywhere/);
+  assert.match(styles, /@media \(max-width:\s*1500px\)[\s\S]*?\.library-grid-four[\s\S]*?repeat\(3, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /@media \(max-width:\s*1180px\)[\s\S]*?\.library-grid-four[\s\S]*?repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /\.sheet-selector select\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;/);
+});

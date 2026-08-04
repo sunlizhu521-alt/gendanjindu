@@ -4389,6 +4389,8 @@ th {
   display: grid;
   grid-template-columns: repeat(2, minmax(280px, 1fr));
   gap: 14px;
+  min-width: 0;
+  align-items: start;
 }
 
 .library-grid-three {
@@ -4403,11 +4405,32 @@ th {
   display: grid;
   gap: 12px;
   align-content: start;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
   padding: 14px;
   border: 1px solid #dde5f0;
   border-radius: 8px;
   background: #fff;
   box-shadow: 0 8px 24px rgba(15, 23, 42, .05);
+  container-type: inline-size;
+}
+
+.library-slot > *,
+.library-slot .slot-head > div,
+.library-slot .mapping-grid label {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.library-slot .mapping-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 0;
+}
+
+.library-slot .mapping-grid select {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .slot-head {
@@ -4415,6 +4438,10 @@ th {
   align-items: start;
   justify-content: space-between;
   gap: 10px;
+}
+
+.slot-head h3 {
+  overflow-wrap: anywhere;
 }
 
 .slot-head p {
@@ -4464,6 +4491,9 @@ th {
 
 .drop-zone strong {
   color: #1e293b;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .drop-zone span {
@@ -4476,6 +4506,12 @@ th {
   gap: 4px;
   color: #475569;
   font-size: 13px;
+}
+
+.slot-info span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .slot-progress {
@@ -4601,6 +4637,22 @@ th {
   flex-wrap: wrap;
 }
 
+.card-actions button,
+.card-actions .button {
+  max-width: 100%;
+}
+
+@container (max-width: 420px) {
+  .library-slot .mapping-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .library-slot .sheet-selector label {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .permission-table table {
   min-width: 1000px;
 }
@@ -4650,6 +4702,12 @@ th {
   color: #334155;
 }
 
+@media (max-width: 1500px) {
+  .library-grid-four {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 1180px) {
   .first-mile-dimension-chart-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4657,7 +4715,7 @@ th {
 
   .library-grid-three,
   .library-grid-four {
-    grid-template-columns: repeat(2, minmax(280px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -5045,10 +5103,10 @@ th {
   }
 }
 
-.sheet-selector { padding: 0 16px 12px; }
-.sheet-selector label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #6b7280; }
-.sheet-selector select { flex: 1; padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; background: #fff; }
-.sheet-multi-selector { margin: 0 16px 12px; padding: 10px; border: 1px solid #dbe3ef; border-radius: 6px; background: #f8fafc; min-width: 0; }
+.sheet-selector { min-width: 0; padding: 0; }
+.sheet-selector label { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; color: #6b7280; }
+.sheet-selector select { flex: 1 1 auto; min-width: 0; max-width: 100%; padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; background: #fff; }
+.sheet-multi-selector { margin: 0; padding: 10px; border: 1px solid #dbe3ef; border-radius: 6px; background: #f8fafc; min-width: 0; max-width: 100%; }
 .sheet-multi-selector legend { padding: 0 4px; font-size: 13px; color: #475569; }
 .sheet-multi-selector legend span { color: #2563eb; font-weight: 700; }
 .sheet-multi-selector > div { display: grid; gap: 6px; max-height: 150px; overflow-x: hidden; overflow-y: auto; }

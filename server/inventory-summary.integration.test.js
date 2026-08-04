@@ -99,9 +99,10 @@ test('inventory summary model uses inventory library facts, layered totals and s
       { materialCode: 'M4', sku: 'SKU-4', materialName: 'Material Four', productLine: 'Line A', productSeries: 'Series C', pretaxPrice: '15' }
     ]],
     ['spare1', [
-      { subject: '主体一', warehouseName: 'FBM仓' },
+      { subject: '主体一', warehouseName: 'FBM仓', marketplace: '中国' },
       { subject: '主体一', warehouseName: 'WFS仓' },
-      { subject: '主体一', warehouseName: '102-US-海外二部-海上在途' }
+      { subject: '主体一', warehouseName: '102-US-海外二部-海上在途' },
+      { subject: '国内主体', warehouseName: '国内仓', marketplace: '中国' }
     ]],
     ['warehouseMaterialMap', [
       { subject: '主体一', warehouseName: 'FBA金蝶仓', materialCode: 'M1', businessUnit: '跨境事业部' },
@@ -406,10 +407,16 @@ test('inventory summary separates unsellable warehouse stock without losing norm
       }
     ]],
     ['spare1', [
-      { subject: '主体一', warehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境' },
-      { subject: '主体一', warehouseName: '浙江仓（退货）' },
-      { subject: '主体一', warehouseName: '106-G-国内事业部-海上在途' }
-    ]],
+      '555-G/退货仓/瑞朗德仓/医疗器械/国内&跨境',
+      '555-O/退货仓/瑞朗德仓/医疗器械/国内&跨境',
+      '555-X/原始退货仓',
+      '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境',
+      '777-R/售后配件仓/瑞朗德仓/医疗器械/国内',
+      '001-M/待（退货）仓/瑞朗德仓/国内医疗器械',
+      '浙江仓（退货）',
+      '106-G-国内事业部-海上在途',
+      '正常仓'
+    ].map((warehouseName) => ({ subject: '主体一', warehouseName, marketplace: '中国' }))],
     ['warehouseMaterialMap', [
       ...[
         '555-M/退货仓/瑞朗德仓/医疗器械/国内&跨境',
@@ -599,6 +606,9 @@ test('domestic inventory excludes JD central and outbound-goods warehouses befor
     ['warehouseMaterialMap', [
       { subject: 'Domestic Subject', warehouseName: 'Regular Warehouse', materialCode: 'M-KEEP', businessUnit: '国内事业部' }
     ]],
+    ['spare1', [
+      { subject: 'Domestic Subject', warehouseName: 'Regular Warehouse', marketplace: '中国' }
+    ]],
     ['inventorySummaryFile6', [
       { subject: 'Domestic Subject', warehouseName: '999-M/国内事业部/京东总仓/国内医疗器械', materialCode: 'M-JD', domesticStockQty: '100' },
       { subject: 'Domestic Subject', warehouseName: '001-M/国内事业部/发出商品仓/天猫', materialCode: 'M-OUTBOUND', domesticStockQty: '200' },
@@ -631,6 +641,36 @@ test('domestic inventory excludes JD central and outbound-goods warehouses befor
   assert.equal(parsed.mapping.__inventorySummary.filteredIgnoredWarehouseRows, 2);
 });
 
+test('domestic inventory only includes warehouses uniquely mapped to the China site', () => {
+  const warehouseRows = [
+    { subject: '主体一', warehouseName: '中国仓', marketplace: '中国' },
+    { subject: '主体一', warehouseName: '美国仓', marketplace: '美国' },
+    { subject: '主体一', warehouseName: '空站点仓', marketplace: '' },
+    { subject: '主体一', warehouseName: '冲突仓', marketplace: '中国' },
+    { subject: '主体二', warehouseName: '冲突仓', marketplace: '美国' }
+  ];
+  const facts = [
+    ['M-CN', '中国仓', 10],
+    ['M-US', '美国仓', 20],
+    ['M-BLANK', '空站点仓', 30],
+    ['M-MISSING', '维度缺失仓', 40],
+    ['M-CONFLICT', '冲突仓', 50]
+  ];
+  const rowsBySlot = new Map([
+    ['productCategory', facts.map(([materialCode]) => ({ materialCode, sku: `SKU-${materialCode}`, materialName: materialCode, productLine: 'Line A', productSeries: 'Series A', pretaxPrice: '10' }))],
+    ['spare1', warehouseRows],
+    ['warehouseMaterialMap', facts.map(([materialCode, warehouseName]) => ({ subject: '主体一', warehouseName, materialCode, businessUnit: '国内事业部' }))],
+    ['inventorySummaryFile6', facts.map(([materialCode, warehouseName, domesticStockQty]) => ({ subject: '主体一', warehouseName, materialCode, domesticStockQty }))]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
+  });
+  assert.equal(result.在库量.国内, 10);
+  assert.deepEqual(result.rows.map((row) => row.materialCode), ['M-CN']);
+  assert.equal(result.anomalies.length, 0);
+});
+
 test('domestic sales warehouses are assigned to sales factory without dimension mappings', () => {
   const rowsBySlot = new Map([
     ['productCategory', [
@@ -640,6 +680,11 @@ test('domestic sales warehouses are assigned to sales factory without dimension 
     ]],
     ['warehouseMaterialMap', [
       { subject: 'Domestic Subject', warehouseName: 'Regular Warehouse', materialCode: 'M-KEEP', businessUnit: '国内事业部' }
+    ]],
+    ['spare1', [
+      { subject: '河北瑞朗德医疗器械科技集团有限公司', warehouseName: '028-R/瑞朗德销售部/瑞朗德仓/国内医疗器械', marketplace: '中国' },
+      { subject: '浙江迈德斯特医疗器械科技有限公司', warehouseName: '028-M/瑞朗德销售部/瑞朗德仓/国内医疗器械', marketplace: '中国' },
+      { subject: 'Domestic Subject', warehouseName: 'Regular Warehouse', marketplace: '中国' }
     ]],
     ['inventorySummaryFile6', [
       { subject: '河北瑞朗德医疗器械科技集团有限公司', warehouseName: '028-R/瑞朗德销售部/瑞朗德仓/国内医疗器械', materialCode: 'M-R', domesticStockQty: '190' },

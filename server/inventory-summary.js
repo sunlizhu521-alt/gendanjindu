@@ -772,6 +772,10 @@ function warehouseName(row) {
   return text(aliasValue(row, ['warehouseName', '仓库名称', '金蝶仓库名称', '金蝶仓库', '金蝶名称']));
 }
 
+function warehouseSite(row) {
+  return text(aliasValue(row, ['marketplace', 'site', '站点', '站点名称', '国家站点', '销售站点', '国家/地区']));
+}
+
 function terminalWarehouseName(value) {
   const segments = text(value).split(/[\\/]/).map((segment) => text(segment)).filter(Boolean);
   return segments.at(-1) || '';
@@ -1303,6 +1307,11 @@ export function buildInventorySummaryModel({
     getRows('spare1'),
     (row) => matchKey(warehouseName(row)),
     (row) => ({ subject: warehouseSubject(row) })
+  );
+  const warehouseSiteLookup = exactLookup(
+    getRows('spare1'),
+    (row) => matchKey(warehouseName(row)),
+    (row) => ({ site: warehouseSite(row) })
   );
   const warehouseMaterialLookup = exactLookup(
     getRows('warehouseMaterialMap'),
@@ -1853,6 +1862,8 @@ export function buildInventorySummaryModel({
     if (isIgnoredDomesticWarehouse(raw.warehouseName)) return;
     const qty = inventoryQuantity(raw, 'inventorySummaryFile6', '国内在库', raw.materialCode, '库存量(主单位)');
     if (qty === null) return;
+    const siteResult = warehouseSiteLookup.resolve(raw.warehouseName);
+    if (siteResult.status !== 'ok' || matchKey(siteResult.value?.site) !== matchKey('中国')) return;
     const materialCode = text(raw.materialCode).replace(/\.0$/, '');
     const product = resolveProduct(materialCode, '国内在库', raw.materialCode);
     const warehouseResult = isSalesFactoryDomesticWarehouse(raw.warehouseName)

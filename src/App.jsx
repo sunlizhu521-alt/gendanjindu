@@ -275,7 +275,7 @@ const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
 const INVENTORY_MANUAL_LIBRARY_SLOTS = INVENTORY_SUMMARY_LIBRARY_SLOTS.map((slot) => ({
   ...slot,
   id: slot.id.replace('inventorySummaryFile', 'inventoryManualFile'),
-  title: `${slot.title}手工`,
+  title: slot.id === 'inventorySummaryFile8' ? '不可售手工' : `${slot.title}手工`,
   manualFieldSelection: true
 }));
 

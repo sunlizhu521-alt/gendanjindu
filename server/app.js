@@ -128,6 +128,7 @@ Object.entries(DIMENSION_SLOTS)
   .forEach(([slotId, title]) => {
     DIMENSION_SLOTS[slotId.replace('inventorySummaryFile', 'inventoryManualFile')] = `${title}手工`;
   });
+DIMENSION_SLOTS.inventoryManualFile8 = '不可售手工';
 
 function inventoryLibraryBaseSlotId(slotId) {
   return String(slotId || '').replace(/^inventoryManualFile(?=\d+$)/, 'inventorySummaryFile');

@@ -2148,6 +2148,20 @@ h3 {
   gap: 7px;
 }
 
+.inventory-composition-row {
+  display: grid;
+  grid-template-columns: minmax(920px, 5fr) minmax(560px, 3fr);
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-color: #a7b6c5 #edf2f6;
+  scrollbar-width: thin;
+}
+
+.inventory-composition-row > .inventory-transit-breakdown {
+  min-width: 0;
+}
+
 .inventory-transit-breakdown-head {
   display: flex;
   align-items: baseline;

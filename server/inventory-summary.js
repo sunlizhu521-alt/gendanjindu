@@ -267,6 +267,7 @@ const INVENTORY_MANUAL_RECONCILIATION_SOURCES = [
   { sourceType: 'FBM在途', label: 'FBM在途', group: '在途', systemSlotId: 'inventorySummaryFile5', manualSlotId: 'inventoryManualFile5' },
   { sourceType: '京东在途', label: '京东在途', group: '在途', systemSlotId: 'inventorySummaryFile14', manualSlotId: 'inventoryManualFile14' }
 ];
+const INVENTORY_MANUAL_RECONCILIATION_CATEGORIES = ['全部', '成品+配件', '成品', '配件', '不可售'];
 const QUANTITY_RECONCILIATION_SOURCES = [
   { sourceType: 'FBA库存', label: 'FBA在库', slotId: 'inventorySummaryFile1', group: '在库', field: 'fbaInventoryQty' },
   { sourceType: 'FBM库存', label: 'FBM在库', slotId: 'inventorySummaryFile2', group: '在库', field: 'fbmInventoryQty' },
@@ -1024,7 +1025,8 @@ function buildInventoryManualReconciliation({
   systemSource = {},
   productLookup,
   anomalies = [],
-  quantityReconciliation
+  quantityReconciliation,
+  requestedCategories = INVENTORY_MANUAL_RECONCILIATION_CATEGORIES
 } = {}) {
   const standardConfigs = INVENTORY_MANUAL_RECONCILIATION_SOURCES.map((config) => ({
     ...config,
@@ -1046,7 +1048,8 @@ function buildInventoryManualReconciliation({
       manualSlotId: 'inventoryManualFile8'
     }
   ];
-  const categories = ['全部', '成品+配件', '成品', '配件', '不可售'];
+  const categories = INVENTORY_MANUAL_RECONCILIATION_CATEGORIES;
+  const computedCategories = categories.filter((category) => requestedCategories.includes(category));
   const categoryMatches = (fact, category) => (
     category === '全部'
       || (category === '成品+配件' && ['成品', '配件'].includes(fact.productType))
@@ -1088,6 +1091,28 @@ function buildInventoryManualReconciliation({
     comparisonSourceType: fact.productType === '不可售' ? '不可售' : fact.sourceType,
     quantity: manualReconciliationQuantity(fact.quantity)
   }));
+  const factIndexKey = (fact) => combinedKey(
+    fact.businessUnit,
+    fact.materialCode,
+    fact.comparisonSourceType,
+    fact.group
+  );
+  const indexFacts = (facts) => facts.reduce((index, fact) => {
+    const key = factIndexKey(fact);
+    const bucket = index.get(key) || [];
+    bucket.push(fact);
+    index.set(key, bucket);
+    return index;
+  }, new Map());
+  const systemFactIndex = indexFacts(normalizedSystemFacts);
+  const manualFactIndex = indexFacts(manualFacts);
+  const anomalyIndex = anomalies.reduce((index, item) => {
+    const key = combinedKey(item.sourceType, item.businessUnit, item.materialCode);
+    const bucket = index.get(key) || [];
+    bucket.push(item.issue);
+    index.set(key, bucket);
+    return index;
+  }, new Map());
   const keyIdentity = new Map();
   [...normalizedSystemFacts, ...manualFacts].forEach((fact) => {
     const key = combinedKey(fact.businessUnit, fact.materialCode);
@@ -1118,20 +1143,11 @@ function buildInventoryManualReconciliation({
     const { businessUnit, materialCode } = keyIdentity.get(key);
     const productResult = productLookup.resolve(materialCode);
     const product = productResult.status === 'ok' ? productResult.value : {};
-    const categoryResults = Object.fromEntries(categories.map((category) => {
+    const categoryResults = Object.fromEntries(computedCategories.map((category) => {
       const sourceRows = configsForCategory(category).map((config) => {
-        const systemMatches = normalizedSystemFacts.filter((fact) => (
-          combinedKey(fact.businessUnit, fact.materialCode) === key
-          && fact.comparisonSourceType === config.sourceType
-          && fact.group === config.group
-          && categoryMatches(fact, category)
-        ));
-        const manualMatches = manualFacts.filter((fact) => (
-          combinedKey(fact.businessUnit, fact.materialCode) === key
-          && fact.comparisonSourceType === config.sourceType
-          && fact.group === config.group
-          && categoryMatches(fact, category)
-        ));
+        const sourceKey = combinedKey(businessUnit, materialCode, config.sourceType, config.group);
+        const systemMatches = (systemFactIndex.get(sourceKey) || []).filter((fact) => categoryMatches(fact, category));
+        const manualMatches = (manualFactIndex.get(sourceKey) || []).filter((fact) => categoryMatches(fact, category));
         const availability = sourceAvailable(config);
         const systemQty = manualReconciliationQuantity(systemMatches.reduce((sum, fact) => sum + fact.quantity, 0));
         const manualQty = manualReconciliationQuantity(manualMatches.reduce((sum, fact) => sum + fact.quantity, 0));
@@ -1140,11 +1156,7 @@ function buildInventoryManualReconciliation({
         let reason = status;
         if (availability.available) {
           const internal = internalSourceStatus.get(config.sourceType);
-          const matchingIssues = anomalies.filter((item) => (
-            item.sourceType === config.sourceType
-            && matchKey(item.materialCode) === matchKey(materialCode)
-            && matchKey(item.businessUnit) === matchKey(businessUnit)
-          )).map((item) => item.issue);
+          const matchingIssues = anomalyIndex.get(combinedKey(config.sourceType, businessUnit, materialCode)) || [];
           if (status === '无差异') reason = '无差异';
           else if (status === '仅系统有') reason = '手工表缺少该物料';
           else if (status === '仅手工有' && matchingIssues.length) reason = `系统维度或过滤规则未计入：${[...new Set(matchingIssues)].join('；')}`;
@@ -1208,7 +1220,7 @@ function buildInventoryManualReconciliation({
     left.businessUnit.localeCompare(right.businessUnit, 'zh-Hans-CN')
     || left.materialCode.localeCompare(right.materialCode, 'zh-Hans-CN')
   ));
-  const summaryByCategory = Object.fromEntries(categories.map((category) => {
+  const summaryByCategory = Object.fromEntries(computedCategories.map((category) => {
     const categoryRows = rows.map((row) => row.categories[category]).filter((row) => row.hasData);
     return [category, {
       rowCount: rows.length,
@@ -1238,15 +1250,22 @@ function buildInventoryManualReconciliation({
   };
 }
 
-export function buildInventorySummaryModel({ getRows, getRecord }) {
+export function buildInventorySummaryModel({
+  getRows,
+  getRecord,
+  includeManualReconciliation = true,
+  manualReconciliationCategories = INVENTORY_MANUAL_RECONCILIATION_CATEGORIES
+}) {
   const source = Object.fromEntries(Array.from({ length: 14 }, (_, index) => {
     const slotId = `inventorySummaryFile${index + 1}`;
     return [slotId, rowsRecord(getRecord, slotId)];
   }));
-  const manualSource = Object.fromEntries(Array.from({ length: 16 }, (_, index) => {
-    const slotId = `inventoryManualFile${index + 1}`;
-    return [slotId, rowsRecord(getRecord, slotId)];
-  }));
+  const manualSource = includeManualReconciliation
+    ? Object.fromEntries(Array.from({ length: 16 }, (_, index) => {
+      const slotId = `inventoryManualFile${index + 1}`;
+      return [slotId, rowsRecord(getRecord, slotId)];
+    }))
+    : {};
   const productRows = getRows('productCategory');
   const salesRegionConfigured = productRows.some((row) => text(aliasValue(row, ['salesRegion', '销售区域'])));
   const productLookup = exactLookup(
@@ -1612,7 +1631,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     });
     countQuantity(reconciliationId, sourceType, quantities);
     const reconciliationConfig = QUANTITY_RECONCILIATION_SOURCE_MAP.get(sourceType);
-    if (reconciliationConfig && ['在库', '在途'].includes(reconciliationConfig.group)) {
+    if (includeManualReconciliation && reconciliationConfig && ['在库', '在途'].includes(reconciliationConfig.group)) {
       manualReconciliationSystemFacts.push({
         sourceType,
         group: reconciliationConfig.group,
@@ -2112,14 +2131,17 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     facts: quantityFactLedger,
     totals
   });
-  const manualReconciliation = buildInventoryManualReconciliation({
-    systemFacts: manualReconciliationSystemFacts,
-    manualSource,
-    systemSource: source,
-    productLookup,
-    anomalies,
-    quantityReconciliation
-  });
+  const manualReconciliation = includeManualReconciliation
+    ? buildInventoryManualReconciliation({
+      systemFacts: manualReconciliationSystemFacts,
+      manualSource,
+      systemSource: source,
+      productLookup,
+      anomalies,
+      quantityReconciliation,
+      requestedCategories: manualReconciliationCategories
+    })
+    : null;
   const months = [...new Set(rows.flatMap((row) => Object.keys(row.salesByMonth)))].sort();
   const updatedAt = [...Object.values(source), ...Object.values(manualSource)].map((record) => record.updatedAt).filter(Boolean).sort().at(-1) || '';
   return {
@@ -2134,7 +2156,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     months,
     totals,
     quantityReconciliation,
-    manualReconciliation,
+    ...(manualReconciliation ? { manualReconciliation } : {}),
     anomalies,
     rows
   };

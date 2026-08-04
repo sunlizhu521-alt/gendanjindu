@@ -323,6 +323,38 @@ test('manual inventory reconciliation marks an unapplied side as unavailable ins
   assert.ok(result.manualReconciliation.unavailableFiles.some((row) => row.slotId === 'inventoryManualFile1'));
 });
 
+test('manual inventory reconciliation indexes production-scale facts and supports one-category responses', () => {
+  const rowCount = 2500;
+  const products = Array.from({ length: rowCount }, (_, index) => ({
+    materialCode: `M${index}`,
+    sku: `SKU-${index}`,
+    materialName: `物料${index}`,
+    productLine: '产品线A',
+    productSeries: '系列A',
+    productType: '全新品'
+  }));
+  const rowsBySlot = new Map([
+    ['productCategory', products],
+    ['warehouseMaterialMap', products.map((row) => ({ subject: '主体一', warehouseName: 'FBA金蝶仓', materialCode: row.materialCode, businessUnit: '事业部A' }))],
+    ['inventorySummaryFile1', products.map((row) => ({ sku: row.sku, warehouseName: 'FBA源仓', inventoryAttribute: '全部', endingInventoryQty: '1' }))],
+    ['inventorySummaryFile9', [{ subject: '主体一', lingxingWarehouseName: 'FBA源仓', kingdeeWarehouseName: 'FBA金蝶仓' }]],
+    ['inventorySummaryFile10', products.map((row) => ({ lingxingSku: row.sku, identifier: row.materialCode }))],
+    ['inventoryManualFile1', products.map((row) => ({ businessUnit: '事业部A', warehouseName: 'FBA源仓', subject: '主体一', materialCode: row.materialCode, quantity: '1' }))]
+  ]);
+  const startedAt = performance.now();
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now }),
+    manualReconciliationCategories: ['成品']
+  });
+  const elapsedMs = performance.now() - startedAt;
+  assert.equal(result.manualReconciliation.rows.length, rowCount);
+  assert.deepEqual(Object.keys(result.manualReconciliation.summaryByCategory), ['成品']);
+  assert.equal(result.manualReconciliation.summaryByCategory['成品'].systemInventoryQty, rowCount);
+  assert.equal(result.manualReconciliation.summaryByCategory['成品'].manualInventoryQty, rowCount);
+  assert.ok(elapsedMs < 6000, `indexed reconciliation took ${Math.round(elapsedMs)}ms`);
+});
+
 test('quantity reconciliation reports missing and overlapping quantities independently', () => {
   const source = Object.fromEntries(Array.from({ length: 14 }, (_, index) => [
     `inventorySummaryFile${index + 1}`,
@@ -1914,8 +1946,9 @@ test('inventory summary and domestic board use complete source models and enforc
   try {
     await waitForServer(`http://127.0.0.1:${port}/gendanjindu/`, child, logs);
     const endpoint = `http://127.0.0.1:${port}/api/inventory-summary`;
-    const [adminResponse, purchaseSummaryResponse, domesticResponse, dimensionMissingResponse, demandsResponse, firstMileResponse, anonymousResponse, limitedResponse, expiredResponse] = await Promise.all([
+    const [adminResponse, manualReconciliationResponse, purchaseSummaryResponse, domesticResponse, dimensionMissingResponse, demandsResponse, firstMileResponse, anonymousResponse, limitedResponse, expiredResponse] = await Promise.all([
       fetch(endpoint, { headers: { Authorization: 'Bearer admin-token' } }),
+      fetch(`${endpoint}/manual-reconciliation?category=${encodeURIComponent('成品+配件')}`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/inventory-purchase-summary`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/domestic-board`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/dimension-missing/cross-border`, { headers: { Authorization: 'Bearer admin-token' } }),
@@ -1927,6 +1960,7 @@ test('inventory summary and domestic board use complete source models and enforc
     ]);
 
     assert.equal(adminResponse.status, 200);
+    assert.equal(manualReconciliationResponse.status, 200);
     assert.equal(purchaseSummaryResponse.status, 200);
     assert.equal(domesticResponse.status, 200);
     assert.equal(dimensionMissingResponse.status, 200);
@@ -1988,6 +2022,7 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal((await fetch(`http://127.0.0.1:${port}/api/bootstrap`, { headers: { Authorization: 'Bearer bulk-token-1' } })).status, 401);
 
     const summary = await adminResponse.json();
+    const manualReconciliationPayload = await manualReconciliationResponse.json();
     assert.deepEqual({
       在制量: summary.在制量,
       在途量: summary.在途量,
@@ -1999,6 +2034,9 @@ test('inventory summary and domestic board use complete source models and enforc
     });
     assert.ok(Array.isArray(summary.rows));
     assert.equal(summary.rows.length, 0);
+    assert.equal(summary.manualReconciliation, undefined);
+    assert.deepEqual(manualReconciliationPayload.manualReconciliation.categories, ['全部', '成品+配件', '成品', '配件', '不可售']);
+    assert.deepEqual(Object.keys(manualReconciliationPayload.manualReconciliation.summaryByCategory), ['成品+配件']);
     assert.equal(summary.quantityReconciliation.summary.sourceCount, 9);
     assert.equal(summary.quantityReconciliation.summary.missingQuantity, 0);
     assert.equal(summary.quantityReconciliation.summary.overlapQuantity, 0);

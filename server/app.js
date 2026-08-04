@@ -2447,8 +2447,27 @@ function buildCrossBorderInventoryModel() {
   };
 }
 
-function inventorySummaryData() {
-  return buildInventorySummaryModel({
+let inventorySummaryResultCache = { version: '', main: null, manualCategory: '', manualPayload: null };
+
+function inventorySummarySourceVersion() {
+  return all(
+    `SELECT slot_id, file_name, updated_at, applied, length(rows_json) AS rows_size
+     FROM dimension_files
+     WHERE applied = 1 AND (slot_id LIKE 'inventorySummaryFile%' OR slot_id LIKE 'inventoryManualFile%' OR slot_id IN ('productCategory', 'spare1', 'warehouseMaterialMap'))
+     ORDER BY slot_id`
+  ).map((row) => [row.slot_id, row.file_name, row.updated_at, row.applied, row.rows_size].join(':')).join('|');
+}
+
+function inventorySummaryData({ manualCategory = '' } = {}) {
+  const version = inventorySummarySourceVersion();
+  if (inventorySummaryResultCache.version !== version) {
+    inventorySummaryResultCache = { version, main: null, manualCategory: '', manualPayload: null };
+  }
+  if (!manualCategory && inventorySummaryResultCache.main) return inventorySummaryResultCache.main;
+  if (manualCategory === inventorySummaryResultCache.manualCategory && inventorySummaryResultCache.manualPayload) {
+    return inventorySummaryResultCache.manualPayload;
+  }
+  const payload = buildInventorySummaryModel({
     getRows: getDimensionRows,
     getRecord(slotId) {
       const record = get(
@@ -2459,8 +2478,18 @@ function inventorySummaryData() {
         rows: parseJson(record?.rows_json, []),
         updatedAt: record?.updated_at || ''
       };
-    }
+    },
+    includeManualReconciliation: Boolean(manualCategory),
+    manualReconciliationCategories: manualCategory ? [manualCategory] : []
   });
+  if (manualCategory) {
+    const result = { updatedAt: payload.updatedAt, manualReconciliation: payload.manualReconciliation };
+    inventorySummaryResultCache.manualCategory = manualCategory;
+    inventorySummaryResultCache.manualPayload = result;
+    return result;
+  }
+  inventorySummaryResultCache.main = payload;
+  return payload;
 }
 
 let inventoryRiskResultCache = { key: '', payload: null };
@@ -3650,6 +3679,16 @@ app.get('/api/bootstrap', requireAuth, (req, res) => {
 
 app.get('/api/inventory-summary', requireAuth, requirePage('inventorySummary'), (req, res) => {
   res.json(inventorySummaryData());
+});
+
+app.get('/api/inventory-summary/manual-reconciliation', requireAuth, requirePage('inventorySummary'), (req, res) => {
+  const categories = ['全部', '成品+配件', '成品', '配件', '不可售'];
+  const category = normalize(req.query.category);
+  if (!categories.includes(category)) {
+    return res.status(400).json({ error: '库存分类参数无效' });
+  }
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json(inventorySummaryData({ manualCategory: category }));
 });
 
 app.post('/api/inventory-risk/query', requireAuth, requirePage('inventoryRisk'), (req, res) => {

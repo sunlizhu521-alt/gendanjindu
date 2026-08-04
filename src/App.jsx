@@ -1832,7 +1832,10 @@ function InventoryQuantityReconciliation({ data }) {
   );
 }
 
-function InventoryManualReconciliation({ data, loading, error, onBack }) {
+function InventoryManualReconciliation({ token, onBack }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const reconciliation = data?.manualReconciliation;
   const [category, setCategory] = useState('成品+配件');
   const [filters, setFilters] = useState({ businessUnits: [], productLines: [], productSeries: [], sources: [], statuses: [], keyword: '' });
@@ -1872,6 +1875,25 @@ function InventoryManualReconciliation({ data, loading, error, onBack }) {
   const pageRows = filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const summary = reconciliation?.summaryByCategory?.[category] || {};
   const formatQty = (value) => Number(value || 0).toLocaleString('zh-CN', { maximumFractionDigits: 1 });
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    request(`/api/inventory-summary/manual-reconciliation?category=${encodeURIComponent(category)}`, { token })
+      .then((payload) => {
+        if (!cancelled) setData(payload);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message || '手工库存核对加载失败');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [category, token]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -2240,9 +2262,7 @@ function InventorySummary({ token, active }) {
   if (showManualReconciliation) {
     return (
       <InventoryManualReconciliation
-        data={data}
-        loading={loading}
-        error={error}
+        token={token}
         onBack={() => setShowManualReconciliation(false)}
       />
     );

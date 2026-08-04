@@ -67,6 +67,8 @@ test('销售与库存看板展示仅数量的来源校准和遗漏重叠提醒',
   assert.match(client, /<h2>与手工表库存核对<\/h2>/);
   assert.match(client, /手工库存核对加载失败/);
   assert.match(client, /data\?\.manualReconciliation/);
+  assert.match(client, /\/api\/inventory-summary\/manual-reconciliation\?category=/);
+  assert.match(client, /<InventoryManualReconciliation[\s\S]*?token=\{token\}/);
   assert.match(client, /系统在库量/);
   assert.match(client, /手工在途量/);
   assert.match(client, /是否有差异/);

@@ -275,7 +275,10 @@ const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
 const INVENTORY_MANUAL_LIBRARY_SLOTS = INVENTORY_SUMMARY_LIBRARY_SLOTS.map((slot) => ({
   ...slot,
   id: slot.id.replace('inventorySummaryFile', 'inventoryManualFile'),
-  title: slot.id === 'inventorySummaryFile8' ? '不可售手工' : `${slot.title}手工`,
+  title: /^inventorySummaryFile1[0-6]$/.test(slot.id)
+    ? '备用'
+    : slot.id === 'inventorySummaryFile8' ? '不可售手工' : `${slot.title}手工`,
+  requiredFields: [],
   manualFieldSelection: true
 }));
 
@@ -2976,7 +2979,7 @@ function FieldMapping({ fields, columns, mapping, onChange, requiredFields = [],
   const required = new Set(requiredFields);
   return (
     <div className="mapping-grid">
-      {manual && <p className="mapping-grid-note">请手动选择原表字段，标记“必选”的字段未选完整时不能应用。</p>}
+      {manual && <p className="mapping-grid-note">请按需要手动选择原表字段，未选择的字段按空值处理，不会自动匹配。</p>}
       {fields.map(([key, label]) => (
         <label key={key}>
           {label}{required.has(key) ? '（必选）' : ''}
@@ -5915,22 +5918,6 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       });
       setMessage(`${slot.title} 必须选择 ${slot.requiredSheetCount} 个工作表`);
       return;
-    }
-    if (slot.manualFieldSelection && slot.fields.length > 0) {
-      const fieldLabels = new Map(slot.fields.map(([key, label]) => [key, label]));
-      const missingFields = (slot.requiredFields || []).filter((key) => !state.mapping?.[key]);
-      if (missingFields.length) {
-        const missingLabels = missingFields.map((key) => fieldLabels.get(key) || key);
-        const warning = `请手动选择必填字段：${missingLabels.join('、')}`;
-        setSlotState(slot.id, {
-          progress: 100,
-          statusText: warning,
-          statusType: 'warning',
-          busy: ''
-        });
-        setMessage(`${slot.title} ${warning}`);
-        return;
-      }
     }
     setSlotState(slot.id, {
       progress: 35,

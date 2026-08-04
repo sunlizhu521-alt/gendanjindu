@@ -129,6 +129,9 @@ Object.entries(DIMENSION_SLOTS)
     DIMENSION_SLOTS[slotId.replace('inventorySummaryFile', 'inventoryManualFile')] = `${title}手工`;
   });
 DIMENSION_SLOTS.inventoryManualFile8 = '不可售手工';
+for (let slotNumber = 10; slotNumber <= 16; slotNumber += 1) {
+  DIMENSION_SLOTS[`inventoryManualFile${slotNumber}`] = '备用';
+}
 
 function inventoryLibraryBaseSlotId(slotId) {
   return String(slotId || '').replace(/^inventoryManualFile(?=\d+$)/, 'inventorySummaryFile');
@@ -4358,7 +4361,10 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     ? { ...req.file, buffer: await fs.promises.readFile(req.file.path) }
     : req.file;
   const inventorySummaryParsed = isInventorySummarySlot(baseSlotId)
-    ? parseInventorySummaryWorkbook(inventorySummaryFile, baseSlotId, mapping, { strictMapping: isInventoryManualSlot(slotId) })
+    ? parseInventorySummaryWorkbook(inventorySummaryFile, baseSlotId, mapping, {
+      strictMapping: isInventoryManualSlot(slotId),
+      allowIncompleteMapping: isInventoryManualSlot(slotId)
+    })
     : null;
   const parsed = firstMileParsed || inventorySummaryParsed || (
     ['inventorySummaryFile15', 'inventorySummaryFile16'].includes(baseSlotId)
@@ -4529,7 +4535,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   const rows = isInventoryLibrarySlot(slotId)
     ? rowsWithSheetSource.map(({ raw: _raw, ...row }) => row)
     : rowsWithSheetSource;
-  if (['inventorySummaryFile15', 'inventorySummaryFile16'].includes(baseSlotId) && !rows.length) {
+  if ((isInventoryManualSlot(slotId) || ['inventorySummaryFile15', 'inventorySummaryFile16'].includes(baseSlotId)) && !rows.length) {
     const error = new Error(`${DIMENSION_SLOTS[slotId]}选中的工作表没有可保存的数据，已保留当前应用文件`);
     error.status = 400;
     error.publicMessage = error.message;

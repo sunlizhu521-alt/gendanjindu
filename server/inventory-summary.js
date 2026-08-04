@@ -487,12 +487,13 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}, option
   if (slotId === 'inventorySummaryFile4') expandMergedCells(sheet);
   const parsed = worksheetRows(sheet, schema);
   const strictMapping = Boolean(options.strictMapping);
+  const allowIncompleteMapping = Boolean(options.allowIncompleteMapping);
   const columnMap = Object.fromEntries(schema.fields.map((field) => [
     field,
     mappedColumn(field, mapping, parsed.columns, slotId, strictMapping)
   ]));
   const missing = schema.required.filter((field) => !columnMap[field]);
-  if (missing.length) {
+  if (missing.length && !allowIncompleteMapping) {
     const labels = missing.map((field) => FIELD_ALIASES[field]?.[0] || field);
     throw inventoryValidationError(strictMapping
       ? `手工表必须手动选择必填字段：${labels.join('、')}`
@@ -506,7 +507,7 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}, option
   const mappedRows = parsed.rows.map((row) => Object.fromEntries(schema.fields.map((field) => [
     field,
     columnMap[field] ? row[columnMap[field]] ?? '' : ''
-  ])));
+  ]))).filter((row) => schema.fields.some((field) => columnMap[field] && text(row[field])));
   if (slotId === 'inventorySummaryFile4') {
     const carryFields = ['storeName', 'marketplace', 'shipmentStatus', 'dispatchQty'];
     const previous = {};

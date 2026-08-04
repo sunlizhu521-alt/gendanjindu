@@ -44,7 +44,7 @@ async function waitForServer(url, child, logs) {
   throw new Error(`Server did not become ready.\n${logs.join('')}`);
 }
 
-test('手工库存表必须显式选择必填字段，不使用表头自动推断', () => {
+test('手工库存表字段均为可选且未选字段不自动推断', () => {
   const workbook = xlsx.utils.book_new();
   xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet([
     ['自定义SKU列', '自定义仓库列', '自定义库存属性列', '自定义数量列'],
@@ -55,6 +55,21 @@ test('手工库存表必须显式选择必填字段，不使用表头自动推�
   assert.throws(
     () => parseInventorySummaryWorkbook(file, 'inventorySummaryFile1', {}, { strictMapping: true }),
     /手工表必须手动选择必填字段/
+  );
+
+  const partial = parseInventorySummaryWorkbook(file, 'inventorySummaryFile1', {
+    endingInventoryQty: '自定义数量列'
+  }, { strictMapping: true, allowIncompleteMapping: true });
+  assert.equal(partial.rows.length, 1);
+  assert.equal(partial.rows[0].endingInventoryQty, 25);
+  assert.equal(partial.rows[0].sku, '');
+  assert.equal(partial.rows[0].warehouseName, '');
+  assert.equal(
+    parseInventorySummaryWorkbook(file, 'inventorySummaryFile1', {}, {
+      strictMapping: true,
+      allowIncompleteMapping: true
+    }).rows.length,
+    0
   );
 
   const parsed = parseInventorySummaryWorkbook(file, 'inventorySummaryFile1', {
@@ -2143,13 +2158,6 @@ test('inventory summary and domestic board use complete source models and enforc
       'FBA库存报表手工.xlsx'
     );
     manualInventoryForm.append('mapping', JSON.stringify({
-      storeName: '店铺',
-      marketplace: '站点',
-      sku: 'SKU',
-      fnsku: 'FNSKU',
-      asin: 'ASIN',
-      warehouseName: '仓库名称',
-      inventoryAttribute: '库存属性',
       endingInventoryQty: '期末库存(含移仓)-数量'
     }));
     const manualInventoryUploadResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions/inventoryManualFile1/upload`, {

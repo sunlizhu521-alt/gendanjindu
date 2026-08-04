@@ -1043,6 +1043,45 @@ test('WFS inventory resolves by terminal warehouse name and material when wareho
   assert.equal(result.anomalies.length, 0);
 });
 
+test('WFS inventory ignores warehouse dimension candidates whose composite key uses SKU instead of material code', () => {
+  const rowsBySlot = new Map([
+    ['productCategory', [
+      { materialCode: 'M-ONE', sku: 'SKU-ONE', materialName: 'Item One', productLine: 'Line', productSeries: 'Series', pretaxPrice: '10' }
+    ]],
+    ['warehouseMaterialMap', [
+      {
+        subject: '杭州国源养老科技有限公司',
+        warehouseName: '101-G/海外一部/WFS仓/国源-Walmart美国仓',
+        materialCode: 'M-ONE',
+        sku: 'SKU-ONE',
+        businessUnit: '海外事业一部',
+        raw: { '仓库名称&物料编码': '杭州国源养老科技有限公司101-G/海外一部/WFS仓/国源-Walmart美国仓M-ONE' }
+      },
+      {
+        subject: '杭州国源养老科技有限公司',
+        warehouseName: '102-G/海外二部/WFS仓/国源-Walmart美国仓',
+        materialCode: 'M-ONE',
+        sku: 'SKU-ONE',
+        businessUnit: '海外事业二部',
+        raw: { '仓库名称&物料编码': '杭州国源养老科技有限公司102-G/海外二部/WFS仓/国源-Walmart美国仓SKU-ONE' }
+      }
+    ]],
+    ['inventorySummaryFile3', [
+      { sku: 'SKU-ONE', warehouseName: '国源-Walmart美国仓', totalInventoryQty: '100' }
+    ]],
+    ['inventorySummaryFile10', [
+      { lingxingSku: 'SKU-ONE', identifier: 'M-ONE' }
+    ]]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
+  });
+  const overseasOne = result.rows.find((row) => row.matchKey === '海外事业一部+M-ONE');
+  assert.equal(overseasOne?.wfsInventoryQty, 100);
+  assert.equal(result.anomalies.length, 0);
+});
+
 test('WFS inventory marks conflicting business unit mappings instead of guessing', () => {
   const rowsBySlot = new Map([
     ['productCategory', [

@@ -701,6 +701,17 @@ function warehouseBusinessUnit(row) {
   return text(aliasValue(row, ['businessUnit', '事业部']));
 }
 
+function warehouseMaterialUsesMaterialComposite(row) {
+  const materialCode = text(aliasValue(row, ['materialCode', '物料编码', '品号'])).replace(/\.0$/, '');
+  const composite = text(aliasValue(row, [
+    'warehouseMaterialKey',
+    '仓库名称&物料编码',
+    '主体&仓库名称&物料编码'
+  ]));
+  if (!materialCode || !composite) return true;
+  return matchKey(composite).endsWith(matchKey(materialCode));
+}
+
 function applyAbc(rows, metricKey, targetKey) {
   const byBusinessUnit = new Map();
   rows.forEach((row) => {
@@ -959,7 +970,9 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     (row) => ({ businessUnit: warehouseBusinessUnit(row) })
   );
   const wfsWarehouseMaterialLookup = exactLookup(
-    getRows('warehouseMaterialMap').filter((row) => isWfsWarehouseName(warehouseName(row))),
+    getRows('warehouseMaterialMap').filter((row) => (
+      isWfsWarehouseName(warehouseName(row)) && warehouseMaterialUsesMaterialComposite(row)
+    )),
     (row) => combinedKey(terminalWarehouseName(warehouseName(row)), aliasValue(row, ['materialCode', '物料编码', '品号'])),
     (row) => ({
       subject: warehouseSubject(row),

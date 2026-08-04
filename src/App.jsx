@@ -209,52 +209,55 @@ const LINGXING_INVENTORY_SLOTS = [
 ];
 
 const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
-  { id: 'inventorySummaryFile1', title: 'FBA库存报表', fields: [
+  { id: 'inventorySummaryFile1', title: 'FBA库存报表', requiredFields: ['sku', 'warehouseName', 'inventoryAttribute', 'endingInventoryQty'], fields: [
     ['storeName', '店铺'], ['marketplace', '站点'], ['sku', 'SKU'], ['fnsku', 'FNSKU'],
     ['asin', 'ASIN'], ['warehouseName', '仓库名称'], ['inventoryAttribute', '库存属性'], ['endingInventoryQty', '期末库存(含移仓)-数量']
   ] },
-  { id: 'inventorySummaryFile2', title: 'FBM库存报表', fields: [
+  { id: 'inventorySummaryFile2', title: 'FBM库存报表', requiredFields: ['identifier', 'warehouseName', 'actualTotalQty'], fields: [
     ['storeName', '店铺'], ['marketplace', '站点'], ['identifier', '识别码'],
     ['warehouseName', '仓库名称'], ['actualTotalQty', '实际总量']
   ] },
-  { id: 'inventorySummaryFile3', title: 'WFS库存报表', fields: [
+  { id: 'inventorySummaryFile3', title: 'WFS库存报表', requiredFields: ['sku', 'warehouseName', 'totalInventoryQty'], fields: [
     ['storeName', '店铺'], ['marketplace', '站点'], ['sku', 'SKU'], ['itemId', 'Item ID'],
     ['warehouseName', '仓库名称'], ['totalInventoryQty', '总库存数量']
   ] },
-  { id: 'inventorySummaryFile4', title: 'FBA在途报表', fields: [
+  { id: 'inventorySummaryFile4', title: 'FBA在途报表', requiredFields: ['storeName', 'sku', 'shipmentStatus', 'dispatchQty', 'shippedQty', 'signedQty'], fields: [
     ['storeName', '店铺'], ['marketplace', '站点'], ['sku', 'SKU'],
     ['shipmentStatus', '货件状态'], ['dispatchQty', '发货数量'], ['shippedQty', '已发货'], ['signedQty', '签收量']
   ] },
-  { id: 'inventorySummaryFile5', title: 'FBM在途报表', fields: [
+  { id: 'inventorySummaryFile5', title: 'FBM在途报表', requiredFields: ['sku', 'warehouseName', 'receivingWarehouseName', 'documentStatus', 'stockupQty', 'receivedQty'], fields: [
     ['storeName', '店铺'], ['marketplace', '站点'], ['sku', 'SKU'],
     ['warehouseName', '发货仓库（单据）'], ['receivingWarehouseName', '收货仓库'], ['documentStatus', '单据状态'],
     ['stockupQty', '备货数量'], ['receivedQty', '收货数量']
   ] },
-  { id: 'inventorySummaryFile6', title: '国内在库报表', fields: [
+  { id: 'inventorySummaryFile6', title: '国内在库报表', requiredFields: ['subject', 'warehouseName', 'materialCode', 'domesticStockQty'], fields: [
     ['subject', '使用组织/库存组织'], ['warehouseName', '仓库名称'],
     ['materialCode', '物料编码'], ['domesticStockQty', '库存量(主单位)']
   ] },
-  { id: 'inventorySummaryFile7', title: '京东在库报表', fields: [
+  { id: 'inventorySummaryFile7', title: '京东在库报表', requiredFields: ['jdId', 'jdStockQty'], fields: [
     ['jdId', 'SKU/京东ID'], ['jdRdc', 'RDC（新格式）'], ['jdStockQty', '现货库存/全国现货库存']
   ] },
-  { id: 'inventorySummaryFile14', title: '京东在途', fields: [
+  { id: 'inventorySummaryFile14', title: '京东在途', requiredFields: ['materialCode', 'jdTransitQty'], fields: [
     ['materialCode', '物料编码'], ['jdTransitQty', '在途数量']
   ] },
-  { id: 'inventorySummaryFile8', title: '销售数据报表', fields: [
+  { id: 'inventorySummaryFile8', title: '销售数据报表', requiredFields: ['date', 'businessUnit', 'materialCode', 'salesQty', 'salesAmount'], fields: [
     ['date', '日期'], ['businessUnit', '事业部'], ['materialCode', '物料编码'],
     ['salesQty', '销售数量'], ['salesAmount', '销售金额']
   ] },
-  { id: 'inventorySummaryFile9', title: 'Dim-领星FBA仓库&金蝶仓库', fields: [
+  { id: 'inventorySummaryFile9', title: 'Dim-领星FBA仓库&金蝶仓库', requiredFields: ['subject', 'lingxingWarehouseName', 'kingdeeWarehouseName'], fields: [
     ['subject', '主体'], ['lingxingWarehouseName', '领星FBA仓库'],
     ['kingdeeWarehouseName', '金蝶仓库名称']
   ] },
-  { id: 'inventorySummaryFile10', title: 'Dim-领星SKU对应物料编码-产品管理', fields: [
+  { id: 'inventorySummaryFile10', title: 'Dim-领星SKU对应物料编码-产品管理', requiredFields: ['lingxingSku', 'identifier'], fields: [
     ['lingxingSku', 'SKU'], ['identifier', '识别码'], ['remark', '备注']
   ] },
-  { id: 'inventorySummaryFile11', title: 'Dim-京东ID与品号匹配', fields: [
+  { id: 'inventorySummaryFile11', title: 'Dim-京东ID与品号匹配', requiredFields: ['jdId', 'materialCode'], fields: [
     ['jdId', '京东ID'], ['materialCode', '品号']
   ] },
-  { id: 'inventorySummaryFile12', title: '采购跟单情况', fields: [
+  { id: 'inventorySummaryFile12', title: '采购跟单情况', requiredFields: [
+    'month', 'businessUnit', 'materialCode', 'remainingQty', 'finishedQty', 'unpreparedQty',
+    'preparedNotStartedQty', 'inProductionQty', 'deliveryStatus', 'unfulfilledReason', 'reasonDetail', 'remark'
+  ], fields: [
     ['month', '下单月份'], ['businessUnit', '事业部'], ['materialCode', '物料编码'],
     ['remainingQty', '备货剩余数量'], ['finishedQty', '完工未发产品'],
     ['unpreparedQty', '已下单未备料未生产'], ['preparedNotStartedQty', '已备料未生产'],
@@ -262,7 +265,7 @@ const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
     ['supplierShortName', '供应商简称'],
     ['unfulfilledReason', '未履约原因'], ['reasonDetail', '原因详情'], ['remark', '备注']
   ] },
-  { id: 'inventorySummaryFile13', title: 'Dim-领星FBA在途&金蝶仓库', fields: [
+  { id: 'inventorySummaryFile13', title: 'Dim-领星FBA在途&金蝶仓库', requiredFields: ['subject', 'storeName', 'kingdeeWarehouseName'], fields: [
     ['subject', '主体'], ['storeName', '店铺'], ['kingdeeWarehouseName', '金蝶仓库名称']
   ] },
   { id: 'inventorySummaryFile15', title: '销售预测', fields: [], requiresSheetSelection: true },
@@ -272,7 +275,8 @@ const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
 const INVENTORY_MANUAL_LIBRARY_SLOTS = INVENTORY_SUMMARY_LIBRARY_SLOTS.map((slot) => ({
   ...slot,
   id: slot.id.replace('inventorySummaryFile', 'inventoryManualFile'),
-  title: `${slot.title}手工`
+  title: `${slot.title}手工`,
+  manualFieldSelection: true
 }));
 
 const FIRST_MILE_DATABASE_SLOTS = [
@@ -2968,12 +2972,14 @@ function MonthCalendarFilter({ label, value = [], options = [], onChange, multip
   );
 }
 
-function FieldMapping({ fields, columns, mapping, onChange }) {
+function FieldMapping({ fields, columns, mapping, onChange, requiredFields = [], manual = false }) {
+  const required = new Set(requiredFields);
   return (
     <div className="mapping-grid">
+      {manual && <p className="mapping-grid-note">请手动选择原表字段，标记“必选”的字段未选完整时不能应用。</p>}
       {fields.map(([key, label]) => (
         <label key={key}>
-          {label}
+          {label}{required.has(key) ? '（必选）' : ''}
           <select value={mapping[key] || ''} onChange={(event) => onChange({ ...mapping, [key]: event.target.value })}>
             <option value="">请选择字段</option>
             {columns.map((column) => <option key={column} value={column}>{column}</option>)}
@@ -3024,11 +3030,15 @@ function inferredMappingColumn(key, label, columns) {
   return ranked[0].column;
 }
 
-function validMappingForColumns(mapping = {}, columns = [], fields = []) {
+function validMappingForColumns(mapping = {}, columns = [], fields = [], inferMissing = true) {
   const validColumns = new Set(columns);
   return fields.reduce((next, [key, label]) => {
     const value = mapping[key] || '';
-    next[key] = value && validColumns.has(value) ? value : inferredMappingColumn(key, label, columns);
+    next[key] = value && validColumns.has(value)
+      ? value
+      : inferMissing
+        ? inferredMappingColumn(key, label, columns)
+        : '';
     return next;
   }, {});
 }
@@ -5763,10 +5773,10 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       const requiresMultipleSheets = Number(slot.requiredSheetCount || 0) > 0;
       setLocal((prev) => {
         const prevState = prev[slot.id] || {};
-        const savedMapping = prevState.savedMapping || prevState.mapping || record?.mapping || {};
-        const sheetMappings = { ...(prevState.sheetMappings || {}) };
-        const mapping = validMappingForColumns(sheetMappings[''] || savedMapping, columns, slot.fields);
-        if (record?.sheetName) {
+        const savedMapping = slot.manualFieldSelection ? {} : (prevState.savedMapping || prevState.mapping || record?.mapping || {});
+        const sheetMappings = slot.manualFieldSelection ? {} : { ...(prevState.sheetMappings || {}) };
+        const mapping = validMappingForColumns(sheetMappings[''] || savedMapping, columns, slot.fields, !slot.manualFieldSelection);
+        if (!slot.manualFieldSelection && record?.sheetName) {
           const recordSheet = (payload.sheetPreviews || []).find((item) => item.sheetName === record.sheetName);
           sheetMappings[record.sheetName] = validMappingForColumns(record.mapping || {}, recordSheet?.columns || columns, slot.fields);
         }
@@ -5828,7 +5838,12 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
     const currentKey = state.sheetName || '';
     const nextKey = sheetName || '';
     const sheetMappings = { ...(state.sheetMappings || {}), [currentKey]: state.mapping || {} };
-    const mapping = validMappingForColumns(sheetMappings[nextKey] || state.savedMapping || {}, nextColumns, slot.fields);
+    const mapping = validMappingForColumns(
+      sheetMappings[nextKey] || (slot.manualFieldSelection ? {} : state.savedMapping || {}),
+      nextColumns,
+      slot.fields,
+      !slot.manualFieldSelection
+    );
     const inspectRowCount = sheetName
       ? (sheet?.rowCount == null ? null : Number(sheet.rowCount || 0))
       : (state.sheetPreviews || []).every((item) => item.rowCount != null)
@@ -5900,6 +5915,22 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       });
       setMessage(`${slot.title} 必须选择 ${slot.requiredSheetCount} 个工作表`);
       return;
+    }
+    if (slot.manualFieldSelection && slot.fields.length > 0) {
+      const fieldLabels = new Map(slot.fields.map(([key, label]) => [key, label]));
+      const missingFields = (slot.requiredFields || []).filter((key) => !state.mapping?.[key]);
+      if (missingFields.length) {
+        const missingLabels = missingFields.map((key) => fieldLabels.get(key) || key);
+        const warning = `请手动选择必填字段：${missingLabels.join('、')}`;
+        setSlotState(slot.id, {
+          progress: 100,
+          statusText: warning,
+          statusType: 'warning',
+          busy: ''
+        });
+        setMessage(`${slot.title} ${warning}`);
+        return;
+      }
     }
     setSlotState(slot.id, {
       progress: 35,
@@ -6104,8 +6135,10 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
                   fields={slot.fields}
                   columns={state.columns}
                   mapping={state.mapping || {}}
+                  requiredFields={slot.manualFieldSelection ? (slot.requiredFields || []) : []}
+                  manual={Boolean(slot.manualFieldSelection)}
                   onChange={(mapping) => {
-                    const nextMapping = validMappingForColumns(mapping, state.columns, slot.fields);
+                    const nextMapping = validMappingForColumns(mapping, state.columns, slot.fields, !slot.manualFieldSelection);
                     const sheetKey = state.sheetName || '';
                     setLocal({ ...local, [slot.id]: { ...state, mapping: nextMapping, sheetMappings: { ...(state.sheetMappings || {}), [sheetKey]: nextMapping } } });
                   }}

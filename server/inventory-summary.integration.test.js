@@ -44,6 +44,29 @@ async function waitForServer(url, child, logs) {
   throw new Error(`Server did not become ready.\n${logs.join('')}`);
 }
 
+test('手工库存表必须显式选择必填字段，不使用表头自动推断', () => {
+  const workbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet([
+    ['自定义SKU列', '自定义仓库列', '自定义库存属性列', '自定义数量列'],
+    ['SKU-1', '仓库一', '全部', 25]
+  ]), '手工表');
+  const file = { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) };
+
+  assert.throws(
+    () => parseInventorySummaryWorkbook(file, 'inventorySummaryFile1', {}, { strictMapping: true }),
+    /手工表必须手动选择必填字段/
+  );
+
+  const parsed = parseInventorySummaryWorkbook(file, 'inventorySummaryFile1', {
+    sku: '自定义SKU列',
+    warehouseName: '自定义仓库列',
+    inventoryAttribute: '自定义库存属性列',
+    endingInventoryQty: '自定义数量列'
+  }, { strictMapping: true });
+  assert.equal(parsed.rows.length, 1);
+  assert.equal(parsed.rows[0].endingInventoryQty, 25);
+});
+
 test('inventory summary model uses inventory library facts, layered totals and stable ABC classes', () => {
   const rowsBySlot = new Map([
     ['productCategory', [

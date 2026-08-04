@@ -436,7 +436,9 @@ function worksheetRows(sheet, schema) {
   return { rows, columns };
 }
 
-function mappedColumn(field, mapping, columns, slotId) {
+function mappedColumn(field, mapping, columns, slotId, strictMapping = false) {
+  const configured = text(mapping?.[field]);
+  if (strictMapping) return configured && columns.includes(configured) ? configured : '';
   if (slotId === 'inventorySummaryFile1' && field === 'endingInventoryQty') {
     const canonicalAliases = new Set(FIELD_ALIASES.endingInventoryQty.map(headerKey));
     const canonicalColumn = columns.find((column) => canonicalAliases.has(headerKey(column)));
@@ -447,7 +449,6 @@ function mappedColumn(field, mapping, columns, slotId) {
     const canonicalColumn = columns.find((column) => canonicalAliases.has(headerKey(column)));
     return canonicalColumn || '';
   }
-  const configured = text(mapping?.[field]);
   if (configured && columns.includes(configured)) return configured;
   const aliases = new Set((FIELD_ALIASES[field] || []).map(headerKey));
   return columns.find((column) => aliases.has(headerKey(column))) || '';
@@ -464,7 +465,7 @@ function inventoryValidationError(message) {
   return error;
 }
 
-export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
+export function parseInventorySummaryWorkbook(file, slotId, mapping = {}, options = {}) {
   const schema = SLOT_SCHEMAS[slotId];
   if (!schema) return null;
   if (!file?.buffer) throw inventoryValidationError('未收到上传文件');
@@ -485,11 +486,17 @@ export function parseInventorySummaryWorkbook(file, slotId, mapping = {}) {
   const sheet = workbook.Sheets[sheetName];
   if (slotId === 'inventorySummaryFile4') expandMergedCells(sheet);
   const parsed = worksheetRows(sheet, schema);
-  const columnMap = Object.fromEntries(schema.fields.map((field) => [field, mappedColumn(field, mapping, parsed.columns, slotId)]));
+  const strictMapping = Boolean(options.strictMapping);
+  const columnMap = Object.fromEntries(schema.fields.map((field) => [
+    field,
+    mappedColumn(field, mapping, parsed.columns, slotId, strictMapping)
+  ]));
   const missing = schema.required.filter((field) => !columnMap[field]);
   if (missing.length) {
     const labels = missing.map((field) => FIELD_ALIASES[field]?.[0] || field);
-    throw inventoryValidationError(`缺少必填列：${labels.join('、')}`);
+    throw inventoryValidationError(strictMapping
+      ? `手工表必须手动选择必填字段：${labels.join('、')}`
+      : `缺少必填列：${labels.join('、')}`);
   }
   const jdUsesRdcFormat = slotId === 'inventorySummaryFile7'
     && headerKey(columnMap.jdStockQty) === headerKey('现货库存');

@@ -4269,7 +4269,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     ? parseFirstMileWorkbook(req.file, { slotId, fileName: safeFilename(req.file) })
     : null;
   const inventorySummaryParsed = isInventorySummarySlot(baseSlotId)
-    ? parseInventorySummaryWorkbook(req.file, baseSlotId, mapping)
+    ? parseInventorySummaryWorkbook(req.file, baseSlotId, mapping, { strictMapping: isInventoryManualSlot(slotId) })
     : null;
   const parsed = firstMileParsed || inventorySummaryParsed || (
     ['inventorySummaryFile15', 'inventorySummaryFile16'].includes(baseSlotId)

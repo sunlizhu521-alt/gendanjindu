@@ -66,8 +66,12 @@ test('销售与库存看板展示仅数量的来源校准和遗漏重叠提醒',
   assert.match(client, /function InventoryManualReconciliation/);
   assert.match(client, /<h2>与手工表库存核对<\/h2>/);
   assert.match(client, /手工库存核对加载失败/);
-  assert.match(client, /<InventoryQuantityReconciliation data=\{data\?\.quantityReconciliation\}/);
-  assert.equal((client.match(/<InventoryQuantityReconciliation data=\{data\?\.quantityReconciliation\}/g) || []).length, 1);
+  assert.match(client, /data\?\.manualReconciliation/);
+  assert.match(client, /系统在库量/);
+  assert.match(client, /手工在途量/);
+  assert.match(client, /是否有差异/);
+  assert.match(client, /来源差异明细/);
+  assert.match(client, /writeStyledExcelFile/);
   assert.match(client, /库存计算口径<\/button>[\s\S]*?与手工表库存核对<\/button>/);
   assert.match(client, /showManualReconciliation[\s\S]*?<InventoryManualReconciliation/);
   assert.match(styles, /\.inventory-quantity-reconciliation\.warning/);

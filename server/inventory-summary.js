@@ -257,6 +257,16 @@ const INVENTORY_SOURCE_TABLE_LABELS = {
 
 const INVENTORY_MANUAL_FIELDS = ['businessUnit', 'warehouseName', 'subject', 'materialCode', 'quantity'];
 const INVENTORY_UNSELLABLE_MANUAL_FIELDS = ['businessUnit', 'warehouseName', 'subject', 'materialCode', 'inventoryQty', 'transitQty'];
+const INVENTORY_MANUAL_RECONCILIATION_SOURCES = [
+  { sourceType: 'FBA库存', label: 'FBA在库', group: '在库', systemSlotId: 'inventorySummaryFile1', manualSlotId: 'inventoryManualFile1' },
+  { sourceType: 'FBM库存', label: 'FBM在库', group: '在库', systemSlotId: 'inventorySummaryFile2', manualSlotId: 'inventoryManualFile2' },
+  { sourceType: 'WFS库存', label: 'WFS在库', group: '在库', systemSlotId: 'inventorySummaryFile3', manualSlotId: 'inventoryManualFile3' },
+  { sourceType: '国内在库', label: '国内在库', group: '在库', systemSlotId: 'inventorySummaryFile6', manualSlotId: 'inventoryManualFile6' },
+  { sourceType: '京东在库', label: '京东在库', group: '在库', systemSlotId: 'inventorySummaryFile7', manualSlotId: 'inventoryManualFile7' },
+  { sourceType: 'FBA在途', label: 'FBA在途', group: '在途', systemSlotId: 'inventorySummaryFile4', manualSlotId: 'inventoryManualFile4' },
+  { sourceType: 'FBM在途', label: 'FBM在途', group: '在途', systemSlotId: 'inventorySummaryFile5', manualSlotId: 'inventoryManualFile5' },
+  { sourceType: '京东在途', label: '京东在途', group: '在途', systemSlotId: 'inventorySummaryFile14', manualSlotId: 'inventoryManualFile14' }
+];
 const QUANTITY_RECONCILIATION_SOURCES = [
   { sourceType: 'FBA库存', label: 'FBA在库', slotId: 'inventorySummaryFile1', group: '在库', field: 'fbaInventoryQty' },
   { sourceType: 'FBM库存', label: 'FBM在库', slotId: 'inventorySummaryFile2', group: '在库', field: 'fbmInventoryQty' },
@@ -994,9 +1004,247 @@ export function buildInventoryQuantityReconciliation({ source = {}, facts = [], 
   };
 }
 
+function manualReconciliationQuantity(value) {
+  const parsed = safeNumber(value);
+  return parsed.valid ? Math.round((parsed.value + Number.EPSILON) * 10) / 10 : 0;
+}
+
+function manualReconciliationStatus(systemQty, manualQty) {
+  const system = manualReconciliationQuantity(systemQty);
+  const manual = manualReconciliationQuantity(manualQty);
+  if (system === manual) return '无差异';
+  if (system !== 0 && manual === 0) return '仅系统有';
+  if (system === 0 && manual !== 0) return '仅手工有';
+  return '有差异';
+}
+
+function buildInventoryManualReconciliation({
+  systemFacts = [],
+  manualSource = {},
+  systemSource = {},
+  productLookup,
+  anomalies = [],
+  quantityReconciliation
+} = {}) {
+  const standardConfigs = INVENTORY_MANUAL_RECONCILIATION_SOURCES.map((config) => ({
+    ...config,
+    systemSlotIds: [config.systemSlotId]
+  }));
+  const unsellableConfigs = [
+    {
+      sourceType: '不可售',
+      label: '不可售在库',
+      group: '在库',
+      systemSlotIds: ['inventorySummaryFile1', 'inventorySummaryFile2', 'inventorySummaryFile3', 'inventorySummaryFile6'],
+      manualSlotId: 'inventoryManualFile8'
+    },
+    {
+      sourceType: '不可售',
+      label: '不可售在途',
+      group: '在途',
+      systemSlotIds: ['inventorySummaryFile5'],
+      manualSlotId: 'inventoryManualFile8'
+    }
+  ];
+  const categories = ['全部', '成品+配件', '成品', '配件', '不可售'];
+  const categoryMatches = (fact, category) => (
+    category === '全部'
+      || (category === '成品+配件' && ['成品', '配件'].includes(fact.productType))
+      || fact.productType === category
+  );
+  const manualFacts = [];
+  const addManualFact = (row, sourceType, group, quantity, productType) => {
+    const businessUnit = text(row.businessUnit) || '未匹配';
+    const materialCode = text(row.materialCode).replace(/\.0$/, '') || '未匹配';
+    manualFacts.push({
+      sourceType,
+      comparisonSourceType: sourceType,
+      group,
+      businessUnit,
+      materialCode,
+      productType,
+      quantity: manualReconciliationQuantity(quantity),
+      subject: text(row.subject),
+      sourceWarehouseName: text(row.warehouseName),
+      mappedWarehouseName: '',
+      storeName: ''
+    });
+  };
+  standardConfigs.forEach((config) => {
+    (manualSource[config.manualSlotId]?.rows || []).forEach((row) => {
+      const materialCode = text(row.materialCode).replace(/\.0$/, '');
+      const productResult = productLookup.resolve(materialCode);
+      const productType = productResult.status === 'ok' ? baseInventoryProductType(productResult.value) : '未匹配';
+      addManualFact(row, config.sourceType, config.group, row.quantity, productType);
+    });
+  });
+  (manualSource.inventoryManualFile8?.rows || []).forEach((row) => {
+    addManualFact(row, '不可售', '在库', row.inventoryQty, '不可售');
+    addManualFact(row, '不可售', '在途', row.transitQty, '不可售');
+  });
+
+  const normalizedSystemFacts = systemFacts.map((fact) => ({
+    ...fact,
+    comparisonSourceType: fact.productType === '不可售' ? '不可售' : fact.sourceType,
+    quantity: manualReconciliationQuantity(fact.quantity)
+  }));
+  const keyIdentity = new Map();
+  [...normalizedSystemFacts, ...manualFacts].forEach((fact) => {
+    const key = combinedKey(fact.businessUnit, fact.materialCode);
+    if (!keyIdentity.has(key)) keyIdentity.set(key, { businessUnit: fact.businessUnit, materialCode: fact.materialCode });
+  });
+  const allKeys = new Set(keyIdentity.keys());
+  const internalSourceStatus = new Map(
+    (quantityReconciliation?.sources || []).map((row) => [row.sourceType, row])
+  );
+  const sourceAvailable = (config) => {
+    const missingSystem = config.systemSlotIds.filter((slotId) => !systemSource[slotId]?.updatedAt);
+    if (missingSystem.length) return { available: false, status: '无法核对：系统底表未应用', missingSystem };
+    if (!manualSource[config.manualSlotId]?.updatedAt) {
+      return { available: false, status: '无法核对：手工表未应用', missingManual: [config.manualSlotId] };
+    }
+    return { available: true, status: '' };
+  };
+  const configsForCategory = (category) => (
+    category === '不可售'
+      ? unsellableConfigs
+      : category === '全部'
+        ? [...standardConfigs, ...unsellableConfigs]
+        : standardConfigs
+  );
+  const detailText = (facts, field) => [...new Set(facts.map((fact) => text(fact[field])).filter(Boolean))].join(' & ');
+
+  const rows = [...allKeys].map((key) => {
+    const { businessUnit, materialCode } = keyIdentity.get(key);
+    const productResult = productLookup.resolve(materialCode);
+    const product = productResult.status === 'ok' ? productResult.value : {};
+    const categoryResults = Object.fromEntries(categories.map((category) => {
+      const sourceRows = configsForCategory(category).map((config) => {
+        const systemMatches = normalizedSystemFacts.filter((fact) => (
+          combinedKey(fact.businessUnit, fact.materialCode) === key
+          && fact.comparisonSourceType === config.sourceType
+          && fact.group === config.group
+          && categoryMatches(fact, category)
+        ));
+        const manualMatches = manualFacts.filter((fact) => (
+          combinedKey(fact.businessUnit, fact.materialCode) === key
+          && fact.comparisonSourceType === config.sourceType
+          && fact.group === config.group
+          && categoryMatches(fact, category)
+        ));
+        const availability = sourceAvailable(config);
+        const systemQty = manualReconciliationQuantity(systemMatches.reduce((sum, fact) => sum + fact.quantity, 0));
+        const manualQty = manualReconciliationQuantity(manualMatches.reduce((sum, fact) => sum + fact.quantity, 0));
+        const differenceQty = manualReconciliationQuantity(systemQty - manualQty);
+        let status = availability.status || manualReconciliationStatus(systemQty, manualQty);
+        let reason = status;
+        if (availability.available) {
+          const internal = internalSourceStatus.get(config.sourceType);
+          const matchingIssues = anomalies.filter((item) => (
+            item.sourceType === config.sourceType
+            && matchKey(item.materialCode) === matchKey(materialCode)
+            && matchKey(item.businessUnit) === matchKey(businessUnit)
+          )).map((item) => item.issue);
+          if (status === '无差异') reason = '无差异';
+          else if (status === '仅系统有') reason = '手工表缺少该物料';
+          else if (status === '仅手工有' && matchingIssues.length) reason = `系统维度或过滤规则未计入：${[...new Set(matchingIssues)].join('；')}`;
+          else if (status === '仅手工有') reason = '系统底表未计入该物料';
+          else if (internal && internal.status === '数量遗漏') reason = '系统汇总遗漏';
+          else if (internal && internal.status === '数量重叠') reason = '系统重复计入';
+          else if (status === '有差异') reason = '来源数量不一致';
+          else reason = '待人工确认';
+        }
+        return {
+          sourceType: config.sourceType,
+          label: config.label,
+          group: config.group,
+          systemQty,
+          manualQty,
+          differenceQty,
+          status,
+          reason,
+          systemSubject: detailText(systemMatches, 'subject'),
+          systemWarehouse: detailText(systemMatches, 'sourceWarehouseName'),
+          systemMappedWarehouse: detailText(systemMatches, 'mappedWarehouseName'),
+          manualSubject: detailText(manualMatches, 'subject'),
+          manualWarehouse: detailText(manualMatches, 'sourceWarehouseName')
+        };
+      }).filter((row) => row.systemQty !== 0 || row.manualQty !== 0);
+      const groupResult = (group) => {
+        const groupRows = sourceRows.filter((row) => row.group === group);
+        const systemQty = manualReconciliationQuantity(groupRows.reduce((sum, row) => sum + row.systemQty, 0));
+        const manualQty = manualReconciliationQuantity(groupRows.reduce((sum, row) => sum + row.manualQty, 0));
+        const unavailable = groupRows.find((row) => row.status.startsWith('无法核对'));
+        return {
+          systemQty,
+          manualQty,
+          differenceQty: manualReconciliationQuantity(systemQty - manualQty),
+          status: unavailable?.status || manualReconciliationStatus(systemQty, manualQty)
+        };
+      };
+      const inventory = groupResult('在库');
+      const transit = groupResult('在途');
+      const hasData = sourceRows.some((row) => row.systemQty !== 0 || row.manualQty !== 0);
+      let status = '无差异';
+      if ([inventory.status, transit.status].some((value) => value.startsWith('无法核对'))) status = '无法核对';
+      else if ([inventory.status, transit.status].some((value) => value === '有差异')) status = '有差异';
+      else if ([inventory.status, transit.status].some((value) => value === '仅系统有')) status = '仅系统有';
+      else if ([inventory.status, transit.status].some((value) => value === '仅手工有')) status = '仅手工有';
+      const reason = [...new Set(sourceRows.filter((row) => row.status !== '无差异').map((row) => `${row.label}：${row.reason}`))].join('；') || '无差异';
+      return [category, { inventory, transit, status, reason, sources: sourceRows, hasData }];
+    }));
+    return {
+      id: key,
+      businessUnit,
+      materialCode,
+      sku: text(product.sku) || '未匹配',
+      materialName: text(product.materialName) || '未匹配',
+      productLine: text(product.productLine) || '未匹配',
+      productSeries: text(product.productSeries) || '未匹配',
+      productType: productResult.status === 'ok' ? baseInventoryProductType(product) : '未匹配',
+      categories: categoryResults
+    };
+  }).sort((left, right) => (
+    left.businessUnit.localeCompare(right.businessUnit, 'zh-Hans-CN')
+    || left.materialCode.localeCompare(right.materialCode, 'zh-Hans-CN')
+  ));
+  const summaryByCategory = Object.fromEntries(categories.map((category) => {
+    const categoryRows = rows.map((row) => row.categories[category]).filter((row) => row.hasData);
+    return [category, {
+      rowCount: rows.length,
+      issueCount: categoryRows.filter((row) => row.status !== '无差异').length,
+      matchedCount: categoryRows.filter((row) => row.status === '无差异').length,
+      unavailableCount: categoryRows.filter((row) => row.status === '无法核对').length,
+      systemInventoryQty: manualReconciliationQuantity(categoryRows.reduce((sum, row) => sum + row.inventory.systemQty, 0)),
+      manualInventoryQty: manualReconciliationQuantity(categoryRows.reduce((sum, row) => sum + row.inventory.manualQty, 0)),
+      systemTransitQty: manualReconciliationQuantity(categoryRows.reduce((sum, row) => sum + row.transit.systemQty, 0)),
+      manualTransitQty: manualReconciliationQuantity(categoryRows.reduce((sum, row) => sum + row.transit.manualQty, 0))
+    }];
+  }));
+  const unavailableFiles = [];
+  [...standardConfigs, ...unsellableConfigs].forEach((config) => {
+    const availability = sourceAvailable(config);
+    if (availability.available) return;
+    (availability.missingSystem || []).forEach((slotId) => unavailableFiles.push({ side: '系统', slotId, source: config.label, status: '系统底表未应用' }));
+    (availability.missingManual || []).forEach((slotId) => unavailableFiles.push({ side: '手工', slotId, source: config.label, status: '手工表未应用' }));
+  });
+  return {
+    categories,
+    summaryByCategory,
+    rows,
+    unavailableFiles: unavailableFiles.filter((item, index, list) => (
+      list.findIndex((candidate) => candidate.side === item.side && candidate.slotId === item.slotId) === index
+    ))
+  };
+}
+
 export function buildInventorySummaryModel({ getRows, getRecord }) {
   const source = Object.fromEntries(Array.from({ length: 14 }, (_, index) => {
     const slotId = `inventorySummaryFile${index + 1}`;
+    return [slotId, rowsRecord(getRecord, slotId)];
+  }));
+  const manualSource = Object.fromEntries(Array.from({ length: 16 }, (_, index) => {
+    const slotId = `inventoryManualFile${index + 1}`;
     return [slotId, rowsRecord(getRecord, slotId)];
   }));
   const productRows = getRows('productCategory');
@@ -1056,6 +1304,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
   const rowMap = new Map();
   const anomalies = [];
   const quantityFactLedger = new Map();
+  const manualReconciliationSystemFacts = [];
   let sourceIndex = 0;
   let factIndex = 0;
   let quantityFactIndex = 0;
@@ -1308,6 +1557,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       hasProduct ? productResult.product : { ...productResult.product, materialCode: '' },
       text(rawIdentifier || materialCode)
     );
+    let factProductType = baseInventoryProductType(productResult.product);
     if (rowIssues.length) {
       row.mappingStatus = '映射冲突';
       rowIssues.forEach((issue) => row.issues.add(issue));
@@ -1320,6 +1570,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       const segmentType = text(inventoryProductType) || (hasStock
         ? inventoryFactProductType(productResult.product, inventoryWarehouseName)
         : baseInventoryProductType(productResult.product));
+      factProductType = segmentType;
       row.inventorySubjects.add(subject);
       const subjectAmounts = row.inventorySubjectBreakdown[subject] || {};
       const segmentKey = combinedKey(subject, segmentType);
@@ -1360,6 +1611,22 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
       row[field] += amount;
     });
     countQuantity(reconciliationId, sourceType, quantities);
+    const reconciliationConfig = QUANTITY_RECONCILIATION_SOURCE_MAP.get(sourceType);
+    if (reconciliationConfig && ['在库', '在途'].includes(reconciliationConfig.group)) {
+      manualReconciliationSystemFacts.push({
+        sourceType,
+        group: reconciliationConfig.group,
+        businessUnit: resolvedBusinessUnit,
+        materialCode: text(materialCode).replace(/\.0$/, '') || '未匹配',
+        productType: factProductType,
+        quantity: Number(quantities[reconciliationConfig.field] || 0),
+        subject: text(inventorySubject || sourceContext.subject),
+        sourceWarehouseName: text(sourceContext.sourceWarehouseName || sourceContext.receivingWarehouseName),
+        mappedWarehouseName: text(sourceContext.kingdeeWarehouseName || inventoryWarehouseName),
+        storeName: text(sourceContext.storeName),
+        issues: rowIssues
+      });
+    }
     if (month && (quantities.salesQty || quantities.salesAmount)) {
       row.salesByMonth[month] = (row.salesByMonth[month] || 0) + quantities.salesQty;
       row.salesAmountByMonth[month] = (row.salesAmountByMonth[month] || 0) + quantities.salesAmount;
@@ -1845,8 +2112,16 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     facts: quantityFactLedger,
     totals
   });
+  const manualReconciliation = buildInventoryManualReconciliation({
+    systemFacts: manualReconciliationSystemFacts,
+    manualSource,
+    systemSource: source,
+    productLookup,
+    anomalies,
+    quantityReconciliation
+  });
   const months = [...new Set(rows.flatMap((row) => Object.keys(row.salesByMonth)))].sort();
-  const updatedAt = Object.values(source).map((record) => record.updatedAt).filter(Boolean).sort().at(-1) || '';
+  const updatedAt = [...Object.values(source), ...Object.values(manualSource)].map((record) => record.updatedAt).filter(Boolean).sort().at(-1) || '';
   return {
     在制量: totals.unfulfilledQty || 0,
     在途量: totals.transitQty || 0,
@@ -1859,6 +2134,7 @@ export function buildInventorySummaryModel({ getRows, getRecord }) {
     months,
     totals,
     quantityReconciliation,
+    manualReconciliation,
     anomalies,
     rows
   };

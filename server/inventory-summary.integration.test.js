@@ -253,6 +253,76 @@ test('inventory summary model uses inventory library facts, layered totals and s
   );
 });
 
+test('manual inventory reconciliation compares business unit and material by category and source', () => {
+  const rowsBySlot = new Map([
+    ['productCategory', [
+      { materialCode: 'M1', sku: 'SKU-1', materialName: '成品一', productLine: '产品线A', productSeries: '系列A', productType: '全新品', pretaxPrice: '10' },
+      { materialCode: 'M2', sku: 'SKU-2', materialName: '配件一', productLine: '其他/配件', productSeries: '系列B', productType: '其他/配件', pretaxPrice: '5' },
+      { materialCode: 'M3', sku: 'SKU-3', materialName: '不可售成品', productLine: '产品线A', productSeries: '系列A', productType: '全新品', pretaxPrice: '8' }
+    ]],
+    ['spare1', [
+      { subject: '主体一', warehouseName: 'FBM仓' },
+      { subject: '主体一', warehouseName: '555-G/退货仓' },
+      { subject: '主体一', warehouseName: '102-US-海外二部-海上在途' }
+    ]],
+    ['warehouseMaterialMap', [
+      { subject: '主体一', warehouseName: 'FBA金蝶仓', materialCode: 'M1', businessUnit: '事业部A' },
+      { subject: '主体一', warehouseName: 'FBM仓', materialCode: 'M2', businessUnit: '事业部A' },
+      { subject: '主体一', warehouseName: '555-G/退货仓', materialCode: 'M3', businessUnit: '事业部A' },
+      { subject: '主体一', warehouseName: '102-US-海外二部-海上在途', materialCode: 'M1', businessUnit: '事业部A' }
+    ]],
+    ['inventorySummaryFile1', [{ sku: 'SKU-1', warehouseName: 'FBA源仓', inventoryAttribute: '全部', endingInventoryQty: '10.04' }]],
+    ['inventorySummaryFile2', [
+      { identifier: 'M2', warehouseName: 'FBM仓', actualTotalQty: '5' },
+      { identifier: 'M3', warehouseName: '555-G/退货仓', actualTotalQty: '3' }
+    ]],
+    ['inventorySummaryFile5', [{ sku: 'SKU-1', warehouseName: '102-US-海外二部-海上在途', documentStatus: '待收货', stockupQty: '4', receivedQty: '0' }]],
+    ['inventorySummaryFile9', [{ subject: '主体一', lingxingWarehouseName: 'FBA源仓', kingdeeWarehouseName: 'FBA金蝶仓' }]],
+    ['inventorySummaryFile10', [{ lingxingSku: 'SKU-1', identifier: 'M1' }]],
+    ['inventoryManualFile1', [{ businessUnit: '事业部A', warehouseName: 'FBA源仓', subject: '主体一', materialCode: 'M1', quantity: '10.0' }]],
+    ['inventoryManualFile2', [{ businessUnit: '事业部A', warehouseName: 'FBM仓', subject: '主体一', materialCode: 'M2', quantity: '4' }]],
+    ['inventoryManualFile5', [{ businessUnit: '事业部A', warehouseName: '102-US-海外二部-海上在途', subject: '主体一', materialCode: 'M1', quantity: '2' }]],
+    ['inventoryManualFile8', [{ businessUnit: '事业部A', warehouseName: '555-G/退货仓', subject: '主体一', materialCode: 'M3', inventoryQty: '3', transitQty: '0' }]]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: '2026-08-04 12:00:00' })
+  });
+  const m1 = result.manualReconciliation.rows.find((row) => row.materialCode === 'M1');
+  const m2 = result.manualReconciliation.rows.find((row) => row.materialCode === 'M2');
+  const m3 = result.manualReconciliation.rows.find((row) => row.materialCode === 'M3');
+  assert.equal(m1.categories['成品'].inventory.status, '无差异');
+  assert.equal(m1.categories['成品'].transit.differenceQty, 2);
+  assert.equal(m1.categories['成品'].status, '有差异');
+  assert.equal(m2.categories['配件'].inventory.differenceQty, 1);
+  assert.equal(m2.categories['配件'].sources.find((row) => row.sourceType === 'FBM库存')?.reason, '来源数量不一致');
+  assert.equal(m3.categories['不可售'].inventory.status, '无差异');
+  assert.equal(result.manualReconciliation.summaryByCategory['全部'].systemInventoryQty, 18);
+  assert.equal(result.manualReconciliation.summaryByCategory['全部'].manualInventoryQty, 17);
+  assert.equal(result.manualReconciliation.unavailableFiles.length, 0);
+});
+
+test('manual inventory reconciliation marks an unapplied side as unavailable instead of zero difference', () => {
+  const rowsBySlot = new Map([
+    ['productCategory', [{ materialCode: 'M1', sku: 'SKU-1', materialName: '成品一', productLine: '产品线A', productSeries: '系列A', pretaxPrice: '10' }]],
+    ['warehouseMaterialMap', [{ subject: '主体一', warehouseName: 'FBA金蝶仓', materialCode: 'M1', businessUnit: '事业部A' }]],
+    ['inventorySummaryFile1', [{ sku: 'SKU-1', warehouseName: 'FBA源仓', inventoryAttribute: '全部', endingInventoryQty: '10' }]],
+    ['inventorySummaryFile9', [{ subject: '主体一', lingxingWarehouseName: 'FBA源仓', kingdeeWarehouseName: 'FBA金蝶仓' }]],
+    ['inventorySummaryFile10', [{ lingxingSku: 'SKU-1', identifier: 'M1' }]]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({
+      rows: rowsBySlot.get(slotId) || [],
+      updatedAt: slotId === 'inventoryManualFile1' ? '' : '2026-08-04 12:00:00'
+    })
+  });
+  const m1 = result.manualReconciliation.rows.find((row) => row.materialCode === 'M1');
+  assert.equal(m1.categories['成品'].inventory.status, '无法核对：手工表未应用');
+  assert.equal(m1.categories['成品'].status, '无法核对');
+  assert.ok(result.manualReconciliation.unavailableFiles.some((row) => row.slotId === 'inventoryManualFile1'));
+});
+
 test('quantity reconciliation reports missing and overlapping quantities independently', () => {
   const source = Object.fromEntries(Array.from({ length: 14 }, (_, index) => [
     `inventorySummaryFile${index + 1}`,

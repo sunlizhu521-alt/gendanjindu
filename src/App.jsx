@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { purchaseTrackingBusinessUnit } from './business-unit.js';
 import InventoryCalculationGuide from './InventoryCalculationGuide.jsx';
 import InventoryRiskPage from './InventoryRiskPage.jsx';
@@ -1833,6 +1833,121 @@ function InventoryQuantityReconciliation({ data }) {
 }
 
 function InventoryManualReconciliation({ data, loading, error, onBack }) {
+  const reconciliation = data?.manualReconciliation;
+  const [category, setCategory] = useState('成品+配件');
+  const [filters, setFilters] = useState({ businessUnits: [], productLines: [], productSeries: [], sources: [], statuses: [], keyword: '' });
+  const [expandedRows, setExpandedRows] = useState(new Set());
+  const [currentPage, setCurrentPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+  const pageSize = 50;
+  const rows = useMemo(() => (reconciliation?.rows || []).map((row) => ({
+    ...row,
+    comparison: row.categories?.[category] || { inventory: {}, transit: {}, sources: [], status: '无法核对', reason: '缺少核对结果', hasData: false }
+  })).filter((row) => row.comparison.hasData), [reconciliation, category]);
+  const optionValues = (field) => [...new Set(rows.map((row) => row[field]).filter(Boolean))].sort((left, right) => left.localeCompare(right, 'zh-CN'));
+  const options = useMemo(() => ({
+    businessUnits: optionValues('businessUnit'),
+    productLines: optionValues('productLine'),
+    productSeries: optionValues('productSeries'),
+    sources: [...new Set(rows.flatMap((row) => row.comparison.sources.map((source) => source.label)))].sort((left, right) => left.localeCompare(right, 'zh-CN')),
+    statuses: ['有差异', '无差异', '仅系统有', '仅手工有', '无法核对']
+  }), [rows]);
+  const selected = (values, value) => !values.length || values.includes(value);
+  const filteredRows = useMemo(() => {
+    const keyword = filters.keyword.trim().toLowerCase();
+    return rows.filter((row) => {
+      const sourceMatch = !filters.sources.length || row.comparison.sources.some((source) => filters.sources.includes(source.label));
+      const keywordMatch = !keyword || [row.businessUnit, row.productLine, row.productSeries, row.materialCode, row.sku, row.materialName, row.comparison.reason]
+        .some((value) => String(value || '').toLowerCase().includes(keyword));
+      return selected(filters.businessUnits, row.businessUnit)
+        && selected(filters.productLines, row.productLine)
+        && selected(filters.productSeries, row.productSeries)
+        && selected(filters.statuses, row.comparison.status)
+        && sourceMatch
+        && keywordMatch;
+    });
+  }, [rows, filters]);
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const pageRows = filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const summary = reconciliation?.summaryByCategory?.[category] || {};
+  const formatQty = (value) => Number(value || 0).toLocaleString('zh-CN', { maximumFractionDigits: 1 });
+
+  useEffect(() => {
+    setCurrentPage(1);
+    setExpandedRows(new Set());
+  }, [category, filters]);
+
+  const updateFilter = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
+  const toggleExpanded = (id) => setExpandedRows((current) => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
+  const filteredSources = (row) => row.comparison.sources.filter((source) => !filters.sources.length || filters.sources.includes(source.label));
+  const exportRows = async () => {
+    if (!filteredRows.length || exporting) return;
+    setExporting(true);
+    setExportError('');
+    try {
+      const XLSX = await import('xlsx');
+      const workbook = XLSX.utils.book_new();
+      const summaryRows = filteredRows.map((row) => ({
+        分类: category,
+        事业部: row.businessUnit,
+        产品线: row.productLine,
+        系列: row.productSeries,
+        物料编码: row.materialCode,
+        SKU: row.sku,
+        物料名称: row.materialName,
+        系统在库量: row.comparison.inventory.systemQty,
+        手工在库量: row.comparison.inventory.manualQty,
+        在库差异: row.comparison.inventory.differenceQty,
+        系统在途量: row.comparison.transit.systemQty,
+        手工在途量: row.comparison.transit.manualQty,
+        在途差异: row.comparison.transit.differenceQty,
+        是否有差异: row.comparison.status,
+        原因分析: row.comparison.reason
+      }));
+      const sourceRows = filteredRows.flatMap((row) => filteredSources(row).map((source) => ({
+        分类: category,
+        事业部: row.businessUnit,
+        物料编码: row.materialCode,
+        SKU: row.sku,
+        物料名称: row.materialName,
+        来源: source.label,
+        指标: source.group,
+        系统数量: source.systemQty,
+        手工数量: source.manualQty,
+        差异数量: source.differenceQty,
+        状态: source.status,
+        原因: source.reason,
+        系统主体: source.systemSubject,
+        系统来源仓库: source.systemWarehouse,
+        系统映射仓库: source.systemMappedWarehouse,
+        手工主体: source.manualSubject,
+        手工仓库: source.manualWarehouse
+      })));
+      const reasonRows = sourceRows.filter((row) => row.状态 !== '无差异');
+      const unavailableRows = (reconciliation.unavailableFiles || []).map((row) => ({
+        数据侧: row.side,
+        槽位: row.slotId,
+        核对来源: row.source,
+        状态: row.status
+      }));
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows), '汇总核对');
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(sourceRows.length ? sourceRows : [{ 提示: '当前筛选无来源明细' }]), '来源差异明细');
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(reasonRows.length ? reasonRows : [{ 提示: '当前筛选无差异原因' }]), '原因分析');
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(unavailableRows.length ? unavailableRows : [{ 提示: '所有核对文件均已应用' }]), '未应用文件清单');
+      await writeStyledExcelFile(XLSX, workbook, `手工库存核对_${category}_${todayText()}.xlsx`);
+    } catch (err) {
+      setExportError(err.message || '导出失败，请重试');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <section className="inventory-manual-reconciliation">
       <header className="inventory-methodology-header">
@@ -1840,15 +1955,74 @@ function InventoryManualReconciliation({ data, loading, error, onBack }) {
         <div>
           <span className="section-kicker">MANUAL INVENTORY CHECK</span>
           <h2>与手工表库存核对</h2>
-          <p>核对各库存来源的计算数量与销售及库存看板展示数量，定位遗漏或重复计入的数据。</p>
+          <p>按事业部与物料编码核对系统计算和手工表的在库量、在途量，并定位来源差异。</p>
         </div>
       </header>
       {loading ? (
         <div className="inventory-summary-status" role="status">加载中</div>
       ) : error ? (
         <div className="inventory-summary-status error" role="alert">手工库存核对加载失败：{error}</div>
+      ) : !reconciliation ? (
+        <div className="inventory-summary-status error" role="alert">暂无手工库存核对结果</div>
       ) : (
-        <InventoryQuantityReconciliation data={data?.quantityReconciliation} />
+        <>
+          <div className="inventory-manual-category-bar" role="group" aria-label="库存分类">
+            {(reconciliation.categories || []).map((value) => (
+              <button key={value} type="button" className={category === value ? 'active' : ''} onClick={() => setCategory(value)}>{value}</button>
+            ))}
+          </div>
+          <section className="inventory-manual-metrics">
+            <article><span>系统在库量</span><strong>{formatQty(summary.systemInventoryQty)}</strong></article>
+            <article><span>手工在库量</span><strong>{formatQty(summary.manualInventoryQty)}</strong><small>差异 {formatQty(Number(summary.systemInventoryQty || 0) - Number(summary.manualInventoryQty || 0))}</small></article>
+            <article><span>系统在途量</span><strong>{formatQty(summary.systemTransitQty)}</strong></article>
+            <article><span>手工在途量</span><strong>{formatQty(summary.manualTransitQty)}</strong><small>差异 {formatQty(Number(summary.systemTransitQty || 0) - Number(summary.manualTransitQty || 0))}</small></article>
+            <article><span>系统库存总量</span><strong>{formatQty(Number(summary.systemInventoryQty || 0) + Number(summary.systemTransitQty || 0))}</strong></article>
+            <article><span>手工库存总量</span><strong>{formatQty(Number(summary.manualInventoryQty || 0) + Number(summary.manualTransitQty || 0))}</strong><small>有差异 {Number(summary.issueCount || 0).toLocaleString()} / 共 {Number(summary.rowCount || 0).toLocaleString()} 条</small></article>
+          </section>
+          <div className="toolbar filters-row inventory-summary-filters inventory-manual-filters">
+            <MultiSelectFilter label="事业部" allLabel="全部事业部" value={filters.businessUnits} options={options.businessUnits} onChange={(value) => updateFilter('businessUnits', value)} />
+            <MultiSelectFilter label="产品线" allLabel="全部产品线" value={filters.productLines} options={options.productLines} onChange={(value) => updateFilter('productLines', value)} />
+            <MultiSelectFilter label="系列" allLabel="全部系列" value={filters.productSeries} options={options.productSeries} onChange={(value) => updateFilter('productSeries', value)} />
+            <MultiSelectFilter label="来源" allLabel="全部来源" value={filters.sources} options={options.sources} onChange={(value) => updateFilter('sources', value)} />
+            <MultiSelectFilter label="是否有差异" allLabel="全部状态" value={filters.statuses} options={options.statuses} onChange={(value) => updateFilter('statuses', value)} />
+            <input className="search-input" placeholder="搜索物料编码、SKU、名称或原因" value={filters.keyword} onChange={(event) => updateFilter('keyword', event.target.value)} />
+            <button type="button" className="ghost compact-button" onClick={() => setFilters({ businessUnits: [], productLines: [], productSeries: [], sources: [], statuses: [], keyword: '' })}>清空筛选</button>
+            <button type="button" className="compact-button" disabled={exporting || !filteredRows.length} onClick={exportRows}>{exporting ? '正在生成Excel...' : '导出Excel'}</button>
+          </div>
+          {exportError && <p className="inventory-manual-export-error" role="alert">{exportError}</p>}
+          {(reconciliation.unavailableFiles || []).length > 0 && (
+            <div className="inventory-manual-unavailable" role="status">
+              当前有 {reconciliation.unavailableFiles.length} 个核对文件未应用，对应来源显示“无法核对”。
+            </div>
+          )}
+          <div className="inventory-manual-table-wrap">
+            <table className="inventory-manual-table">
+              <thead><tr><th>明细</th><th>事业部</th><th>产品线</th><th>系列</th><th>物料编码</th><th>SKU</th><th>物料名称</th><th>系统在库量</th><th>手工在库量</th><th>在库差异</th><th>系统在途量</th><th>手工在途量</th><th>在途差异</th><th>是否有差异</th><th>原因分析</th></tr></thead>
+              <tbody>
+                {pageRows.map((row) => (
+                  <Fragment key={row.id}>
+                    <tr key={row.id} className={row.comparison.status === '无差异' ? '' : 'has-issue'}>
+                      <td><button type="button" className="inventory-manual-expand" onClick={() => toggleExpanded(row.id)} aria-label={`${expandedRows.has(row.id) ? '收起' : '展开'}${row.materialCode}来源明细`}>{expandedRows.has(row.id) ? '−' : '+'}</button></td>
+                      <td>{row.businessUnit}</td><td>{row.productLine}</td><td>{row.productSeries}</td><td>{row.materialCode}</td><td>{row.sku}</td><td>{row.materialName}</td>
+                      <td>{formatQty(row.comparison.inventory.systemQty)}</td><td>{formatQty(row.comparison.inventory.manualQty)}</td><td>{formatQty(row.comparison.inventory.differenceQty)}</td>
+                      <td>{formatQty(row.comparison.transit.systemQty)}</td><td>{formatQty(row.comparison.transit.manualQty)}</td><td>{formatQty(row.comparison.transit.differenceQty)}</td>
+                      <td><span className={`inventory-manual-status status-${row.comparison.status}`}>{row.comparison.status}</span></td><td>{row.comparison.reason}</td>
+                    </tr>
+                    {expandedRows.has(row.id) && (
+                      <tr key={`${row.id}-details`} className="inventory-manual-detail-row"><td colSpan="15">
+                        <table><thead><tr><th>来源</th><th>指标</th><th>系统数量</th><th>手工数量</th><th>差异</th><th>状态</th><th>原因</th><th>系统主体</th><th>系统来源仓库</th><th>系统映射仓库</th><th>手工主体</th><th>手工仓库</th></tr></thead>
+                          <tbody>{filteredSources(row).map((source, index) => <tr key={`${source.label}-${source.group}-${index}`}><td>{source.label}</td><td>{source.group}</td><td>{formatQty(source.systemQty)}</td><td>{formatQty(source.manualQty)}</td><td>{formatQty(source.differenceQty)}</td><td>{source.status}</td><td>{source.reason}</td><td>{source.systemSubject || '-'}</td><td>{source.systemWarehouse || '-'}</td><td>{source.systemMappedWarehouse || '-'}</td><td>{source.manualSubject || '-'}</td><td>{source.manualWarehouse || '-'}</td></tr>)}</tbody>
+                        </table>
+                      </td></tr>
+                    )}
+                  </Fragment>
+                ))}
+                {!pageRows.length && <tr><td colSpan="15" className="empty-cell">当前筛选无核对记录</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <div className="inventory-manual-table-footer"><span>当前 {filteredRows.length} / {rows.length} 条</span>{totalPages > 1 && <TablePagination label="手工库存核对分页" currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} pageSize={pageSize} />}</div>
+        </>
       )}
     </section>
   );

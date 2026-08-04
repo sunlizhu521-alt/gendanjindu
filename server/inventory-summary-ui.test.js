@@ -27,6 +27,7 @@ test('事业部订单库存明细默认隐藏来源仓库并可同步展示和�
   assert.match(dashboard, /全部月份/);
   assert.doesNotMatch(dashboard, /\['匹配列（事业部\+物料编码）'/);
   assert.match(dashboard, /InventorySummaryVerticalGroupedBars title="销售产品线库存、在途与未交付"/);
+  assert.match(client, /data-series-label=\{item\.label\}/);
   assert.match(dashboard, /inventory-detail-table\$\{showSourceWarehouses \? ' show-source-warehouses' : ''\}/);
   assert.match(client, /inventory-source-warehouse-cell/);
   assert.match(styles, /--inventory-source-warehouse-width:\s*clamp\(/);
@@ -37,6 +38,9 @@ test('事业部订单库存明细默认隐藏来源仓库并可同步展示和�
   assert.match(loadingProgress, /Math\.min\(90, progress \+ increment\)/);
   assert.match(loadingProgress, /progress = 100/);
   assert.match(styles, /\.global-loading-progress-track/);
+  assert.match(styles, /\.inventory-business-group:nth-child\(even\)/);
+  assert.match(styles, /\.inventory-business-group:not\(:last-child\)::after/);
+  assert.match(styles, /content:\s*attr\(data-series-label\)/);
 });
 
 test('销售与库存看板展示仅数量的来源校准和遗漏重叠提醒', () => {

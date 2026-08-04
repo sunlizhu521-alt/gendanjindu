@@ -1564,9 +1564,10 @@ function InventorySummaryVerticalGroupedBars({ title, rows }) {
                     const value = numberValue(row[item.key]);
                     const display = metric === 'qty' ? formatDashboardNumber(value) : formatDashboardWan(value);
                     return (
-                      <span key={item.key}>
+                      <span key={item.key} data-series-label={item.label}>
                         <small title={`${row.name}${item.label}：${display}`}>{display}</small>
                         <i
+                          title={`${row.name}${item.label}：${display}`}
                           style={{
                             height: `${Math.max(Math.abs(value) / maxValue * 150, value ? 4 : 0)}px`,
                             background: item.color

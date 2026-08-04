@@ -2310,34 +2310,67 @@ h3 {
 
 .inventory-business-bars {
   display: flex;
-  height: 220px;
+  height: 244px;
   align-items: end;
-  gap: 12px;
-  padding: 2px 8px 8px;
+  gap: 22px;
+  padding: 4px 12px 10px;
 }
 
 .inventory-business-group {
+  position: relative;
   display: grid;
-  flex: 0 0 258px;
-  grid-template-rows: 184px 28px;
+  flex: 0 0 242px;
+  grid-template-rows: 194px 36px;
   min-width: 0;
+  padding: 0 10px;
+  border-radius: 4px;
+  background: #f8fafc;
+}
+
+.inventory-business-group:nth-child(even) {
+  background: #f1f5f9;
+}
+
+.inventory-business-group:not(:last-child)::after {
+  position: absolute;
+  top: 10px;
+  right: -12px;
+  bottom: 34px;
+  width: 1px;
+  background: #cbd5e1;
+  content: "";
 }
 
 .inventory-business-series {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: end;
-  gap: 6px;
-  border-bottom: 1px solid #cbd5e1;
+  gap: 4px;
+  border-bottom: 1px solid #94a3b8;
 }
 
 .inventory-business-series > span {
+  position: relative;
   display: flex;
-  height: 178px;
+  height: 188px;
   min-width: 0;
   align-items: center;
   flex-direction: column;
   justify-content: end;
+}
+
+.inventory-business-series > span::after {
+  position: absolute;
+  right: 0;
+  bottom: -17px;
+  left: 0;
+  color: #64748b;
+  content: attr(data-series-label);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 14px;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .inventory-business-series small {
@@ -2411,9 +2444,10 @@ h3 {
 .inventory-business-group > strong {
   align-self: start;
   overflow: hidden;
-  padding-top: 6px;
-  color: #475569;
-  font-size: 10px;
+  padding-top: 20px;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;

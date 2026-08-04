@@ -1381,6 +1381,13 @@ h3 {
   gap: 12px;
 }
 
+.inventory-dashboard-entry-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .inventory-methodology-entry {
   border-color: #99d8d3;
   color: #0f766e;
@@ -1391,6 +1398,18 @@ h3 {
 .inventory-methodology-entry:hover {
   border-color: #0f8f88;
   background: #ccfbf1;
+}
+
+.inventory-reconciliation-entry {
+  border-color: #bfd0e2;
+  background: #f5f8fc;
+  color: #245b8f;
+  font-weight: 700;
+}
+
+.inventory-reconciliation-entry:hover {
+  border-color: #2477c9;
+  background: #eaf3fb;
 }
 
 .inventory-dashboard-heading p {
@@ -2146,6 +2165,13 @@ h3 {
 .inventory-transit-breakdown {
   display: grid;
   gap: 7px;
+}
+
+.inventory-manual-reconciliation {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+  color: #162033;
 }
 
 .inventory-composition-row {
@@ -5312,6 +5338,7 @@ th {
 }
 
 .inventory-methodology-entry,
+.inventory-reconciliation-entry,
 .inventory-risk-button,
 .inventory-metric-toggle button,
 .inventory-table-actions .compact-button {

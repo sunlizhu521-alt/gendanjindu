@@ -1803,6 +1803,28 @@ function InventoryQuantityReconciliation({ data }) {
   );
 }
 
+function InventoryManualReconciliation({ data, loading, error, onBack }) {
+  return (
+    <section className="inventory-manual-reconciliation">
+      <header className="inventory-methodology-header">
+        <button type="button" className="ghost compact-button inventory-methodology-back" onClick={onBack}>← 返回销售与库存看板</button>
+        <div>
+          <span className="section-kicker">MANUAL INVENTORY CHECK</span>
+          <h2>与手工表库存核对</h2>
+          <p>核对各库存来源的计算数量与销售及库存看板展示数量，定位遗漏或重复计入的数据。</p>
+        </div>
+      </header>
+      {loading ? (
+        <div className="inventory-summary-status" role="status">加载中</div>
+      ) : error ? (
+        <div className="inventory-summary-status error" role="alert">手工库存核对加载失败：{error}</div>
+      ) : (
+        <InventoryQuantityReconciliation data={data?.quantityReconciliation} />
+      )}
+    </section>
+  );
+}
+
 function InventorySummary({ token, active }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1813,6 +1835,7 @@ function InventorySummary({ token, active }) {
   const [pageSize, setPageSize] = useState(10);
   const [exporting, setExporting] = useState(false);
   const [showMethodology, setShowMethodology] = useState(false);
+  const [showManualReconciliation, setShowManualReconciliation] = useState(false);
   const [showSourceBreakdown, setShowSourceBreakdown] = useState(false);
   const [showSourceWarehouses, setShowSourceWarehouses] = useState(false);
   const [salesMonthRange, setSalesMonthRange] = useState('3');
@@ -2011,13 +2034,27 @@ function InventorySummary({ token, active }) {
     return <InventoryCalculationGuide onBack={() => setShowMethodology(false)} />;
   }
 
+  if (showManualReconciliation) {
+    return (
+      <InventoryManualReconciliation
+        data={data}
+        loading={loading}
+        error={error}
+        onBack={() => setShowManualReconciliation(false)}
+      />
+    );
+  }
+
   return (
     <section className="inventory-dashboard">
       <div className="inventory-dashboard-heading">
         <div>
           <div className="inventory-dashboard-title-row">
             <h2>销售与库存看板</h2>
-            <button type="button" className="ghost compact-button inventory-methodology-entry" onClick={() => setShowMethodology(true)}>库存计算口径</button>
+            <div className="inventory-dashboard-entry-actions">
+              <button type="button" className="ghost compact-button inventory-methodology-entry" onClick={() => setShowMethodology(true)}>库存计算口径</button>
+              <button type="button" className="ghost compact-button inventory-reconciliation-entry" onClick={() => setShowManualReconciliation(true)}>与手工表库存核对</button>
+            </div>
           </div>
           <p>销售、在库、在途与采购未交付统一口径</p>
         </div>
@@ -2043,8 +2080,6 @@ function InventorySummary({ token, active }) {
             <input className="search-input" placeholder="搜索事业部、物料编码、SKU或名称" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
             <button type="button" className="ghost compact-button" onClick={clearFilters}>清除筛选</button>
           </div>
-
-          <InventoryQuantityReconciliation data={data?.quantityReconciliation} />
 
           <section className="inventory-kpi-grid inventory-five-kpis" aria-label="销售与库存指标">
             <InventoryPurchaseMetric label="销售" quantity={totals.salesQty} value={formatDashboardWan(totals.salesAmount)} note="当前筛选/全量" share={share(totals.salesQty, fullTotals.salesQty)} tone="total" />

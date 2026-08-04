@@ -63,9 +63,17 @@ test('销售与库存看板展示仅数量的来源校准和遗漏重叠提醒',
   assert.match(reconciliation, /看板展示量/);
   assert.match(reconciliation, /仅校验数量/);
   assert.doesNotMatch(reconciliation, /货值|金额|元/);
+  assert.match(client, /function InventoryManualReconciliation/);
+  assert.match(client, /<h2>与手工表库存核对<\/h2>/);
+  assert.match(client, /手工库存核对加载失败/);
   assert.match(client, /<InventoryQuantityReconciliation data=\{data\?\.quantityReconciliation\}/);
+  assert.equal((client.match(/<InventoryQuantityReconciliation data=\{data\?\.quantityReconciliation\}/g) || []).length, 1);
+  assert.match(client, /库存计算口径<\/button>[\s\S]*?与手工表库存核对<\/button>/);
+  assert.match(client, /showManualReconciliation[\s\S]*?<InventoryManualReconciliation/);
   assert.match(styles, /\.inventory-quantity-reconciliation\.warning/);
   assert.match(styles, /\.inventory-reconciliation-table/);
+  assert.match(styles, /\.inventory-dashboard-entry-actions/);
+  assert.match(styles, /\.inventory-reconciliation-entry/);
 });
 
 test('库存数据提供独立的底表文件和手工表库', () => {

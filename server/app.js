@@ -133,6 +133,7 @@ DIMENSION_SLOTS.inventoryManualFile8 = '不可售手工';
 for (let slotNumber = 10; slotNumber <= 16; slotNumber += 1) {
   DIMENSION_SLOTS[`inventoryManualFile${slotNumber}`] = '备用';
 }
+DIMENSION_SLOTS.inventoryManualFile14 = '京东在途手工';
 
 function inventoryLibraryBaseSlotId(slotId) {
   return String(slotId || '').replace(/^inventoryManualFile(?=\d+$)/, 'inventorySummaryFile');
@@ -4362,7 +4363,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     ? { ...req.file, buffer: await fs.promises.readFile(req.file.path) }
     : req.file;
   const inventoryManualParsed = isInventoryManualSlot(slotId)
-    ? parseInventoryManualWorkbook(inventorySummaryFile, mapping, { sheetName })
+    ? parseInventoryManualWorkbook(inventorySummaryFile, mapping, { sheetName, slotId })
     : null;
   const inventorySummaryParsed = !inventoryManualParsed && isInventorySummarySlot(baseSlotId)
     ? parseInventorySummaryWorkbook(inventorySummaryFile, baseSlotId, mapping)

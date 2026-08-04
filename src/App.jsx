@@ -275,16 +275,30 @@ const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
 const INVENTORY_MANUAL_LIBRARY_SLOTS = INVENTORY_SUMMARY_LIBRARY_SLOTS.map((slot) => ({
   ...slot,
   id: slot.id.replace('inventorySummaryFile', 'inventoryManualFile'),
-  title: /^inventorySummaryFile1[0-6]$/.test(slot.id)
-    ? '备用'
-    : slot.id === 'inventorySummaryFile8' ? '不可售手工' : `${slot.title}手工`,
-  fields: [
-    ['businessUnit', '事业部'],
-    ['warehouseName', '仓库'],
-    ['subject', '主体'],
-    ['quantity', '数量']
-  ],
-  requiredFields: [],
+  title: slot.id === 'inventorySummaryFile14'
+    ? '京东在途手工'
+    : slot.id === 'inventorySummaryFile8'
+      ? '不可售手工'
+      : /^inventorySummaryFile1[0-6]$/.test(slot.id) ? '备用' : `${slot.title}手工`,
+  fields: slot.id === 'inventorySummaryFile8'
+    ? [
+      ['businessUnit', '事业部'],
+      ['warehouseName', '仓库'],
+      ['subject', '主体'],
+      ['materialCode', '物料编码'],
+      ['inventoryQty', '在库量'],
+      ['transitQty', '在途量']
+    ]
+    : [
+      ['businessUnit', '事业部'],
+      ['warehouseName', '仓库'],
+      ['subject', '主体'],
+      ['materialCode', '物料编码'],
+      ['quantity', '数量']
+    ],
+  requiredFields: slot.id === 'inventorySummaryFile8'
+    ? ['materialCode', 'inventoryQty', 'transitQty']
+    : ['materialCode'],
   requiresSheetSelection: false,
   requiredSheetCount: 0,
   manualFieldSelection: true
@@ -2987,7 +3001,7 @@ function FieldMapping({ fields, columns, mapping, onChange, requiredFields = [],
   const required = new Set(requiredFields);
   return (
     <div className="mapping-grid">
-      {manual && <p className="mapping-grid-note">请按需要手动选择事业部、仓库、主体、数量；未选择的字段按空值保存。</p>}
+      {manual && <p className="mapping-grid-note">请手动选择标记为必选的字段；其他未选择字段按空值保存。</p>}
       {fields.map(([key, label]) => (
         <label key={key}>
           {label}{required.has(key) ? '（必选）' : ''}
@@ -5927,6 +5941,21 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       setMessage(`${slot.title} 必须选择 ${slot.requiredSheetCount} 个工作表`);
       return;
     }
+    if (slot.manualFieldSelection) {
+      const labels = new Map(slot.fields || []);
+      const missingFields = (slot.requiredFields || []).filter((field) => !state.mapping?.[field]);
+      if (missingFields.length) {
+        const missingLabels = missingFields.map((field) => labels.get(field) || field).join('、');
+        setSlotState(slot.id, {
+          progress: 100,
+          statusText: `请选择必选字段：${missingLabels}`,
+          statusType: 'warning',
+          busy: ''
+        });
+        setMessage(`${slot.title} 请选择必选字段：${missingLabels}`);
+        return;
+      }
+    }
     setSlotState(slot.id, {
       progress: 35,
       statusText: '正在上传保存...',
@@ -5942,16 +5971,21 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       const payload = await request(`/api/dimensions/${slot.id}/upload`, { token, method: 'POST', body: data });
       const parseSummary = payload.parseSummary;
       const inventoryParseSummary = parseSummary?.parserType === 'inventorySummary' ? parseSummary : null;
+      const manualParseSummary = parseSummary?.parserType === 'inventoryManual' ? parseSummary : null;
       const jdParseSummaryText = inventoryParseSummary?.jdFormat
         ? `，识别格式 ${inventoryParseSummary.jdFormat}，区域行过滤 ${inventoryParseSummary.filteredJdRegionalRows || 0} 行，有效库存 ${numberValue(inventoryParseSummary.jdScopeQuantity).toLocaleString(undefined, { maximumFractionDigits: 1 })}`
         : '';
       const uploadSummaryText = inventoryParseSummary
         ? `上传保存完成：源数据 ${inventoryParseSummary.sourceRowCount || 0} 行，有效保存 ${payload.rowCount} 行${jdParseSummaryText}`
+        : manualParseSummary
+          ? `上传保存完成：源数据 ${manualParseSummary.sourceRowCount || 0} 行，有效保存 ${payload.rowCount} 行`
         : parseSummary
           ? `上传保存完成：${payload.rowCount} 行，${parseSummary.issueRows || 0} 行异常`
           : `上传保存完成：${payload.rowCount} 行`;
       const appliedSummaryText = inventoryParseSummary
         ? `${slot.title} 已自动解析并应用 ${payload.rowCount} 行；源数据 ${inventoryParseSummary.sourceRowCount || 0} 行，零数量过滤 ${inventoryParseSummary.filteredZeroQtyRows || 0} 行，汇总行过滤 ${inventoryParseSummary.filteredSummaryRows || 0} 行${jdParseSummaryText}。`
+        : manualParseSummary
+          ? `${slot.title} 已按手工映射解析并应用 ${payload.rowCount} 行。`
         : parseSummary
           ? `${slot.title} 已自动解析并应用 ${payload.rowCount} 行，异常 ${parseSummary.issueRows || 0} 行。`
           : slot.requiresSheetSelection && payload.sheetName
@@ -6160,6 +6194,12 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
                     有效保存 {record.mapping.__inventorySummary.rowCount ?? record.rowCount} 行，
                     零数量过滤 {record.mapping.__inventorySummary.filteredZeroQtyRows || 0} 行，
                     汇总行过滤 {record.mapping.__inventorySummary.filteredSummaryRows || 0} 行
+                  </span>
+                )}
+                {record?.mapping?.__inventoryManual && (
+                  <span>
+                    手工解析：源数据 {record.mapping.__inventoryManual.sourceRowCount ?? record.rowCount} 行，
+                    有效保存 {record.mapping.__inventoryManual.rowCount ?? record.rowCount} 行
                   </span>
                 )}
                 {slot.id === 'inventorySummaryFile7' && record?.mapping?.__inventorySummary && (

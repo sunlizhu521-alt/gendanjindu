@@ -45,15 +45,16 @@ async function waitForServer(url, child, logs) {
   throw new Error(`Server did not become ready.\n${logs.join('')}`);
 }
 
-test('手工库存表只保存手动选择的事业部、仓库、主体和数量', () => {
+test('手工库存表按物料编码保存标准数量或不可售在库在途数量', () => {
   const workbook = xlsx.utils.book_new();
   xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet([
-    ['自定义SKU列', '自定义仓库列', '自定义库存属性列', '自定义数量列'],
-    ['SKU-1', '仓库一', '全部', 25]
+    ['自定义物料列', '自定义仓库列', '自定义主体列', '自定义数量列', '自定义在途列'],
+    [1002010248, '仓库一', '主体一', 25, 6]
   ]), '手工表');
   const file = { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) };
 
   const partial = parseInventoryManualWorkbook(file, {
+    materialCode: '自定义物料列',
     warehouseName: '自定义仓库列',
     quantity: '自定义数量列'
   });
@@ -62,14 +63,31 @@ test('手工库存表只保存手动选择的事业部、仓库、主体和数�
     businessUnit: '',
     warehouseName: '仓库一',
     subject: '',
+    materialCode: '1002010248',
     quantity: 25
   });
   assert.throws(
     () => parseInventoryManualWorkbook(file, {}),
-    /请至少选择一个映射字段：事业部、仓库、主体、数量/
+    /请选择必选字段：物料编码/
   );
   assert.equal(Object.hasOwn(partial.rows[0], 'sku'), false);
   assert.equal(Object.hasOwn(partial.rows[0], 'endingInventoryQty'), false);
+
+  const unsellable = parseInventoryManualWorkbook(file, {
+    materialCode: '自定义物料列',
+    subject: '自定义主体列',
+    inventoryQty: '自定义数量列',
+    transitQty: '自定义在途列'
+  }, { slotId: 'inventoryManualFile8' });
+  assert.deepEqual(unsellable.rows[0], {
+    businessUnit: '',
+    warehouseName: '',
+    subject: '主体一',
+    materialCode: '1002010248',
+    inventoryQty: 25,
+    transitQty: 6
+  });
+  assert.equal(unsellable.mapping.__inventoryManual.schemaType, 'unsellable');
 });
 
 test('inventory summary model uses inventory library facts, layered totals and stable ABC classes', () => {
@@ -2086,6 +2104,7 @@ test('inventory summary and domestic board use complete source models and enforc
         店铺: 'US Store',
         站点: 'US',
         SKU: 'SKU-FBA-1',
+        物料编码: 'M-FBA-1',
         FNSKU: 'FNSKU-1',
         ASIN: 'ASIN-1',
         仓库名称: 'FBA Warehouse',
@@ -2148,6 +2167,7 @@ test('inventory summary and domestic board use complete source models and enforc
       'FBA库存报表手工.xlsx'
     );
     manualInventoryForm.append('mapping', JSON.stringify({
+      materialCode: '物料编码',
       warehouseName: '仓库名称',
       quantity: '期末库存(含移仓)-数量'
     }));
@@ -2228,9 +2248,10 @@ test('inventory summary and domestic board use complete source models and enforc
         businessUnit: manualInventoryRecord?.mapping?.businessUnit,
         warehouseName: manualInventoryRecord?.mapping?.warehouseName,
         subject: manualInventoryRecord?.mapping?.subject,
+        materialCode: manualInventoryRecord?.mapping?.materialCode,
         quantity: manualInventoryRecord?.mapping?.quantity
       },
-      { businessUnit: '', warehouseName: '仓库名称', subject: '', quantity: '期末库存(含移仓)-数量' }
+      { businessUnit: '', warehouseName: '仓库名称', subject: '', materialCode: '物料编码', quantity: '期末库存(含移仓)-数量' }
     );
     assert.equal(Object.hasOwn(manualInventoryRecord?.mapping || {}, 'endingInventoryQty'), false);
     const transitWarehouseRecord = inventoryDimensionRows.find((row) => row.slot_id === 'inventorySummaryFile13');

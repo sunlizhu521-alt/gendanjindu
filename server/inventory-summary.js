@@ -255,10 +255,8 @@ const INVENTORY_SOURCE_TABLE_LABELS = {
   京东在途: '京东在途'
 };
 
-const INVENTORY_MANUAL_SCHEMA = {
-  required: [],
-  fields: ['businessUnit', 'warehouseName', 'subject', 'quantity']
-};
+const INVENTORY_MANUAL_FIELDS = ['businessUnit', 'warehouseName', 'subject', 'materialCode', 'quantity'];
+const INVENTORY_UNSELLABLE_MANUAL_FIELDS = ['businessUnit', 'warehouseName', 'subject', 'materialCode', 'inventoryQty', 'transitQty'];
 const QUANTITY_RECONCILIATION_SOURCES = [
   { sourceType: 'FBA库存', label: 'FBA在库', slotId: 'inventorySummaryFile1', group: '在库', field: 'fbaInventoryQty' },
   { sourceType: 'FBM库存', label: 'FBM在库', slotId: 'inventorySummaryFile2', group: '在库', field: 'fbmInventoryQty' },
@@ -711,22 +709,32 @@ export function parseInventoryManualWorkbook(file, mapping = {}, options = {}) {
   }
   const sheetName = requestedSheetName || workbook.SheetNames[0];
   if (!sheetName) throw inventoryValidationError('手工表中没有可读取的工作表');
+  const isUnsellable = text(options.slotId) === 'inventoryManualFile8';
+  const fields = isUnsellable ? INVENTORY_UNSELLABLE_MANUAL_FIELDS : INVENTORY_MANUAL_FIELDS;
+  const requiredFields = isUnsellable ? ['materialCode', 'inventoryQty', 'transitQty'] : ['materialCode'];
+  const schema = { required: requiredFields, fields };
   const parsed = worksheetRows(
     workbook.Sheets[sheetName],
-    INVENTORY_MANUAL_SCHEMA,
+    schema,
     Object.values(mapping)
   );
-  const columnMap = Object.fromEntries(INVENTORY_MANUAL_SCHEMA.fields.map((field) => {
+  const columnMap = Object.fromEntries(fields.map((field) => {
     const configured = text(mapping?.[field]);
     return [field, configured && parsed.columns.includes(configured) ? configured : ''];
   }));
-  if (!Object.values(columnMap).some(Boolean)) {
-    throw inventoryValidationError('手工表请至少选择一个映射字段：事业部、仓库、主体、数量');
+  const missingFields = requiredFields.filter((field) => !columnMap[field]);
+  if (missingFields.length) {
+    const labels = {
+      materialCode: '物料编码',
+      inventoryQty: '在库量',
+      transitQty: '在途量'
+    };
+    throw inventoryValidationError(`手工表请选择必选字段：${missingFields.map((field) => labels[field] || field).join('、')}`);
   }
-  const rows = parsed.rows.map((row) => Object.fromEntries(INVENTORY_MANUAL_SCHEMA.fields.map((field) => [
-    field,
-    columnMap[field] ? row[columnMap[field]] ?? '' : ''
-  ]))).filter((row) => INVENTORY_MANUAL_SCHEMA.fields.some((field) => text(row[field])));
+  const rows = parsed.rows.map((row) => Object.fromEntries(fields.map((field) => {
+    const value = columnMap[field] ? row[columnMap[field]] ?? '' : '';
+    return [field, field === 'materialCode' ? text(value).replace(/\.0$/, '') : value];
+  }))).filter((row) => fields.some((field) => text(row[field])));
   return {
     rows,
     sheetName,
@@ -735,7 +743,8 @@ export function parseInventoryManualWorkbook(file, mapping = {}, options = {}) {
       ...columnMap,
       __inventoryManual: {
         parserType: 'inventoryManual',
-        parserVersion: 1,
+        parserVersion: 2,
+        schemaType: isUnsellable ? 'unsellable' : 'standard',
         sheetName,
         sourceRowCount: parsed.rows.length,
         rowCount: rows.length

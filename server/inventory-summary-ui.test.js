@@ -93,5 +93,7 @@ test('库存数据提供独立的底表文件和手工表库', () => {
   assert.match(client, /validMappingForColumns\(mapping = \{\}, columns = \[\], fields = \[\], inferMissing = true\)/);
   assert.match(client, /title="手工表库" slots=\{INVENTORY_MANUAL_LIBRARY_SLOTS\} gridColumns=\{4\}/);
   assert.match(server, /function inventoryLibraryBaseSlotId/);
-  assert.match(server, /parseInventorySummaryWorkbook\(req\.file, baseSlotId, mapping, \{ strictMapping: isInventoryManualSlot\(slotId\) \}\)/);
+  assert.match(server, /parseInventorySummaryWorkbook\(inventorySummaryFile, baseSlotId, mapping, \{ strictMapping: isInventoryManualSlot\(slotId\) \}\)/);
+  assert.match(server, /return res\.json\(await streamingWorkbookInspect\(req\.file, sheetName \|\| null\)\)/);
+  assert.match(server, /serializeInventoryUpload, async \(req, res\)/);
 });

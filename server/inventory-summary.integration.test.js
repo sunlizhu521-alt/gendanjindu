@@ -2089,6 +2089,27 @@ test('inventory summary and domestic board use complete source models and enforc
         不应持久化字段: 'large-unused-value'
       }
     ]), 'FBA库存');
+    const inventoryInspectForms = Array.from({ length: 3 }, (_, index) => {
+      const form = new FormData();
+      form.append('slotId', `inventoryManualFile${index + 1}`);
+      form.append(
+        'file',
+        new Blob([xlsx.write(inventoryWorkbook, { type: 'buffer', bookType: 'xlsx' })]),
+        `库存并发预览${index + 1}.xlsx`
+      );
+      return form;
+    });
+    const inventoryInspectResponses = await Promise.all(inventoryInspectForms.map((body) => fetch(
+      `http://127.0.0.1:${port}/api/workbook/inspect`,
+      { method: 'POST', headers: { Authorization: 'Bearer admin-token' }, body }
+    )));
+    const inventoryInspectPayloads = await Promise.all(inventoryInspectResponses.map((response) => response.json()));
+    inventoryInspectResponses.forEach((response, index) => {
+      assert.equal(response.status, 200, `${JSON.stringify(inventoryInspectPayloads[index])}\n${logs.join('')}`);
+      assert.equal(inventoryInspectPayloads[index].streaming, true);
+      assert.equal(inventoryInspectPayloads[index].rowCount, 1);
+      assert.deepEqual(inventoryInspectPayloads[index].sheetNames, ['FBA库存']);
+    });
     const inventoryForm = new FormData();
     inventoryForm.append(
       'file',

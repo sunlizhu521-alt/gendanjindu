@@ -815,9 +815,13 @@ function worksheetCellValue(cell, sharedStrings, dateStyleIndexes) {
   return number;
 }
 
-async function streamWorksheetData(entry, sheetName, sharedStrings, dateStyleIndexes) {
+async function streamWorksheetData(entry, sheetName, sharedStrings, dateStyleIndexes, options = {}) {
   const prefixRows = [];
   const rows = [];
+  const maxStoredRows = Number.isFinite(options.maxStoredRows)
+    ? Math.max(0, Number(options.maxStoredRows))
+    : Infinity;
+  let rowCount = 0;
   let columns = [];
   let headerRow = 0;
   let detectedHeaderScore = 0;
@@ -832,7 +836,9 @@ async function streamWorksheetData(entry, sheetName, sharedStrings, dateStyleInd
     headerRow = headerIndex + 1;
     prefixRows.slice(headerIndex + 1).forEach((values) => {
       const row = rowObject(columns, values);
-      if (Object.values(row).some((value) => normalize(value))) rows.push(row);
+      if (!Object.values(row).some((value) => normalize(value))) return;
+      rowCount += 1;
+      if (rows.length < maxStoredRows) rows.push(row);
     });
   };
 
@@ -843,8 +849,10 @@ async function streamWorksheetData(entry, sheetName, sharedStrings, dateStyleInd
       return;
     }
     const row = rowObject(columns, values);
-    if (Object.values(row).some((value) => normalize(value))) rows.push(row);
-    if (rows.length > 200000) {
+    if (!Object.values(row).some((value) => normalize(value))) return;
+    rowCount += 1;
+    if (rows.length < maxStoredRows) rows.push(row);
+    if (rowCount > 200000) {
       const error = new Error('采购订单超过20万行，请拆分或清理无效行后重试');
       error.status = 400;
       error.publicMessage = error.message;
@@ -893,9 +901,61 @@ async function streamWorksheetData(entry, sheetName, sharedStrings, dateStyleInd
   return {
     sheetName,
     rows,
+    rowCount,
     columns: columns.filter(Boolean),
     headerRow,
     detectedHeaderScore
+  };
+}
+
+async function streamingWorkbookInspect(file, sheetName = null) {
+  const extension = path.extname(file?.originalname || file?.path || '').toLowerCase();
+  if (extension !== '.xlsx') {
+    const buffer = file?.buffer || await fs.promises.readFile(file.path);
+    return workbookInspect({ ...file, buffer }, sheetName);
+  }
+
+  const directory = await unzipper.Open.file(file.path);
+  const definedSheets = await workbookSheetDefinitions(directory);
+  const worksheetEntries = directory.files
+    .filter((entry) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(entry.path))
+    .map((entry, index) => ({
+      name: definedSheets.find((sheet) => sheet.path === entry.path)?.name || `Sheet${index + 1}`,
+      entry
+    }));
+  const sharedStrings = await readSharedStrings(directory);
+  const dateStyleIndexes = await readDateStyleIndexes(directory);
+  const sheetPreviews = [];
+  for (const worksheet of worksheetEntries) {
+    const data = await streamWorksheetData(
+      worksheet.entry,
+      worksheet.name,
+      sharedStrings,
+      dateStyleIndexes,
+      { maxStoredRows: 8 }
+    );
+    sheetPreviews.push({
+      sheetName: worksheet.name,
+      columns: data.columns,
+      rowCount: data.rowCount,
+      previewRows: data.rows,
+      headerRow: data.headerRow
+    });
+  }
+  const sheetNames = sheetPreviews.map((sheet) => sheet.sheetName);
+  const targetName = sheetName && sheetNames.includes(sheetName) ? sheetName : sheetNames[0];
+  const target = sheetPreviews.find((sheet) => sheet.sheetName === targetName)
+    || { columns: [], previewRows: [], rowCount: 0, headerRow: 0 };
+  const totalRowCount = sheetPreviews.reduce((sum, sheet) => sum + numberValue(sheet.rowCount), 0);
+  return {
+    sheetNames,
+    sheetPreviews,
+    columns: target.columns,
+    previewRows: target.previewRows,
+    rowCount: sheetName ? target.rowCount : totalRowCount,
+    totalRowCount,
+    headerRow: target.headerRow,
+    streaming: true
   };
 }
 
@@ -985,10 +1045,32 @@ function cleanupKingdeeUpload(req, res, next) {
 }
 
 function dimensionWorkbookUpload(req, res, next) {
-  const baseSlotId = inventoryLibraryBaseSlotId(normalize(req.params?.slotId));
-  const useDisk = ['inventorySummaryFile15', 'inventorySummaryFile16'].includes(baseSlotId);
+  const slotId = normalize(req.params?.slotId);
+  const baseSlotId = inventoryLibraryBaseSlotId(slotId);
+  const useDisk = isInventoryLibrarySlot(slotId)
+    || ['inventorySummaryFile15', 'inventorySummaryFile16'].includes(baseSlotId);
   const middleware = (useDisk ? kingdeeUpload : upload).single('file');
   return middleware(req, res, next);
+}
+
+let inventoryUploadQueue = Promise.resolve();
+
+function serializeInventoryUpload(req, res, next) {
+  if (!isInventoryLibrarySlot(req.params?.slotId)) return next();
+  let release;
+  const previous = inventoryUploadQueue;
+  inventoryUploadQueue = new Promise((resolve) => { release = resolve; });
+  previous.catch(() => {}).then(() => {
+    let released = false;
+    const releaseQueue = () => {
+      if (released) return;
+      released = true;
+      release();
+    };
+    res.once('finish', releaseQueue);
+    res.once('close', releaseQueue);
+    next();
+  });
 }
 
 function workbookInspect(file, sheetName = null) {
@@ -3783,6 +3865,9 @@ app.post('/api/workbook/inspect', requireAuth, kingdeeUpload.single('file'), cle
   if (['inventorySummaryFile15', 'inventorySummaryFile16'].includes(baseSlotId)) {
     return res.json(await workbookChoiceInspect(req.file));
   }
+  if (isInventoryLibrarySlot(slotId)) {
+    return res.json(await streamingWorkbookInspect(req.file, sheetName || null));
+  }
   const file = { ...req.file, buffer: await fs.promises.readFile(req.file.path) };
   res.json(workbookInspect(file, sheetName || null));
 });
@@ -4227,7 +4312,7 @@ app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'wan
   });
 });
 
-app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase']), dimensionWorkbookUpload, cleanupKingdeeUpload, async (req, res) => {
+app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase']), dimensionWorkbookUpload, cleanupKingdeeUpload, serializeInventoryUpload, async (req, res) => {
   const slotId = req.params.slotId;
   const baseSlotId = inventoryLibraryBaseSlotId(slotId);
   const mapping = parseJson(req.body.mapping, {});
@@ -4269,8 +4354,11 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   const firstMileParsed = isFirstMileSlot(slotId)
     ? parseFirstMileWorkbook(req.file, { slotId, fileName: safeFilename(req.file) })
     : null;
+  const inventorySummaryFile = isInventorySummarySlot(baseSlotId) && !req.file?.buffer
+    ? { ...req.file, buffer: await fs.promises.readFile(req.file.path) }
+    : req.file;
   const inventorySummaryParsed = isInventorySummarySlot(baseSlotId)
-    ? parseInventorySummaryWorkbook(req.file, baseSlotId, mapping, { strictMapping: isInventoryManualSlot(slotId) })
+    ? parseInventorySummaryWorkbook(inventorySummaryFile, baseSlotId, mapping, { strictMapping: isInventoryManualSlot(slotId) })
     : null;
   const parsed = firstMileParsed || inventorySummaryParsed || (
     ['inventorySummaryFile15', 'inventorySummaryFile16'].includes(baseSlotId)

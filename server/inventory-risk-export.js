@@ -1,6 +1,7 @@
 import xlsx from 'xlsx';
 
 export const INVENTORY_RISK_EXPORT_COLUMNS = [
+  ['数据来源', 'dataSource'],
   ['渠道', 'channel'],
   ['销售区域', 'salesRegion'],
   ['事业部', 'businessUnit'],
@@ -42,10 +43,15 @@ function sheetFromObjects(rows = [], columns = []) {
   return xlsx.utils.aoa_to_sheet([headers, ...values]);
 }
 
-export function inventoryRiskExportRows(rows = []) {
-  return rows.map((row) => Object.fromEntries(INVENTORY_RISK_EXPORT_COLUMNS.map(([label, key]) => [
+export function inventoryRiskExportRows(rows = [], { includeDataSource = true } = {}) {
+  const columns = includeDataSource
+    ? INVENTORY_RISK_EXPORT_COLUMNS
+    : INVENTORY_RISK_EXPORT_COLUMNS.filter(([, key]) => key !== 'dataSource');
+  return rows.map((row) => Object.fromEntries(columns.map(([label, key]) => [
     label,
-    key === 'unfulfilledSupplierShortName' ? row?.[key] || '未匹配' : row?.[key] ?? ''
+    key === 'unfulfilledSupplierShortName'
+      ? row?.[key] || '未匹配'
+      : key === 'dataSource' ? row?.[key] || '无仓库数据' : row?.[key] ?? ''
   ])));
 }
 
@@ -74,10 +80,14 @@ export function inventoryRiskParameterRows(payload = {}) {
 
 export function buildInventoryRiskWorkbook(payload = {}) {
   const workbook = xlsx.utils.book_new();
-  const exportRows = inventoryRiskExportRows(payload.rows);
+  const includeDataSource = payload.includeDataSource !== false;
+  const exportColumns = includeDataSource
+    ? INVENTORY_RISK_EXPORT_COLUMNS
+    : INVENTORY_RISK_EXPORT_COLUMNS.filter(([, key]) => key !== 'dataSource');
+  const exportRows = inventoryRiskExportRows(payload.rows, { includeDataSource });
   xlsx.utils.book_append_sheet(
     workbook,
-    sheetFromObjects(exportRows, INVENTORY_RISK_EXPORT_COLUMNS.map(([label]) => label)),
+    sheetFromObjects(exportRows, exportColumns.map(([label]) => label)),
     '处置清单'
   );
   xlsx.utils.book_append_sheet(workbook, sheetFromObjects(payload.diagnostics?.mappingIssues || []), '映射诊断');

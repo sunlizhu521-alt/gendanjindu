@@ -379,6 +379,7 @@ function addAggregate(map, row) {
     inTransitQty: 0,
     undeliveredQty: 0,
     unfulfilledSupplierShortNames: new Set(),
+    dataSources: new Set(),
     salesByMonth: new Map()
   };
   current.onHandQty += numberValue(row.inventoryQty);
@@ -390,6 +391,19 @@ function addAggregate(map, row) {
       : String(row.unfulfilledSupplierShortName || '').split(/[&+、,，;；]/);
     supplierValues.map(text).filter((name) => name && name !== '未匹配').forEach((name) => current.unfulfilledSupplierShortNames.add(name));
   }
+  (row.inventorySourceDetails || []).forEach((item) => {
+    const sourceTable = text(item.sourceTable) || '未知来源';
+    const locations = [];
+    const sourceWarehouse = text(item.sourceWarehouseName);
+    const storeName = text(item.storeName);
+    const receivingWarehouse = text(item.receivingWarehouseName);
+    const mappedWarehouse = text(item.mappedWarehouseName);
+    if (sourceWarehouse) locations.push(sourceWarehouse);
+    else if (storeName) locations.push(`店铺：${storeName}`);
+    if (receivingWarehouse && !locations.includes(receivingWarehouse)) locations.push(`收货：${receivingWarehouse}`);
+    if (mappedWarehouse && !locations.includes(mappedWarehouse)) locations.push(`映射：${mappedWarehouse}`);
+    current.dataSources.add(`${sourceTable}：${locations.join(' → ') || '无仓库字段'}`);
+  });
   Object.entries(row.salesByMonth || {}).forEach(([month, qty]) => {
     current.salesByMonth.set(month, (current.salesByMonth.get(month) || 0) + numberValue(qty));
   });
@@ -484,6 +498,7 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
       channel: row.channel,
       businessUnit: row.businessUnit,
       businessUnits: row.businessUnit,
+      dataSource: [...row.dataSources].join('；') || '无仓库数据',
       onHandQty: row.onHandQty,
       inTransitQty: row.inTransitQty,
       inventoryQty: row.onHandQty + row.inTransitQty,

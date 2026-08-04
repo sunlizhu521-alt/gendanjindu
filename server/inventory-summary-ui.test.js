@@ -19,6 +19,7 @@ test('事业部订单库存明细默认隐藏来源仓库并可同步展示和�
   assert.doesNotMatch(dashboard, /\['来源表'/);
   assert.match(dashboard, /showSourceWarehouses \? \[inventorySourceWarehouses\(row, '\\n'\)\] : \[\]/);
   assert.match(dashboard, /showSourceWarehouses \? '隐藏来源仓库' : '显示来源仓库'/);
+  assert.match(dashboard, /showSourceBreakdown \? \[[\s\S]*?\['已生产未发货',[\s\S]*?\['生产中产品',[\s\S]*?\] : \[\]\),[\s\S]*?\['未交付数量'/);
   assert.match(dashboard, /const \[salesMonthRange, setSalesMonthRange\] = useState\('3'\)/);
   assert.match(dashboard, /allMonthColumns\.slice\(-Number\(salesMonthRange\)\)/);
   assert.match(dashboard, /最近3个月/);

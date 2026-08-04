@@ -1949,12 +1949,12 @@ function InventorySummary({ token, active }) {
       ['京东在库', (row) => formatDashboardNumber(row.jdInventoryQty)],
       ['FBA在途', (row) => formatDashboardNumber(row.fbaTransitQty)],
       ['FBM在途', (row) => formatDashboardNumber(row.fbmTransitQty)],
-      ['京东在途', (row) => formatDashboardNumber(row.jdTransitQty)]
+      ['京东在途', (row) => formatDashboardNumber(row.jdTransitQty)],
+      ['已生产未发货', (row) => formatDashboardNumber(row.finishedNotShippedQty)],
+      ['已下单未备料未生产', (row) => formatDashboardNumber(row.unpreparedQty)],
+      ['已备料未生产', (row) => formatDashboardNumber(row.preparedNotStartedQty)],
+      ['生产中产品', (row) => formatDashboardNumber(row.inProductionQty)]
     ] : []),
-    ['已生产未发货', (row) => formatDashboardNumber(row.finishedNotShippedQty)],
-    ['已下单未备料未生产', (row) => formatDashboardNumber(row.unpreparedQty)],
-    ['已备料未生产', (row) => formatDashboardNumber(row.preparedNotStartedQty)],
-    ['生产中产品', (row) => formatDashboardNumber(row.inProductionQty)],
     ['未交付数量', (row) => formatDashboardNumber(row.unfulfilledQty)],
     ['是否需正常交货', (row) => row.deliveryStatus],
     ['不含税结算价', (row) => formatDashboardNumber(row.pretaxPrice)],
@@ -1980,10 +1980,10 @@ function InventorySummary({ token, active }) {
           ...(showSourceBreakdown ? [
             numberValue(row.fbaInventoryQty), numberValue(row.fbmInventoryQty), numberValue(row.wfsInventoryQty),
             numberValue(row.domesticMainInventoryQty), numberValue(row.jdInventoryQty),
-            numberValue(row.fbaTransitQty), numberValue(row.fbmTransitQty), numberValue(row.jdTransitQty)
+            numberValue(row.fbaTransitQty), numberValue(row.fbmTransitQty), numberValue(row.jdTransitQty),
+            numberValue(row.finishedNotShippedQty), numberValue(row.unpreparedQty),
+            numberValue(row.preparedNotStartedQty), numberValue(row.inProductionQty)
           ] : []),
-          numberValue(row.finishedNotShippedQty),
-          numberValue(row.unpreparedQty), numberValue(row.preparedNotStartedQty), numberValue(row.inProductionQty),
           numberValue(row.unfulfilledQty), row.deliveryStatus, numberValue(row.pretaxPrice),
           numberValue(row.normalOrderQty), numberValue(row.normalOrderValue),
           numberValue(row.abnormalOrderQty), numberValue(row.abnormalOrderValue)

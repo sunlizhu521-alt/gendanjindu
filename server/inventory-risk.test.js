@@ -25,6 +25,7 @@ function summaryRow(overrides = {}) {
     transitQty: 0,
     unfulfilledQty: 0,
     unfulfilledSupplierShortName: '供应商甲&供应商乙&供应商甲',
+    inventorySourceDetails: [{ sourceTable: 'FBA库存报表', sourceWarehouseName: '美国仓', mappedWarehouseName: '101-US' }],
     salesByMonth: {
       '2026-02': 10,
       '2026-03': 20,
@@ -115,6 +116,7 @@ test('未交付供应商简称按事业部和物料去重汇总', () => {
   assert.equal(payload.stopped.length, 1);
   assert.equal(payload.stopped[0].undeliveredQty, 30);
   assert.equal(payload.stopped[0].unfulfilledSupplierShortName, '供应商甲&供应商乙&供应商丙');
+  assert.equal(payload.stopped[0].dataSource, 'FBA库存报表：美国仓 → 映射：101-US');
 });
 
 test('无文件日期时使用槽位更新时间把年初月份归入次年', () => {
@@ -348,7 +350,7 @@ test('供应计划分析页面、权限与API均注册在gendanjindu', () => {
   assert.match(server, /\/api\/inventory-risk\/export/);
   assert.match(client, /供应计划分析/);
   assert.match(client, /InventoryRiskPage/);
-  assert.match(server, /buildInventoryRiskWorkbook\(payload\)/);
+  assert.match(server, /buildInventoryRiskWorkbook\(\{[\s\S]*?includeDataSource: Boolean\(req\.body\?\.includeDataSource\)[\s\S]*?\}\)/);
   assert.doesNotMatch(server, /inventoryRiskSupplierContext/);
   assert.match(riskPage, /label="事业部"/);
   assert.match(riskPage, /label="产品线"/);
@@ -359,6 +361,10 @@ test('供应计划分析页面、权限与API均注册在gendanjindu', () => {
   assert.match(riskPage, /label="渠道"/);
   assert.match(riskPage, /label="处置动作"/);
   assert.match(riskPage, /label="预测销售"/);
+  assert.match(riskPage, /showDataSources \? '隐藏数据来源' : '显示数据来源'/);
+  assert.match(riskPage, /showDataSources && <th>数据来源<\/th>/);
+  assert.match(riskPage, /inventory-risk-table\$\{showDataSources \? ' show-data-source' : ''\}/);
+  assert.match(riskPage, /includeDataSource: showDataSources/);
   assert.match(riskPage, /正在请求服务器生成 Excel/);
   assert.match(riskPage, /response\.body\?\.getReader/);
   assert.match(riskPage, /response\.headers\.get\('content-length'\)/);

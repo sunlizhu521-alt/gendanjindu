@@ -8,6 +8,7 @@ import {
 } from './inventory-risk-export.js';
 
 const expectedHeaders = [
+  '数据来源',
   '渠道', '销售区域', '事业部', '产品线', '物料编码', 'SKU', '物料名称', '未交付供应商简称',
   '在库数量', '在途数量', '待交付数量', '合计数量', '预测月均销量', '最近N月平均月销量',
   '在库在途周转天数', '全链覆盖天数', '预测状态', '处置动作'
@@ -16,6 +17,7 @@ const expectedHeaders = [
 test('库存风险导出严格使用页面列顺序并保留供应商简称', () => {
   assert.deepEqual(INVENTORY_RISK_EXPORT_COLUMNS.map(([label]) => label), expectedHeaders);
   const [row] = inventoryRiskExportRows([{
+    dataSource: 'FBA库存报表：美国仓 → 映射：101-US',
     channel: '海外-美国', salesRegion: '美国', businessUnit: '海外事业一部', productLine: '产品线A',
     materialCode: '1001', sku: 'SKU-1001', materialName: '测试产品',
     unfulfilledSupplierShortName: '供应商甲&供应商乙', onHandQty: 10, inTransitQty: 20,
@@ -23,6 +25,7 @@ test('库存风险导出严格使用页面列顺序并保留供应商简称', ()
     transitTurnoverDays: 22.5, fullChainCoverageDays: 67.5, forecastStatus: '已匹配', action: '限制采购'
   }]);
   assert.deepEqual(Object.keys(row), expectedHeaders);
+  assert.equal(row.数据来源, 'FBA库存报表：美国仓 → 映射：101-US');
   assert.equal(row.未交付供应商简称, '供应商甲&供应商乙');
   assert.equal(row.合计数量, 60);
 });

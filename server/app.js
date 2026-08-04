@@ -3561,7 +3561,10 @@ app.post('/api/inventory-risk/export', requireAuth, requirePage('inventoryRisk')
     if (!payload.ok) {
       return res.status(payload.status === 'invalid_params' ? 400 : 422).json(payload);
     }
-    const workbook = buildInventoryRiskWorkbook(payload);
+    const workbook = buildInventoryRiskWorkbook({
+      ...payload,
+      includeDataSource: Boolean(req.body?.includeDataSource)
+    });
     const buffer = Buffer.from(await buildStyledExcelBuffer(xlsx, workbook));
     const fileName = `供应计划分析_${nowText().slice(0, 10).replaceAll('-', '')}.xlsx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

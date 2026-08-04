@@ -246,7 +246,12 @@ function RiskPagination({ page, pages, onChange }) {
   );
 }
 
-function RiskTable({ rows }) {
+function RiskDataSourceCell({ value }) {
+  const items = String(value || '无仓库数据').split('；').filter(Boolean);
+  return <div className="inventory-risk-source-cell">{items.map((item) => <span key={item}>{item}</span>)}</div>;
+}
+
+function RiskTable({ rows, showDataSources, onToggleDataSources }) {
   const pageSize = 20;
   const [page, setPage] = useState(1);
   const pages = Math.max(1, Math.ceil(rows.length / pageSize));
@@ -261,12 +266,16 @@ function RiskTable({ rows }) {
           <span className="inventory-risk-section-kicker">处置清单</span>
           <h3>供应计划分析处置清单</h3>
         </div>
-        <strong>{numberText(rows.length, 0)} 个物料</strong>
+        <div className="inventory-risk-section-actions">
+          <button className="inventory-risk-button secondary" type="button" onClick={onToggleDataSources}>{showDataSources ? '隐藏数据来源' : '显示数据来源'}</button>
+          <strong>{numberText(rows.length, 0)} 个物料</strong>
+        </div>
       </div>
       <div className="inventory-risk-table-wrap">
-        <table className="inventory-risk-table">
+        <table className={`inventory-risk-table${showDataSources ? ' show-data-source' : ''}`}>
           <thead>
             <tr>
+              {showDataSources && <th>数据来源</th>}
               <th>渠道</th><th>销售区域</th><th>事业部</th><th>产品线</th><th>物料编码</th><th>SKU</th><th>物料名称</th><th>未交付供应商简称</th>
               <th>在库数量</th><th>在途数量</th><th>待交付数量</th><th>合计数量</th><th>预测月均销量</th><th>最近N月平均月销量</th>
               <th>在库在途周转天数</th><th>全链覆盖天数</th><th>预测状态</th><th>处置动作</th>
@@ -275,6 +284,7 @@ function RiskTable({ rows }) {
           <tbody>
             {visibleRows.map((row) => (
               <tr key={row.id}>
+                {showDataSources && <td><RiskDataSourceCell value={row.dataSource} /></td>}
                 <td><span className={`inventory-risk-segment inventory-risk-segment-${row.channel === '国内' ? 'domestic' : 'overseas'}`}>{row.channel}</span></td>
                 <td>{row.salesRegion}</td><td>{row.businessUnit}</td><td>{row.productLine}</td><td>{row.materialCode}</td><td>{row.sku}</td><td>{row.materialName}</td>
                 <td>{row.unfulfilledSupplierShortName || '未匹配'}</td><td>{numberText(row.onHandQty)}</td><td>{numberText(row.inTransitQty)}</td>
@@ -284,7 +294,7 @@ function RiskTable({ rows }) {
                 <td><strong className={`inventory-risk-action inventory-risk-action-${row.action === '停止采购' ? 'stopped' : row.action === '限制采购' ? 'restricted' : 'normal'}`}>{row.action}</strong></td>
               </tr>
             ))}
-            {!visibleRows.length && <tr><td className="inventory-risk-empty" colSpan="18">当前筛选条件下没有库存、在途或未交付数量大于 0 的物料</td></tr>}
+            {!visibleRows.length && <tr><td className="inventory-risk-empty" colSpan={showDataSources ? 19 : 18}>当前筛选条件下没有库存、在途或未交付数量大于 0 的物料</td></tr>}
           </tbody>
         </table>
       </div>
@@ -323,6 +333,7 @@ export default function InventoryRiskPage({ token, active }) {
   const [filters, setFilters] = useState({ ...EMPTY_RISK_FILTERS });
   const [exporting, setExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState(null);
+  const [showDataSources, setShowDataSources] = useState(false);
 
   const setRootParam = (field, value) => setParams((current) => ({ ...current, [field]: value }));
   const setChannelParam = (channelKey, field, value) => setParams((current) => ({
@@ -367,7 +378,7 @@ export default function InventoryRiskPage({ token, active }) {
       const response = await fetch(`${API}/api/inventory-risk/export`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(params)
+        body: JSON.stringify({ ...params, includeDataSource: showDataSources })
       });
       if (!response.ok) {
         const contentType = response.headers.get('content-type') || '';
@@ -553,7 +564,7 @@ export default function InventoryRiskPage({ token, active }) {
             <span>2B渠道排除：{numberText(summary.b2bExcludedCount, 0)} 条</span>
             <span>销售区域待维护：{numberText(summary.channelMissingCount, 0)} 条</span>
           </div>
-          <RiskTable rows={filteredRows} />
+          <RiskTable rows={filteredRows} showDataSources={showDataSources} onToggleDataSources={() => setShowDataSources((current) => !current)} />
           {(result.diagnostics.mappingIssues.length > 0 || result.diagnostics.forecastIssues.length > 0) && (
             <details className="inventory-risk-diagnostics">
               <summary>数据诊断：映射问题 {result.diagnostics.mappingIssues.length} 条，预测问题 {result.diagnostics.forecastIssues.length} 条</summary>

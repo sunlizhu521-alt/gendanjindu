@@ -372,6 +372,14 @@
 .inventory-risk-section-heading h3 { margin: 2px 0 0; font-size: 1rem; }
 .inventory-risk-section-heading > strong { color: #44536a; font-size: .8rem; }
 
+.inventory-risk-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.inventory-risk-section-actions > strong { color: #44536a; font-size: .8rem; white-space: nowrap; }
+
 .inventory-risk-table-wrap {
   overflow-x: auto;
   scrollbar-gutter: stable;
@@ -421,6 +429,31 @@
 .inventory-risk-table th:nth-child(7) { width: 190px; }
 .inventory-risk-table th:nth-child(8) { width: 150px; }
 .inventory-risk-table th:nth-child(n+9) { width: 105px; }
+
+.inventory-risk-table.show-data-source {
+  min-width: 2220px;
+}
+
+.inventory-risk-table.show-data-source th:nth-child(1) {
+  width: 380px;
+}
+
+.inventory-risk-table.show-data-source th:nth-child(-n+9),
+.inventory-risk-table.show-data-source td:nth-child(-n+9) {
+  text-align: left;
+}
+
+.inventory-risk-source-cell {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  white-space: normal;
+}
+
+.inventory-risk-source-cell span {
+  display: block;
+  overflow-wrap: anywhere;
+}
 
 .inventory-risk-table tbody tr:hover { background: #f8fbfd; }
 .inventory-risk-empty { padding: 24px !important; color: #8290a3; text-align: center !important; }

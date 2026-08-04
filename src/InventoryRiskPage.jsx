@@ -311,7 +311,7 @@ function InventoryRiskLogic({ onBack }) {
         <button className="inventory-risk-button secondary" type="button" onClick={onBack}>返回供应计划分析</button>
       </header>
       <div className="inventory-risk-logic-grid">
-        <section><span>01</span><h3>数据来源</h3><p>库存、在途、待交付、商品分类和历史销售完全复用“库存汇总”的标准化结果；销售预测读取“库存汇总文件库”的槽位 15。</p></section>
+        <section><span>01</span><h3>数据来源</h3><p>库存、在途、待交付、商品分类和历史销售完全复用“库存汇总”的标准化结果；销售预测读取“底表文件”的槽位 15。</p></section>
         <section><span>02</span><h3>物料与渠道</h3><p>以事业部 + 物料编码为主键，SKU 仅展示。渠道只取商品分类的销售区域：中国为国内，美国为海外-美国，欧洲为海外-欧洲；其他已确认区域按2B排除，缺失或无法区分进入维度表缺失。</p></section>
         <section><span>03</span><h3>销售速度</h3><p>预测月均销量取本月起连续 N 个月预测数量合计除以 N；最近 N 月平均月销量独立取销售数据最新月份向前 N 个月。</p></section>
         <section><span>04</span><h3>在库在途周转</h3><p>在库在途周转天数 =（在库数量 + 在途数量）÷（预测月均销量 ÷ 30）。超过当前渠道的限制采购阈值时限制采购。</p></section>

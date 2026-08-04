@@ -67,3 +67,18 @@ test('销售与库存看板展示仅数量的来源校准和遗漏重叠提醒',
   assert.match(styles, /\.inventory-quantity-reconciliation\.warning/);
   assert.match(styles, /\.inventory-reconciliation-table/);
 });
+
+test('库存数据提供独立的底表文件和手工表库', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
+  const server = fs.readFileSync(path.join(root, 'server', 'app.js'), 'utf8');
+
+  assert.match(client, /inventorySummaryLibrary: '底表文件'/);
+  assert.match(client, /inventoryManualLibrary: '手工表库'/);
+  assert.match(client, /const INVENTORY_MANUAL_LIBRARY_SLOTS = INVENTORY_SUMMARY_LIBRARY_SLOTS\.map/);
+  assert.match(client, /replace\('inventorySummaryFile', 'inventoryManualFile'\)/);
+  assert.match(client, /title: `\$\{slot\.title\}手工`/);
+  assert.match(client, /title="手工表库" slots=\{INVENTORY_MANUAL_LIBRARY_SLOTS\} gridColumns=\{4\}/);
+  assert.match(server, /function inventoryLibraryBaseSlotId/);
+  assert.match(server, /isInventorySummarySlot\(baseSlotId\)[\s\S]*?parseInventorySummaryWorkbook\(req\.file, baseSlotId, mapping\)/);
+});

@@ -45,6 +45,7 @@ const ALL_PAGES = [
   'inventoryRisk',
   'inventoryPurchase',
   'inventorySummaryLibrary',
+  'inventoryManualLibrary',
   'operationBoard',
   'progressRefresh',
   'differenceAllocation',
@@ -63,7 +64,8 @@ const PAGE_LABELS = {
   inventorySummary: '库存汇总',
   inventoryRisk: '供应计划分析',
   inventoryPurchase: '采购未交付',
-  inventorySummaryLibrary: '库存汇总文件库',
+  inventorySummaryLibrary: '底表文件',
+  inventoryManualLibrary: '手工表库',
   operationBoard: '运营看板-未交付',
   purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',
@@ -121,6 +123,24 @@ const DIMENSION_SLOTS = {
   firstMileData5: '李宛宸头程数据',
   firstMileSpare: '备用'
 };
+Object.entries(DIMENSION_SLOTS)
+  .filter(([slotId]) => /^inventorySummaryFile\d+$/.test(slotId))
+  .forEach(([slotId, title]) => {
+    DIMENSION_SLOTS[slotId.replace('inventorySummaryFile', 'inventoryManualFile')] = `${title}手工`;
+  });
+
+function inventoryLibraryBaseSlotId(slotId) {
+  return String(slotId || '').replace(/^inventoryManualFile(?=\d+$)/, 'inventorySummaryFile');
+}
+
+function isInventoryManualSlot(slotId) {
+  return /^inventoryManualFile\d+$/.test(String(slotId || ''));
+}
+
+function isInventoryLibrarySlot(slotId) {
+  return isInventorySummarySlot(inventoryLibraryBaseSlotId(slotId))
+    || ['inventorySummaryFile15', 'inventorySummaryFile16'].includes(inventoryLibraryBaseSlotId(slotId));
+}
 const DIFF_NORMAL_ORDER = '正常订单';
 const DIFF_ORDER_COMPLETE_REASON = '订单已完结';
 const DIFF_LEGACY_ORDER_COMPLETE_REASON = '订单完结';
@@ -370,6 +390,7 @@ function auditPageForRequest(req) {
     if (slotId.startsWith('wangdian')) return { key: 'wangdianData', label: PAGE_LABELS.wangdianData };
     if (slotId.startsWith('lingxingF')) return { key: 'lingxingInventory', label: PAGE_LABELS.lingxingInventory };
     if (slotId.startsWith('inventorySummaryFile')) return { key: 'inventorySummaryLibrary', label: PAGE_LABELS.inventorySummaryLibrary };
+    if (isInventoryManualSlot(slotId)) return { key: 'inventoryManualLibrary', label: PAGE_LABELS.inventoryManualLibrary };
     return { key: 'dimensionLibrary', label: PAGE_LABELS.dimensionLibrary };
   }
   return { key: 'system', label: '系统操作' };
@@ -963,7 +984,8 @@ function cleanupKingdeeUpload(req, res, next) {
 }
 
 function dimensionWorkbookUpload(req, res, next) {
-  const useDisk = ['inventorySummaryFile15', 'inventorySummaryFile16'].includes(normalize(req.params?.slotId));
+  const baseSlotId = inventoryLibraryBaseSlotId(normalize(req.params?.slotId));
+  const useDisk = ['inventorySummaryFile15', 'inventorySummaryFile16'].includes(baseSlotId);
   const middleware = (useDisk ? kingdeeUpload : upload).single('file');
   return middleware(req, res, next);
 }
@@ -3752,11 +3774,12 @@ app.put('/api/mappings/:kind', requireAuth, (req, res) => {
 app.post('/api/workbook/inspect', requireAuth, kingdeeUpload.single('file'), cleanupKingdeeUpload, async (req, res) => {
   const sheetName = normalize(req.body.sheetName);
   const slotId = normalize(req.body.slotId);
+  const baseSlotId = inventoryLibraryBaseSlotId(slotId);
   if (isFirstMileSlot(slotId)) {
     const file = { ...req.file, buffer: await fs.promises.readFile(req.file.path) };
     return res.json(inspectFirstMileWorkbook(file));
   }
-  if (['inventorySummaryFile15', 'inventorySummaryFile16'].includes(slotId)) {
+  if (['inventorySummaryFile15', 'inventorySummaryFile16'].includes(baseSlotId)) {
     return res.json(await workbookChoiceInspect(req.file));
   }
   const file = { ...req.file, buffer: await fs.promises.readFile(req.file.path) };
@@ -4180,7 +4203,7 @@ app.post('/api/difference-allocations/:sessionId/apply', requireAuth, requirePag
   res.json({ batchId, status: { ...allocationStatus(req.params.sessionId), applied: true }, demands: demandRows(false, req.user) });
 });
 
-app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'firstMileDatabase']), (req, res) => {
+app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase']), (req, res) => {
   const rows = all('SELECT slot_id, title, file_name, sheet_name, sheet_names, selected_sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at FROM dimension_files');
   res.json({
     rows: rows.map((row) => {
@@ -4203,14 +4226,15 @@ app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'wan
   });
 });
 
-app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'firstMileDatabase']), dimensionWorkbookUpload, cleanupKingdeeUpload, async (req, res) => {
+app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase']), dimensionWorkbookUpload, cleanupKingdeeUpload, async (req, res) => {
   const slotId = req.params.slotId;
+  const baseSlotId = inventoryLibraryBaseSlotId(slotId);
   const mapping = parseJson(req.body.mapping, {});
   const sheetName = normalize(req.body.sheetName);
   const selectedSheetNames = parseJson(req.body.sheetNames, [])
     .map(normalize)
     .filter((name, index, names) => name && names.indexOf(name) === index);
-  if (slotId === 'inventorySummaryFile15') {
+  if (baseSlotId === 'inventorySummaryFile15') {
     const sheetNames = await workbookSheetNamesFromUpload(req.file);
     if (sheetName && !sheetNames.includes(sheetName)) {
       const error = new Error('销售预测选择的工作表不存在，请重新选择');
@@ -4225,7 +4249,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
       throw error;
     }
   }
-  if (slotId === 'inventorySummaryFile16') {
+  if (baseSlotId === 'inventorySummaryFile16') {
     const sheetNames = await workbookSheetNamesFromUpload(req.file);
     if (selectedSheetNames.length !== 2) {
       const error = new Error('库龄文件必须选择两个工作表后才能应用');
@@ -4244,14 +4268,14 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   const firstMileParsed = isFirstMileSlot(slotId)
     ? parseFirstMileWorkbook(req.file, { slotId, fileName: safeFilename(req.file) })
     : null;
-  const inventorySummaryParsed = isInventorySummarySlot(slotId)
-    ? parseInventorySummaryWorkbook(req.file, slotId, mapping)
+  const inventorySummaryParsed = isInventorySummarySlot(baseSlotId)
+    ? parseInventorySummaryWorkbook(req.file, baseSlotId, mapping)
     : null;
   const parsed = firstMileParsed || inventorySummaryParsed || (
-    ['inventorySummaryFile15', 'inventorySummaryFile16'].includes(slotId)
+    ['inventorySummaryFile15', 'inventorySummaryFile16'].includes(baseSlotId)
       ? await streamingKingdeeWorkbookRows(
         req.file,
-        slotId === 'inventorySummaryFile16' ? selectedSheetNames : sheetName || null,
+        baseSlotId === 'inventorySummaryFile16' ? selectedSheetNames : sheetName || null,
         { includePreviews: false, stringifyValues: true }
       )
       : workbookRows(req.file, sheetName || null, { includePreviews: false })
@@ -4410,13 +4434,13 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     }
     return row;
   });
-  const rowsWithSheetSource = slotId === 'inventorySummaryFile16'
+  const rowsWithSheetSource = baseSlotId === 'inventorySummaryFile16'
     ? parsed.sheets.flatMap((sheet) => sheet.rows.map((row) => ({ ...row, __sourceSheet: sheet.sheetName })))
     : parsedRows;
-  const rows = slotId.startsWith('inventorySummaryFile')
+  const rows = isInventoryLibrarySlot(slotId)
     ? rowsWithSheetSource.map(({ raw: _raw, ...row }) => row)
     : rowsWithSheetSource;
-  if (['inventorySummaryFile15', 'inventorySummaryFile16'].includes(slotId) && !rows.length) {
+  if (['inventorySummaryFile15', 'inventorySummaryFile16'].includes(baseSlotId) && !rows.length) {
     const error = new Error(`${DIMENSION_SLOTS[slotId]}选中的工作表没有可保存的数据，已保留当前应用文件`);
     error.status = 400;
     error.publicMessage = error.message;
@@ -4432,7 +4456,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
       `INSERT INTO dimension_files (slot_id, title, file_name, sheet_name, sheet_names, selected_sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
       ON CONFLICT(slot_id) DO UPDATE SET title = excluded.title, file_name = excluded.file_name, sheet_name = excluded.sheet_name, sheet_names = excluded.sheet_names, selected_sheet_names = excluded.selected_sheet_names, mapping_json = excluded.mapping_json, rows_json = excluded.rows_json, applied = 1, uploaded_by = excluded.uploaded_by, updated_at = excluded.updated_at`,
-      [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), firstMileParsed ? '' : inventorySummaryParsed?.sheetName || sheetName, JSON.stringify(parsed.sheetNames), JSON.stringify(slotId === 'inventorySummaryFile16' ? selectedSheetNames : []), JSON.stringify(storedMapping), JSON.stringify(rows), req.user.name, now]
+      [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), firstMileParsed ? '' : inventorySummaryParsed?.sheetName || sheetName, JSON.stringify(parsed.sheetNames), JSON.stringify(baseSlotId === 'inventorySummaryFile16' ? selectedSheetNames : []), JSON.stringify(storedMapping), JSON.stringify(rows), req.user.name, now]
     );
     if (slotId === 'productCategory' || slotId === 'purchaseAssignment') applyDimensionEnrichment();
     assertOrderDataUnchanged(beforeOrderCounts);
@@ -4441,25 +4465,25 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     rowCount: rows.length,
     sheetName: firstMileParsed ? '' : inventorySummaryParsed?.sheetName || sheetName,
     sheetNames: parsed.sheetNames,
-    selectedSheetNames: slotId === 'inventorySummaryFile16' ? selectedSheetNames : [],
+    selectedSheetNames: baseSlotId === 'inventorySummaryFile16' ? selectedSheetNames : [],
     applied: true,
     diagnostics: dimensionDiagnostics(slotId, rows),
     parseSummary: firstMileParsed?.summary || inventorySummaryParsed?.mapping?.__inventorySummary || null,
-    ...(slotId.startsWith('inventorySummaryFile') ? {} : { rows: demandRows(false, req.user) })
+    ...(isInventoryLibrarySlot(slotId) ? {} : { rows: demandRows(false, req.user) })
   });
 });
 
-app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'firstMileDatabase']), (req, res) => {
+app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase']), (req, res) => {
   const beforeOrderCounts = orderDataCounts();
   transaction(() => {
     run('UPDATE dimension_files SET applied = 1, updated_at = ? WHERE slot_id = ?', [nowText(), req.params.slotId]);
     if (req.params.slotId === 'productCategory' || req.params.slotId === 'purchaseAssignment') applyDimensionEnrichment();
     assertOrderDataUnchanged(beforeOrderCounts);
   });
-  res.json(req.params.slotId.startsWith('inventorySummaryFile') ? { applied: true } : { rows: demandRows(false, req.user) });
+  res.json(isInventoryLibrarySlot(req.params.slotId) ? { applied: true } : { rows: demandRows(false, req.user) });
 });
 
-app.delete('/api/dimensions/:slotId', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'firstMileDatabase']), (req, res) => {
+app.delete('/api/dimensions/:slotId', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase']), (req, res) => {
   run('DELETE FROM dimension_files WHERE slot_id = ?', [req.params.slotId]);
   saveDatabase();
   res.json({ ok: true });
@@ -4887,7 +4911,7 @@ app.use((err, req, res, next) => {
     error = '文件过大，请压缩到100MB以内再上传';
   } else if (err.publicMessage) {
     error = String(err.publicMessage);
-  } else if (['inventorySummaryFile15', 'inventorySummaryFile16'].includes(normalize(req.params?.slotId))) {
+  } else if (['inventorySummaryFile15', 'inventorySummaryFile16'].includes(inventoryLibraryBaseSlotId(normalize(req.params?.slotId)))) {
     error = `${DIMENSION_SLOTS[req.params.slotId]}解析或保存失败，请重新选择工作表后上传`;
   } else if (isKingdeeMemoryError) {
     error = '采购订单文件解压体积过大，流式解析仍未完成，请将文件另存为CSV后重新上传';

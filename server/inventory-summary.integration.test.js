@@ -2092,6 +2092,32 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(inventoryUploadPayload.rowCount, 1);
     assert.equal(Object.hasOwn(inventoryUploadPayload, 'rows'), false);
 
+    const manualInventoryForm = new FormData();
+    manualInventoryForm.append(
+      'file',
+      new Blob([xlsx.write(inventoryWorkbook, { type: 'buffer', bookType: 'xlsx' })]),
+      'FBA库存报表手工.xlsx'
+    );
+    manualInventoryForm.append('mapping', JSON.stringify({
+      storeName: '店铺',
+      marketplace: '站点',
+      sku: 'SKU',
+      fnsku: 'FNSKU',
+      asin: 'ASIN',
+      warehouseName: '仓库名称',
+      inventoryAttribute: '库存属性',
+      endingInventoryQty: '期末库存(含移仓)-数量'
+    }));
+    const manualInventoryUploadResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions/inventoryManualFile1/upload`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token' },
+      body: manualInventoryForm
+    });
+    const manualInventoryUploadPayload = await manualInventoryUploadResponse.json();
+    assert.equal(manualInventoryUploadResponse.status, 200, `${JSON.stringify(manualInventoryUploadPayload)}\n${logs.join('')}`);
+    assert.equal(manualInventoryUploadPayload.rowCount, 1);
+    assert.equal(Object.hasOwn(manualInventoryUploadPayload, 'rows'), false);
+
     const invalidInventoryWorkbook = xlsx.utils.book_new();
     xlsx.utils.book_append_sheet(invalidInventoryWorkbook, xlsx.utils.aoa_to_sheet([
       ['SKU', '仓库名称', '库存属性', '期末库存(含移仓)-数量'],
@@ -2148,6 +2174,11 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.deepEqual(
       { title: inventoryRecord?.title, rowCount: inventoryRecord?.rowCount, fileName: inventoryRecord?.file_name },
       { title: 'FBA库存报表', rowCount: 1, fileName: 'FBA库存报表.xlsx' }
+    );
+    const manualInventoryRecord = inventoryDimensionRows.find((row) => row.slot_id === 'inventoryManualFile1');
+    assert.deepEqual(
+      { title: manualInventoryRecord?.title, rowCount: manualInventoryRecord?.rowCount, fileName: manualInventoryRecord?.file_name },
+      { title: 'FBA库存报表手工', rowCount: 1, fileName: 'FBA库存报表手工.xlsx' }
     );
     const transitWarehouseRecord = inventoryDimensionRows.find((row) => row.slot_id === 'inventorySummaryFile13');
     assert.deepEqual(

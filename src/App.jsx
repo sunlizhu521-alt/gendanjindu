@@ -20,6 +20,7 @@ const PAGE_ORDER = [
   'inventoryRisk',
   'inventoryPurchase',
   'inventorySummaryLibrary',
+  'inventoryManualLibrary',
   'operationBoard',
   'progressRefresh',
   'differenceAllocation',
@@ -39,7 +40,8 @@ const PAGE_LABELS = {
   inventorySummary: '库存汇总',
   inventoryRisk: '供应计划分析',
   inventoryPurchase: '采购未交付',
-  inventorySummaryLibrary: '库存汇总文件库',
+  inventorySummaryLibrary: '底表文件',
+  inventoryManualLibrary: '手工表库',
   operationBoard: '运营看板-未交付',
   purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',
@@ -60,7 +62,7 @@ const PAGE_LABELS = {
 const NAV_GROUPS = [
   { title: '国内数据', pages: ['domesticBoard', 'wangdianData'] },
   { title: '跨境数据', pages: ['crossBorderInventory', 'lingxingInventory'] },
-  { title: '库存数据', pages: ['inventorySummary', 'inventoryRisk', 'inventoryPurchase', 'inventorySummaryLibrary'] },
+  { title: '库存数据', pages: ['inventorySummary', 'inventoryRisk', 'inventoryPurchase', 'inventorySummaryLibrary', 'inventoryManualLibrary'] },
   { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'differenceAllocation', 'trace', 'purchaseBoard'] },
   { title: '头程数据', pages: ['firstMileBoard', 'firstMileDatabase'] },
   { title: '维护数据', pages: ['dimensionMissing', 'dimensionLibrary', 'kingdeeImport'] },
@@ -266,6 +268,12 @@ const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
   { id: 'inventorySummaryFile15', title: '销售预测', fields: [], requiresSheetSelection: true },
   { id: 'inventorySummaryFile16', title: '库龄文件', fields: [], requiredSheetCount: 2 }
 ];
+
+const INVENTORY_MANUAL_LIBRARY_SLOTS = INVENTORY_SUMMARY_LIBRARY_SLOTS.map((slot) => ({
+  ...slot,
+  id: slot.id.replace('inventorySummaryFile', 'inventoryManualFile'),
+  title: `${slot.title}手工`
+}));
 
 const FIRST_MILE_DATABASE_SLOTS = [
   { id: 'firstMileData1', title: '张婷婷头程数据', fields: [], firstMile: true },
@@ -3856,7 +3864,7 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, act
       </div>
       <div className="diagnostic-group-heading inventory-diagnostic-heading">
         <div><span className="section-kicker">INVENTORY DATA</span><h3>库存汇总数据诊断</h3></div>
-        <span className="section-count">直接抓取库存汇总文件库无法完成维度映射的记录</span>
+        <span className="section-count">直接抓取底表文件无法完成维度映射的记录</span>
       </div>
       <section className="metric-grid inventory-diagnostic-metrics">
         <MetricCard label="待维护问题" value={numberValue(inventoryQuality.issueRows).toLocaleString()} />
@@ -6675,7 +6683,8 @@ function App() {
         {shouldMount('inventorySummary') && <PagePane page="inventorySummary" activeTab={activeTab}><InventorySummary token={token} active={activeTab === 'inventorySummary'} /></PagePane>}
         {shouldMount('inventoryRisk') && <PagePane page="inventoryRisk" activeTab={activeTab}><InventoryRiskPage token={token} active={activeTab === 'inventoryRisk'} /></PagePane>}
         {shouldMount('inventoryPurchase') && <PagePane page="inventoryPurchase" activeTab={activeTab}><InventoryPurchaseFilePage token={token} active={activeTab === 'inventoryPurchase'} /></PagePane>}
-        {shouldMount('inventorySummaryLibrary') && <PagePane page="inventorySummaryLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="库存汇总文件库" slots={INVENTORY_SUMMARY_LIBRARY_SLOTS} gridColumns={4} onDataApplied={refreshCrossBorderData} /></PagePane>}
+        {shouldMount('inventorySummaryLibrary') && <PagePane page="inventorySummaryLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="底表文件" slots={INVENTORY_SUMMARY_LIBRARY_SLOTS} gridColumns={4} onDataApplied={refreshCrossBorderData} /></PagePane>}
+        {shouldMount('inventoryManualLibrary') && <PagePane page="inventoryManualLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="手工表库" slots={INVENTORY_MANUAL_LIBRARY_SLOTS} gridColumns={4} /></PagePane>}
         {shouldMount('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><Dashboard rows={demands} title="运营看板-未交付" filterKey="operationBoard" currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
         {shouldMount('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}

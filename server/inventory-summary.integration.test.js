@@ -384,7 +384,7 @@ test('manual inventory reconciliation compares business unit and material by cat
   assert.equal(result.manualReconciliation.unavailableFiles.length, 0);
 });
 
-test('manual inventory reconciliation treats warehouse-grain differences as informational when source totals match', () => {
+test('manual inventory reconciliation does not report warehouse-grain differences when source totals match', () => {
   const rowsBySlot = new Map([
     ['productCategory', [{ materialCode: 'M1', sku: 'SKU-1', materialName: '成品一', productLine: '产品线A', productSeries: '系列A', productType: '全新品', pretaxPrice: '10' }]],
     ['spare1', [
@@ -428,7 +428,7 @@ test('manual inventory reconciliation treats warehouse-grain differences as info
   });
   assert.equal(fbmRows.length, 3);
   assert.ok(fbmRows.every((row) => row.status === '无差异'));
-  assert.ok(fbmRows.every((row) => row.reason === '仓库明细口径不同，数量无差异'));
+  assert.ok(fbmRows.every((row) => row.reason === '无差异'));
 });
 
 test('manual inventory reconciliation marks an unapplied side as unavailable instead of zero difference', () => {

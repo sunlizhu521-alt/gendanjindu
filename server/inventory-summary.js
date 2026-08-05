@@ -1220,7 +1220,7 @@ function buildInventoryManualReconciliation({
             const matchingIssues = anomalyIndex.get(combinedKey(config.sourceType, businessUnit, materialCode)) || [];
             if (sourceTotalsMatch && differenceQty !== 0) {
               status = '无差异';
-              reason = '仓库明细口径不同，数量无差异';
+              reason = '无差异';
             } else if (status === '无差异') reason = '无差异';
             else if (systemQty !== 0 && manualQty === 0) reason = '手工表缺少该仓库物料';
             else if (systemQty === 0 && manualQty !== 0 && matchingIssues.length) reason = `系统维度或过滤规则未计入：${[...new Set(matchingIssues)].join('；')}`;

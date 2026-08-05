@@ -15,6 +15,8 @@ test('生产跟进按采购订单供应商独立分组并支持供应家数筛�
   );
   assert.match(progressSource, /groupBy=\{\(row\) => progressSupplierName\(row\)\}/);
   assert.match(progressSource, /progressSupplierName\(row\)/);
+  assert.doesNotMatch(progressSource, /\bunique\(clearFilterRows/);
+  assert.match(progressSource, /uniqueProgressValues\(clearFilterRows/);
   assert.match(appSource, /<MultiSelectFilter label="是否多家供应" allLabel="全部供应家数"/);
   assert.match(appSource, /filters\.supplierCount\.includes\(supplyCount\)/);
   assert.match(appSource, /supplierCounts:[\s\S]*?sort\(\(left, right\) => left - right\)[\s\S]*?map\(supplierCountLabel\)/);

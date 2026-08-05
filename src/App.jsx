@@ -380,6 +380,11 @@ function supplierCountLabel(value) {
   return `${count}家供应`;
 }
 
+function uniqueProgressValues(values) {
+  return [...new Set(values.map(normalize).filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
+}
+
 const FILTER_CACHE_PREFIX = 'gendanjindu:filters:';
 
 function useSessionFilters(cacheKey, initialFilters) {
@@ -3363,7 +3368,6 @@ function clearInvalidFilterValues(filters, optionMap) {
 
 function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
   const [filters, setFilters] = useSessionFilters(cacheKey, { keyword: '', month: '', supplier: '', supplierCount: [], purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
-  const unique = (values) => [...new Set(values.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'zh-Hans-CN'));
   const matchesFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
     const displaySupplier = progressSupplierName(row);
@@ -3383,17 +3387,17 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
   const options = useMemo(() => {
     const rowsFor = (field) => rows.filter((row) => matchesFilters(row, field));
     return {
-      months: unique(rowsFor('month').map((row) => row.month)),
-      suppliers: unique(rowsFor('supplier').map((row) => progressSupplierName(row))),
+      months: uniqueProgressValues(rowsFor('month').map((row) => row.month)),
+      suppliers: uniqueProgressValues(rowsFor('supplier').map((row) => progressSupplierName(row))),
       supplierCounts: [...new Set(rowsFor('supplierCount').map((row) => Math.max(0, Math.trunc(numberValue(row.supplierCount)))))]
         .sort((left, right) => left - right)
         .map(supplierCountLabel),
-      purchaseOrgs: unique(rowsFor('purchaseOrg').map((row) => row.purchaseOrg)),
-      businessUnits: unique(rowsFor('businessUnit').map((row) => purchaseTrackingBusinessUnit(row.businessUnit))),
-      productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
-      series: unique(rowsFor('series').map((row) => row.productSeries)),
-      purchaseGroups: unique(rowsFor('purchaseGroup').map((row) => row.purchaseGroup)),
-      purchaseOwners: unique(rowsFor('purchaseOwner').map((row) => row.purchaseOwner))
+      purchaseOrgs: uniqueProgressValues(rowsFor('purchaseOrg').map((row) => row.purchaseOrg)),
+      businessUnits: uniqueProgressValues(rowsFor('businessUnit').map((row) => purchaseTrackingBusinessUnit(row.businessUnit))),
+      productLines: uniqueProgressValues(rowsFor('productLine').map((row) => row.productLine)),
+      series: uniqueProgressValues(rowsFor('series').map((row) => row.productSeries)),
+      purchaseGroups: uniqueProgressValues(rowsFor('purchaseGroup').map((row) => row.purchaseGroup)),
+      purchaseOwners: uniqueProgressValues(rowsFor('purchaseOwner').map((row) => row.purchaseOwner))
     };
   }, [rows, filters]);
   useEffect(() => {
@@ -5263,10 +5267,10 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
     && (omit === 'productSeries' || clearFilters.productSeries.length === 0 || clearFilters.productSeries.includes(row.productSeries))
   ));
   const clearOptions = useMemo(() => ({
-    purchaseOwners: unique(clearFilterRows('purchaseOwners').map((row) => row.purchaseOwner)),
-    suppliers: unique(clearFilterRows('suppliers').map((row) => progressSupplierName(row))),
-    productLines: unique(clearFilterRows('productLines').map((row) => row.productLine)),
-    productSeries: unique(clearFilterRows('productSeries').map((row) => row.productSeries))
+    purchaseOwners: uniqueProgressValues(clearFilterRows('purchaseOwners').map((row) => row.purchaseOwner)),
+    suppliers: uniqueProgressValues(clearFilterRows('suppliers').map((row) => progressSupplierName(row))),
+    productLines: uniqueProgressValues(clearFilterRows('productLines').map((row) => row.productLine)),
+    productSeries: uniqueProgressValues(clearFilterRows('productSeries').map((row) => row.productSeries))
   }), [trackableRows, clearFilters]);
   const hasClearFilter = Object.values(clearFilters).some((values) => values.length > 0);
 

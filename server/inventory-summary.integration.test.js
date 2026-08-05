@@ -402,8 +402,12 @@ test('inventory summary separates unsellable warehouse stock without losing norm
         productSeries: 'Series A', productType: '全新品', pretaxPrice: '10'
       },
       {
-        materialCode: 'M2', sku: 'SKU-2', materialName: 'Spare Part', productLine: '其他/配件',
+        materialCode: 'M2', sku: 'SKU-RE-2', materialName: 'Spare Part', productLine: '其他/配件',
         productSeries: 'Series B', productType: '其他/配件', pretaxPrice: '20'
+      },
+      {
+        materialCode: 'M3', sku: 'SKU-K1-3', materialName: 'Finished Return', productLine: 'Line A',
+        productSeries: 'Series C', productType: '全新品', pretaxPrice: '30'
       }
     ]],
     ['spare1', [
@@ -438,6 +442,14 @@ test('inventory summary separates unsellable warehouse stock without losing norm
       {
         subject: '主体一', warehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境',
         materialCode: 'M2', businessUnit: '国内事业部'
+      },
+      {
+        subject: '主体一', warehouseName: '浙江仓（退货）',
+        materialCode: 'M2', businessUnit: '国内事业部'
+      },
+      {
+        subject: '主体一', warehouseName: '浙江仓（退货）',
+        materialCode: 'M3', businessUnit: '国内事业部'
       }
     ]],
     ['inventorySummaryFile1', [
@@ -447,7 +459,9 @@ test('inventory summary separates unsellable warehouse stock without losing norm
     ['inventorySummaryFile2', [
       { identifier: 'M1', warehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境', actualTotalQty: '20' },
       { identifier: 'M1', warehouseName: '浙江仓（退货）', actualTotalQty: '7' },
-      { identifier: 'M2', warehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境', actualTotalQty: '6' }
+      { identifier: 'M2', warehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境', actualTotalQty: '6' },
+      { identifier: 'M2', warehouseName: '浙江仓（退货）', actualTotalQty: '12' },
+      { identifier: 'M3', warehouseName: '浙江仓（退货）', actualTotalQty: '13' }
     ]],
     ['inventorySummaryFile3', [
       { sku: 'SKU-1', warehouseName: 'WFS-RETURN', totalInventoryQty: '30' },
@@ -485,6 +499,7 @@ test('inventory summary separates unsellable warehouse stock without losing norm
   });
   const finished = result.rows.find((row) => row.matchKey === '国内事业部+M1');
   const sparePart = result.rows.find((row) => row.matchKey === '国内事业部+M2');
+  const k1Finished = result.rows.find((row) => row.matchKey === '国内事业部+M3');
   const unsellableSegments = finished?.inventorySegmentBreakdown.filter((row) => row.productType === '不可售') || [];
   const unsellableTotal = (field) => unsellableSegments.reduce((sum, row) => sum + Number(row[field] || 0), 0);
   const finishedSegments = finished?.inventorySegmentBreakdown.filter((row) => row.productType === '成品') || [];
@@ -517,8 +532,17 @@ test('inventory summary separates unsellable warehouse stock without losing norm
     wfs: sparePartUnsellable.reduce((sum, row) => sum + Number(row.wfsInventoryQty || 0), 0),
     domestic: sparePartUnsellable.reduce((sum, row) => sum + Number(row.domesticMainInventoryQty || 0), 0)
   }, { fba: 5, fbm: 6, wfs: 7, domestic: 8 });
-  assert.equal(sparePart?.inventoryQty, 26);
+  assert.equal(sparePart?.inventoryQty, 38);
+  assert.equal(
+    sparePart?.inventorySegmentBreakdown
+      .filter((row) => row.productType === '成品')
+      .reduce((sum, row) => sum + Number(row.fbmInventoryQty || 0), 0),
+    12
+  );
   assert.equal(sparePart?.inventorySegmentBreakdown.some((row) => row.productType === '配件'), false);
+  assert.equal(k1Finished?.inventoryQty, 13);
+  assert.equal(k1Finished?.inventorySegmentBreakdown[0]?.productType, '成品');
+  assert.equal(k1Finished?.inventorySegmentBreakdown.some((row) => row.productType === '不可售'), false);
 });
 
 test('销售区域随商品分类进入汇总，未知区域进入维度缺失而2B区域不报错', () => {

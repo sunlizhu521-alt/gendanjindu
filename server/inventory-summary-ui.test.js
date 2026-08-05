@@ -64,6 +64,7 @@ test('销售与库存看板展示仅数量的来源校准和遗漏重叠提醒',
   assert.match(reconciliation, /仅校验数量/);
   assert.doesNotMatch(reconciliation, /货值|金额|元/);
   assert.match(client, /function InventoryManualReconciliation/);
+  assert.match(client, /const \[category, setCategory\] = useState\('成品'\)/);
   assert.match(client, /<h2>与手工表库存核对<\/h2>/);
   assert.match(client, /手工库存核对加载失败/);
   assert.match(client, /data\?\.manualReconciliation/);

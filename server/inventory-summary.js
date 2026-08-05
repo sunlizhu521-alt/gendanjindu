@@ -344,11 +344,12 @@ function hasWarehouseCodePrefix(value, prefixes = ['555', '777']) {
 function isUnsellableWarehouse(value) {
   const warehouse = normalizedWarehouse(value);
   if (hasWarehouseCodePrefix(warehouse)) return true;
-  return warehouse.replace(/[()（）]/g, '').includes('待退货仓');
+  return warehouse.replace(/[()（）]/g, '').includes('退货');
 }
 
-function isFbmReturnWarehouse(value) {
-  return normalizedWarehouse(value).replace(/[()（）]/g, '').includes('退货');
+function isReturnFinishedSku(product) {
+  const sku = text(product?.sku).normalize('NFKC').replace(/\s+/g, '').toUpperCase();
+  return sku.includes('RE') || sku.includes('K1');
 }
 
 function unsellableInventoryType(matchesWarehouse) {
@@ -356,9 +357,8 @@ function unsellableInventoryType(matchesWarehouse) {
 }
 
 function inventoryFactProductType(product, ...warehouses) {
-  if (unsellableInventoryType(warehouses.some(isUnsellableWarehouse))) {
-    return '不可售';
-  }
+  if (warehouses.some((warehouse) => hasWarehouseCodePrefix(warehouse))) return '不可售';
+  if (warehouses.some(isUnsellableWarehouse)) return isReturnFinishedSku(product) ? '成品' : '不可售';
   return baseInventoryProductType(product);
 }
 
@@ -1756,10 +1756,10 @@ export function buildInventorySummaryModel({
       inventorySubject: warehouseResult.subject,
       inventoryWarehouseName: warehouseResult.kingdeeWarehouseName,
       reconciliationId,
-      inventoryProductType: unsellableInventoryType(
-        isUnsellableWarehouse(warehouseResult.kingdeeWarehouseName)
-          || isUnsellableWarehouse(raw.warehouseName)
-          || isFbmReturnWarehouse(raw.warehouseName)
+      inventoryProductType: inventoryFactProductType(
+        product.product,
+        warehouseResult.kingdeeWarehouseName,
+        raw.warehouseName
       ),
       quantities: { fbmInventoryQty: qty, fbmInventoryValue: qty * product.product.pretaxPrice },
       sourceContext: {
@@ -1879,7 +1879,7 @@ export function buildInventorySummaryModel({
         }
       : resolveWarehouseBusinessUnit(raw.subject, raw.warehouseName, materialCode);
     const directUnsellableWarehouse = hasWarehouseCodePrefix(raw.warehouseName);
-    const directUnsellableProduct = Boolean(unsellableInventoryType(directUnsellableWarehouse));
+    const directUnsellableProduct = directUnsellableWarehouse;
     const inventoryBusinessUnit = warehouseResult.businessUnit;
     if (!inventoryBusinessUnit) {
       addAnomaly('国内在库', raw.materialCode, warehouseResult.issue || '事业部映射缺失', qty, 0, {
@@ -1903,8 +1903,10 @@ export function buildInventorySummaryModel({
       inventorySubject: text(raw.subject),
       inventoryWarehouseName: text(raw.warehouseName),
       reconciliationId,
-      inventoryProductType: unsellableInventoryType(
-        isUnsellableWarehouse(warehouseResult.kingdeeWarehouseName) || directUnsellableWarehouse
+      inventoryProductType: inventoryFactProductType(
+        product.product,
+        warehouseResult.kingdeeWarehouseName,
+        raw.warehouseName
       ),
       quantities: { domesticMainInventoryQty: qty, domesticMainInventoryValue: qty * product.product.pretaxPrice },
       sourceContext: {

@@ -1837,7 +1837,7 @@ function InventoryManualReconciliation({ token, onBack }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const reconciliation = data?.manualReconciliation;
-  const [category, setCategory] = useState('成品+配件');
+  const [category, setCategory] = useState('成品');
   const [filters, setFilters] = useState({ businessUnits: [], productLines: [], productSeries: [], sources: [], statuses: [], keyword: '' });
   const [expandedRows, setExpandedRows] = useState(new Set());
   const [currentPage, setCurrentPage] = useState(1);

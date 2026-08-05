@@ -5118,7 +5118,6 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, selected = fals
     preparedNotStartedQty: displayQty(row.preparedNotStartedQty),
     inProductionQty: displayQty(row.inProductionQty),
     finishedQty: displayQty(row.finishedQty),
-    shippedQty: displayQty(row.shippedQty),
     productionDeliveryDate: row.productionDeliveryDate || '',
     unproducedEstimatedDeliveryDate: row.unproducedEstimatedDeliveryDate || '',
     fulfillmentStatus: row.fulfillmentStatus || '',
@@ -5155,7 +5154,6 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, selected = fals
       preparedNotStartedQty: numberValue(nextValues.preparedNotStartedQty),
       inProductionQty: numberValue(nextValues.inProductionQty),
       finishedQty: numberValue(nextValues.finishedQty),
-      shippedQty: numberValue(nextValues.shippedQty),
       productionDeliveryDate: nextValues.productionDeliveryDate || '',
       unproducedEstimatedDeliveryDate: nextValues.unproducedEstimatedDeliveryDate || '',
       fulfillmentStatus: nextValues.fulfillmentStatus || '',
@@ -5171,7 +5169,6 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, selected = fals
       preparedNotStartedQty: displayQty(row.preparedNotStartedQty),
       inProductionQty: displayQty(row.inProductionQty),
       finishedQty: displayQty(row.finishedQty),
-      shippedQty: displayQty(row.shippedQty),
       productionDeliveryDate: row.productionDeliveryDate || '',
       unproducedEstimatedDeliveryDate: row.unproducedEstimatedDeliveryDate || '',
       fulfillmentStatus: row.fulfillmentStatus || '',
@@ -5183,7 +5180,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, selected = fals
     setQuantityEdited(false);
     onDraftChange?.(row.demandKey, toPayload(nextValues, row.progressAdjustmentRequired));
   }, [
-    row.demandKey, row.unpreparedQty, row.preparedNotStartedQty, row.inProductionQty, row.finishedQty, row.shippedQty,
+    row.demandKey, row.unpreparedQty, row.preparedNotStartedQty, row.inProductionQty, row.finishedQty,
     row.productionDeliveryDate, row.unproducedEstimatedDeliveryDate, row.fulfillmentStatus,
     row.unfulfilledReason, row.reasonDetail, row.remark
   ]);
@@ -5269,6 +5266,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, selected = fals
     row.orderCreator,
     row.documentStatus,
     row.purchaseOrg,
+    row.supplier || '未填写',
     progressSupplierName(row),
     row.businessUnit,
     <TightCell value={row.productLine} />,
@@ -5278,7 +5276,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, selected = fals
     row.materialName || row.materialCode,
     numberValue(row.operationStockQty),
     row.remainingInboundQty,
-    quantityInput('shippedQty', { readOnly: true }),
+    <span className="progress-readonly-qty" title="来自采购订单累计入库数量，不能手动修改">{numberValue(row.shippedQty).toLocaleString('zh-CN')}</span>,
     quantityInput('unpreparedQty', { readOnly: true, value: displayQty(unpreparedQty) }),
     quantityInput('preparedNotStartedQty'),
     quantityInput('inProductionQty'),
@@ -5455,7 +5453,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
       setExportProgress(35);
       setMessage('正在整理生产跟进字段，导出进度 35%。');
       const headers = [
-        '采购组', '采购下单人', '月份', '采购订单号', '创建人', '单据状态', '采购组织', '供应商简称',
+        '采购组', '采购下单人', '月份', '采购订单号', '创建人', '单据状态', '采购组织', '供应商', '供应商简称',
         '事业部', '产品线', '系列', '物料编码', 'SKU', '物料名称',
         '运营备货数量', '未交付数量', '已发货数量',
         '未备料未生产', '已备料未生产', '生产中产品', '完工未发产品',
@@ -5486,6 +5484,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
             row.orderCreator,
             row.documentStatus,
             row.purchaseOrg,
+            row.supplier || '未填写',
             progressSupplierName(row),
             row.businessUnit,
             row.productLine,
@@ -5495,7 +5494,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
             row.materialName || row.materialCode,
             numberValue(row.operationStockQty),
             numberValue(row.remainingInboundQty),
-            numberValue(draft.shippedQty ?? row.shippedQty),
+            numberValue(row.shippedQty),
             numberValue(draftUnprepared),
             numberValue(draftPrepared),
             numberValue(draftInProduction),
@@ -5612,7 +5611,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
             />
             <span>全选</span>
           </label>
-        ), '采购组', '采购下单人', '月份', '采购订单号', '创建人', '单据状态', '采购组织', '供应商简称',
+        ), '采购组', '采购下单人', '月份', '采购订单号', '创建人', '单据状态', '采购组织', '供应商', '供应商简称',
         '事业部', '产品线', '系列', '物料编码', 'SKU', '物料名称',
         '运营备货数量', '未交付数量', '已发货数量',
         '未备料未生产', '已备料未生产', '生产中产品', '完工未发产品',

@@ -2838,8 +2838,19 @@ function uniqueOrderDates(rows) {
   return uniqueDelimitedValues([...rows].sort(compareOaRows).map(rawOrderDate));
 }
 
+function contractDateOnly(value) {
+  const text = normalize(value);
+  if (!text) return '';
+  const matched = text.match(/^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})/);
+  if (matched) {
+    const p = (part) => String(part).padStart(2, '0');
+    return `${matched[1]}-${p(matched[2])}-${p(matched[3])}`;
+  }
+  return dateOnly(text);
+}
+
 function uniqueDeliveryDates(rows) {
-  return [...new Set(rows.map((row) => normalize(row.deliveryDate || row.delivery_date)).filter(Boolean))]
+  return [...new Set(rows.map((row) => contractDateOnly(row.deliveryDate || row.delivery_date)).filter(Boolean))]
     .sort((left, right) => dateSortValue(left) - dateSortValue(right) || left.localeCompare(right, 'zh-Hans-CN'))
     .join('、');
 }
@@ -4370,11 +4381,7 @@ app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'
   if (!canEditDemand(req.user, { ...demand, order_creator: orderCreator, purchase_owner: enriched.purchaseOwner })) {
     return res.status(403).json({ error: '没有该供应商物料的刷新权限' });
   }
-  const clientShipped = numberValue(req.body.shippedQty);
-  const dbShipped = numberValue(demand.tracking_inbound_qty);
-  if (Math.abs(clientShipped - dbShipped) > 0.000001) {
-    return res.status(409).json({ error: '采购订单已更新，请刷新页面后重新提交' });
-  }
+  const purchaseOrderInboundQty = numberValue(demand.tracking_inbound_qty);
   const remainingInboundQty = Math.max(numberValue(demand.tracking_remaining_qty), 0);
   const preparedNotStarted = progressQuantityValue(req.body.preparedNotStartedQty, progress.prepared_not_started_qty, '已备料未生产');
   const inProduction = progressQuantityValue(req.body.inProductionQty, progress.in_production_qty, '生产中产品');
@@ -4397,7 +4404,7 @@ app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'
     preparedNotStarted,
     inProduction,
     finished,
-    shipped: clientShipped,
+    shipped: purchaseOrderInboundQty,
     productionDeliveryDate: progressDateValue(req.body.productionDeliveryDate ?? progress.production_delivery_date, '生产中交付时间'),
     unproducedEstimatedDeliveryDate: progressDateValue(req.body.unproducedEstimatedDeliveryDate ?? progress.unproduced_estimated_delivery_date, '未生产预计交付时间'),
     fulfillmentStatus,

@@ -2050,11 +2050,11 @@ test('inventory summary and domestic board use complete source models and enforc
    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
   database.run(
     kingdeeOrderSql,
-    ['order-june', 'batch-june', 'active-june', '2026-06', '国内事业部', 'Supplier A', 'M1', 1200, '2026-09-30', '薛文乐7月柜1', '未关闭', '{}']
+    ['order-june', 'batch-june', 'active-june', '2026-06', '国内事业部', 'Supplier A', 'M1', 1200, '2026-09-30 15:30:00', '薛文乐7月柜1', '未关闭', '{}']
   );
   database.run(
     kingdeeOrderSql,
-    ['order-june-date-2', 'batch-june', 'active-june', '2026-06', '国内事业部', 'Supplier A', 'M1', 0, '2026-09-15', '薛文乐7月柜1', '未关闭', '{}']
+    ['order-june-date-2', 'batch-june', 'active-june', '2026-06', '国内事业部', 'Supplier A', 'M1', 0, '2026/09/15 08:00:00', '薛文乐7月柜1', '未关闭', '{}']
   );
 
   const dimensionSql = `INSERT INTO dimension_files
@@ -2547,13 +2547,14 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(allocationRow?.orderCreator, '陈晨');
 
     const progressEndpoint = `http://127.0.0.1:${port}/api/progress/${encodeURIComponent(m1Demand.demandKey)}`;
-    const staleProgressResponse = await fetch(progressEndpoint, {
+    const clientShippedOverrideResponse = await fetch(progressEndpoint, {
       method: 'PATCH',
       headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
       body: JSON.stringify({ inProductionQty: 600, finishedQty: 400, shippedQty: 199, remark: 'stale' })
     });
-    assert.equal(staleProgressResponse.status, 409);
-    assert.deepEqual(await staleProgressResponse.json(), { error: '采购订单已更新，请刷新页面后重新提交' });
+    assert.equal(clientShippedOverrideResponse.status, 200);
+    const clientShippedOverrideRow = (await clientShippedOverrideResponse.json()).rows.find((row) => row.demandKey === m1Demand.demandKey);
+    assert.equal(clientShippedOverrideRow?.shippedQty, 200);
 
     const invalidProgressResponse = await fetch(progressEndpoint, {
       method: 'PATCH',

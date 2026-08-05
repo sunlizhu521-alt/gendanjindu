@@ -45,6 +45,16 @@ test('生产跟进四阶段、履约字段和导出状态完整呈现', () => {
   assert.match(progressSource, /待人工调整/);
   assert.match(progressSource, /导出中 \$\{exportProgress\}%/);
   assert.match(progressSource, /writeStyledExcelFile/);
+  assert.match(progressSource, /'供应商', '供应商简称'/);
+  assert.match(progressSource, /row\.supplier \|\| '未填写',[\s\S]*?progressSupplierName\(row\)/);
+  assert.match(progressSource, /来自采购订单累计入库数量，不能手动修改/);
+  assert.doesNotMatch(progressSource, /shippedQty: numberValue\(nextValues\.shippedQty\)/);
+  assert.doesNotMatch(progressSource, /quantityInput\('shippedQty'/);
+  assert.match(serverSource, /const purchaseOrderInboundQty = numberValue\(demand\.tracking_inbound_qty\)/);
+  assert.match(serverSource, /shipped: purchaseOrderInboundQty/);
+  assert.doesNotMatch(serverSource, /numberValue\(req\.body\.shippedQty\)/);
+  assert.match(serverSource, /function contractDateOnly\(value\)/);
+  assert.match(serverSource, /contractDateOnly\(row\.deliveryDate \|\| row\.delivery_date\)/);
 });
 
 test('采购未交付减少时保留四阶段原值并交由人工调整', () => {
@@ -62,5 +72,6 @@ test('生产跟进表格使用清晰竖线和交替行色', () => {
   assert.match(styleSource, /\.progress-table th,[\s\S]*?border-right: 1px solid #d5dee9/);
   assert.match(styleSource, /\.progress-table tbody tr:nth-child\(odd\):not\(\.progress-row-adjustment\) > td/);
   assert.match(styleSource, /\.progress-table tbody tr:nth-child\(even\):not\(\.progress-row-adjustment\) > td/);
+  assert.match(styleSource, /\.progress-table tbody tr:nth-child\(even\):not\(\.progress-row-adjustment\) input:not\(\[type="checkbox"\]\)/);
   assert.match(styleSource, /\.progress-row-adjustment > td[\s\S]*?background: #fff1f2 !important/);
 });

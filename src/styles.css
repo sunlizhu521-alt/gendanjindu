@@ -3976,11 +3976,26 @@ th {
 }
 
 .progress-table tbody tr:nth-child(even):not(.progress-row-adjustment) > td {
-  background: #f1f6fb;
+  background: #edf4fa;
 }
 
 .progress-table tbody tr:not(.progress-row-adjustment):hover > td {
   background: #e8f2fb;
+}
+
+.progress-table tbody tr:nth-child(even):not(.progress-row-adjustment) input:not([type="checkbox"]),
+.progress-table tbody tr:nth-child(even):not(.progress-row-adjustment) select,
+.progress-table tbody tr:nth-child(even):not(.progress-row-adjustment) textarea {
+  background: #f7fbff;
+}
+
+.progress-readonly-qty {
+  display: inline-block;
+  min-width: 72px;
+  color: #334155;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: center;
 }
 
 .progress-sticky-top {

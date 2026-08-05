@@ -336,6 +336,15 @@ function normalizedWarehouse(value) {
   return text(value).normalize('NFKC').replace(/\s+/g, '').toLowerCase();
 }
 
+const FORCED_UNSELLABLE_WAREHOUSE_NAMES = new Set([
+  '888-G-采购成品仓虚拟仓-跨境医疗器械'
+].map(normalizedWarehouse));
+const FORCED_UNSELLABLE_WAREHOUSE_KEYWORDS = [
+  '配件仓',
+  '塑件车间仓库',
+  '综合线组装仓库'
+].map(normalizedWarehouse);
+
 function hasWarehouseCodePrefix(value, prefixes = ['333', '555', '777']) {
   const warehouse = normalizedWarehouse(value);
   return prefixes.some((prefix) => new RegExp(`^${prefix}(?:[-/\\\\])`).test(warehouse));
@@ -345,7 +354,9 @@ function isForcedUnsellableWarehouse(value) {
   const warehouse = normalizedWarehouse(value);
   return hasWarehouseCodePrefix(warehouse)
     || warehouse.includes('023')
-    || warehouse.includes('(杭州)电子成品仓');
+    || warehouse.includes('(杭州)电子成品仓')
+    || FORCED_UNSELLABLE_WAREHOUSE_NAMES.has(warehouse)
+    || FORCED_UNSELLABLE_WAREHOUSE_KEYWORDS.some((keyword) => warehouse.includes(keyword));
 }
 
 function isUnsellableWarehouse(value) {

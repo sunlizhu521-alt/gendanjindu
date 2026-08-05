@@ -469,6 +469,10 @@ test('inventory summary separates unsellable warehouse stock without losing norm
       '777-R/售后配件仓/瑞朗德仓/医疗器械/国内',
       '333-M/不可售仓/杭州',
       '（杭州）电子成品仓',
+      '888-G-采购成品仓虚拟仓-跨境医疗器械',
+      '采购配件仓',
+      '塑件车间仓库',
+      '综合线组装仓库',
       '001-M/待（退货）仓/瑞朗德仓/国内医疗器械',
       '浙江仓（退货）',
       '海外023临时仓',
@@ -484,6 +488,10 @@ test('inventory summary separates unsellable warehouse stock without losing norm
         '777-R/售后配件仓/瑞朗德仓/医疗器械/国内',
         '333-M/不可售仓/杭州',
         '（杭州）电子成品仓',
+        '888-G-采购成品仓虚拟仓-跨境医疗器械',
+        '采购配件仓',
+        '塑件车间仓库',
+        '综合线组装仓库',
         '001-M/待（退货）仓/瑞朗德仓/国内医疗器械',
         '浙江仓（退货）',
         '海外023临时仓',
@@ -526,6 +534,10 @@ test('inventory summary separates unsellable warehouse stock without losing norm
       { identifier: 'M2', warehouseName: '海外023临时仓', actualTotalQty: '15' },
       { identifier: 'M1', warehouseName: '333-M/不可售仓/杭州', actualTotalQty: '9' },
       { identifier: 'M1', warehouseName: '（杭州）电子成品仓', actualTotalQty: '11' },
+      { identifier: 'M1', warehouseName: '888-G-采购成品仓虚拟仓-跨境医疗器械', actualTotalQty: '3' },
+      { identifier: 'M1', warehouseName: '采购配件仓', actualTotalQty: '4' },
+      { identifier: 'M1', warehouseName: '塑件车间仓库', actualTotalQty: '5' },
+      { identifier: 'M1', warehouseName: '综合线组装仓库', actualTotalQty: '6' },
       { identifier: 'M3', warehouseName: '浙江仓（退货）', actualTotalQty: '13' }
     ]],
     ['inventorySummaryFile3', [
@@ -579,7 +591,7 @@ test('inventory summary separates unsellable warehouse stock without losing norm
 
   assert.equal(finished?.productType, '全新品');
   assert.equal(finished?.baseProductType, '成品');
-  assert.equal(finished?.inventoryQty, 187);
+  assert.equal(finished?.inventoryQty, 205);
   assert.equal(segmentedQty, finished?.inventoryQty);
   assert.deepEqual({
     fba: unsellableTotal('fbaInventoryQty'),
@@ -587,7 +599,7 @@ test('inventory summary separates unsellable warehouse stock without losing norm
     wfs: unsellableTotal('wfsInventoryQty'),
     domestic: unsellableTotal('domesticMainInventoryQty'),
     fbmTransit: unsellableTotal('fbmTransitQty')
-  }, { fba: 10, fbm: 47, wfs: 30, domestic: 10, fbmTransit: 8 });
+  }, { fba: 10, fbm: 65, wfs: 30, domestic: 10, fbmTransit: 8 });
   assert.equal(finishedSegments.reduce((sum, row) => sum + Number(row.domesticMainInventoryQty || 0), 0), 40);
   assert.equal(finishedSegments.reduce((sum, row) => sum + Number(row.jdInventoryQty || 0), 0), 50);
   assert.equal(sparePart?.baseProductType, '配件');

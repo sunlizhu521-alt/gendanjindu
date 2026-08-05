@@ -3958,7 +3958,7 @@ th {
 }
 
 .progress-table table {
-  min-width: 2400px;
+  min-width: 5200px;
 }
 
 .progress-sticky-top {
@@ -4064,6 +4064,14 @@ th {
 
 .progress-logic-tag.in-production {
   background: #4f7ccf;
+}
+
+.progress-logic-tag.unprepared {
+  background: #e76f51;
+}
+
+.progress-logic-tag.prepared {
+  background: #d89b22;
 }
 
 .progress-logic-tag.finished {
@@ -4229,6 +4237,14 @@ th {
   min-width: 118px;
 }
 
+.stack-total[data-segments="3"] {
+  min-width: 174px;
+}
+
+.stack-total[data-segments="4"] {
+  min-width: 232px;
+}
+
 .stack-fill {
   position: relative;
   display: flex;
@@ -4270,6 +4286,14 @@ th {
 
 .progress-stack-chart .in-production {
   background: #4f7ccf;
+}
+
+.progress-stack-chart .unprepared {
+  background: #e76f51;
+}
+
+.progress-stack-chart .prepared {
+  background: #d89b22;
 }
 
 .progress-stack-chart .finished {
@@ -4618,6 +4642,7 @@ th {
 .ledger-table select,
 .ledger-table textarea,
 .progress-table input,
+.progress-table select,
 .progress-table textarea {
   min-width: 92px;
   padding: 4px 6px;
@@ -4704,6 +4729,47 @@ th {
   gap: 14px;
   min-width: 0;
   align-items: start;
+}
+
+.progress-date-input {
+  width: 132px;
+}
+
+.progress-text-input {
+  min-width: 160px !important;
+}
+
+.progress-contract-date {
+  display: inline-block;
+  min-width: 132px;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.progress-price-missing,
+.progress-adjustment-status {
+  color: #c2410c;
+  font-weight: 700;
+}
+
+.progress-adjustment-ok {
+  color: #15803d;
+  font-weight: 700;
+}
+
+.progress-row-adjustment > td {
+  background: #fff1f2 !important;
+  box-shadow: inset 0 1px 0 #fecdd3, inset 0 -1px 0 #fecdd3;
+}
+
+.progress-export-status {
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .library-grid-three {

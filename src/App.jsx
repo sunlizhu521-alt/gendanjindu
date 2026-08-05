@@ -2778,53 +2778,67 @@ function ProgressStackedChart({ title, rows, groupBy }) {
     const map = new Map();
     rows.forEach((row) => {
       const name = normalize(groupBy(row)) || '未分类';
-      const record = map.get(name) || { name, remainingQty: 0, inProductionQty: 0, finishedQty: 0 };
+      const record = map.get(name) || {
+        name,
+        remainingQty: 0,
+        unpreparedQty: 0,
+        preparedNotStartedQty: 0,
+        inProductionQty: 0,
+        finishedQty: 0
+      };
       record.remainingQty += numberValue(row.remainingInboundQty);
+      record.unpreparedQty += numberValue(row.unpreparedQty);
+      record.preparedNotStartedQty += numberValue(row.preparedNotStartedQty);
       record.inProductionQty += numberValue(row.inProductionQty);
       record.finishedQty += numberValue(row.finishedQty);
       map.set(name, record);
     });
     return [...map.values()]
-      .filter((row) => row.remainingQty > 0 || row.inProductionQty > 0 || row.finishedQty > 0)
+      .filter((row) => row.remainingQty > 0 || row.unpreparedQty > 0 || row.preparedNotStartedQty > 0 || row.inProductionQty > 0 || row.finishedQty > 0)
       .sort((a, b) => b.remainingQty - a.remainingQty)
       .slice(0, 15);
   }, [rows, groupBy]);
-  const maxRemainingQty = Math.max(...chartRows.map((row) => numberValue(row.remainingQty)), 1);
+  const maxDisplayQty = Math.max(...chartRows.map((row) => Math.max(
+    numberValue(row.remainingQty),
+    numberValue(row.unpreparedQty) + numberValue(row.preparedNotStartedQty) + numberValue(row.inProductionQty) + numberValue(row.finishedQty)
+  )), 1);
 
   return (
     <article className="panel progress-stack-chart">
       <div className="chart-title-row">
         <h3>{title}</h3>
-        <span className="chart-legend"><i className="in-production" />在产品 <i className="finished" />完工产品</span>
+        <span className="chart-legend">
+          <i className="unprepared" />未备料
+          <i className="prepared" />已备料
+          <i className="in-production" />生产中
+          <i className="finished" />完工未发
+        </span>
       </div>
       <div className="stack-list">
         {chartRows.length === 0 ? (
           <p className="empty-chart">暂无数据</p>
         ) : chartRows.map((row) => {
           const remainingQty = numberValue(row.remainingQty);
-          const chartMax = Math.max(maxRemainingQty, 1);
-          const rowTotal = Math.max(remainingQty, 1);
-          const barPct = Math.max(Math.min(remainingQty / chartMax * 100, 100), 8);
-          const inProductionPct = Math.max(Math.min(numberValue(row.inProductionQty) / rowTotal * 100, 100), 0);
-          const finishedPct = Math.max(Math.min(numberValue(row.finishedQty) / rowTotal * 100, 100 - inProductionPct), 0);
-          const inProductionValue = numberValue(row.inProductionQty);
-          const finishedValue = numberValue(row.finishedQty);
-          const visibleSegments = [inProductionValue, finishedValue].filter((value) => value > 0).length;
+          const segments = [
+            ['unprepared', numberValue(row.unpreparedQty)],
+            ['prepared', numberValue(row.preparedNotStartedQty)],
+            ['in-production', numberValue(row.inProductionQty)],
+            ['finished', numberValue(row.finishedQty)]
+          ];
+          const segmentTotal = segments.reduce((sum, [, value]) => sum + value, 0);
+          const displayQty = Math.max(remainingQty, segmentTotal);
+          const barPct = Math.max(Math.min(displayQty / maxDisplayQty * 100, 100), 8);
+          const visibleSegments = segments.filter(([, value]) => value > 0).length;
           return (
             <div key={row.name} className="stack-row">
               <span title={row.name}>{row.name}</span>
-              <div className="stack-track" title={`未交付 ${row.remainingQty}，在产品 ${row.inProductionQty}，完工产品 ${row.finishedQty}`}>
+              <div className="stack-track" title={`未交付 ${row.remainingQty}，未备料 ${row.unpreparedQty}，已备料 ${row.preparedNotStartedQty}，生产中 ${row.inProductionQty}，完工未发 ${row.finishedQty}`}>
                 <div className="stack-total" data-segments={visibleSegments} style={{ width: `${barPct}%` }}>
-                  {inProductionValue > 0 && (
-                    <div className="stack-fill in-production" style={{ width: `${inProductionPct}%` }}>
-                      <b>{inProductionValue.toLocaleString()}</b>
+                  {segments.map(([className, value]) => value > 0 && (
+                    <div key={className} className={`stack-fill ${className}`} style={{ width: `${value / Math.max(segmentTotal, 1) * 100}%` }}>
+                      <b>{value.toLocaleString()}</b>
                     </div>
-                  )}
-                  {finishedValue > 0 && (
-                    <div className="stack-fill finished" style={{ width: `${finishedPct}%` }}>
-                      <b>{finishedValue.toLocaleString()}</b>
-                    </div>
-                  )}
+                  ))}
                 </div>
               </div>
               <strong className="stack-summary">{remainingQty.toLocaleString()}</strong>
@@ -5098,77 +5112,105 @@ function KingdeeImport({ token, user, reloadDemands, setMessage }) {
 }
 
 function ProgressEditor({ row, token, reloadDemands, setMessage, selected = false, onSelect, onDraftChange }) {
-  const autoQtyKeys = ['inProductionQty', 'finishedQty'];
   const displayQty = (value) => (numberValue(value) ? String(numberValue(value)) : '');
-  const toPayload = (nextValues) => ({
-    inProductionQty: numberValue(nextValues.inProductionQty),
-    finishedQty: numberValue(nextValues.finishedQty),
-    shippedQty: numberValue(nextValues.shippedQty),
-    remark: nextValues.remark || ''
-  });
   const [values, setValues] = useState({
+    unpreparedQty: displayQty(row.unpreparedQty),
+    preparedNotStartedQty: displayQty(row.preparedNotStartedQty),
     inProductionQty: displayQty(row.inProductionQty),
     finishedQty: displayQty(row.finishedQty),
     shippedQty: displayQty(row.shippedQty),
+    productionDeliveryDate: row.productionDeliveryDate || '',
+    unproducedEstimatedDeliveryDate: row.unproducedEstimatedDeliveryDate || '',
+    fulfillmentStatus: row.fulfillmentStatus || '',
+    unfulfilledReason: row.unfulfilledReason || '',
+    reasonDetail: row.reasonDetail || '',
     remark: row.remark || ''
   });
-  const [autoKey, setAutoKey] = useState('');
   const [saving, setSaving] = useState(false);
+  const [quantityEdited, setQuantityEdited] = useState(false);
+
+  const remainingQty = numberValue(row.remainingInboundQty);
+  const manuallyAssignedQty = numberValue(values.preparedNotStartedQty)
+    + numberValue(values.inProductionQty)
+    + numberValue(values.finishedQty);
+  const calculatedUnpreparedQty = remainingQty - manuallyAssignedQty;
+  const invalidQty = calculatedUnpreparedQty < -0.000001;
+  const preserveStoredAllocation = row.progressAdjustmentRequired && !quantityEdited;
+  const unpreparedQty = invalidQty || preserveStoredAllocation
+    ? numberValue(values.unpreparedQty)
+    : Math.max(calculatedUnpreparedQty, 0);
+  const progressGap = remainingQty - unpreparedQty - manuallyAssignedQty;
+  const normalFulfillmentQty = values.fulfillmentStatus === '是' ? remainingQty : 0;
+  const abnormalFulfillmentQty = values.fulfillmentStatus === '否' ? remainingQty : 0;
+  const pretaxPrice = numberValue(row.pretaxPrice);
+
+  const toPayload = (nextValues, preserveUnprepared = false) => {
+    const nextAssignedQty = numberValue(nextValues.preparedNotStartedQty)
+      + numberValue(nextValues.inProductionQty)
+      + numberValue(nextValues.finishedQty);
+    return {
+      unpreparedQty: preserveUnprepared
+        ? numberValue(nextValues.unpreparedQty)
+        : Math.max(remainingQty - nextAssignedQty, 0),
+      preparedNotStartedQty: numberValue(nextValues.preparedNotStartedQty),
+      inProductionQty: numberValue(nextValues.inProductionQty),
+      finishedQty: numberValue(nextValues.finishedQty),
+      shippedQty: numberValue(nextValues.shippedQty),
+      productionDeliveryDate: nextValues.productionDeliveryDate || '',
+      unproducedEstimatedDeliveryDate: nextValues.unproducedEstimatedDeliveryDate || '',
+      fulfillmentStatus: nextValues.fulfillmentStatus || '',
+      unfulfilledReason: nextValues.unfulfilledReason || '',
+      reasonDetail: nextValues.reasonDetail || '',
+      remark: nextValues.remark || ''
+    };
+  };
 
   useEffect(() => {
     const nextValues = {
+      unpreparedQty: displayQty(row.unpreparedQty),
+      preparedNotStartedQty: displayQty(row.preparedNotStartedQty),
       inProductionQty: displayQty(row.inProductionQty),
       finishedQty: displayQty(row.finishedQty),
       shippedQty: displayQty(row.shippedQty),
+      productionDeliveryDate: row.productionDeliveryDate || '',
+      unproducedEstimatedDeliveryDate: row.unproducedEstimatedDeliveryDate || '',
+      fulfillmentStatus: row.fulfillmentStatus || '',
+      unfulfilledReason: row.unfulfilledReason || '',
+      reasonDetail: row.reasonDetail || '',
       remark: row.remark || ''
     };
     setValues(nextValues);
-    setAutoKey('');
-    onDraftChange?.(row.demandKey, toPayload(nextValues));
-  }, [row.demandKey, row.inProductionQty, row.finishedQty, row.shippedQty, row.remark]);
-
-  function normalizeProgressValues(nextValues, changedKey = '', targetAutoKey = '') {
-    const orderQty = numberValue(row.remainingInboundQty);
-    const nextAutoKey = targetAutoKey || (changedKey === 'finishedQty' ? 'inProductionQty' : 'finishedQty');
-    const manualTotal = ['inProductionQty', 'finishedQty']
-      .filter((key) => key !== nextAutoKey)
-      .reduce((sum, key) => sum + numberValue(nextValues[key]), 0);
-    const autoQty = orderQty - manualTotal;
-    if (autoQty < 0) return null;
-    return { values: { ...nextValues, [nextAutoKey]: autoQty ? String(autoQty) : '' }, autoKey: nextAutoKey };
-  }
+    setQuantityEdited(false);
+    onDraftChange?.(row.demandKey, toPayload(nextValues, row.progressAdjustmentRequired));
+  }, [
+    row.demandKey, row.unpreparedQty, row.preparedNotStartedQty, row.inProductionQty, row.finishedQty, row.shippedQty,
+    row.productionDeliveryDate, row.unproducedEstimatedDeliveryDate, row.fulfillmentStatus,
+    row.unfulfilledReason, row.reasonDetail, row.remark
+  ]);
 
   function handleQtyChange(key, rawValue) {
     const nextValues = { ...values, [key]: rawValue };
-    if (key === 'shippedQty') {
-      setValues(nextValues);
-      onDraftChange?.(row.demandKey, toPayload(nextValues));
-      return;
-    }
-    const nextAutoKey = autoQtyKeys.includes(key) ? autoQtyKeys.find((item) => item !== key) : (autoKey || 'inProductionQty');
-    const normalized = normalizeProgressValues(nextValues, key, nextAutoKey);
-    if (!normalized) {
-      setMessage('在产品、完工产品合计不能超过未交付数量。');
-      return;
-    }
-    setAutoKey(normalized.autoKey);
-    setValues(normalized.values);
-    onDraftChange?.(row.demandKey, toPayload(normalized.values));
+    setValues(nextValues);
+    setQuantityEdited(true);
+    onDraftChange?.(row.demandKey, toPayload(nextValues));
   }
 
-  function handleRemarkChange(value) {
-    const nextValues = { ...values, remark: value };
+  function handleTextChange(key, value) {
+    const nextValues = { ...values, [key]: value };
     setValues(nextValues);
     onDraftChange?.(row.demandKey, toPayload(nextValues));
   }
 
   async function save() {
-    const normalized = normalizeProgressValues(values, '', autoKey || 'inProductionQty');
-    if (!normalized) {
-      setMessage('在产品、完工产品合计不能超过未交付数量。');
+    if (invalidQty) {
+      setMessage('已备料未生产、生产中产品、完工未发产品合计不能超过未交付数量。');
       return;
     }
-    const payload = toPayload(normalized.values);
+    if (values.fulfillmentStatus === '否' && !normalize(values.unfulfilledReason)) {
+      setMessage('非正常履约必须填写未履约原因。');
+      return;
+    }
+    const payload = toPayload(values);
     setSaving(true);
     try {
       await request(`/api/progress/${encodeURIComponent(row.demandKey)}`, {
@@ -5185,13 +5227,36 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, selected = fals
     }
   }
 
-  const input = (key) => (
+  const quantityInput = (key, { readOnly = false, value = values[key] } = {}) => (
     <input
       type="number"
-      value={values[key]}
-      readOnly={autoKey === key || key === 'shippedQty'}
-      title={key === 'shippedQty' ? '由采购订单入库数量更新' : autoKey === key ? '自动计算' : ''}
+      min="0"
+      step="any"
+      value={value}
+      readOnly={readOnly}
+      disabled={!row.canEdit && !readOnly}
+      title={readOnly ? '系统自动计算，只读' : ''}
       onChange={(event) => handleQtyChange(key, event.target.value)}
+    />
+  );
+
+  const dateInput = (key) => (
+    <input
+      className="progress-date-input"
+      type="date"
+      value={values[key]}
+      disabled={!row.canEdit}
+      onChange={(event) => handleTextChange(key, event.target.value)}
+    />
+  );
+
+  const textInput = (key, placeholder = '') => (
+    <input
+      className="progress-text-input"
+      value={values[key]}
+      placeholder={placeholder}
+      disabled={!row.canEdit}
+      onChange={(event) => handleTextChange(key, event.target.value)}
     />
   );
 
@@ -5211,17 +5276,38 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, selected = fals
     row.materialCode,
     row.sku,
     row.materialName || row.materialCode,
+    numberValue(row.operationStockQty),
     row.remainingInboundQty,
-    input('inProductionQty'),
-    input('finishedQty'),
-    input('shippedQty'),
+    quantityInput('shippedQty', { readOnly: true }),
+    quantityInput('unpreparedQty', { readOnly: true, value: displayQty(unpreparedQty) }),
+    quantityInput('preparedNotStartedQty'),
+    quantityInput('inProductionQty'),
+    quantityInput('finishedQty'),
+    <span className="progress-contract-date" title={row.contractDeliveryDates || '暂无'}>{row.contractDeliveryDates || '暂无'}</span>,
+    dateInput('productionDeliveryDate'),
+    dateInput('unproducedEstimatedDeliveryDate'),
+    <select value={values.fulfillmentStatus} disabled={!row.canEdit} onChange={(event) => handleTextChange('fulfillmentStatus', event.target.value)}>
+      <option value="">待维护</option>
+      <option value="是">是</option>
+      <option value="否">否</option>
+    </select>,
+    row.pretaxPriceMaintained ? pretaxPrice : <span className="progress-price-missing">未维护</span>,
+    normalFulfillmentQty,
+    normalFulfillmentQty * pretaxPrice,
+    abnormalFulfillmentQty,
+    abnormalFulfillmentQty * pretaxPrice,
+    textInput('unfulfilledReason', values.fulfillmentStatus === '否' ? '必填' : '未履约原因'),
+    textInput('reasonDetail', '原因详情'),
+    <input className="progress-remark-input" value={values.remark} placeholder="添加备注" disabled={!row.canEdit} onChange={(event) => handleTextChange('remark', event.target.value)} />,
     row.oaFlowNo,
-    <input className="progress-remark-input" value={values.remark} placeholder="添加批注" disabled={!row.canEdit} onChange={(event) => handleRemarkChange(event.target.value)} />,
+    invalidQty || Math.abs(progressGap) > 0.000001
+      ? <span className="progress-adjustment-status">待人工调整（差额 {progressGap.toLocaleString()}）</span>
+      : <span className="progress-adjustment-ok">正常</span>,
     <button type="button" className="compact-button" disabled={!row.canEdit || saving} onClick={save}>{saving ? '保存中...' : row.canEdit ? '提交' : '无权限'}</button>
   ];
 
   return (
-    <tr>
+    <tr className={row.progressAdjustmentRequired || invalidQty ? 'progress-row-adjustment' : ''}>
       {cells.map((cell, index) => <td key={index}>{cell}</td>)}
     </tr>
   );
@@ -5240,6 +5326,8 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
   const [clearFilters, setClearFilters] = useState({ purchaseOwners: [], suppliers: [], productLines: [], productSeries: [] });
   const [clearPreview, setClearPreview] = useState(null);
   const [clearBusy, setClearBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
   const pageSize = 20;
   const visibleFiltered = filtered;
   const displayRows = onlyIssues
@@ -5357,13 +5445,39 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
   }
 
   async function handleExport() {
+    if (exporting) return;
+    setExporting(true);
+    setExportProgress(10);
+    setMessage('正在获取生产跟进数据，导出进度 10%。');
     try {
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
       const XLSX = await import('xlsx');
-      const headers = ['采购组', '采购下单人', '月份', '采购订单号', '创建人', '单据状态', '采购组织', '供应商简称', '事业部', '产品线', '系列', '物料编码', 'SKU', '物料', '未交付数量', '在产品', '完工产品', '已发货数量', 'OA备货流程号', '批注'];
+      setExportProgress(35);
+      setMessage('正在整理生产跟进字段，导出进度 35%。');
+      const headers = [
+        '采购组', '采购下单人', '月份', '采购订单号', '创建人', '单据状态', '采购组织', '供应商简称',
+        '事业部', '产品线', '系列', '物料编码', 'SKU', '物料名称',
+        '运营备货数量', '未交付数量', '已发货数量',
+        '未备料未生产', '已备料未生产', '生产中产品', '完工未发产品',
+        '合同约定交期', '生产中交付时间', '未生产预计交付时间',
+        '是否正常履约', '不含税结算价', '正常履约数量', '正常履约金额',
+        '非正常履约数量', '非正常履约金额', '未履约原因', '原因详情', '备注',
+        'OA备货流程号', '状态校验'
+      ];
       const aoa = [
         headers,
         ...displayRows.map((row) => {
           const draft = drafts[row.demandKey] || {};
+          const fulfillmentStatus = draft.fulfillmentStatus ?? row.fulfillmentStatus ?? '';
+          const normalQty = fulfillmentStatus === '是' ? numberValue(row.remainingInboundQty) : 0;
+          const abnormalQty = fulfillmentStatus === '否' ? numberValue(row.remainingInboundQty) : 0;
+          const draftUnprepared = draft.unpreparedQty ?? row.unpreparedQty;
+          const draftPrepared = draft.preparedNotStartedQty ?? row.preparedNotStartedQty;
+          const draftInProduction = draft.inProductionQty ?? row.inProductionQty;
+          const draftFinished = draft.finishedQty ?? row.finishedQty;
+          const draftGap = numberValue(row.remainingInboundQty)
+            - numberValue(draftUnprepared) - numberValue(draftPrepared)
+            - numberValue(draftInProduction) - numberValue(draftFinished);
           return [
             row.purchaseGroup,
             row.purchaseOwner,
@@ -5379,23 +5493,46 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
             row.materialCode,
             row.sku,
             row.materialName || row.materialCode,
+            numberValue(row.operationStockQty),
             numberValue(row.remainingInboundQty),
-            numberValue(draft.inProductionQty ?? row.inProductionQty),
-            numberValue(draft.finishedQty ?? row.finishedQty),
             numberValue(draft.shippedQty ?? row.shippedQty),
+            numberValue(draftUnprepared),
+            numberValue(draftPrepared),
+            numberValue(draftInProduction),
+            numberValue(draftFinished),
+            row.contractDeliveryDates,
+            draft.productionDeliveryDate ?? row.productionDeliveryDate,
+            draft.unproducedEstimatedDeliveryDate ?? row.unproducedEstimatedDeliveryDate,
+            fulfillmentStatus || '待维护',
+            row.pretaxPriceMaintained ? numberValue(row.pretaxPrice) : '未维护',
+            normalQty,
+            normalQty * numberValue(row.pretaxPrice),
+            abnormalQty,
+            abnormalQty * numberValue(row.pretaxPrice),
+            draft.unfulfilledReason ?? row.unfulfilledReason,
+            draft.reasonDetail ?? row.reasonDetail,
+            draft.remark ?? row.remark ?? '',
             row.oaFlowNo,
-            draft.remark ?? row.remark ?? ''
+            Math.abs(draftGap) > 0.000001 ? `待人工调整（差额 ${draftGap}）` : '正常'
           ];
         })
       ];
+      setExportProgress(65);
+      setMessage('正在生成 Excel 工作簿，导出进度 65%。');
       const workbook = XLSX.utils.book_new();
       const worksheet = XLSX.utils.aoa_to_sheet(aoa);
       worksheet['!cols'] = headers.map((header) => ({ wch: Math.max(12, header.length + 4) }));
       XLSX.utils.book_append_sheet(workbook, worksheet, '生产跟进');
+      setExportProgress(85);
+      setMessage('正在写入 Excel 文件，导出进度 85%。');
       await writeStyledExcelFile(XLSX, workbook, `生产跟进_${todayText()}.xlsx`);
+      setExportProgress(100);
       setMessage(`已导出当前筛选 ${displayRows.length} 条生产跟进。`);
     } catch (err) {
       setMessage('导出失败：' + err.message);
+    } finally {
+      setExporting(false);
+      window.setTimeout(() => setExportProgress(0), 1200);
     }
   }
 
@@ -5405,19 +5542,22 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
         <AppliedTimeNote value={currentAppliedAt} />
         <section className="progress-logic-note" aria-label="生产跟进数量口径">
           <div className="progress-logic-definitions">
-            <span><b className="progress-logic-tag in-production">在产品</b>供应商正在生产的未交付数量</span>
-            <span><b className="progress-logic-tag finished">完工产品（已完工）</b>已生产完成、等待采购入库的数量</span>
+            <span><b className="progress-logic-tag unprepared">未备料未生产</b>尚未开始备料的未交付数量</span>
+            <span><b className="progress-logic-tag prepared">已备料未生产</b>已经备料但尚未投产的数量</span>
+            <span><b className="progress-logic-tag in-production">生产中产品</b>供应商正在生产的数量</span>
+            <span><b className="progress-logic-tag finished">完工未发产品</b>已完工但尚未交付入库的数量</span>
             <span><b className="progress-logic-tag shipped">已发货数量</b>取金蝶累计入库数量，只读不手工修改</span>
           </div>
           <div className="progress-logic-rules">
-            <strong>加减逻辑：</strong>
-            首次导入将未交付数量全部计入在产品；未交付增加时，增加部分加入在产品；未交付减少时，先扣在产品，不足再扣完工产品；手工填写一项时自动计算另一项，并始终保证“在产品 + 完工产品 = 未交付数量”，已发货数量不参与该等式。
+            <strong>数量逻辑：</strong>
+            未备料未生产自动补差，四阶段合计必须等于未交付数量；运营备货数量等于未交付数量加已发货数量。新增数量进入未备料未生产；未交付减少后原分配超出时标记待人工调整。
           </div>
         </section>
         <div className="section-heading-row">
           <h2>{title}</h2>
           <span className="section-count">共 {displayRows.length} 条，第 {currentPage} / {totalPages} 页</span>
-          {!onlyIssues && <button type="button" className="compact-button" onClick={handleExport}>导出 Excel</button>}
+          {!onlyIssues && <button type="button" className="compact-button" disabled={exporting || !displayRows.length} onClick={handleExport}>{exporting ? `导出中 ${exportProgress}%` : '导出 Excel'}</button>}
+          {!onlyIssues && exporting && <span className="progress-export-status">正在生成文件 {exportProgress}%</span>}
           {!onlyIssues && user?.role === '管理员' && (
             <button type="button" className="danger compact-button" onClick={() => setClearPanelOpen((open) => !open)}>
               清除跟单数据
@@ -5453,10 +5593,10 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
         )}
         <FilterBar filters={filters} setFilters={setFilters} options={options} />
         <section className="progress-chart-grid">
-          <ProgressStackedChart title="供应商简称未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => progressSupplierName(row)} />
-          <ProgressStackedChart title="事业部未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => purchaseTrackingBusinessUnit(row.businessUnit)} />
-          <ProgressStackedChart title="系列未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => row.productSeries} />
-          <ProgressStackedChart title="SKU未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => row.sku} />
+          <ProgressStackedChart title="供应商简称四阶段分布" rows={displayRows} groupBy={(row) => progressSupplierName(row)} />
+          <ProgressStackedChart title="事业部四阶段分布" rows={displayRows} groupBy={(row) => purchaseTrackingBusinessUnit(row.businessUnit)} />
+          <ProgressStackedChart title="系列四阶段分布" rows={displayRows} groupBy={(row) => row.productSeries} />
+          <ProgressStackedChart title="SKU四阶段分布" rows={displayRows} groupBy={(row) => row.sku} />
         </section>
       </div>
       <DataTable
@@ -5472,7 +5612,14 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
             />
             <span>全选</span>
           </label>
-        ), '采购组', '采购下单人', '月份', '采购订单号', '创建人', '单据状态', '采购组织', '供应商简称', '事业部', '产品线', '系列', '物料编码', 'SKU', '物料', '未交付数量', '在产品', '完工产品', '已发货数量', 'OA备货流程号', '批注', '操作']}
+        ), '采购组', '采购下单人', '月份', '采购订单号', '创建人', '单据状态', '采购组织', '供应商简称',
+        '事业部', '产品线', '系列', '物料编码', 'SKU', '物料名称',
+        '运营备货数量', '未交付数量', '已发货数量',
+        '未备料未生产', '已备料未生产', '生产中产品', '完工未发产品',
+        '合同约定交期', '生产中交付时间', '未生产预计交付时间',
+        '是否正常履约', '不含税结算价', '正常履约数量', '正常履约金额',
+        '非正常履约数量', '非正常履约金额', '未履约原因', '原因详情', '备注',
+        'OA备货流程号', '状态校验', '操作']}
         renderRow={(row) => (
           <ProgressEditor
             key={row.demandKey}

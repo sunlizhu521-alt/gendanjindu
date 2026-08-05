@@ -1953,12 +1953,17 @@ test('inventory summary and domestic board use complete source models and enforc
   database.run("UPDATE order_demands SET purchase_owner = '陈晨' WHERE demand_key IN (?, ?)", ['active-june', 'active-july']);
   database.run("UPDATE order_demands SET supplier_short_name = '供应商庚' WHERE material_code = 'M6'");
 
+  const kingdeeOrderSql = `INSERT INTO kingdee_orders
+    (id, batch_id, demand_key, month, business_unit, supplier, material_code, quantity,
+     delivery_date, operator_name, close_status, raw_json)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
   database.run(
-    `INSERT INTO kingdee_orders
-      (id, batch_id, demand_key, month, business_unit, supplier, material_code, quantity,
-       operator_name, close_status, raw_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ['order-june', 'batch-june', 'active-june', '2026-06', '国内事业部', 'Supplier A', 'M1', 1200, '薛文乐7月柜1', '未关闭', '{}']
+    kingdeeOrderSql,
+    ['order-june', 'batch-june', 'active-june', '2026-06', '国内事业部', 'Supplier A', 'M1', 1200, '2026-09-30', '薛文乐7月柜1', '未关闭', '{}']
+  );
+  database.run(
+    kingdeeOrderSql,
+    ['order-june-date-2', 'batch-june', 'active-june', '2026-06', '国内事业部', 'Supplier A', 'M1', 0, '2026-09-15', '薛文乐7月柜1', '未关闭', '{}']
   );
 
   const dimensionSql = `INSERT INTO dimension_files
@@ -2369,6 +2374,11 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(m1Demand?.supplierCount, 1);
     assert.equal(m1Demand?.unpreparedQty, 0);
     assert.equal(m1Demand?.preparedNotStartedQty, 0);
+    assert.equal(m1Demand?.contractDeliveryDates, '2026-09-15、2026-09-30');
+    assert.equal(m1Demand?.operationStockQty, 1200);
+    assert.equal(m1Demand?.pretaxPriceMaintained, false);
+    assert.equal(m1Demand?.normalFulfillmentAmount, 0);
+    assert.equal(m1Demand?.abnormalFulfillmentAmount, 0);
     assert.equal(demandRows.find((row) => row.materialCode === 'M2')?.purchaseOwner, '未分配采购下单人');
     assert.equal(demandRows.find((row) => row.materialCode === 'M2')?.supplierShortName, '供应商丙&供应商丁');
     assert.equal(demandRows.find((row) => row.materialCode === 'M2')?.orderSupplierShortName, '供应商丙&供应商丁');
@@ -2454,12 +2464,65 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(staleProgressResponse.status, 409);
     assert.deepEqual(await staleProgressResponse.json(), { error: '采购订单已更新，请刷新页面后重新提交' });
 
+    const invalidProgressResponse = await fetch(progressEndpoint, {
+      method: 'PATCH',
+      headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preparedNotStartedQty: 500, inProductionQty: 600, finishedQty: 1, shippedQty: 200 })
+    });
+    assert.equal(invalidProgressResponse.status, 400);
+
+    const missingReasonResponse = await fetch(progressEndpoint, {
+      method: 'PATCH',
+      headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preparedNotStartedQty: 100, inProductionQty: 500, finishedQty: 400, shippedQty: 200, fulfillmentStatus: '否' })
+    });
+    assert.equal(missingReasonResponse.status, 400);
+
     const currentProgressResponse = await fetch(progressEndpoint, {
       method: 'PATCH',
       headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ inProductionQty: 600, finishedQty: 400, shippedQty: 200, remark: 'current' })
+      body: JSON.stringify({
+        preparedNotStartedQty: 100,
+        inProductionQty: 500,
+        finishedQty: 400,
+        shippedQty: 200,
+        productionDeliveryDate: '2026-09-10',
+        unproducedEstimatedDeliveryDate: '2026-08-20',
+        fulfillmentStatus: '否',
+        unfulfilledReason: '供应商延期',
+        reasonDetail: '原料延期',
+        remark: 'current'
+      })
     });
     assert.equal(currentProgressResponse.status, 200);
+    const savedProgress = (await currentProgressResponse.json()).rows.find((row) => row.demandKey === m1Demand.demandKey);
+    assert.deepEqual({
+      unpreparedQty: savedProgress?.unpreparedQty,
+      preparedNotStartedQty: savedProgress?.preparedNotStartedQty,
+      inProductionQty: savedProgress?.inProductionQty,
+      finishedQty: savedProgress?.finishedQty,
+      progressTotal: savedProgress?.progressTotal,
+      fulfillmentStatus: savedProgress?.fulfillmentStatus,
+      abnormalFulfillmentQty: savedProgress?.abnormalFulfillmentQty,
+      abnormalFulfillmentAmount: savedProgress?.abnormalFulfillmentAmount,
+      productionDeliveryDate: savedProgress?.productionDeliveryDate,
+      unproducedEstimatedDeliveryDate: savedProgress?.unproducedEstimatedDeliveryDate,
+      unfulfilledReason: savedProgress?.unfulfilledReason,
+      reasonDetail: savedProgress?.reasonDetail
+    }, {
+      unpreparedQty: 0,
+      preparedNotStartedQty: 100,
+      inProductionQty: 500,
+      finishedQty: 400,
+      progressTotal: 1000,
+      fulfillmentStatus: '否',
+      abnormalFulfillmentQty: 1000,
+      abnormalFulfillmentAmount: 0,
+      productionDeliveryDate: '2026-09-10',
+      unproducedEstimatedDeliveryDate: '2026-08-20',
+      unfulfilledReason: '供应商延期',
+      reasonDetail: '原料延期'
+    });
 
     const sessionApplyResponse = await fetch(`http://127.0.0.1:${port}/api/difference-allocations/session-consistency/apply`, {
       method: 'POST',
@@ -2476,6 +2539,61 @@ test('inventory summary and domestic board use complete source models and enforc
       { diffType: sessionDiff?.diff_type, oldQty: sessionDiff?.old_qty, newQty: sessionDiff?.new_qty },
       { diffType: '数量增加', oldQty: 1200, newQty: 1300 }
     );
+    const demandsAfterIncreaseResponse = await fetch(`http://127.0.0.1:${port}/api/demands`, {
+      headers: { Authorization: 'Bearer admin-token' }
+    });
+    const increasedM1 = (await demandsAfterIncreaseResponse.json()).rows.find((row) => row.demandKey === m1Demand.demandKey);
+    assert.deepEqual({
+      unpreparedQty: increasedM1?.unpreparedQty,
+      preparedNotStartedQty: increasedM1?.preparedNotStartedQty,
+      inProductionQty: increasedM1?.inProductionQty,
+      finishedQty: increasedM1?.finishedQty,
+      progressTotal: increasedM1?.progressTotal,
+      progressAdjustmentRequired: increasedM1?.progressAdjustmentRequired,
+      fulfillmentStatus: increasedM1?.fulfillmentStatus,
+      unfulfilledReason: increasedM1?.unfulfilledReason
+    }, {
+      unpreparedQty: 100,
+      preparedNotStartedQty: 100,
+      inProductionQty: 500,
+      finishedQty: 400,
+      progressTotal: 1100,
+      progressAdjustmentRequired: false,
+      fulfillmentStatus: '否',
+      unfulfilledReason: '供应商延期'
+    });
+
+    const normalProgressResponse = await fetch(progressEndpoint, {
+      method: 'PATCH',
+      headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        preparedNotStartedQty: 100,
+        inProductionQty: 500,
+        finishedQty: 400,
+        shippedQty: 200,
+        productionDeliveryDate: '2026-09-10',
+        unproducedEstimatedDeliveryDate: '2026-08-20',
+        fulfillmentStatus: '是',
+        remark: 'normal'
+      })
+    });
+    assert.equal(normalProgressResponse.status, 200);
+    const normalM1 = (await normalProgressResponse.json()).rows.find((row) => row.demandKey === m1Demand.demandKey);
+    assert.deepEqual({
+      unpreparedQty: normalM1?.unpreparedQty,
+      progressTotal: normalM1?.progressTotal,
+      progressAdjustmentRequired: normalM1?.progressAdjustmentRequired,
+      fulfillmentStatus: normalM1?.fulfillmentStatus,
+      normalFulfillmentQty: normalM1?.normalFulfillmentQty,
+      abnormalFulfillmentQty: normalM1?.abnormalFulfillmentQty
+    }, {
+      unpreparedQty: 100,
+      progressTotal: 1100,
+      progressAdjustmentRequired: false,
+      fulfillmentStatus: '是',
+      normalFulfillmentQty: 1100,
+      abnormalFulfillmentQty: 0
+    });
 
     const emptyProgressClearPreview = await fetch(`http://127.0.0.1:${port}/api/progress/clear-preview`, {
       method: 'POST',
@@ -2544,6 +2662,10 @@ test('inventory summary and domestic board use complete source models and enforc
     const clearedM1 = (await demandsAfterProgressClear.json()).rows.find((row) => row.demandKey === m1Demand.demandKey);
     assert.equal(clearedM1?.inProductionQty, 0);
     assert.equal(clearedM1?.finishedQty, 0);
+    assert.equal(clearedM1?.unpreparedQty, 0);
+    assert.equal(clearedM1?.preparedNotStartedQty, 0);
+    assert.equal(clearedM1?.fulfillmentStatus, '');
+    assert.equal(clearedM1?.unfulfilledReason, '');
     assert.equal(clearedM1?.remark, '');
     assert.equal(clearedM1?.progressUpdatedAt, '');
 

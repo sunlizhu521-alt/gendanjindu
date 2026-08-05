@@ -192,6 +192,11 @@ function migrate() {
       in_production_qty REAL NOT NULL DEFAULT 0,
       finished_qty REAL NOT NULL DEFAULT 0,
       shipped_qty REAL NOT NULL DEFAULT 0,
+      production_delivery_date TEXT NOT NULL DEFAULT '',
+      unproduced_estimated_delivery_date TEXT NOT NULL DEFAULT '',
+      fulfillment_status TEXT NOT NULL DEFAULT '',
+      unfulfilled_reason TEXT NOT NULL DEFAULT '',
+      reason_detail TEXT NOT NULL DEFAULT '',
       remark TEXT,
       updated_by TEXT,
       updated_at TEXT
@@ -204,6 +209,11 @@ function migrate() {
       in_production_qty REAL NOT NULL,
       finished_qty REAL NOT NULL,
       shipped_qty REAL NOT NULL DEFAULT 0,
+      production_delivery_date TEXT NOT NULL DEFAULT '',
+      unproduced_estimated_delivery_date TEXT NOT NULL DEFAULT '',
+      fulfillment_status TEXT NOT NULL DEFAULT '',
+      unfulfilled_reason TEXT NOT NULL DEFAULT '',
+      reason_detail TEXT NOT NULL DEFAULT '',
       remark TEXT,
       updated_by TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -465,12 +475,29 @@ function migrate() {
   if (!progressColumns.includes('shipped_qty')) {
     run("ALTER TABLE supplier_progress ADD COLUMN shipped_qty REAL NOT NULL DEFAULT 0");
   }
-  run('UPDATE supplier_progress SET unprepared_qty = 0, prepared_not_started_qty = 0');
+  [
+    ['production_delivery_date', "TEXT NOT NULL DEFAULT ''"],
+    ['unproduced_estimated_delivery_date', "TEXT NOT NULL DEFAULT ''"],
+    ['fulfillment_status', "TEXT NOT NULL DEFAULT ''"],
+    ['unfulfilled_reason', "TEXT NOT NULL DEFAULT ''"],
+    ['reason_detail', "TEXT NOT NULL DEFAULT ''"]
+  ].forEach(([column, definition]) => {
+    if (!progressColumns.includes(column)) run(`ALTER TABLE supplier_progress ADD COLUMN ${column} ${definition}`);
+  });
 
   const progressSnapshotColumns = all('PRAGMA table_info(supplier_progress_snapshots)').map((row) => row.name);
   if (!progressSnapshotColumns.includes('shipped_qty')) {
     run("ALTER TABLE supplier_progress_snapshots ADD COLUMN shipped_qty REAL NOT NULL DEFAULT 0");
   }
+  [
+    ['production_delivery_date', "TEXT NOT NULL DEFAULT ''"],
+    ['unproduced_estimated_delivery_date', "TEXT NOT NULL DEFAULT ''"],
+    ['fulfillment_status', "TEXT NOT NULL DEFAULT ''"],
+    ['unfulfilled_reason', "TEXT NOT NULL DEFAULT ''"],
+    ['reason_detail', "TEXT NOT NULL DEFAULT ''"]
+  ].forEach(([column, definition]) => {
+    if (!progressSnapshotColumns.includes(column)) run(`ALTER TABLE supplier_progress_snapshots ADD COLUMN ${column} ${definition}`);
+  });
 
   const compareSessionColumns = all('PRAGMA table_info(difference_compare_sessions)').map((row) => row.name);
   if (!compareSessionColumns.includes('summary_json')) {
@@ -802,13 +829,23 @@ function consolidateSupplierProgress(keyMap) {
     const sum = (field) => list.reduce((total, row) => total + Number(row[field] || 0), 0);
     list.forEach((row) => run('DELETE FROM supplier_progress WHERE demand_key = ?', [row.demand_key]));
     run(
-      `INSERT INTO supplier_progress (demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty, remark, updated_by, updated_at)
-       VALUES (?, 0, 0, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO supplier_progress (
+         demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty,
+         production_delivery_date, unproduced_estimated_delivery_date, fulfillment_status,
+         unfulfilled_reason, reason_detail, remark, updated_by, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         targetKey,
+        sum('unprepared_qty'),
+        sum('prepared_not_started_qty'),
         sum('in_production_qty'),
         sum('finished_qty'),
         sum('shipped_qty'),
+        latest.production_delivery_date || '',
+        latest.unproduced_estimated_delivery_date || '',
+        latest.fulfillment_status || '',
+        latest.unfulfilled_reason || '',
+        latest.reason_detail || '',
         latest.remark || '',
         latest.updated_by || '',
         latest.updated_at || ''

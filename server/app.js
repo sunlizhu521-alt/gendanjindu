@@ -251,6 +251,35 @@ function dateSortValue(value) {
   return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3] || 1)).getTime();
 }
 
+function progressDateValue(value, label) {
+  const text = normalize(value);
+  if (!text) return '';
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    const error = new Error(`${label}必须使用 YYYY-MM-DD 格式`);
+    error.status = 400;
+    throw error;
+  }
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  if (date.getFullYear() !== Number(match[1]) || date.getMonth() !== Number(match[2]) - 1 || date.getDate() !== Number(match[3])) {
+    const error = new Error(`${label}不是有效日期`);
+    error.status = 400;
+    throw error;
+  }
+  return text;
+}
+
+function progressQuantityValue(value, fallback, label) {
+  if (value === undefined || value === null || normalize(value) === '') return Math.max(0, numberValue(fallback));
+  const parsed = Number(normalize(value).replace(/,/g, ''));
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    const error = new Error(`${label}必须是大于等于0的有效数量`);
+    error.status = 400;
+    throw error;
+  }
+  return parsed;
+}
+
 function demandKey(purchaseOrg, month, businessUnit, supplier, materialCode) {
   return [purchaseOrg, month, normalize(businessUnit) || UNASSIGNED_BUSINESS_UNIT, supplier, materialCode].map(normalize).join('|');
 }
@@ -2540,6 +2569,8 @@ function enrichDemandFields(supplier, materialCode, orderCreator = '', lookups =
     materialName: normalize(product.materialName),
     productLine: normalize(product.productLine),
     productSeries: normalize(product.productSeries),
+    pretaxPrice: numberValue(product.pretaxPrice),
+    pretaxPriceMaintained: normalize(product.pretaxPrice) !== '',
     supplierShortName: assignmentSupplierShortName(lookups, materialCode, [assignment, supplierAssignment]),
     purchaseGroup: assignmentGroup(assignment),
     purchaseOwner: realPurchaseOwner(assignmentOwner(assignment)) || UNASSIGNED_PURCHASE_OWNER,
@@ -2594,6 +2625,11 @@ function progressForDemand(demandKeyValue) {
     in_production_qty: 0,
     finished_qty: 0,
     shipped_qty: 0,
+    production_delivery_date: '',
+    unproduced_estimated_delivery_date: '',
+    fulfillment_status: '',
+    unfulfilled_reason: '',
+    reason_detail: '',
     remark: '',
     updated_by: '',
     updated_at: ''
@@ -2604,25 +2640,24 @@ function progressAfterInbound(remainingQty, progress, inboundQty, options = {}) 
   const hasProgress = Boolean(progress?.demand_key);
   const nextShipped = Math.max(0, numberValue(inboundQty));
   const remainingInboundQty = Math.max(numberValue(remainingQty), 0);
-  let finished = numberValue(progress?.finished_qty);
-  let inProduction = hasProgress ? numberValue(progress?.in_production_qty) : remainingInboundQty;
-  if (!options.preserveExistingProgress) {
-    inProduction = remainingInboundQty;
-    finished = 0;
+  let unprepared = numberValue(progress?.unprepared_qty);
+  const preparedNotStarted = numberValue(progress?.prepared_not_started_qty);
+  const inProduction = numberValue(progress?.in_production_qty);
+  const finished = numberValue(progress?.finished_qty);
+  if (!hasProgress || !options.preserveExistingProgress) {
+    return {
+      unprepared: remainingInboundQty,
+      preparedNotStarted: 0,
+      inProduction: 0,
+      finished: 0,
+      shipped: nextShipped,
+      gap: 0
+    };
   }
-  const progressTotal = finished + inProduction;
-  if (progressTotal > remainingInboundQty) {
-    // Remaining demand reductions consume work in progress before finished goods.
-    let excess = progressTotal - remainingInboundQty;
-    const inProductionExcess = Math.min(inProduction, excess);
-    inProduction -= inProductionExcess;
-    excess -= inProductionExcess;
-    finished = Math.max(finished - excess, 0);
-  } else if (progressTotal < remainingInboundQty) {
-    inProduction += remainingInboundQty - progressTotal;
-  }
-  const gap = remainingInboundQty - finished - inProduction;
-  return { inProduction, finished, shipped: nextShipped, gap };
+  const progressTotal = unprepared + preparedNotStarted + inProduction + finished;
+  if (progressTotal < remainingInboundQty) unprepared += remainingInboundQty - progressTotal;
+  const gap = remainingInboundQty - unprepared - preparedNotStarted - inProduction - finished;
+  return { unprepared, preparedNotStarted, inProduction, finished, shipped: nextShipped, gap };
 }
 
 function hasManualProgressHistory(demandKeyValue) {
@@ -2645,6 +2680,11 @@ function defaultProgress(demandKeyValue) {
     in_production_qty: 0,
     finished_qty: 0,
     shipped_qty: 0,
+    production_delivery_date: '',
+    unproduced_estimated_delivery_date: '',
+    fulfillment_status: '',
+    unfulfilled_reason: '',
+    reason_detail: '',
     remark: '',
     updated_by: '',
     updated_at: ''
@@ -2661,7 +2701,7 @@ function demandLoadContext(demands) {
   if (batchIds.length) {
     const placeholders = batchIds.map(() => '?').join(',');
     all(
-      `SELECT batch_id, demand_key, creator, operator_name, oa_flow_no, order_no, material_name, document_status, close_status, raw_json
+      `SELECT batch_id, demand_key, creator, operator_name, oa_flow_no, order_no, delivery_date, material_name, document_status, close_status, raw_json
        FROM kingdee_orders
        WHERE batch_id IN (${placeholders})`,
       batchIds
@@ -2697,6 +2737,7 @@ function demandRows(includeInactive = false, user = null) {
     const orderNo = uniqueOrderNos(orderRows);
     const documentStatus = uniqueDocumentStatuses(orderRows);
     const orderDates = uniqueOrderDates(orderRows);
+    const contractDeliveryDates = uniqueDeliveryDates(orderRows);
     const oaFlowNo = demand.oa_flow_no || orderedOaFlowNos(orderRows, rawOaFlowNo);
     const enriched = enrichDemandFields(demand.supplier, demand.material_code, orderCreator, context.lookups);
     const matchedSupplierShortName = orderSupplierShortName(context.lookups, demand.supplier, demand.material_code);
@@ -2704,7 +2745,16 @@ function demandRows(includeInactive = false, user = null) {
     const purchaseGroup = enriched.purchaseGroup || '';
     const shippedQty = numberValue(demand.tracking_inbound_qty);
     const remainingInboundQty = Math.max(numberValue(demand.tracking_remaining_qty), 0);
-    const progressTotal = numberValue(progress.in_production_qty) + numberValue(progress.finished_qty);
+    const unpreparedQty = numberValue(progress.unprepared_qty);
+    const preparedNotStartedQty = numberValue(progress.prepared_not_started_qty);
+    const inProductionQty = numberValue(progress.in_production_qty);
+    const finishedQty = numberValue(progress.finished_qty);
+    const progressTotal = unpreparedQty + preparedNotStartedQty + inProductionQty + finishedQty;
+    const progressGap = remainingInboundQty - progressTotal;
+    const fulfillmentStatus = ['是', '否'].includes(normalize(progress.fulfillment_status)) ? normalize(progress.fulfillment_status) : '';
+    const pretaxPrice = numberValue(enriched.pretaxPrice);
+    const normalFulfillmentQty = fulfillmentStatus === '是' ? remainingInboundQty : 0;
+    const abnormalFulfillmentQty = fulfillmentStatus === '否' ? remainingInboundQty : 0;
     const stockQty = numberValue(stock.stock_qty);
     const demandAfterStock = Math.max(remainingInboundQty - stockQty, 0);
     return {
@@ -2724,6 +2774,7 @@ function demandRows(includeInactive = false, user = null) {
       trackingOrderQty: numberValue(demand.tracking_order_qty),
       trackingInboundQty: numberValue(demand.tracking_inbound_qty),
       remainingInboundQty,
+      operationStockQty: remainingInboundQty + shippedQty,
       active: Boolean(demand.active),
       sku: demand.sku || enriched.sku || '',
       logisticsCode: demand.logistics_code || enriched.logisticsCode || '',
@@ -2736,18 +2787,31 @@ function demandRows(includeInactive = false, user = null) {
       orderNo,
       documentStatus,
       orderDates,
+      contractDeliveryDates,
       oaFlowNo,
       orderCreator,
       stockQty,
       demandAfterStock,
-      unpreparedQty: numberValue(progress.unprepared_qty),
-      preparedNotStartedQty: numberValue(progress.prepared_not_started_qty),
-      inProductionQty: numberValue(progress.in_production_qty),
-      finishedQty: numberValue(progress.finished_qty),
+      unpreparedQty,
+      preparedNotStartedQty,
+      inProductionQty,
+      finishedQty,
       shippedQty,
       progressTotal,
-      gap: remainingInboundQty - progressTotal,
+      gap: progressGap,
+      progressAdjustmentRequired: Math.abs(progressGap) > 0.000001,
       shortageAfterStock: demandAfterStock - progressTotal,
+      productionDeliveryDate: progress.production_delivery_date || '',
+      unproducedEstimatedDeliveryDate: progress.unproduced_estimated_delivery_date || '',
+      fulfillmentStatus,
+      pretaxPrice,
+      pretaxPriceMaintained: Boolean(enriched.pretaxPriceMaintained),
+      normalFulfillmentQty,
+      abnormalFulfillmentQty,
+      normalFulfillmentAmount: normalFulfillmentQty * pretaxPrice,
+      abnormalFulfillmentAmount: abnormalFulfillmentQty * pretaxPrice,
+      unfulfilledReason: progress.unfulfilled_reason || '',
+      reasonDetail: progress.reason_detail || '',
       remark: progress.remark || '',
       progressUpdatedBy: progress.updated_by || '',
       progressUpdatedAt: progress.updated_at || '',
@@ -2772,6 +2836,12 @@ function rawOrderDate(row) {
 
 function uniqueOrderDates(rows) {
   return uniqueDelimitedValues([...rows].sort(compareOaRows).map(rawOrderDate));
+}
+
+function uniqueDeliveryDates(rows) {
+  return [...new Set(rows.map((row) => normalize(row.deliveryDate || row.delivery_date)).filter(Boolean))]
+    .sort((left, right) => dateSortValue(left) - dateSortValue(right) || left.localeCompare(right, 'zh-Hans-CN'))
+    .join('、');
 }
 
 function oldOrderNosForDemand(demandKeyValue) {
@@ -2935,6 +3005,8 @@ function compareRowsFromSummary(summary, sourceRows, user, options = {}) {
     const enriched = enrichDemandFields(supplier, materialCode, orderCreator, lookups);
     const progressInput = current ? {
       demand_key: current.demandKey,
+      unprepared_qty: current.unpreparedQty,
+      prepared_not_started_qty: current.preparedNotStartedQty,
       in_production_qty: current.inProductionQty,
       finished_qty: current.finishedQty,
       shipped_qty: current.shippedQty
@@ -2988,10 +3060,13 @@ function compareRowsFromSummary(summary, sourceRows, user, options = {}) {
       automaticAction: handlingType === 'auto_new' ? '新增订单' : handlingType === 'auto_closed' ? '正常业务关闭' : handlingType === 'auto_inbound' ? '累计入库变化' : '',
       automaticReason: handlingType === 'auto_new' ? '新增订单' : handlingType === 'auto_closed' ? '正常业务关闭' : handlingType === 'auto_inbound' ? '累计入库变化' : '',
       stockQty: numberValue(stock?.stock_qty),
+      unpreparedQty: numberValue(projectedProgress.unprepared),
+      preparedNotStartedQty: numberValue(projectedProgress.preparedNotStarted),
       inProductionQty: numberValue(projectedProgress.inProduction),
       finishedQty: numberValue(projectedProgress.finished),
       shippedQty: numberValue(projectedProgress.shipped),
-      progressTotal: numberValue(projectedProgress.inProduction) + numberValue(projectedProgress.finished) + numberValue(projectedProgress.shipped),
+      progressTotal: numberValue(projectedProgress.unprepared) + numberValue(projectedProgress.preparedNotStarted)
+        + numberValue(projectedProgress.inProduction) + numberValue(projectedProgress.finished),
       newSnapshot: next || null
     };
   }).filter(Boolean).sort((a, b) => (
@@ -3165,7 +3240,8 @@ function backfillCompareRowsFromSnapshot(session) {
           uniqueCreators(newOrderRows) || oldCreatorsForDemand(diff.demand_key),
           numberValue(diff.old_qty), numberValue(diff.new_qty), numberValue(diff.new_qty) - numberValue(diff.old_qty), diff.diff_type,
           oldOrderNosForDemand(diff.demand_key), uniqueOrderNos(newOrderRows), oldOrderDatesForDemand(diff.demand_key), uniqueOrderDates(newOrderRows),
-          numberValue(progress.in_production_qty) + numberValue(progress.finished_qty),
+          numberValue(progress.unprepared_qty) + numberValue(progress.prepared_not_started_qty)
+            + numberValue(progress.in_production_qty) + numberValue(progress.finished_qty),
           numberValue(stock.stock_qty), '{}', session.created_at || diff.created_at
         ]
       );
@@ -3232,9 +3308,12 @@ function compareRowsForSession(sessionId, user) {
       oldInboundQty: numberValue(row.old_inbound_qty),
       inboundDeltaQty: numberValue(row.inbound_qty) - numberValue(row.old_inbound_qty),
       handlingType: row.handling_type || 'pending',
+      unpreparedQty: numberValue(progress.unprepared_qty),
+      preparedNotStartedQty: numberValue(progress.prepared_not_started_qty),
       inProductionQty: numberValue(progress.in_production_qty),
       finishedQty: numberValue(progress.finished_qty),
-      progressTotal: numberValue(progress.in_production_qty) + numberValue(progress.finished_qty),
+      progressTotal: numberValue(progress.unprepared_qty) + numberValue(progress.prepared_not_started_qty)
+        + numberValue(progress.in_production_qty) + numberValue(progress.finished_qty),
       stockQty: numberValue(row.stock_qty)
     };
   }).filter(Boolean);
@@ -3527,6 +3606,7 @@ function compactKingdeeRaw(row) {
   return {
     createDate: row.createDate || '',
     purchaseDate: row.purchaseDate || '',
+    deliveryDate: row.deliveryDate || '',
     orderDate: row.purchaseDate || row.createDate || '',
     oaFlowNo: row.oaFlowNo || ''
   };
@@ -3576,7 +3656,6 @@ function applyKingdeeSnapshot({
     ])
   );
   const progressMap = new Map(all('SELECT * FROM supplier_progress').map((row) => [row.demand_key, row]));
-  const manualProgressKeys = new Set(all('SELECT DISTINCT demand_key FROM supplier_progress_snapshots').map((row) => row.demand_key));
   const demandParams = [];
   const progressParams = [];
   summary.forEach((row) => {
@@ -3587,9 +3666,24 @@ function applyKingdeeSnapshot({
     ]);
     const progress = progressMap.get(row.demandKey);
     const nextProgress = progressAfterInbound(row.trackingRemainingQty, progress, row.trackingInboundQty, {
-      preserveExistingProgress: Boolean(progress) && manualProgressKeys.has(row.demandKey)
+      preserveExistingProgress: Boolean(progress)
     });
-    progressParams.push([row.demandKey, nextProgress.inProduction, nextProgress.finished, nextProgress.shipped, progress?.remark || '', userName, now]);
+    progressParams.push([
+      row.demandKey,
+      nextProgress.unprepared,
+      nextProgress.preparedNotStarted,
+      nextProgress.inProduction,
+      nextProgress.finished,
+      nextProgress.shipped,
+      progress?.production_delivery_date || '',
+      progress?.unproduced_estimated_delivery_date || '',
+      progress?.fulfillment_status || '',
+      progress?.unfulfilled_reason || '',
+      progress?.reason_detail || '',
+      progress?.remark || '',
+      userName,
+      now
+    ]);
   });
   run('UPDATE order_demands SET active = 0');
   runMany(
@@ -3613,14 +3707,22 @@ function applyKingdeeSnapshot({
     demandParams
   );
   runMany(
-    `INSERT INTO supplier_progress (demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty, remark, updated_by, updated_at)
-     VALUES (?, 0, 0, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO supplier_progress (
+       demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty,
+       production_delivery_date, unproduced_estimated_delivery_date, fulfillment_status,
+       unfulfilled_reason, reason_detail, remark, updated_by, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(demand_key) DO UPDATE SET
-       unprepared_qty = 0,
-       prepared_not_started_qty = 0,
+       unprepared_qty = excluded.unprepared_qty,
+       prepared_not_started_qty = excluded.prepared_not_started_qty,
        in_production_qty = excluded.in_production_qty,
        finished_qty = excluded.finished_qty,
        shipped_qty = excluded.shipped_qty,
+       production_delivery_date = supplier_progress.production_delivery_date,
+       unproduced_estimated_delivery_date = supplier_progress.unproduced_estimated_delivery_date,
+       fulfillment_status = supplier_progress.fulfillment_status,
+       unfulfilled_reason = supplier_progress.unfulfilled_reason,
+       reason_detail = supplier_progress.reason_detail,
        remark = supplier_progress.remark,
        updated_by = excluded.updated_by,
        updated_at = excluded.updated_at`,
@@ -4262,6 +4364,7 @@ app.post('/api/progress/clear', requireAuth, requirePage('progressRefresh'), req
 app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'), (req, res) => {
   const demand = get('SELECT * FROM order_demands WHERE demand_key = ?', [req.params.demandKey]);
   if (!demand) return res.status(404).json({ error: '需求不存在' });
+  const progress = progressForDemand(demand.demand_key);
   const orderCreator = oldCreatorsForDemand(demand.demand_key);
   const enriched = enrichDemandFields(demand.supplier, demand.material_code, orderCreator);
   if (!canEditDemand(req.user, { ...demand, order_creator: orderCreator, purchase_owner: enriched.purchaseOwner })) {
@@ -4272,36 +4375,75 @@ app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'
   if (Math.abs(clientShipped - dbShipped) > 0.000001) {
     return res.status(409).json({ error: '采购订单已更新，请刷新页面后重新提交' });
   }
-  const values = {
-    inProduction: numberValue(req.body.inProductionQty),
-    finished: numberValue(req.body.finishedQty),
-    shipped: clientShipped,
-    remark: normalize(req.body.remark)
-  };
   const remainingInboundQty = Math.max(numberValue(demand.tracking_remaining_qty), 0);
-  const total = values.inProduction + values.finished;
-  if (Math.abs(total - remainingInboundQty) > 0.000001) {
-    return res.status(400).json({ error: '在产品、完工产品合计必须等于未交付数量' });
+  const preparedNotStarted = progressQuantityValue(req.body.preparedNotStartedQty, progress.prepared_not_started_qty, '已备料未生产');
+  const inProduction = progressQuantityValue(req.body.inProductionQty, progress.in_production_qty, '生产中产品');
+  const finished = progressQuantityValue(req.body.finishedQty, progress.finished_qty, '完工未发产品');
+  const assignedQty = preparedNotStarted + inProduction + finished;
+  if (assignedQty - remainingInboundQty > 0.000001) {
+    return res.status(400).json({ error: '已备料未生产、生产中产品、完工未发产品合计不能超过未交付数量' });
   }
+  const unprepared = Math.max(remainingInboundQty - assignedQty, 0);
+  const fulfillmentStatus = normalize(req.body.fulfillmentStatus ?? progress.fulfillment_status);
+  if (fulfillmentStatus && !['是', '否'].includes(fulfillmentStatus)) {
+    return res.status(400).json({ error: '是否正常履约只能选择“是”或“否”' });
+  }
+  const unfulfilledReason = normalize(req.body.unfulfilledReason ?? progress.unfulfilled_reason);
+  if (fulfillmentStatus === '否' && !unfulfilledReason) {
+    return res.status(400).json({ error: '非正常履约必须填写未履约原因' });
+  }
+  const values = {
+    unprepared,
+    preparedNotStarted,
+    inProduction,
+    finished,
+    shipped: clientShipped,
+    productionDeliveryDate: progressDateValue(req.body.productionDeliveryDate ?? progress.production_delivery_date, '生产中交付时间'),
+    unproducedEstimatedDeliveryDate: progressDateValue(req.body.unproducedEstimatedDeliveryDate ?? progress.unproduced_estimated_delivery_date, '未生产预计交付时间'),
+    fulfillmentStatus,
+    unfulfilledReason,
+    reasonDetail: normalize(req.body.reasonDetail ?? progress.reason_detail),
+    remark: normalize(req.body.remark ?? progress.remark)
+  };
   const now = nowText();
   transaction(() => {
     run(
-      `INSERT INTO supplier_progress (demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty, remark, updated_by, updated_at)
-       VALUES (?, 0, 0, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO supplier_progress (
+         demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty,
+         production_delivery_date, unproduced_estimated_delivery_date, fulfillment_status,
+         unfulfilled_reason, reason_detail, remark, updated_by, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(demand_key) DO UPDATE SET
-         unprepared_qty = 0,
-         prepared_not_started_qty = 0,
+         unprepared_qty = excluded.unprepared_qty,
+         prepared_not_started_qty = excluded.prepared_not_started_qty,
          in_production_qty = excluded.in_production_qty,
          finished_qty = excluded.finished_qty,
          shipped_qty = excluded.shipped_qty,
+         production_delivery_date = excluded.production_delivery_date,
+         unproduced_estimated_delivery_date = excluded.unproduced_estimated_delivery_date,
+         fulfillment_status = excluded.fulfillment_status,
+         unfulfilled_reason = excluded.unfulfilled_reason,
+         reason_detail = excluded.reason_detail,
          remark = excluded.remark,
          updated_by = excluded.updated_by,
          updated_at = excluded.updated_at`,
-      [demand.demand_key, values.inProduction, values.finished, values.shipped, values.remark, req.user.name, now]
+      [
+        demand.demand_key, values.unprepared, values.preparedNotStarted, values.inProduction, values.finished, values.shipped,
+        values.productionDeliveryDate, values.unproducedEstimatedDeliveryDate, values.fulfillmentStatus,
+        values.unfulfilledReason, values.reasonDetail, values.remark, req.user.name, now
+      ]
     );
     run(
-      'INSERT INTO supplier_progress_snapshots (id, demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty, remark, updated_by, updated_at) VALUES (?, ?, 0, 0, ?, ?, ?, ?, ?, ?)',
-      [randomUUID(), demand.demand_key, values.inProduction, values.finished, values.shipped, values.remark, req.user.name, now]
+      `INSERT INTO supplier_progress_snapshots (
+         id, demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty,
+         production_delivery_date, unproduced_estimated_delivery_date, fulfillment_status,
+         unfulfilled_reason, reason_detail, remark, updated_by, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        randomUUID(), demand.demand_key, values.unprepared, values.preparedNotStarted, values.inProduction, values.finished, values.shipped,
+        values.productionDeliveryDate, values.unproducedEstimatedDeliveryDate, values.fulfillmentStatus,
+        values.unfulfilledReason, values.reasonDetail, values.remark, req.user.name, now
+      ]
     );
   });
   res.json({ rows: demandRows(false, req.user) });
@@ -4815,15 +4957,29 @@ app.post('/api/inventory', requireAuth, requirePage('inventory'), (req, res) => 
 
 app.get('/api/progress/export', requireAuth, async (req, res) => {
   const rows = demandRows(false, req.user).filter((row) => numberValue(row.remainingInboundQty) > 0);
-  const headers = ['demandKey', '采购组', '采购下单人', '月份', '采购订单号', '创建人', 'OA备货流程号', '采购组织', '事业部', '供应商简称', '产品线', '系列', '物料编码', '物料', '物流编码', 'SKU', '未交付数量', '在产品', '完工产品', '已发货数量', '备注'];
+  const headers = [
+    'demandKey', '采购组', '采购下单人', '月份', '采购订单号', '创建人', 'OA备货流程号', '采购组织',
+    '事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称',
+    '运营备货数量', '未交付数量', '已发货数量',
+    '未备料未生产', '已备料未生产', '生产中产品', '完工未发产品',
+    '合同约定交期', '生产中交付时间', '未生产预计交付时间',
+    '是否正常履约', '不含税结算价', '正常履约数量', '正常履约金额',
+    '非正常履约数量', '非正常履约金额', '未履约原因', '原因详情', '备注', '状态校验'
+  ];
   const aoa = [headers];
   rows.forEach((row) => {
     aoa.push([
       row.demandKey, row.purchaseGroup, row.purchaseOwner, row.month, row.orderNo, row.orderCreator, row.oaFlowNo, row.purchaseOrg,
       row.businessUnit, row.orderSupplierShortName || UNMATCHED_SUPPLIER_SHORT_NAME,
-      row.productLine, row.productSeries, row.materialCode, row.materialName || row.materialCode,
-      row.logisticsCode, row.sku, row.remainingInboundQty,
-      row.inProductionQty, row.finishedQty, row.shippedQty, row.remark
+      row.productLine, row.productSeries, row.materialCode, row.sku, row.materialName || row.materialCode,
+      row.operationStockQty, row.remainingInboundQty, row.shippedQty,
+      row.unpreparedQty, row.preparedNotStartedQty, row.inProductionQty, row.finishedQty,
+      row.contractDeliveryDates, row.productionDeliveryDate, row.unproducedEstimatedDeliveryDate,
+      row.fulfillmentStatus || '待维护', row.pretaxPriceMaintained ? row.pretaxPrice : '未维护',
+      row.normalFulfillmentQty, row.normalFulfillmentAmount,
+      row.abnormalFulfillmentQty, row.abnormalFulfillmentAmount,
+      row.unfulfilledReason, row.reasonDetail, row.remark,
+      row.progressAdjustmentRequired ? `待人工调整（差额 ${row.gap}）` : '正常'
     ]);
   });
   const wb = xlsx.utils.book_new();
@@ -4847,24 +5003,58 @@ app.post('/api/progress/import', requireAuth, upload.single('file'), (req, res) 
       if (!demand) return;
       const qty = (col) => Math.max(0, numberValue(row[col] || 0));
       const remark = normalize(row['备注'] || row.remark || '');
-      const inProduction = qty('在产品') || qty('生产中');
-      const finished = qty('完工产品') || qty('已完工');
+      const preparedNotStarted = qty('已备料未生产');
+      const inProduction = qty('生产中产品') || qty('在产品') || qty('生产中');
+      const finished = qty('完工未发产品') || qty('完工产品') || qty('已完工');
       const shipped = numberValue(demand.tracking_inbound_qty);
       const expectedQty = Math.max(numberValue(demand.tracking_remaining_qty), 0);
-      if (Math.abs(inProduction + finished - expectedQty) > 0.000001) return;
+      const assignedQty = preparedNotStarted + inProduction + finished;
+      if (assignedQty - expectedQty > 0.000001) return;
+      const unprepared = Math.max(expectedQty - assignedQty, 0);
+      const fulfillmentStatus = normalize(row['是否正常履约'] || row['是否需正常交货'] || row.fulfillmentStatus || '');
+      if (fulfillmentStatus && !['是', '否'].includes(fulfillmentStatus)) return;
+      const unfulfilledReason = normalize(row['未履约原因'] || row.unfulfilledReason || '');
+      if (fulfillmentStatus === '否' && !unfulfilledReason) return;
+      const productionDeliveryDate = progressDateValue(row['生产中交付时间'] || row.productionDeliveryDate || '', '生产中交付时间');
+      const unproducedEstimatedDeliveryDate = progressDateValue(row['未生产预计交付时间'] || row.unproducedEstimatedDeliveryDate || '', '未生产预计交付时间');
+      const reasonDetail = normalize(row['原因详情'] || row.reasonDetail || '');
       run(
-        `INSERT INTO supplier_progress (demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty, remark, updated_by, updated_at)
-         VALUES (?, 0, 0, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO supplier_progress (
+           demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty,
+           production_delivery_date, unproduced_estimated_delivery_date, fulfillment_status,
+           unfulfilled_reason, reason_detail, remark, updated_by, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(demand_key) DO UPDATE SET
-           unprepared_qty = 0,
-           prepared_not_started_qty = 0,
+           unprepared_qty = excluded.unprepared_qty,
+           prepared_not_started_qty = excluded.prepared_not_started_qty,
            in_production_qty = excluded.in_production_qty,
            finished_qty = excluded.finished_qty,
            shipped_qty = excluded.shipped_qty,
+           production_delivery_date = excluded.production_delivery_date,
+           unproduced_estimated_delivery_date = excluded.unproduced_estimated_delivery_date,
+           fulfillment_status = excluded.fulfillment_status,
+           unfulfilled_reason = excluded.unfulfilled_reason,
+           reason_detail = excluded.reason_detail,
            remark = excluded.remark,
            updated_by = excluded.updated_by,
            updated_at = excluded.updated_at`,
-        [demandKeyValue, inProduction, finished, shipped, remark, req.user.name, now]
+        [
+          demandKeyValue, unprepared, preparedNotStarted, inProduction, finished, shipped,
+          productionDeliveryDate, unproducedEstimatedDeliveryDate, fulfillmentStatus,
+          unfulfilledReason, reasonDetail, remark, req.user.name, now
+        ]
+      );
+      run(
+        `INSERT INTO supplier_progress_snapshots (
+           id, demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty,
+           production_delivery_date, unproduced_estimated_delivery_date, fulfillment_status,
+           unfulfilled_reason, reason_detail, remark, updated_by, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          randomUUID(), demandKeyValue, unprepared, preparedNotStarted, inProduction, finished, shipped,
+          productionDeliveryDate, unproducedEstimatedDeliveryDate, fulfillmentStatus,
+          unfulfilledReason, reasonDetail, remark, req.user.name, now
+        ]
       );
       updated++;
     });

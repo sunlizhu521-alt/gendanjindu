@@ -55,6 +55,8 @@ const criticalTotals = {
   kingdeeInboundQty: scalar('SELECT COALESCE(SUM(inbound_qty), 0) FROM kingdee_orders'),
   progressInProductionQty: scalar('SELECT COALESCE(SUM(in_production_qty), 0) FROM supplier_progress'),
   progressFinishedQty: scalar('SELECT COALESCE(SUM(finished_qty), 0) FROM supplier_progress'),
+  progressUnpreparedQty: scalar('SELECT COALESCE(SUM(unprepared_qty), 0) FROM supplier_progress'),
+  progressPreparedNotStartedQty: scalar('SELECT COALESCE(SUM(prepared_not_started_qty), 0) FROM supplier_progress'),
   progressShippedQty: scalar('SELECT COALESCE(SUM(shipped_qty), 0) FROM supplier_progress'),
   inventoryQty: scalar('SELECT COALESCE(SUM(stock_qty), 0) FROM inventory'),
   appliedDimensionFiles: scalar('SELECT COUNT(*) FROM dimension_files WHERE applied = 1')

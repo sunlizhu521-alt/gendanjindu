@@ -5212,7 +5212,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, selected = fals
   );
 }
 
-function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产跟进', onlyIssues = false, currentAppliedAt = '' }) {
+function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '生产跟进', onlyIssues = false, currentAppliedAt = '' }) {
   const trackableRows = useMemo(
     () => rows.filter((row) => row.active && numberValue(row.remainingInboundQty) > 0),
     [rows]
@@ -5221,6 +5221,10 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
   const [selectedKeys, setSelectedKeys] = useState([]);
   const [drafts, setDrafts] = useState({});
   const [currentPage, setCurrentPage] = useState(1);
+  const [clearPanelOpen, setClearPanelOpen] = useState(false);
+  const [clearFilters, setClearFilters] = useState({ purchaseOwners: [], suppliers: [], productLines: [], productSeries: [] });
+  const [clearPreview, setClearPreview] = useState(null);
+  const [clearBusy, setClearBusy] = useState(false);
   const pageSize = 20;
   const visibleFiltered = filtered;
   const displayRows = onlyIssues
@@ -5241,6 +5245,19 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
   }, [currentPage, totalPages]);
   const editableKeys = pageRows.filter((row) => row.canEdit).map((row) => row.demandKey);
   const allVisibleEditableSelected = editableKeys.length > 0 && editableKeys.every((key) => selectedKeys.includes(key));
+  const clearFilterRows = (omit = '') => trackableRows.filter((row) => (
+    (omit === 'purchaseOwners' || clearFilters.purchaseOwners.length === 0 || clearFilters.purchaseOwners.includes(row.purchaseOwner))
+    && (omit === 'suppliers' || clearFilters.suppliers.length === 0 || clearFilters.suppliers.includes(supplierName(row)))
+    && (omit === 'productLines' || clearFilters.productLines.length === 0 || clearFilters.productLines.includes(row.productLine))
+    && (omit === 'productSeries' || clearFilters.productSeries.length === 0 || clearFilters.productSeries.includes(row.productSeries))
+  ));
+  const clearOptions = useMemo(() => ({
+    purchaseOwners: unique(clearFilterRows('purchaseOwners').map((row) => row.purchaseOwner)),
+    suppliers: unique(clearFilterRows('suppliers').map((row) => supplierName(row))),
+    productLines: unique(clearFilterRows('productLines').map((row) => row.productLine)),
+    productSeries: unique(clearFilterRows('productSeries').map((row) => row.productSeries))
+  }), [trackableRows, clearFilters]);
+  const hasClearFilter = Object.values(clearFilters).some((values) => values.length > 0);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -5260,6 +5277,68 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
       return;
     }
     setSelectedKeys(selectedKeys.filter((key) => !editableKeys.includes(key)));
+  }
+
+  function updateClearFilter(key, value) {
+    setClearFilters((current) => ({ ...current, [key]: value }));
+    setClearPreview(null);
+  }
+
+  async function previewProgressClear() {
+    if (!hasClearFilter) {
+      setMessage('请至少选择一个采购下单人、供应商、产品线或系列。');
+      return;
+    }
+    setClearBusy(true);
+    try {
+      const payload = await request('/api/progress/clear-preview', {
+        token,
+        method: 'POST',
+        body: JSON.stringify(clearFilters)
+      });
+      setClearPreview(payload);
+      setMessage(`清除范围预览完成：匹配 ${payload.matchedDemands} 条需求。`);
+    } catch (err) {
+      setMessage('清除范围预览失败：' + err.message);
+    } finally {
+      setClearBusy(false);
+    }
+  }
+
+  async function clearProgressData() {
+    if (!clearPreview) return;
+    const confirmed = window.confirm(
+      `确定清除匹配的 ${clearPreview.matchedDemands} 条需求的跟单数据吗？\n\n`
+      + `将删除当前跟单 ${clearPreview.currentProgressCount} 条、历史快照 ${clearPreview.snapshotCount} 条。\n`
+      + '采购订单和订单需求不会删除，此操作不可撤销。'
+    );
+    if (!confirmed) return;
+    setClearBusy(true);
+    try {
+      const payload = await request('/api/progress/clear', {
+        token,
+        method: 'POST',
+        body: JSON.stringify({
+          ...clearFilters,
+          expectedCount: clearPreview.matchedDemands,
+          expectedCurrentProgressCount: clearPreview.currentProgressCount,
+          expectedSnapshotCount: clearPreview.snapshotCount,
+          confirmation: 'CLEAR_PROGRESS'
+        })
+      });
+      setMessage(`已清除 ${payload.clearedDemands} 条需求的跟单数据。`);
+      setClearPreview(null);
+      setClearFilters({ purchaseOwners: [], suppliers: [], productLines: [], productSeries: [] });
+      setClearPanelOpen(false);
+      setSelectedKeys([]);
+      setDrafts({});
+      await reloadDemands();
+    } catch (err) {
+      setClearPreview(null);
+      setMessage('清除生产跟进数据失败：' + err.message);
+    } finally {
+      setClearBusy(false);
+    }
   }
 
   async function handleExport() {
@@ -5324,7 +5403,39 @@ function ProgressPage({ rows, token, reloadDemands, setMessage, title = '生产�
           <h2>{title}</h2>
           <span className="section-count">共 {displayRows.length} 条，第 {currentPage} / {totalPages} 页</span>
           {!onlyIssues && <button type="button" className="compact-button" onClick={handleExport}>导出 Excel</button>}
+          {!onlyIssues && user?.role === '管理员' && (
+            <button type="button" className="danger compact-button" onClick={() => setClearPanelOpen((open) => !open)}>
+              清除跟单数据
+            </button>
+          )}
         </div>
+        {clearPanelOpen && user?.role === '管理员' && (
+          <section className="progress-clear-panel" aria-label="清除跟单数据">
+            <div className="progress-clear-heading">
+              <div>
+                <strong>选择清除范围</strong>
+                <span>至少选择一个条件；不同筛选条件之间为同时满足。</span>
+              </div>
+              <button type="button" className="ghost compact-button" onClick={() => setClearPanelOpen(false)}>关闭</button>
+            </div>
+            <div className="toolbar filters-row progress-clear-filters">
+              <MultiSelectFilter label="采购下单人" allLabel="全部采购下单人" value={clearFilters.purchaseOwners} options={clearOptions.purchaseOwners} onChange={(value) => updateClearFilter('purchaseOwners', value)} />
+              <MultiSelectFilter label="供应商" allLabel="全部供应商" value={clearFilters.suppliers} options={clearOptions.suppliers} onChange={(value) => updateClearFilter('suppliers', value)} />
+              <MultiSelectFilter label="产品线" allLabel="全部产品线" value={clearFilters.productLines} options={clearOptions.productLines} onChange={(value) => updateClearFilter('productLines', value)} />
+              <MultiSelectFilter label="系列" allLabel="全部系列" value={clearFilters.productSeries} options={clearOptions.productSeries} onChange={(value) => updateClearFilter('productSeries', value)} />
+              <button type="button" className="ghost compact-button" onClick={() => { setClearFilters({ purchaseOwners: [], suppliers: [], productLines: [], productSeries: [] }); setClearPreview(null); }}>清空条件</button>
+              <button type="button" className="compact-button" disabled={!hasClearFilter || clearBusy} onClick={previewProgressClear}>{clearBusy ? '处理中...' : '预览清除范围'}</button>
+            </div>
+            {clearPreview && (
+              <div className="progress-clear-preview">
+                <span>匹配需求 <b>{clearPreview.matchedDemands}</b> 条</span>
+                <span>当前跟单 <b>{clearPreview.currentProgressCount}</b> 条</span>
+                <span>历史快照 <b>{clearPreview.snapshotCount}</b> 条</span>
+                <button type="button" className="danger compact-button" disabled={clearBusy || clearPreview.matchedDemands === 0} onClick={clearProgressData}>确认清除</button>
+              </div>
+            )}
+          </section>
+        )}
         <FilterBar filters={filters} setFilters={setFilters} options={options} />
         <section className="progress-chart-grid">
           <ProgressStackedChart title="供应商未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => supplierName(row)} />
@@ -7060,7 +7171,7 @@ function App() {
         {shouldMount('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><Dashboard rows={demands} title="运营看板-未交付" filterKey="operationBoard" currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
         {shouldMount('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
-        {shouldMount('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} reloadDemands={reloadDemands} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
+        {shouldMount('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('differenceAllocation') && <PagePane page="differenceAllocation" activeTab={activeTab}><DifferenceAllocationPage token={token} user={user} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('wangdianData') && <PagePane page="wangdianData" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="国内数据" slots={WANGDIAN_SLOTS} gridColumns={3} /></PagePane>}
         {shouldMount('lingxingInventory') && <PagePane page="lingxingInventory" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="领星库存" slots={LINGXING_INVENTORY_SLOTS} onDataApplied={refreshCrossBorderData} highlightSlotId={highlightSlotId} /></PagePane>}

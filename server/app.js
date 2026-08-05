@@ -408,6 +408,8 @@ function auditActionForRequest(req) {
   if (requestPath === '/api/auth/logout') return '退出登录';
   if (requestPath === '/api/operation-logs/export') return '导出操作日志';
   if (requestPath.includes('/export')) return '导出数据';
+  if (requestPath === '/api/progress/clear-preview') return '预览清除生产跟进范围';
+  if (requestPath === '/api/progress/clear') return '清除生产跟进数据';
   if (requestPath.includes('/preview') || requestPath === '/api/workbook/inspect') return '解析预览';
   if (requestPath.includes('/test-cache') || requestPath.endsWith('/cache')) return '清除采购订单缓存';
   if (requestPath === '/api/users/bulk-delete' && req.method === 'POST') return '批量删除用户';
@@ -433,6 +435,7 @@ function auditActionForRequest(req) {
 }
 
 function auditTargetForRequest(req) {
+  if (req.auditTarget) return normalize(req.auditTarget).slice(0, 500);
   if (req.file) return safeFilename(req.file);
   const body = req.body || {};
   const target = body.name || body.demandKey || body.merchantCode || body.rowId || body.id;
@@ -441,6 +444,7 @@ function auditTargetForRequest(req) {
 }
 
 function auditDetailsForRequest(req) {
+  if (req.auditDetails) return normalize(req.auditDetails).slice(0, 2000);
   if (req.file) return `文件：${safeFilename(req.file).slice(0, 500)}，大小：${Math.ceil(numberValue(req.file.size) / 1024)} KB`;
   if (Array.isArray(req.body?.rows)) return `提交 ${req.body.rows.length} 条记录`;
   if (Array.isArray(req.body?.userIds)) return `选择 ${req.body.userIds.length} 名用户`;
@@ -3687,6 +3691,62 @@ function inventoryManualReconciliationNoteKey(category, businessUnit, materialCo
   return JSON.stringify([category, businessUnit, materialCode]);
 }
 
+const PROGRESS_CLEAR_FILTER_FIELDS = Object.freeze({
+  purchaseOwners: 'purchaseOwner',
+  suppliers: 'supplierDisplayName',
+  productLines: 'productLine',
+  productSeries: 'productSeries'
+});
+
+function progressClearFilters(body = {}) {
+  return Object.fromEntries(Object.keys(PROGRESS_CLEAR_FILTER_FIELDS).map((key) => [
+    key,
+    [...new Set((Array.isArray(body[key]) ? body[key] : []).map(normalize).filter(Boolean))].slice(0, 500)
+  ]));
+}
+
+function progressClearSelection(user, filters) {
+  if (!Object.values(filters).some((values) => values.length)) {
+    const error = new Error('请至少选择一个采购下单人、供应商、产品线或系列');
+    error.status = 400;
+    throw error;
+  }
+  const selected = Object.fromEntries(Object.entries(filters).map(([key, values]) => [key, new Set(values)]));
+  return demandRows(false, user)
+    .filter((row) => numberValue(row.remainingInboundQty) > 0)
+    .filter((row) => {
+      const values = {
+        purchaseOwner: normalize(row.purchaseOwner),
+        supplierDisplayName: normalize(row.supplierShortName) || normalize(row.supplier),
+        productLine: normalize(row.productLine),
+        productSeries: normalize(row.productSeries)
+      };
+      return Object.entries(PROGRESS_CLEAR_FILTER_FIELDS).every(([filterKey, rowKey]) => (
+        selected[filterKey].size === 0 || selected[filterKey].has(values[rowKey])
+      ));
+    });
+}
+
+function progressClearPreview(user, filters) {
+  const rows = progressClearSelection(user, filters);
+  const keys = new Set(rows.map((row) => row.demandKey));
+  const currentProgressCount = all('SELECT demand_key FROM supplier_progress').filter((row) => keys.has(row.demand_key)).length;
+  const snapshotCount = all('SELECT demand_key FROM supplier_progress_snapshots').filter((row) => keys.has(row.demand_key)).length;
+  return {
+    matchedDemands: rows.length,
+    currentProgressCount,
+    snapshotCount,
+    sampleRows: rows.slice(0, 10).map((row) => ({
+      demandKey: row.demandKey,
+      purchaseOwner: row.purchaseOwner,
+      supplier: normalize(row.supplierShortName) || normalize(row.supplier),
+      productLine: row.productLine,
+      productSeries: row.productSeries,
+      materialCode: row.materialCode
+    }))
+  };
+}
+
 function inventoryManualReconciliationNotes(category) {
   return all(
     `SELECT category, business_unit, material_code, remark, updated_by, updated_at
@@ -4153,6 +4213,50 @@ app.post('/api/imports/kingdee/new-snapshot', requireAuth, requirePage('kingdeeI
 
 app.get('/api/demands', requireAuth, (req, res) => {
   res.json({ rows: demandRows(req.query.includeInactive === '1', req.user), currentAppliedAt: currentAppliedAt() });
+});
+
+app.post('/api/progress/clear-preview', requireAuth, requirePage('progressRefresh'), requireAdmin, (req, res) => {
+  try {
+    const filters = progressClearFilters(req.body);
+    const preview = progressClearPreview(req.user, filters);
+    req.auditTarget = `${preview.matchedDemands} 条需求`;
+    req.auditDetails = `筛选条件：${JSON.stringify(filters)}；当前跟单 ${preview.currentProgressCount} 条；历史快照 ${preview.snapshotCount} 条`;
+    res.json({ filters, ...preview });
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message || '清除范围预览失败' });
+  }
+});
+
+app.post('/api/progress/clear', requireAuth, requirePage('progressRefresh'), requireAdmin, (req, res) => {
+  try {
+    const filters = progressClearFilters(req.body);
+    const preview = progressClearPreview(req.user, filters);
+    const expectedCount = Math.max(0, Math.floor(numberValue(req.body.expectedCount)));
+    const expectedCurrentProgressCount = Math.max(0, Math.floor(numberValue(req.body.expectedCurrentProgressCount)));
+    const expectedSnapshotCount = Math.max(0, Math.floor(numberValue(req.body.expectedSnapshotCount)));
+    if (req.body.confirmation !== 'CLEAR_PROGRESS') {
+      return res.status(400).json({ error: '缺少清除确认标识' });
+    }
+    if (expectedCount !== preview.matchedDemands
+      || expectedCurrentProgressCount !== preview.currentProgressCount
+      || expectedSnapshotCount !== preview.snapshotCount) {
+      return res.status(409).json({ error: '清除范围已变化，请重新预览后再确认' });
+    }
+    const demandKeys = progressClearSelection(req.user, filters).map((row) => row.demandKey);
+    transaction(() => {
+      runMany('DELETE FROM supplier_progress WHERE demand_key = ?', demandKeys.map((key) => [key]));
+      runMany('DELETE FROM supplier_progress_snapshots WHERE demand_key = ?', demandKeys.map((key) => [key]));
+    });
+    req.auditTarget = `${preview.matchedDemands} 条需求`;
+    req.auditDetails = `筛选条件：${JSON.stringify(filters)}；清除当前跟单 ${preview.currentProgressCount} 条；清除历史快照 ${preview.snapshotCount} 条`;
+    res.json({
+      clearedDemands: preview.matchedDemands,
+      clearedCurrentProgress: preview.currentProgressCount,
+      clearedSnapshots: preview.snapshotCount
+    });
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message || '清除生产跟进数据失败' });
+  }
 });
 
 app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'), (req, res) => {

@@ -2477,6 +2477,68 @@ test('inventory summary and domestic board use complete source models and enforc
       { diffType: '数量增加', oldQty: 1200, newQty: 1300 }
     );
 
+    const emptyProgressClearPreview = await fetch(`http://127.0.0.1:${port}/api/progress/clear-preview`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    assert.equal(emptyProgressClearPreview.status, 400);
+
+    const progressClearFilters = {
+      purchaseOwners: [m1Demand.purchaseOwner],
+      suppliers: [m1Demand.supplierShortName],
+      productLines: [m1Demand.productLine],
+      productSeries: [m1Demand.productSeries]
+    };
+    const progressClearPreviewResponse = await fetch(`http://127.0.0.1:${port}/api/progress/clear-preview`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify(progressClearFilters)
+    });
+    assert.equal(progressClearPreviewResponse.status, 200);
+    const progressClearPreview = await progressClearPreviewResponse.json();
+    assert.ok(progressClearPreview.matchedDemands >= 1);
+    assert.ok(progressClearPreview.currentProgressCount >= 1);
+    assert.ok(progressClearPreview.snapshotCount >= 1);
+
+    const staleProgressClearResponse = await fetch(`http://127.0.0.1:${port}/api/progress/clear`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...progressClearFilters,
+        expectedCount: progressClearPreview.matchedDemands + 1,
+        expectedCurrentProgressCount: progressClearPreview.currentProgressCount,
+        expectedSnapshotCount: progressClearPreview.snapshotCount,
+        confirmation: 'CLEAR_PROGRESS'
+      })
+    });
+    assert.equal(staleProgressClearResponse.status, 409);
+
+    const progressClearResponse = await fetch(`http://127.0.0.1:${port}/api/progress/clear`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...progressClearFilters,
+        expectedCount: progressClearPreview.matchedDemands,
+        expectedCurrentProgressCount: progressClearPreview.currentProgressCount,
+        expectedSnapshotCount: progressClearPreview.snapshotCount,
+        confirmation: 'CLEAR_PROGRESS'
+      })
+    });
+    assert.equal(progressClearResponse.status, 200);
+    const progressClearResult = await progressClearResponse.json();
+    assert.equal(progressClearResult.clearedDemands, progressClearPreview.matchedDemands);
+    assert.equal(progressClearResult.clearedCurrentProgress, progressClearPreview.currentProgressCount);
+    assert.equal(progressClearResult.clearedSnapshots, progressClearPreview.snapshotCount);
+    const demandsAfterProgressClear = await fetch(`http://127.0.0.1:${port}/api/demands`, {
+      headers: { Authorization: 'Bearer admin-token' }
+    });
+    const clearedM1 = (await demandsAfterProgressClear.json()).rows.find((row) => row.demandKey === m1Demand.demandKey);
+    assert.equal(clearedM1?.inProductionQty, 0);
+    assert.equal(clearedM1?.finishedQty, 0);
+    assert.equal(clearedM1?.remark, '');
+    assert.equal(clearedM1?.progressUpdatedAt, '');
+
     const inventoryWorkbook = xlsx.utils.book_new();
     xlsx.utils.book_append_sheet(inventoryWorkbook, xlsx.utils.json_to_sheet([
       {

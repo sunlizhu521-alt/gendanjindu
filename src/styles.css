@@ -3975,6 +3975,55 @@ th {
   margin-bottom: 12px;
 }
 
+.progress-clear-panel {
+  position: relative;
+  z-index: 2100;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  background: #fffafa;
+  box-shadow: 0 4px 14px rgba(127, 29, 29, .08);
+}
+
+.progress-clear-heading,
+.progress-clear-preview {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.progress-clear-heading {
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.progress-clear-heading > div {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.progress-clear-heading span,
+.progress-clear-preview span {
+  color: #64748b;
+  font-size: .82rem;
+}
+
+.progress-clear-filters {
+  margin-bottom: 0 !important;
+}
+
+.progress-clear-preview {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #fee2e2;
+}
+
+.progress-clear-preview .danger {
+  margin-left: auto;
+}
+
 .progress-logic-note {
   display: grid;
   gap: 6px;

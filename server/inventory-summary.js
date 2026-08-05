@@ -341,9 +341,14 @@ function hasWarehouseCodePrefix(value, prefixes = ['555', '777']) {
   return prefixes.some((prefix) => new RegExp(`^${prefix}(?:[-/\\\\])`).test(warehouse));
 }
 
+function isForcedUnsellableWarehouse(value) {
+  const warehouse = normalizedWarehouse(value);
+  return hasWarehouseCodePrefix(warehouse) || warehouse.includes('023');
+}
+
 function isUnsellableWarehouse(value) {
   const warehouse = normalizedWarehouse(value);
-  if (hasWarehouseCodePrefix(warehouse)) return true;
+  if (isForcedUnsellableWarehouse(warehouse)) return true;
   return warehouse.replace(/[()（）]/g, '').includes('退货');
 }
 
@@ -357,7 +362,7 @@ function unsellableInventoryType(matchesWarehouse) {
 }
 
 function inventoryFactProductType(product, ...warehouses) {
-  if (warehouses.some((warehouse) => hasWarehouseCodePrefix(warehouse))) return '不可售';
+  if (warehouses.some(isForcedUnsellableWarehouse)) return '不可售';
   if (warehouses.some(isUnsellableWarehouse)) return isReturnFinishedSku(product) ? '成品' : '不可售';
   return baseInventoryProductType(product);
 }
@@ -1878,7 +1883,7 @@ export function buildInventorySummaryModel({
           kingdeeWarehouseName: text(raw.warehouseName)
         }
       : resolveWarehouseBusinessUnit(raw.subject, raw.warehouseName, materialCode);
-    const directUnsellableWarehouse = hasWarehouseCodePrefix(raw.warehouseName);
+    const directUnsellableWarehouse = isForcedUnsellableWarehouse(raw.warehouseName);
     const directUnsellableProduct = directUnsellableWarehouse;
     const inventoryBusinessUnit = warehouseResult.businessUnit;
     if (!inventoryBusinessUnit) {

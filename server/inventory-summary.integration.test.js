@@ -418,6 +418,7 @@ test('inventory summary separates unsellable warehouse stock without losing norm
       '777-R/售后配件仓/瑞朗德仓/医疗器械/国内',
       '001-M/待（退货）仓/瑞朗德仓/国内医疗器械',
       '浙江仓（退货）',
+      '海外023临时仓',
       '106-G-国内事业部-海上在途',
       '正常仓'
     ].map((warehouseName) => ({ subject: '主体一', warehouseName, marketplace: '中国' }))],
@@ -430,6 +431,7 @@ test('inventory summary separates unsellable warehouse stock without losing norm
         '777-R/售后配件仓/瑞朗德仓/医疗器械/国内',
         '001-M/待（退货）仓/瑞朗德仓/国内医疗器械',
         '浙江仓（退货）',
+        '海外023临时仓',
         '106-G-国内事业部-海上在途',
         '正常仓'
       ].map((warehouseName) => ({
@@ -450,17 +452,23 @@ test('inventory summary separates unsellable warehouse stock without losing norm
       {
         subject: '主体一', warehouseName: '浙江仓（退货）',
         materialCode: 'M3', businessUnit: '国内事业部'
+      },
+      {
+        subject: '主体一', warehouseName: '海外023临时仓',
+        materialCode: 'M2', businessUnit: '国内事业部'
       }
     ]],
     ['inventorySummaryFile1', [
       { sku: 'SKU-1', warehouseName: 'FBA-555', inventoryAttribute: '全部', endingInventoryQty: '10' },
-      { sku: 'SKU-2', warehouseName: 'FBA-555-PART', inventoryAttribute: '全部', endingInventoryQty: '5' }
+      { sku: 'SKU-2', warehouseName: 'FBA-555-PART', inventoryAttribute: '全部', endingInventoryQty: '5' },
+      { sku: 'SKU-2', warehouseName: 'FBA-NORMAL-TO-023', inventoryAttribute: '全部', endingInventoryQty: '16' }
     ]],
     ['inventorySummaryFile2', [
       { identifier: 'M1', warehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境', actualTotalQty: '20' },
       { identifier: 'M1', warehouseName: '浙江仓（退货）', actualTotalQty: '7' },
       { identifier: 'M2', warehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境', actualTotalQty: '6' },
       { identifier: 'M2', warehouseName: '浙江仓（退货）', actualTotalQty: '12' },
+      { identifier: 'M2', warehouseName: '海外023临时仓', actualTotalQty: '15' },
       { identifier: 'M3', warehouseName: '浙江仓（退货）', actualTotalQty: '13' }
     ]],
     ['inventorySummaryFile3', [
@@ -484,6 +492,7 @@ test('inventory summary separates unsellable warehouse stock without losing norm
     ['inventorySummaryFile9', [
       { subject: '主体一', lingxingWarehouseName: 'FBA-555', kingdeeWarehouseName: '555-M/退货仓/瑞朗德仓/医疗器械/国内&跨境' },
       { subject: '主体一', lingxingWarehouseName: 'FBA-555-PART', kingdeeWarehouseName: '555-G/退货仓/瑞朗德仓/医疗器械/国内&跨境' },
+      { subject: '主体一', lingxingWarehouseName: 'FBA-NORMAL-TO-023', kingdeeWarehouseName: '海外023临时仓' },
       { subject: '主体一', lingxingWarehouseName: 'WFS-RETURN', kingdeeWarehouseName: '001-M/待（退货）仓/瑞朗德仓/国内医疗器械' },
       { subject: '主体一', lingxingWarehouseName: 'WFS-PART', kingdeeWarehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境' }
     ]],
@@ -531,8 +540,8 @@ test('inventory summary separates unsellable warehouse stock without losing norm
     fbm: sparePartUnsellable.reduce((sum, row) => sum + Number(row.fbmInventoryQty || 0), 0),
     wfs: sparePartUnsellable.reduce((sum, row) => sum + Number(row.wfsInventoryQty || 0), 0),
     domestic: sparePartUnsellable.reduce((sum, row) => sum + Number(row.domesticMainInventoryQty || 0), 0)
-  }, { fba: 5, fbm: 6, wfs: 7, domestic: 8 });
-  assert.equal(sparePart?.inventoryQty, 38);
+  }, { fba: 21, fbm: 21, wfs: 7, domestic: 8 });
+  assert.equal(sparePart?.inventoryQty, 69);
   assert.equal(
     sparePart?.inventorySegmentBreakdown
       .filter((row) => row.productType === '成品')

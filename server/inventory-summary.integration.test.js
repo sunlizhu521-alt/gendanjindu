@@ -254,6 +254,57 @@ test('inventory summary model uses inventory library facts, layered totals and s
   );
 });
 
+test('FBM transit uses the receiving warehouse to assign business unit', () => {
+  const rowsBySlot = new Map([
+    ['productCategory', [{
+      materialCode: '1002030089',
+      sku: 'V55-10AH-E',
+      materialName: 'V55',
+      productLine: '电动轮椅',
+      productSeries: 'V55',
+      pretaxPrice: '10'
+    }]],
+    ['inventorySummaryFile10', [{ lingxingSku: 'V55-10AH-E', identifier: '1002030089' }]],
+    ['spare1', [
+      { subject: '海上在途主体', warehouseName: '101-G海外一部供应商仓跨境医疗器械' },
+      { subject: '杭州国源养老科技有限公司', warehouseName: '101-G-海外一部-德国东荣仓-国源欧洲' }
+    ]],
+    ['warehouseMaterialMap', [
+      {
+        subject: '海上在途主体',
+        warehouseName: '101-G海外一部供应商仓跨境医疗器械',
+        materialCode: '1002030089',
+        businessUnit: '错误事业部'
+      },
+      {
+        subject: '杭州国源养老科技有限公司',
+        warehouseName: '101-G-海外一部-德国东荣仓-国源欧洲',
+        materialCode: '1002030089',
+        businessUnit: '海外事业一部'
+      }
+    ]],
+    ['inventorySummaryFile5', [{
+      sku: 'V55-10AH-E',
+      warehouseName: '101-G海外一部供应商仓跨境医疗器械',
+      receivingWarehouseName: '101-G-海外一部-德国东荣仓-国源欧洲',
+      documentStatus: '待收货',
+      stockupQty: '20',
+      receivedQty: '0'
+    }]]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
+  });
+
+  const row = result.rows.find((item) => item.materialCode === '1002030089');
+  assert.equal(row?.businessUnit, '海外事业一部');
+  assert.equal(row?.fbmTransitQty, 20);
+  assert.equal(row?.inventorySourceDetails[0]?.receivingWarehouseName, '101-G-海外一部-德国东荣仓-国源欧洲');
+  assert.equal(row?.inventorySourceDetails[0]?.mappedWarehouseName, '101-G-海外一部-德国东荣仓-国源欧洲');
+  assert.equal(result.rows.some((item) => item.businessUnit === '错误事业部'), false);
+});
+
 test('manual inventory reconciliation compares business unit and material by category and source', () => {
   const rowsBySlot = new Map([
     ['productCategory', [

@@ -1842,7 +1842,15 @@ export function buildInventorySummaryModel({
     if (Math.abs(qty) <= 0.000001) return;
     const reconciliationId = expectQuantity('FBM在途', qty, raw.sku);
     const skuResult = resolveSku(raw.sku);
-    const warehouseResult = skuResult.materialCode ? resolveGeneralWarehouse(raw.warehouseName, skuResult.materialCode) : { businessUnit: '', issue: '' };
+    let warehouseResult = { businessUnit: '', issue: '' };
+    if (skuResult.materialCode) {
+      const receivingWarehouseResult = text(raw.receivingWarehouseName)
+        ? resolveGeneralWarehouse(raw.receivingWarehouseName, skuResult.materialCode)
+        : null;
+      warehouseResult = receivingWarehouseResult?.businessUnit
+        ? receivingWarehouseResult
+        : resolveGeneralWarehouse(raw.warehouseName, skuResult.materialCode);
+    }
     const product = resolveProduct(skuResult.materialCode, 'FBM在途', raw.sku);
     addFact({
       sourceType: 'FBM在途',

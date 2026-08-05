@@ -1247,16 +1247,21 @@ function buildInventoryManualReconciliation({
         const systemQty = manualReconciliationQuantity(groupRows.reduce((sum, row) => sum + row.systemQty, 0));
         const manualQty = manualReconciliationQuantity(groupRows.reduce((sum, row) => sum + row.manualQty, 0));
         const unavailable = groupRows.find((row) => row.status.startsWith('无法核对'));
-        const hasWarehouseDifference = groupRows.some((row) => row.status === '有差异');
         return {
           systemQty,
           manualQty,
           differenceQty: manualReconciliationQuantity(systemQty - manualQty),
-          status: unavailable?.status || (hasWarehouseDifference ? '有差异' : manualReconciliationStatus(systemQty, manualQty))
+          status: unavailable?.status || manualReconciliationStatus(systemQty, manualQty)
         };
       };
       const inventory = groupResult('在库');
       const transit = groupResult('在途');
+      sourceRows.forEach((row) => {
+        const metric = row.group === '在库' ? inventory : transit;
+        if (metric.status !== '无差异') return;
+        row.status = '无差异';
+        row.reason = '无差异';
+      });
       const hasData = sourceRows.some((row) => row.systemQty !== 0 || row.manualQty !== 0);
       let status = '无差异';
       if ([inventory.status, transit.status].some((value) => value.startsWith('无法核对'))) status = '无法核对';

@@ -432,7 +432,7 @@ test('manual inventory reconciliation uses the mapped system warehouse and treat
   assert.equal(fbaRows[0].reason, '无差异');
 });
 
-test('manual inventory reconciliation reports different mapped warehouses even when source totals match', () => {
+test('manual inventory reconciliation ignores warehouse differences when business material metric totals match', () => {
   const rowsBySlot = new Map([
     ['productCategory', [{ materialCode: 'M1', sku: 'SKU-1', materialName: '成品一', productLine: '产品线A', productSeries: '系列A', productType: '全新品', pretaxPrice: '10' }]],
     ['warehouseMaterialMap', [{ subject: '主体一', warehouseName: '系统金蝶仓', materialCode: 'M1', businessUnit: '事业部A' }]],
@@ -450,10 +450,14 @@ test('manual inventory reconciliation reports different mapped warehouses even w
   assert.equal(comparison.inventory.systemQty, 10);
   assert.equal(comparison.inventory.manualQty, 10);
   assert.equal(comparison.inventory.differenceQty, 0);
-  assert.equal(comparison.inventory.status, '有差异');
-  assert.equal(comparison.status, '有差异');
+  assert.equal(comparison.inventory.status, '无差异');
+  assert.equal(comparison.status, '无差异');
+  assert.equal(comparison.reason, '无差异');
   assert.equal(fbaRows.length, 2);
-  assert.ok(fbaRows.every((row) => row.status === '有差异'));
+  assert.ok(fbaRows.every((row) => row.status === '无差异'));
+  assert.ok(fbaRows.every((row) => row.reason === '无差异'));
+  assert.equal(result.manualReconciliation.summaryByCategory['成品'].issueCount, 0);
+  assert.equal(result.manualReconciliation.summaryByCategory['成品'].matchedCount, 1);
 });
 
 test('manual inventory reconciliation marks an unapplied side as unavailable instead of zero difference', () => {

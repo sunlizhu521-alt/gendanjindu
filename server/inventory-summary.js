@@ -1206,6 +1206,9 @@ function buildInventoryManualReconciliation({
         const systemMatches = (systemFactIndex.get(sourceKey) || []).filter((fact) => categoryMatches(fact, category));
         const manualMatches = (manualFactIndex.get(sourceKey) || []).filter((fact) => categoryMatches(fact, category));
         const availability = sourceAvailable(config);
+        const sourceSystemQty = manualReconciliationQuantity(systemMatches.reduce((sum, fact) => sum + fact.quantity, 0));
+        const sourceManualQty = manualReconciliationQuantity(manualMatches.reduce((sum, fact) => sum + fact.quantity, 0));
+        const sourceTotalsMatch = availability.available && manualReconciliationStatus(sourceSystemQty, sourceManualQty) === '无差异';
         return pairWarehouseFacts(systemMatches, manualMatches).map(({ warehouseKey, systemMatches: systemWarehouseMatches, manualMatches: manualWarehouseMatches }) => {
           const systemQty = manualReconciliationQuantity(systemWarehouseMatches.reduce((sum, fact) => sum + fact.quantity, 0));
           const manualQty = manualReconciliationQuantity(manualWarehouseMatches.reduce((sum, fact) => sum + fact.quantity, 0));
@@ -1215,7 +1218,10 @@ function buildInventoryManualReconciliation({
           if (availability.available) {
             const internal = internalSourceStatus.get(config.sourceType);
             const matchingIssues = anomalyIndex.get(combinedKey(config.sourceType, businessUnit, materialCode)) || [];
-            if (status === '无差异') reason = '无差异';
+            if (sourceTotalsMatch && differenceQty !== 0) {
+              status = '无差异';
+              reason = '仓库明细口径不同，数量无差异';
+            } else if (status === '无差异') reason = '无差异';
             else if (systemQty !== 0 && manualQty === 0) reason = '手工表缺少该仓库物料';
             else if (systemQty === 0 && manualQty !== 0 && matchingIssues.length) reason = `系统维度或过滤规则未计入：${[...new Set(matchingIssues)].join('；')}`;
             else if (systemQty === 0 && manualQty !== 0) reason = '系统底表未计入该仓库物料';

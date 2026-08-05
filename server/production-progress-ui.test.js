@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const appSource = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
 const serverSource = fs.readFileSync(path.join(root, 'server', 'app.js'), 'utf8');
+const styleSource = fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8');
 
 test('生产跟进显示采购订单匹配的供应商简称并支持供应家数筛选', () => {
   assert.match(appSource, /function progressSupplierName\(row\)\s*\{\s*return normalize\(row\.orderSupplierShortName\) \|\| '未匹配';/);
@@ -55,4 +56,11 @@ test('采购未交付减少时保留四阶段原值并交由人工调整', () =>
   assert.match(modelSource, /if \(progressTotal < remainingInboundQty\) unprepared \+= remainingInboundQty - progressTotal/);
   assert.doesNotMatch(modelSource, /progressTotal > remainingInboundQty/);
   assert.match(serverSource, /progressAdjustmentRequired: Math\.abs\(progressGap\) > 0\.000001/);
+});
+
+test('生产跟进表格使用清晰竖线和交替行色', () => {
+  assert.match(styleSource, /\.progress-table th,[\s\S]*?border-right: 1px solid #d5dee9/);
+  assert.match(styleSource, /\.progress-table tbody tr:nth-child\(odd\):not\(\.progress-row-adjustment\) > td/);
+  assert.match(styleSource, /\.progress-table tbody tr:nth-child\(even\):not\(\.progress-row-adjustment\) > td/);
+  assert.match(styleSource, /\.progress-row-adjustment > td[\s\S]*?background: #fff1f2 !important/);
 });

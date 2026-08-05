@@ -384,6 +384,53 @@ test('manual inventory reconciliation compares business unit and material by cat
   assert.equal(result.manualReconciliation.unavailableFiles.length, 0);
 });
 
+test('manual inventory reconciliation treats warehouse-grain differences as informational when source totals match', () => {
+  const rowsBySlot = new Map([
+    ['productCategory', [{ materialCode: 'M1', sku: 'SKU-1', materialName: '成品一', productLine: '产品线A', productSeries: '系列A', productType: '全新品', pretaxPrice: '10' }]],
+    ['spare1', [
+      { subject: '主体一', warehouseName: '德国仓' },
+      { subject: '主体一', warehouseName: '法国仓' }
+    ]],
+    ['warehouseMaterialMap', [
+      { subject: '主体一', warehouseName: '德国仓', materialCode: 'M1', businessUnit: '事业部A' },
+      { subject: '主体一', warehouseName: '法国仓', materialCode: 'M1', businessUnit: '事业部A' }
+    ]],
+    ['inventorySummaryFile2', [
+      { identifier: 'M1', warehouseName: '德国仓', actualTotalQty: '269' },
+      { identifier: 'M1', warehouseName: '法国仓', actualTotalQty: '58' }
+    ]],
+    ['inventoryManualFile2', [
+      { businessUnit: '事业部A', warehouseName: '欧洲共享仓', subject: '主体一', materialCode: 'M1', quantity: '327' }
+    ]]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: '2026-08-05 12:00:00' })
+  });
+  const comparison = result.manualReconciliation.rows.find((row) => row.materialCode === 'M1')?.categories['成品'];
+  const fbmRows = comparison.sources.filter((row) => row.sourceType === 'FBM库存');
+  assert.deepEqual({
+    inventoryStatus: comparison.inventory.status,
+    overallStatus: comparison.status,
+    reason: comparison.reason,
+    systemQty: comparison.inventory.systemQty,
+    manualQty: comparison.inventory.manualQty,
+    differenceQty: comparison.inventory.differenceQty,
+    sourceDifferenceTotal: fbmRows.reduce((sum, row) => sum + row.differenceQty, 0)
+  }, {
+    inventoryStatus: '无差异',
+    overallStatus: '无差异',
+    reason: '无差异',
+    systemQty: 327,
+    manualQty: 327,
+    differenceQty: 0,
+    sourceDifferenceTotal: 0
+  });
+  assert.equal(fbmRows.length, 3);
+  assert.ok(fbmRows.every((row) => row.status === '无差异'));
+  assert.ok(fbmRows.every((row) => row.reason === '仓库明细口径不同，数量无差异'));
+});
+
 test('manual inventory reconciliation marks an unapplied side as unavailable instead of zero difference', () => {
   const rowsBySlot = new Map([
     ['productCategory', [{ materialCode: 'M1', sku: 'SKU-1', materialName: '成品一', productLine: '产品线A', productSeries: '系列A', pretaxPrice: '10' }]],

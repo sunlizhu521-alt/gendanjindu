@@ -3959,6 +3959,28 @@ th {
 
 .progress-table table {
   min-width: 5200px;
+  border-top: 1px solid #d5dee9;
+  border-left: 1px solid #d5dee9;
+}
+
+.progress-table th,
+.progress-table td,
+.progress-table th:last-child,
+.progress-table td:last-child {
+  border-right: 1px solid #d5dee9;
+  border-bottom: 1px solid #d5dee9;
+}
+
+.progress-table tbody tr:nth-child(odd):not(.progress-row-adjustment) > td {
+  background: #fff;
+}
+
+.progress-table tbody tr:nth-child(even):not(.progress-row-adjustment) > td {
+  background: #f1f6fb;
+}
+
+.progress-table tbody tr:not(.progress-row-adjustment):hover > td {
+  background: #e8f2fb;
 }
 
 .progress-sticky-top {

@@ -5166,9 +5166,31 @@ const PROGRESS_DEFAULT_COMPACT_COLUMNS = [
   'contractDeliveryDates', 'fulfillmentStatus', 'action'
 ];
 
-function defaultProgressColumnKeys() {
-  if (typeof window !== 'undefined' && window.innerWidth < 1600) return PROGRESS_DEFAULT_COMPACT_COLUMNS;
+const PROGRESS_DEFAULT_NARROW_COLUMNS = [
+  'purchaseOwner', 'orderNo', 'supplierShortName', 'businessUnit', 'materialCode', 'sku',
+  'remainingInboundQty', 'unpreparedQty', 'preparedNotStartedQty', 'inProductionQty', 'finishedQty', 'action'
+];
+
+function defaultProgressColumnKeys(viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1920) {
+  if (viewportWidth < 1200) return PROGRESS_DEFAULT_NARROW_COLUMNS;
+  if (viewportWidth < 1920) return PROGRESS_DEFAULT_COMPACT_COLUMNS;
   return PROGRESS_DEFAULT_WIDE_COLUMNS;
+}
+
+function readProgressColumnPreference(storageKey) {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(storageKey) || 'null');
+    const requestedColumns = Array.isArray(saved) ? saved : saved?.columns;
+    const columns = Array.isArray(requestedColumns)
+      ? requestedColumns.filter((key) => PROGRESS_COLUMNS.some(([columnKey]) => columnKey === key))
+      : [];
+    return {
+      columns,
+      customized: Array.isArray(saved) ? columns.length > 0 : Boolean(saved?.customized && columns.length)
+    };
+  } catch {
+    return { columns: [], customized: false };
+  }
 }
 
 function ProgressColumnSelector({ columns, value, onChange, onReset }) {
@@ -5193,10 +5215,10 @@ function ProgressColumnSelector({ columns, value, onChange, onReset }) {
         显示列 {selected.size}/{columns.length}
       </button>
       {open && (
-        <div className="progress-column-menu">
+        <div className="progress-column-menu" role="group" aria-label="选择生产跟进显示列">
           <div className="progress-column-actions">
             <button type="button" onClick={() => onChange(columns.map(([key]) => key))}>全部显示</button>
-            <button type="button" onClick={onReset}>恢复默认</button>
+            <button type="button" onClick={onReset}>按屏幕恢复默认</button>
           </div>
           {columns.map(([key, label]) => (
             <label key={key}>
@@ -5414,16 +5436,14 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const columnStorageKey = `gendanjindu:progress-columns:${user?.id || user?.name || 'user'}`;
-  const [visibleColumnKeys, setVisibleColumnKeys] = useState(() => {
-    try {
-      const saved = JSON.parse(window.localStorage.getItem(columnStorageKey) || '[]');
-      const valid = Array.isArray(saved) ? saved.filter((key) => PROGRESS_COLUMNS.some(([columnKey]) => columnKey === key)) : [];
-      if (valid.length) return valid;
-    } catch {
-      // Ignore invalid preferences and use responsive defaults.
-    }
-    return defaultProgressColumnKeys();
-  });
+  const initialColumnPreference = useRef();
+  if (!initialColumnPreference.current) initialColumnPreference.current = readProgressColumnPreference(columnStorageKey);
+  const [columnPreferenceCustomized, setColumnPreferenceCustomized] = useState(initialColumnPreference.current.customized);
+  const [visibleColumnKeys, setVisibleColumnKeys] = useState(() => (
+    initialColumnPreference.current.customized
+      ? initialColumnPreference.current.columns
+      : defaultProgressColumnKeys()
+  ));
   const visibleProgressColumns = PROGRESS_COLUMNS.filter(([key]) => visibleColumnKeys.includes(key));
   const pageSize = 20;
   const visibleFiltered = filtered;
@@ -5468,8 +5488,32 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
   }, [currentPage, totalPages]);
 
   useEffect(() => {
-    window.localStorage.setItem(columnStorageKey, JSON.stringify(visibleColumnKeys));
-  }, [columnStorageKey, visibleColumnKeys]);
+    try {
+      window.localStorage.setItem(columnStorageKey, JSON.stringify({
+        columns: visibleColumnKeys,
+        customized: columnPreferenceCustomized
+      }));
+    } catch {
+      // Column selection remains usable when browser storage is unavailable.
+    }
+  }, [columnStorageKey, visibleColumnKeys, columnPreferenceCustomized]);
+
+  useEffect(() => {
+    if (columnPreferenceCustomized) return undefined;
+    const applyResponsiveDefault = () => setVisibleColumnKeys(defaultProgressColumnKeys());
+    window.addEventListener('resize', applyResponsiveDefault);
+    return () => window.removeEventListener('resize', applyResponsiveDefault);
+  }, [columnPreferenceCustomized]);
+
+  function updateVisibleProgressColumns(keys) {
+    setColumnPreferenceCustomized(true);
+    setVisibleColumnKeys(keys);
+  }
+
+  function resetVisibleProgressColumns() {
+    setColumnPreferenceCustomized(false);
+    setVisibleColumnKeys(defaultProgressColumnKeys());
+  }
 
   function toggleProgressRow(demandKey, checked) {
     setSelectedKeys(checked ? [...new Set([...selectedKeys, demandKey])] : selectedKeys.filter((key) => key !== demandKey));
@@ -5673,8 +5717,8 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
           <ProgressColumnSelector
             columns={PROGRESS_COLUMNS}
             value={visibleColumnKeys}
-            onChange={setVisibleColumnKeys}
-            onReset={() => setVisibleColumnKeys(defaultProgressColumnKeys())}
+            onChange={updateVisibleProgressColumns}
+            onReset={resetVisibleProgressColumns}
           />
           {!onlyIssues && <button type="button" className="compact-button" disabled={exporting || !displayRows.length} onClick={handleExport}>{exporting ? `导出中 ${exportProgress}%` : '导出 Excel'}</button>}
           {!onlyIssues && exporting && <span className="progress-export-status">正在生成文件 {exportProgress}%</span>}

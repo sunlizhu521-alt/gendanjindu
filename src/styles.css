@@ -4010,7 +4010,7 @@ th {
   right: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(150px, 1fr));
-  width: 380px;
+  width: min(380px, calc(100vw - 32px));
   max-height: min(520px, 70vh);
   overflow-y: auto;
   padding: 8px;
@@ -4060,6 +4060,16 @@ th {
   color: #334155;
   font-size: 12px;
   cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .progress-column-menu {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .progress-column-actions {
+    grid-column: 1;
+  }
 }
 
 .progress-sticky-top {

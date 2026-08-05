@@ -116,3 +116,35 @@ test('差异分配合并到生产跟进内部并复用生产跟进权限', () =>
   assert.match(serverSource, /requestPath\.startsWith\('\/api\/difference'\)\) return \{ key: 'progressRefresh', label: PAGE_LABELS\.progressRefresh \}/);
   assert.match(serverSource, /app\.get\('\/api\/difference-allocations\/latest', requireAuth, requirePage\('progressRefresh'\)/);
 });
+
+test('生产跟进显示列按屏幕宽度默认并按用户持久保存', () => {
+  const columnSource = appSource.slice(
+    appSource.indexOf('const PROGRESS_COLUMNS'),
+    appSource.indexOf('function ProgressEditor(')
+  );
+  const progressSource = appSource.slice(
+    appSource.indexOf('function ProgressPage('),
+    appSource.indexOf('function DifferenceAllocationPage(')
+  );
+  const exportSource = progressSource.slice(
+    progressSource.indexOf('async function handleExport()'),
+    progressSource.indexOf('if (showDifferenceAllocation')
+  );
+
+  assert.match(columnSource, /PROGRESS_DEFAULT_NARROW_COLUMNS/);
+  assert.match(columnSource, /viewportWidth < 1200[\s\S]*?PROGRESS_DEFAULT_NARROW_COLUMNS/);
+  assert.match(columnSource, /viewportWidth < 1920[\s\S]*?PROGRESS_DEFAULT_COMPACT_COLUMNS/);
+  assert.match(columnSource, /return PROGRESS_DEFAULT_WIDE_COLUMNS/);
+  assert.match(columnSource, /function readProgressColumnPreference\(storageKey\)/);
+  assert.match(columnSource, /Array\.isArray\(saved\)[\s\S]*?saved\?\.columns/);
+  assert.match(columnSource, /按屏幕恢复默认/);
+  assert.match(columnSource, /columns\.map\(\(\[key, label\]\)/);
+  assert.match(progressSource, /gendanjindu:progress-columns:\$\{user\?\.id \|\| user\?\.name \|\| 'user'\}/);
+  assert.match(progressSource, /JSON\.stringify\(\{[\s\S]*?columns: visibleColumnKeys,[\s\S]*?customized: columnPreferenceCustomized/);
+  assert.match(progressSource, /window\.addEventListener\('resize', applyResponsiveDefault\)/);
+  assert.match(progressSource, /setColumnPreferenceCustomized\(true\)[\s\S]*?setVisibleColumnKeys\(keys\)/);
+  assert.match(progressSource, /setColumnPreferenceCustomized\(false\)[\s\S]*?defaultProgressColumnKeys\(\)/);
+  assert.match(exportSource, /const headers = \[[\s\S]*?'状态校验'/);
+  assert.match(exportSource, /\.\.\.displayRows\.map/);
+  assert.doesNotMatch(exportSource, /visibleColumnKeys/);
+});

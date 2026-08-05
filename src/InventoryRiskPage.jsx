@@ -46,7 +46,8 @@ const BUSINESS_UNIT_FILTER_ORDER = [
   '海外事业一部',
   '海外事业二部',
   '国内事业部',
-  '全球招商事业部'
+  '全球招商事业部',
+  '销售部-工厂'
 ];
 
 function compareBusinessUnitFilterOptions(left, right) {
@@ -466,7 +467,9 @@ export default function InventoryRiskPage({ token, active }) {
         .filter((status) => valuesFor('forecastAvailability', 'forecastAvailability').includes(status))
     };
   }, [actionRows, filters]);
-  const filteredRows = useMemo(() => actionRows.filter((row) => matchesFilters(row)), [actionRows, filters]);
+  const filteredRows = useMemo(() => actionRows
+    .filter((row) => matchesFilters(row))
+    .sort((left, right) => compareBusinessUnitFilterOptions(left.businessUnit, right.businessUnit)), [actionRows, filters]);
   const filteredSummary = useMemo(() => {
     const onHandQty = filteredRows.reduce((sum, row) => sum + Number(row.onHandQty || 0), 0);
     const inTransitQty = filteredRows.reduce((sum, row) => sum + Number(row.inTransitQty || 0), 0);

@@ -398,7 +398,8 @@ test('供应计划分析页面、权限与API均注册在gendanjindu', () => {
   assert.match(riskPage, /全链路天数/);
   assert.match(riskPage, /海外-美国/);
   assert.match(riskPage, /海外-欧洲/);
-  assert.match(riskPage, /'海外事业一部',[\s\S]*'海外事业二部',[\s\S]*'国内事业部',[\s\S]*'全球招商事业部'/);
+  assert.match(riskPage, /'海外事业一部',[\s\S]*'海外事业二部',[\s\S]*'国内事业部',[\s\S]*'全球招商事业部',[\s\S]*'销售部-工厂'/);
   assert.match(riskPage, /sort\(compareBusinessUnitFilterOptions\)/);
+  assert.match(riskPage, /compareBusinessUnitFilterOptions\(left\.businessUnit, right\.businessUnit\)/);
   assert.equal((riskPage.match(/<RiskTable /g) || []).length, 1);
 });

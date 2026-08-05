@@ -148,3 +148,13 @@ test('生产跟进显示列按屏幕宽度默认并按用户持久保存', () =>
   assert.match(exportSource, /\.\.\.displayRows\.map/);
   assert.doesNotMatch(exportSource, /visibleColumnKeys/);
 });
+
+test('显示列和差异分配入口使用一致UI', () => {
+  const progressSource = appSource.slice(
+    appSource.indexOf('function ProgressColumnSelector('),
+    appSource.indexOf('function DifferenceAllocationPage(')
+  );
+  assert.match(progressSource, /className="ghost compact-button progress-toolbar-entry"[\s\S]*?显示列/);
+  assert.match(progressSource, /className="ghost compact-button progress-toolbar-entry"[\s\S]*?>差异分配<\/button>/);
+  assert.match(styleSource, /\.progress-toolbar-entry\s*\{[\s\S]*?width: 132px;[\s\S]*?min-width: 132px;/);
+});

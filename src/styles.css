@@ -4003,6 +4003,11 @@ th {
   position: relative;
 }
 
+.progress-toolbar-entry {
+  width: 132px;
+  min-width: 132px;
+}
+
 .progress-column-menu {
   position: absolute;
   z-index: 2200;

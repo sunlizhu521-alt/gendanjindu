@@ -5211,7 +5211,7 @@ function ProgressColumnSelector({ columns, value, onChange, onReset }) {
   };
   return (
     <div className="progress-column-selector" ref={rootRef}>
-      <button type="button" className="ghost compact-button" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+      <button type="button" className="ghost compact-button progress-toolbar-entry" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
         显示列 {selected.size}/{columns.length}
       </button>
       {open && (
@@ -5727,7 +5727,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
               清除跟单数据
             </button>
           )}
-          {!onlyIssues && <button type="button" className="compact-button" onClick={() => setShowDifferenceAllocation(true)}>差异分配</button>}
+          {!onlyIssues && <button type="button" className="ghost compact-button progress-toolbar-entry" onClick={() => setShowDifferenceAllocation(true)}>差异分配</button>}
         </div>
         {clearPanelOpen && user?.role === '管理员' && (
           <section className="progress-clear-panel" aria-label="清除跟单数据">

@@ -371,7 +371,7 @@ function isUnsellableWarehouse(value) {
 
 function isReturnFinishedSku(product) {
   const sku = text(product?.sku).normalize('NFKC').replace(/\s+/g, '').toUpperCase();
-  return sku.includes('RE') || sku.includes('K1');
+  return sku.startsWith('RE') || sku.startsWith('K1');
 }
 
 function unsellableInventoryType(matchesWarehouse) {

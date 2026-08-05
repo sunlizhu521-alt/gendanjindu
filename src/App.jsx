@@ -1860,7 +1860,7 @@ function InventoryManualReconciliation({ token, onBack }) {
     productLines: optionValues('productLine'),
     productSeries: optionValues('productSeries'),
     sources: [...new Set(rows.flatMap((row) => row.comparison.sources.map((source) => source.label)))].sort((left, right) => left.localeCompare(right, 'zh-CN')),
-    statuses: ['有差异', '无差异', '仅系统有', '仅手工有', '无法核对']
+    statuses: ['有差异', '无差异', '无法核对']
   }), [rows]);
   const selected = (values, value) => !values.length || values.includes(value);
   const filteredRows = useMemo(() => {

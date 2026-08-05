@@ -361,11 +361,13 @@ test('manual inventory reconciliation compares business unit and material by cat
     manualWarehouse: row.manualWarehouse,
     systemQty: row.systemQty,
     manualQty: row.manualQty,
-    differenceQty: row.differenceQty
+    differenceQty: row.differenceQty,
+    status: row.status,
+    reason: row.reason
   })), [
-    { systemWarehouse: 'FBM仓', manualWarehouse: 'FBM仓', systemQty: 5, manualQty: 4, differenceQty: 1 },
-    { systemWarehouse: 'FBM仓二', manualWarehouse: '', systemQty: 6, manualQty: 0, differenceQty: 6 },
-    { systemWarehouse: '', manualWarehouse: 'FBM仓三', systemQty: 0, manualQty: 2, differenceQty: -2 }
+    { systemWarehouse: 'FBM仓', manualWarehouse: 'FBM仓', systemQty: 5, manualQty: 4, differenceQty: 1, status: '有差异', reason: '仓库数量不一致' },
+    { systemWarehouse: 'FBM仓二', manualWarehouse: '', systemQty: 6, manualQty: 0, differenceQty: 6, status: '有差异', reason: '手工表缺少该仓库物料' },
+    { systemWarehouse: '', manualWarehouse: 'FBM仓三', systemQty: 0, manualQty: 2, differenceQty: -2, status: '有差异', reason: '系统底表未计入该仓库物料' }
   ]);
   assert.equal(m3.categories['不可售'].inventory.status, '无差异');
   assert.equal(result.manualReconciliation.summaryByCategory['全部'].systemInventoryQty, 24);

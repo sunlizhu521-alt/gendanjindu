@@ -1039,8 +1039,6 @@ function manualReconciliationStatus(systemQty, manualQty) {
   const system = manualReconciliationQuantity(systemQty);
   const manual = manualReconciliationQuantity(manualQty);
   if (system === manual) return '无差异';
-  if (system !== 0 && manual === 0) return '仅系统有';
-  if (system === 0 && manual !== 0) return '仅手工有';
   return '有差异';
 }
 
@@ -1200,9 +1198,9 @@ function buildInventoryManualReconciliation({
             const internal = internalSourceStatus.get(config.sourceType);
             const matchingIssues = anomalyIndex.get(combinedKey(config.sourceType, businessUnit, materialCode)) || [];
             if (status === '无差异') reason = '无差异';
-            else if (status === '仅系统有') reason = '手工表缺少该仓库物料';
-            else if (status === '仅手工有' && matchingIssues.length) reason = `系统维度或过滤规则未计入：${[...new Set(matchingIssues)].join('；')}`;
-            else if (status === '仅手工有') reason = '系统底表未计入该仓库物料';
+            else if (systemQty !== 0 && manualQty === 0) reason = '手工表缺少该仓库物料';
+            else if (systemQty === 0 && manualQty !== 0 && matchingIssues.length) reason = `系统维度或过滤规则未计入：${[...new Set(matchingIssues)].join('；')}`;
+            else if (systemQty === 0 && manualQty !== 0) reason = '系统底表未计入该仓库物料';
             else if (internal && internal.status === '数量遗漏') reason = '系统汇总遗漏';
             else if (internal && internal.status === '数量重叠') reason = '系统重复计入';
             else if (status === '有差异') reason = '仓库数量不一致';
@@ -1244,8 +1242,6 @@ function buildInventoryManualReconciliation({
       let status = '无差异';
       if ([inventory.status, transit.status].some((value) => value.startsWith('无法核对'))) status = '无法核对';
       else if ([inventory.status, transit.status].some((value) => value === '有差异')) status = '有差异';
-      else if ([inventory.status, transit.status].some((value) => value === '仅系统有')) status = '仅系统有';
-      else if ([inventory.status, transit.status].some((value) => value === '仅手工有')) status = '仅手工有';
       const reason = [...new Set(sourceRows.filter((row) => row.status !== '无差异').map((row) => `${row.label}：${row.reason}`))].join('；') || '无差异';
       return [category, { inventory, transit, status, reason, sources: sourceRows, hasData }];
     }));

@@ -314,25 +314,33 @@ test('manual inventory reconciliation compares business unit and material by cat
     ]],
     ['spare1', [
       { subject: '主体一', warehouseName: 'FBM仓' },
+      { subject: '主体一', warehouseName: 'FBM仓二' },
+      { subject: '主体一', warehouseName: 'FBM仓三' },
       { subject: '主体一', warehouseName: '555-G/退货仓' },
       { subject: '主体一', warehouseName: '102-US-海外二部-海上在途' }
     ]],
     ['warehouseMaterialMap', [
       { subject: '主体一', warehouseName: 'FBA金蝶仓', materialCode: 'M1', businessUnit: '事业部A' },
       { subject: '主体一', warehouseName: 'FBM仓', materialCode: 'M2', businessUnit: '事业部A' },
+      { subject: '主体一', warehouseName: 'FBM仓二', materialCode: 'M2', businessUnit: '事业部A' },
+      { subject: '主体一', warehouseName: 'FBM仓三', materialCode: 'M2', businessUnit: '事业部A' },
       { subject: '主体一', warehouseName: '555-G/退货仓', materialCode: 'M3', businessUnit: '事业部A' },
       { subject: '主体一', warehouseName: '102-US-海外二部-海上在途', materialCode: 'M1', businessUnit: '事业部A' }
     ]],
     ['inventorySummaryFile1', [{ sku: 'SKU-1', warehouseName: 'FBA源仓', inventoryAttribute: '全部', endingInventoryQty: '10.04' }]],
     ['inventorySummaryFile2', [
       { identifier: 'M2', warehouseName: 'FBM仓', actualTotalQty: '5' },
+      { identifier: 'M2', warehouseName: 'FBM仓二', actualTotalQty: '6' },
       { identifier: 'M3', warehouseName: '555-G/退货仓', actualTotalQty: '3' }
     ]],
     ['inventorySummaryFile5', [{ sku: 'SKU-1', warehouseName: '102-US-海外二部-海上在途', documentStatus: '待收货', stockupQty: '4', receivedQty: '0' }]],
     ['inventorySummaryFile9', [{ subject: '主体一', lingxingWarehouseName: 'FBA源仓', kingdeeWarehouseName: 'FBA金蝶仓' }]],
     ['inventorySummaryFile10', [{ lingxingSku: 'SKU-1', identifier: 'M1' }]],
     ['inventoryManualFile1', [{ businessUnit: '事业部A', warehouseName: 'FBA源仓', subject: '主体一', materialCode: 'M1', quantity: '10.0' }]],
-    ['inventoryManualFile2', [{ businessUnit: '事业部A', warehouseName: 'FBM仓', subject: '主体一', materialCode: 'M2', quantity: '4' }]],
+    ['inventoryManualFile2', [
+      { businessUnit: '事业部A', warehouseName: 'FBM仓', subject: '主体一', materialCode: 'M2', quantity: '4' },
+      { businessUnit: '事业部A', warehouseName: 'FBM仓三', subject: '主体一', materialCode: 'M2', quantity: '2' }
+    ]],
     ['inventoryManualFile5', [{ businessUnit: '事业部A', warehouseName: '102-US-海外二部-海上在途', subject: '主体一', materialCode: 'M1', quantity: '2' }]],
     ['inventoryManualFile8', [{ businessUnit: '事业部A', warehouseName: '555-G/退货仓', subject: '主体一', materialCode: 'M3', inventoryQty: '3', transitQty: '0' }]]
   ]);
@@ -346,11 +354,22 @@ test('manual inventory reconciliation compares business unit and material by cat
   assert.equal(m1.categories['成品'].inventory.status, '无差异');
   assert.equal(m1.categories['成品'].transit.differenceQty, 2);
   assert.equal(m1.categories['成品'].status, '有差异');
-  assert.equal(m2.categories['配件'].inventory.differenceQty, 1);
-  assert.equal(m2.categories['配件'].sources.find((row) => row.sourceType === 'FBM库存')?.reason, '来源数量不一致');
+  assert.equal(m2.categories['配件'].inventory.differenceQty, 5);
+  const m2FbmSources = m2.categories['配件'].sources.filter((row) => row.sourceType === 'FBM库存');
+  assert.deepEqual(m2FbmSources.map((row) => ({
+    systemWarehouse: row.systemWarehouse,
+    manualWarehouse: row.manualWarehouse,
+    systemQty: row.systemQty,
+    manualQty: row.manualQty,
+    differenceQty: row.differenceQty
+  })), [
+    { systemWarehouse: 'FBM仓', manualWarehouse: 'FBM仓', systemQty: 5, manualQty: 4, differenceQty: 1 },
+    { systemWarehouse: 'FBM仓二', manualWarehouse: '', systemQty: 6, manualQty: 0, differenceQty: 6 },
+    { systemWarehouse: '', manualWarehouse: 'FBM仓三', systemQty: 0, manualQty: 2, differenceQty: -2 }
+  ]);
   assert.equal(m3.categories['不可售'].inventory.status, '无差异');
-  assert.equal(result.manualReconciliation.summaryByCategory['全部'].systemInventoryQty, 18);
-  assert.equal(result.manualReconciliation.summaryByCategory['全部'].manualInventoryQty, 17);
+  assert.equal(result.manualReconciliation.summaryByCategory['全部'].systemInventoryQty, 24);
+  assert.equal(result.manualReconciliation.summaryByCategory['全部'].manualInventoryQty, 19);
   assert.equal(result.manualReconciliation.unavailableFiles.length, 0);
 });
 
@@ -473,6 +492,7 @@ test('inventory summary separates unsellable warehouse stock without losing norm
       '采购配件仓',
       '塑件车间仓库',
       '综合线组装仓库',
+      '001-M/国内事业部/瑞朗德仓/京东商家云仓',
       '001-M/待（退货）仓/瑞朗德仓/国内医疗器械',
       '浙江仓（退货）',
       '海外023临时仓',
@@ -492,6 +512,7 @@ test('inventory summary separates unsellable warehouse stock without losing norm
         '采购配件仓',
         '塑件车间仓库',
         '综合线组装仓库',
+        '001-M/国内事业部/瑞朗德仓/京东商家云仓',
         '001-M/待（退货）仓/瑞朗德仓/国内医疗器械',
         '浙江仓（退货）',
         '海外023临时仓',
@@ -518,6 +539,10 @@ test('inventory summary separates unsellable warehouse stock without losing norm
       },
       {
         subject: '主体一', warehouseName: '海外023临时仓',
+        materialCode: 'M2', businessUnit: '国内事业部'
+      },
+      {
+        subject: '主体一', warehouseName: '001-M/国内事业部/瑞朗德仓/京东商家云仓',
         materialCode: 'M2', businessUnit: '国内事业部'
       }
     ]],
@@ -551,7 +576,8 @@ test('inventory summary separates unsellable warehouse stock without losing norm
       { subject: '主体一', warehouseName: '001-M/待（退货）仓/瑞朗德仓/国内医疗器械', materialCode: 'M1', domesticStockQty: '4' },
       { subject: '未维护主体', warehouseName: '555-X/原始退货仓', materialCode: 'M1', domesticStockQty: '5' },
       { subject: '主体一', warehouseName: '正常仓', materialCode: 'M1', domesticStockQty: '40' },
-      { subject: '主体一', warehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境', materialCode: 'M2', domesticStockQty: '8' }
+      { subject: '主体一', warehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境', materialCode: 'M2', domesticStockQty: '8' },
+      { subject: '主体一', warehouseName: '001-M/国内事业部/瑞朗德仓/京东商家云仓', materialCode: 'M2', domesticStockQty: '14' }
     ]],
     ['inventorySummaryFile5', [{
       sku: 'SKU-1', warehouseName: '106-G-国内事业部-海上在途', receivingWarehouseName: '777-M/售后配件仓',
@@ -610,12 +636,18 @@ test('inventory summary separates unsellable warehouse stock without losing norm
     wfs: sparePartUnsellable.reduce((sum, row) => sum + Number(row.wfsInventoryQty || 0), 0),
     domestic: sparePartUnsellable.reduce((sum, row) => sum + Number(row.domesticMainInventoryQty || 0), 0)
   }, { fba: 21, fbm: 21, wfs: 7, domestic: 8 });
-  assert.equal(sparePart?.inventoryQty, 69);
+  assert.equal(sparePart?.inventoryQty, 83);
   assert.equal(
     sparePart?.inventorySegmentBreakdown
       .filter((row) => row.productType === '成品')
       .reduce((sum, row) => sum + Number(row.fbmInventoryQty || 0), 0),
     12
+  );
+  assert.equal(
+    sparePart?.inventorySegmentBreakdown
+      .filter((row) => row.productType === '成品')
+      .reduce((sum, row) => sum + Number(row.domesticMainInventoryQty || 0), 0),
+    14
   );
   assert.equal(sparePart?.inventorySegmentBreakdown.some((row) => row.productType === '配件'), false);
   assert.equal(k1Finished?.inventoryQty, 13);

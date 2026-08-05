@@ -2097,7 +2097,7 @@ function InventoryManualReconciliation({ token, onBack }) {
                     {expandedRows.has(row.id) && (
                       <tr key={`${row.id}-details`} className="inventory-manual-detail-row"><td colSpan="16">
                         <table><thead><tr><th>来源</th><th>指标</th><th>系统数量</th><th>手工数量</th><th>差异</th><th>状态</th><th>原因</th><th>系统主体</th><th>系统来源仓库</th><th>系统映射仓库</th><th>手工主体</th><th>手工仓库</th></tr></thead>
-                          <tbody>{filteredSources(row).map((source, index) => <tr key={`${source.label}-${source.group}-${index}`}><td>{source.label}</td><td>{source.group}</td><td>{formatQty(source.systemQty)}</td><td>{formatQty(source.manualQty)}</td><td>{formatQty(source.differenceQty)}</td><td>{source.status}</td><td>{source.reason}</td><td>{source.systemSubject || '-'}</td><td>{source.systemWarehouse || '-'}</td><td>{source.systemMappedWarehouse || '-'}</td><td>{source.manualSubject || '-'}</td><td>{source.manualWarehouse || '-'}</td></tr>)}</tbody>
+                          <tbody>{filteredSources(row).map((source, index) => <tr key={source.id || `${source.label}-${source.group}-${index}`}><td>{source.label}</td><td>{source.group}</td><td>{formatQty(source.systemQty)}</td><td>{formatQty(source.manualQty)}</td><td>{formatQty(source.differenceQty)}</td><td>{source.status}</td><td>{source.reason}</td><td>{source.systemSubject || '-'}</td><td>{source.systemWarehouse || '-'}</td><td>{source.systemMappedWarehouse || '-'}</td><td>{source.manualSubject || '-'}</td><td>{source.manualWarehouse || '-'}</td></tr>)}</tbody>
                         </table>
                       </td></tr>
                     )}

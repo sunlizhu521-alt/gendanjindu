@@ -344,6 +344,9 @@ const FORCED_UNSELLABLE_WAREHOUSE_KEYWORDS = [
   '塑件车间仓库',
   '综合线组装仓库'
 ].map(normalizedWarehouse);
+const FORCED_FINISHED_WAREHOUSE_NAMES = new Set([
+  '001-M/国内事业部/瑞朗德仓/京东商家云仓'
+].map(normalizedWarehouse));
 
 function hasWarehouseCodePrefix(value, prefixes = ['333', '555', '777']) {
   const warehouse = normalizedWarehouse(value);
@@ -375,6 +378,7 @@ function unsellableInventoryType(matchesWarehouse) {
 }
 
 function inventoryFactProductType(product, ...warehouses) {
+  if (warehouses.some((warehouse) => FORCED_FINISHED_WAREHOUSE_NAMES.has(normalizedWarehouse(warehouse)))) return '成品';
   if (warehouses.some(isForcedUnsellableWarehouse)) return '不可售';
   if (warehouses.some(isUnsellableWarehouse)) return isReturnFinishedSku(product) ? '成品' : '不可售';
   return baseInventoryProductType(product);
@@ -1159,49 +1163,68 @@ function buildInventoryManualReconciliation({
         : standardConfigs
   );
   const detailText = (facts, field) => [...new Set(facts.map((fact) => text(fact[field])).filter(Boolean))].join(' & ');
+  const warehouseFactKey = (fact) => combinedKey(
+    text(fact.subject) || '未匹配',
+    text(fact.sourceWarehouseName || fact.mappedWarehouseName) || '未匹配'
+  );
+  const groupWarehouseFacts = (facts) => facts.reduce((index, fact) => {
+    const warehouseKey = warehouseFactKey(fact);
+    const bucket = index.get(warehouseKey) || [];
+    bucket.push(fact);
+    index.set(warehouseKey, bucket);
+    return index;
+  }, new Map());
 
   const rows = [...allKeys].map((key) => {
     const { businessUnit, materialCode } = keyIdentity.get(key);
     const productResult = productLookup.resolve(materialCode);
     const product = productResult.status === 'ok' ? productResult.value : {};
     const categoryResults = Object.fromEntries(computedCategories.map((category) => {
-      const sourceRows = configsForCategory(category).map((config) => {
+      const sourceRows = configsForCategory(category).flatMap((config) => {
         const sourceKey = combinedKey(businessUnit, materialCode, config.sourceType, config.group);
         const systemMatches = (systemFactIndex.get(sourceKey) || []).filter((fact) => categoryMatches(fact, category));
         const manualMatches = (manualFactIndex.get(sourceKey) || []).filter((fact) => categoryMatches(fact, category));
         const availability = sourceAvailable(config);
-        const systemQty = manualReconciliationQuantity(systemMatches.reduce((sum, fact) => sum + fact.quantity, 0));
-        const manualQty = manualReconciliationQuantity(manualMatches.reduce((sum, fact) => sum + fact.quantity, 0));
-        const differenceQty = manualReconciliationQuantity(systemQty - manualQty);
-        let status = availability.status || manualReconciliationStatus(systemQty, manualQty);
-        let reason = status;
-        if (availability.available) {
-          const internal = internalSourceStatus.get(config.sourceType);
-          const matchingIssues = anomalyIndex.get(combinedKey(config.sourceType, businessUnit, materialCode)) || [];
-          if (status === '无差异') reason = '无差异';
-          else if (status === '仅系统有') reason = '手工表缺少该物料';
-          else if (status === '仅手工有' && matchingIssues.length) reason = `系统维度或过滤规则未计入：${[...new Set(matchingIssues)].join('；')}`;
-          else if (status === '仅手工有') reason = '系统底表未计入该物料';
-          else if (internal && internal.status === '数量遗漏') reason = '系统汇总遗漏';
-          else if (internal && internal.status === '数量重叠') reason = '系统重复计入';
-          else if (status === '有差异') reason = '来源数量不一致';
-          else reason = '待人工确认';
-        }
-        return {
-          sourceType: config.sourceType,
-          label: config.label,
-          group: config.group,
-          systemQty,
-          manualQty,
-          differenceQty,
-          status,
-          reason,
-          systemSubject: detailText(systemMatches, 'subject'),
-          systemWarehouse: detailText(systemMatches, 'sourceWarehouseName'),
-          systemMappedWarehouse: detailText(systemMatches, 'mappedWarehouseName'),
-          manualSubject: detailText(manualMatches, 'subject'),
-          manualWarehouse: detailText(manualMatches, 'sourceWarehouseName')
-        };
+        const systemByWarehouse = groupWarehouseFacts(systemMatches);
+        const manualByWarehouse = groupWarehouseFacts(manualMatches);
+        const warehouseKeys = new Set([...systemByWarehouse.keys(), ...manualByWarehouse.keys()]);
+        return [...warehouseKeys].map((warehouseKey) => {
+          const systemWarehouseMatches = systemByWarehouse.get(warehouseKey) || [];
+          const manualWarehouseMatches = manualByWarehouse.get(warehouseKey) || [];
+          const systemQty = manualReconciliationQuantity(systemWarehouseMatches.reduce((sum, fact) => sum + fact.quantity, 0));
+          const manualQty = manualReconciliationQuantity(manualWarehouseMatches.reduce((sum, fact) => sum + fact.quantity, 0));
+          const differenceQty = manualReconciliationQuantity(systemQty - manualQty);
+          let status = availability.status || manualReconciliationStatus(systemQty, manualQty);
+          let reason = status;
+          if (availability.available) {
+            const internal = internalSourceStatus.get(config.sourceType);
+            const matchingIssues = anomalyIndex.get(combinedKey(config.sourceType, businessUnit, materialCode)) || [];
+            if (status === '无差异') reason = '无差异';
+            else if (status === '仅系统有') reason = '手工表缺少该仓库物料';
+            else if (status === '仅手工有' && matchingIssues.length) reason = `系统维度或过滤规则未计入：${[...new Set(matchingIssues)].join('；')}`;
+            else if (status === '仅手工有') reason = '系统底表未计入该仓库物料';
+            else if (internal && internal.status === '数量遗漏') reason = '系统汇总遗漏';
+            else if (internal && internal.status === '数量重叠') reason = '系统重复计入';
+            else if (status === '有差异') reason = '仓库数量不一致';
+            else reason = '待人工确认';
+          }
+          return {
+            id: combinedKey(config.sourceType, config.group, warehouseKey),
+            sourceType: config.sourceType,
+            label: config.label,
+            group: config.group,
+            systemQty,
+            manualQty,
+            differenceQty,
+            status,
+            reason,
+            systemSubject: detailText(systemWarehouseMatches, 'subject'),
+            systemWarehouse: detailText(systemWarehouseMatches, 'sourceWarehouseName'),
+            systemMappedWarehouse: detailText(systemWarehouseMatches, 'mappedWarehouseName'),
+            manualSubject: detailText(manualWarehouseMatches, 'subject'),
+            manualWarehouse: detailText(manualWarehouseMatches, 'sourceWarehouseName')
+          };
+        });
       }).filter((row) => row.systemQty !== 0 || row.manualQty !== 0);
       const groupResult = (group) => {
         const groupRows = sourceRows.filter((row) => row.group === group);

@@ -5153,28 +5153,14 @@ const PROGRESS_COLUMNS = [
   ['remark', '备注'], ['oaFlowNo', 'OA备货流程号'], ['validationStatus', '状态校验'], ['action', '操作']
 ];
 
-const PROGRESS_DEFAULT_WIDE_COLUMNS = [
-  'purchaseOwner', 'month', 'orderNo', 'supplier', 'supplierShortName', 'businessUnit', 'productLine', 'productSeries',
-  'materialCode', 'sku', 'materialName', 'operationStockQty', 'remainingInboundQty', 'shippedQty', 'unpreparedQty',
-  'preparedNotStartedQty', 'inProductionQty', 'finishedQty', 'contractDeliveryDates', 'fulfillmentStatus', 'pretaxPrice',
-  'unfulfilledReason', 'remark', 'validationStatus', 'action'
+const PROGRESS_DEFAULT_COLUMNS = [
+  'month', 'orderNo', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
+  'operationStockQty', 'remainingInboundQty', 'shippedQty', 'unpreparedQty', 'preparedNotStartedQty',
+  'inProductionQty', 'finishedQty', 'fulfillmentStatus', 'oaFlowNo', 'action'
 ];
 
-const PROGRESS_DEFAULT_COMPACT_COLUMNS = [
-  'purchaseOwner', 'orderNo', 'supplierShortName', 'businessUnit', 'materialCode', 'sku', 'materialName',
-  'remainingInboundQty', 'shippedQty', 'unpreparedQty', 'preparedNotStartedQty', 'inProductionQty', 'finishedQty',
-  'contractDeliveryDates', 'fulfillmentStatus', 'action'
-];
-
-const PROGRESS_DEFAULT_NARROW_COLUMNS = [
-  'purchaseOwner', 'orderNo', 'supplierShortName', 'businessUnit', 'materialCode', 'sku',
-  'remainingInboundQty', 'unpreparedQty', 'preparedNotStartedQty', 'inProductionQty', 'finishedQty', 'action'
-];
-
-function defaultProgressColumnKeys(viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1920) {
-  if (viewportWidth < 1200) return PROGRESS_DEFAULT_NARROW_COLUMNS;
-  if (viewportWidth < 1920) return PROGRESS_DEFAULT_COMPACT_COLUMNS;
-  return PROGRESS_DEFAULT_WIDE_COLUMNS;
+function defaultProgressColumnKeys() {
+  return [...PROGRESS_DEFAULT_COLUMNS];
 }
 
 function readProgressColumnPreference(storageKey) {
@@ -5212,13 +5198,13 @@ function ProgressColumnSelector({ columns, value, onChange, onReset }) {
   return (
     <div className="progress-column-selector" ref={rootRef}>
       <button type="button" className="ghost compact-button progress-toolbar-entry" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
-        显示列 {selected.size}/{columns.length}
+        修改显示列 {selected.size}/{columns.length}
       </button>
       {open && (
         <div className="progress-column-menu" role="group" aria-label="选择生产跟进显示列">
           <div className="progress-column-actions">
             <button type="button" onClick={() => onChange(columns.map(([key]) => key))}>全部显示</button>
-            <button type="button" onClick={onReset}>按屏幕恢复默认</button>
+            <button type="button" onClick={onReset}>默认显示列</button>
           </div>
           {columns.map(([key, label]) => (
             <label key={key}>
@@ -5497,13 +5483,6 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
       // Column selection remains usable when browser storage is unavailable.
     }
   }, [columnStorageKey, visibleColumnKeys, columnPreferenceCustomized]);
-
-  useEffect(() => {
-    if (columnPreferenceCustomized) return undefined;
-    const applyResponsiveDefault = () => setVisibleColumnKeys(defaultProgressColumnKeys());
-    window.addEventListener('resize', applyResponsiveDefault);
-    return () => window.removeEventListener('resize', applyResponsiveDefault);
-  }, [columnPreferenceCustomized]);
 
   function updateVisibleProgressColumns(keys) {
     setColumnPreferenceCustomized(true);

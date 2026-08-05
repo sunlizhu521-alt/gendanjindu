@@ -117,7 +117,7 @@ test('差异分配合并到生产跟进内部并复用生产跟进权限', () =>
   assert.match(serverSource, /app\.get\('\/api\/difference-allocations\/latest', requireAuth, requirePage\('progressRefresh'\)/);
 });
 
-test('生产跟进显示列按屏幕宽度默认并按用户持久保存', () => {
+test('生产跟进使用固定默认显示列并按用户持久保存', () => {
   const columnSource = appSource.slice(
     appSource.indexOf('const PROGRESS_COLUMNS'),
     appSource.indexOf('function ProgressEditor(')
@@ -131,17 +131,26 @@ test('生产跟进显示列按屏幕宽度默认并按用户持久保存', () =>
     progressSource.indexOf('if (showDifferenceAllocation')
   );
 
-  assert.match(columnSource, /PROGRESS_DEFAULT_NARROW_COLUMNS/);
-  assert.match(columnSource, /viewportWidth < 1200[\s\S]*?PROGRESS_DEFAULT_NARROW_COLUMNS/);
-  assert.match(columnSource, /viewportWidth < 1920[\s\S]*?PROGRESS_DEFAULT_COMPACT_COLUMNS/);
-  assert.match(columnSource, /return PROGRESS_DEFAULT_WIDE_COLUMNS/);
+  const defaultColumnsMatch = columnSource.match(/const PROGRESS_DEFAULT_COLUMNS = \[([\s\S]*?)\];/);
+  assert.ok(defaultColumnsMatch);
+  assert.deepEqual(
+    [...defaultColumnsMatch[1].matchAll(/'([^']+)'/g)].map((match) => match[1]),
+    [
+      'month', 'orderNo', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
+      'operationStockQty', 'remainingInboundQty', 'shippedQty', 'unpreparedQty', 'preparedNotStartedQty',
+      'inProductionQty', 'finishedQty', 'fulfillmentStatus', 'oaFlowNo', 'action'
+    ]
+  );
+  assert.match(columnSource, /function defaultProgressColumnKeys\(\)\s*\{\s*return \[\.\.\.PROGRESS_DEFAULT_COLUMNS\];/);
+  assert.doesNotMatch(columnSource, /PROGRESS_DEFAULT_(?:WIDE|COMPACT|NARROW)_COLUMNS/);
   assert.match(columnSource, /function readProgressColumnPreference\(storageKey\)/);
   assert.match(columnSource, /Array\.isArray\(saved\)[\s\S]*?saved\?\.columns/);
-  assert.match(columnSource, /按屏幕恢复默认/);
+  assert.match(columnSource, /修改显示列 \{selected\.size\}\/\{columns\.length\}/);
+  assert.match(columnSource, /默认显示列/);
   assert.match(columnSource, /columns\.map\(\(\[key, label\]\)/);
   assert.match(progressSource, /gendanjindu:progress-columns:\$\{user\?\.id \|\| user\?\.name \|\| 'user'\}/);
   assert.match(progressSource, /JSON\.stringify\(\{[\s\S]*?columns: visibleColumnKeys,[\s\S]*?customized: columnPreferenceCustomized/);
-  assert.match(progressSource, /window\.addEventListener\('resize', applyResponsiveDefault\)/);
+  assert.doesNotMatch(progressSource, /applyResponsiveDefault/);
   assert.match(progressSource, /setColumnPreferenceCustomized\(true\)[\s\S]*?setVisibleColumnKeys\(keys\)/);
   assert.match(progressSource, /setColumnPreferenceCustomized\(false\)[\s\S]*?defaultProgressColumnKeys\(\)/);
   assert.match(exportSource, /const headers = \[[\s\S]*?'状态校验'/);
@@ -149,12 +158,12 @@ test('生产跟进显示列按屏幕宽度默认并按用户持久保存', () =>
   assert.doesNotMatch(exportSource, /visibleColumnKeys/);
 });
 
-test('显示列和差异分配入口使用一致UI', () => {
+test('修改显示列和差异分配入口使用一致UI', () => {
   const progressSource = appSource.slice(
     appSource.indexOf('function ProgressColumnSelector('),
     appSource.indexOf('function DifferenceAllocationPage(')
   );
-  assert.match(progressSource, /className="ghost compact-button progress-toolbar-entry"[\s\S]*?显示列/);
+  assert.match(progressSource, /className="ghost compact-button progress-toolbar-entry"[\s\S]*?修改显示列/);
   assert.match(progressSource, /className="ghost compact-button progress-toolbar-entry"[\s\S]*?>差异分配<\/button>/);
   assert.match(styleSource, /\.progress-toolbar-entry\s*\{[\s\S]*?width: 132px;[\s\S]*?min-width: 132px;/);
 });

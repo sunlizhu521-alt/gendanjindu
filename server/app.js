@@ -2720,7 +2720,7 @@ function demandLoadContext(demands) {
 function canEditDemand(user, demand) {
   if (user.role === ROLE_ADMIN) return true;
   const owner = normalize(demand.purchase_owner);
-  if (!owner || owner === UNASSIGNED_PURCHASE_OWNER) return true;
+  if (!owner || owner === UNASSIGNED_PURCHASE_OWNER) return false;
   return splitDelimited(owner).includes(normalize(user.name));
 }
 
@@ -2728,7 +2728,7 @@ function demandRows(includeInactive = false, user = null) {
   const where = includeInactive ? '' : 'WHERE active = 1';
   const demands = all(`SELECT * FROM order_demands ${where} ORDER BY month DESC, business_unit, supplier, material_code`);
   const context = demandLoadContext(demands);
-  return demands.map((demand) => {
+  const rows = demands.map((demand) => {
     const progress = context.progressMap.get(demand.demand_key) || defaultProgress(demand.demand_key);
     const stock = context.inventoryMap.get(stockKey(demand.business_unit, demand.supplier, demand.material_code)) || { stock_qty: 0 };
     const orderRows = context.orderRowsByDemand.get(demandBatchKey(demand.source_batch_id, demand.demand_key)) || [];
@@ -2818,6 +2818,8 @@ function demandRows(includeInactive = false, user = null) {
       canEdit: user ? canEditDemand(user, { ...demand, purchase_owner: purchaseOwner, order_creator: orderCreator }) : false
     };
   });
+  if (!user || user.role === ROLE_ADMIN) return rows;
+  return rows.filter((row) => canEditDemand(user, { purchase_owner: row.purchaseOwner }));
 }
 
 function uniqueOrderNos(rows) {
@@ -4970,7 +4972,7 @@ app.get('/api/progress/export', requireAuth, async (req, res) => {
     '运营备货数量', '未交付数量', '已发货数量',
     '未备料未生产', '已备料未生产', '生产中产品', '完工未发产品',
     '合同约定交期', '生产中交付时间', '未生产预计交付时间',
-    '是否正常履约', '不含税结算价', '正常履约数量', '正常履约金额',
+    '是否正常履约', '不含税采购价', '正常履约数量', '正常履约金额',
     '非正常履约数量', '非正常履约金额', '未履约原因', '原因详情', '备注', '状态校验'
   ];
   const aoa = [headers];
@@ -4982,7 +4984,11 @@ app.get('/api/progress/export', requireAuth, async (req, res) => {
       row.operationStockQty, row.remainingInboundQty, row.shippedQty,
       row.unpreparedQty, row.preparedNotStartedQty, row.inProductionQty, row.finishedQty,
       row.contractDeliveryDates, row.productionDeliveryDate, row.unproducedEstimatedDeliveryDate,
-      row.fulfillmentStatus || '待维护', row.pretaxPriceMaintained ? row.pretaxPrice : '未维护',
+      row.fulfillmentStatus || '待维护', row.pretaxPriceMaintained
+        ? Math.abs(numberValue(row.pretaxPrice) - 1e-9) < 1e-12
+          ? '配件无采购价'
+          : Math.round(numberValue(row.pretaxPrice) * 10) / 10
+        : '未维护',
       row.normalFulfillmentQty, row.normalFulfillmentAmount,
       row.abnormalFulfillmentQty, row.abnormalFulfillmentAmount,
       row.unfulfilledReason, row.reasonDetail, row.remark,

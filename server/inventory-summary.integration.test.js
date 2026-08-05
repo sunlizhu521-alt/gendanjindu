@@ -2014,6 +2014,10 @@ test('inventory summary and domestic board use complete source models and enforc
   );
   database.run(
     'INSERT INTO users (id, name, password_hash, role, page_access, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ['purchase-owner-id', '当前采购员', 'unused', '普通用户', JSON.stringify(['progressRefresh']), now, now]
+  );
+  database.run(
+    'INSERT INTO users (id, name, password_hash, role, page_access, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     ['bulk-user-1', 'Bulk User One', 'unused', '普通用户', '[]', now, now]
   );
   database.run(
@@ -2022,6 +2026,7 @@ test('inventory summary and domestic board use complete source models and enforc
   );
   database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['admin-token', 'admin-id', now]);
   database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['limited-token', 'limited-id', now]);
+  database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['purchase-owner-token', 'purchase-owner-id', now]);
   database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['bulk-token-1', 'bulk-user-1', now]);
   database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['bulk-token-2', 'bulk-user-2', now]);
   database.run('INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)', ['expired-token', 'admin-id', now, '2020-01-01 00:00:00']);
@@ -2305,6 +2310,19 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(limitedResponse.status, 403);
     assert.equal(expiredResponse.status, 401);
     assert.equal((await expiredResponse.json()).error, '登录已过期，请重新登录');
+
+    const purchaseOwnerDemandsResponse = await fetch(`http://127.0.0.1:${port}/api/demands`, {
+      headers: { Authorization: 'Bearer purchase-owner-token' }
+    });
+    assert.equal(purchaseOwnerDemandsResponse.status, 200);
+    const purchaseOwnerDemandRows = (await purchaseOwnerDemandsResponse.json()).rows;
+    assert.ok(purchaseOwnerDemandRows.length > 0);
+    assert.ok(purchaseOwnerDemandRows.every((row) => String(row.purchaseOwner).split(/[+、]/).includes('当前采购员')));
+    const unrelatedDemandsResponse = await fetch(`http://127.0.0.1:${port}/api/demands`, {
+      headers: { Authorization: 'Bearer limited-token' }
+    });
+    assert.equal(unrelatedDemandsResponse.status, 200);
+    assert.deepEqual((await unrelatedDemandsResponse.json()).rows, []);
 
     const usersResponse = await fetch(`http://127.0.0.1:${port}/api/users`, {
       headers: { Authorization: 'Bearer admin-token' }

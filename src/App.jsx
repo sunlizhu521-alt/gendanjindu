@@ -362,6 +362,20 @@ function progressSupplierName(row) {
   return normalize(row.orderSupplierShortName) || '未匹配';
 }
 
+function formatProgressPurchasePrice(value, maintained = true) {
+  if (!maintained) return '未维护';
+  const price = numberValue(value);
+  if (Math.abs(price - 1e-9) < 1e-12) return '配件无采购价';
+  return price.toLocaleString('zh-CN', { maximumFractionDigits: 1 });
+}
+
+function exportProgressPurchasePrice(value, maintained = true) {
+  if (!maintained) return '未维护';
+  const price = numberValue(value);
+  if (Math.abs(price - 1e-9) < 1e-12) return '配件无采购价';
+  return Math.round(price * 10) / 10;
+}
+
 function orderSupplierName(row) {
   return normalize(row.orderSupplierShortName) || '未匹配';
 }
@@ -5111,7 +5125,78 @@ function KingdeeImport({ token, user, reloadDemands, setMessage }) {
   );
 }
 
-function ProgressEditor({ row, token, reloadDemands, setMessage, selected = false, onSelect, onDraftChange }) {
+const PROGRESS_COLUMNS = [
+  ['purchaseOwner', '采购下单人'], ['month', '月份'], ['orderNo', '采购订单号'], ['orderCreator', '创建人'],
+  ['documentStatus', '单据状态'], ['purchaseOrg', '采购组织'], ['supplier', '供应商'], ['supplierShortName', '供应商简称'],
+  ['businessUnit', '事业部'], ['productLine', '产品线'], ['productSeries', '系列'], ['materialCode', '物料编码'],
+  ['sku', 'SKU'], ['materialName', '物料名称'], ['operationStockQty', '运营备货数量'], ['remainingInboundQty', '未交付数量'],
+  ['shippedQty', '已发货数量'], ['unpreparedQty', '未备料未生产'], ['preparedNotStartedQty', '已备料未生产'],
+  ['inProductionQty', '生产中产品'], ['finishedQty', '完工未发产品'], ['contractDeliveryDates', '合同约定交期'],
+  ['productionDeliveryDate', '生产中交付时间'], ['unproducedEstimatedDeliveryDate', '未生产预计交付时间'],
+  ['fulfillmentStatus', '是否正常履约'], ['pretaxPrice', '不含税采购价'], ['normalFulfillmentQty', '正常履约数量'],
+  ['normalFulfillmentAmount', '正常履约金额'], ['abnormalFulfillmentQty', '非正常履约数量'],
+  ['abnormalFulfillmentAmount', '非正常履约金额'], ['unfulfilledReason', '未履约原因'], ['reasonDetail', '原因详情'],
+  ['remark', '备注'], ['oaFlowNo', 'OA备货流程号'], ['validationStatus', '状态校验'], ['action', '操作']
+];
+
+const PROGRESS_DEFAULT_WIDE_COLUMNS = [
+  'purchaseOwner', 'month', 'orderNo', 'supplier', 'supplierShortName', 'businessUnit', 'productLine', 'productSeries',
+  'materialCode', 'sku', 'materialName', 'operationStockQty', 'remainingInboundQty', 'shippedQty', 'unpreparedQty',
+  'preparedNotStartedQty', 'inProductionQty', 'finishedQty', 'contractDeliveryDates', 'fulfillmentStatus', 'pretaxPrice',
+  'unfulfilledReason', 'remark', 'validationStatus', 'action'
+];
+
+const PROGRESS_DEFAULT_COMPACT_COLUMNS = [
+  'purchaseOwner', 'orderNo', 'supplierShortName', 'businessUnit', 'materialCode', 'sku', 'materialName',
+  'remainingInboundQty', 'shippedQty', 'unpreparedQty', 'preparedNotStartedQty', 'inProductionQty', 'finishedQty',
+  'contractDeliveryDates', 'fulfillmentStatus', 'action'
+];
+
+function defaultProgressColumnKeys() {
+  if (typeof window !== 'undefined' && window.innerWidth < 1600) return PROGRESS_DEFAULT_COMPACT_COLUMNS;
+  return PROGRESS_DEFAULT_WIDE_COLUMNS;
+}
+
+function ProgressColumnSelector({ columns, value, onChange, onReset }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (event) => {
+      if (rootRef.current && !rootRef.current.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+  const selected = new Set(value);
+  const toggle = (key) => {
+    if (selected.has(key) && selected.size === 1) return;
+    onChange(selected.has(key) ? value.filter((item) => item !== key) : [...value, key]);
+  };
+  return (
+    <div className="progress-column-selector" ref={rootRef}>
+      <button type="button" className="ghost compact-button" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+        显示列 {selected.size}/{columns.length}
+      </button>
+      {open && (
+        <div className="progress-column-menu">
+          <div className="progress-column-actions">
+            <button type="button" onClick={() => onChange(columns.map(([key]) => key))}>全部显示</button>
+            <button type="button" onClick={onReset}>恢复默认</button>
+          </div>
+          {columns.map(([key, label]) => (
+            <label key={key}>
+              <input type="checkbox" checked={selected.has(key)} onChange={() => toggle(key)} />
+              <span>{label}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKeys, selected = false, onSelect, onDraftChange }) {
   const displayQty = (value) => (numberValue(value) ? String(numberValue(value)) : '');
   const [values, setValues] = useState({
     unpreparedQty: displayQty(row.unpreparedQty),
@@ -5258,55 +5343,42 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, selected = fals
   );
 
   const cells = [
-    <input type="checkbox" checked={selected} disabled={!row.canEdit} onChange={(event) => onSelect?.(row.demandKey, event.target.checked)} />,
-    row.purchaseGroup,
-    row.purchaseOwner,
-    row.month,
-    row.orderNo,
-    row.orderCreator,
-    row.documentStatus,
-    row.purchaseOrg,
-    row.supplier || '未填写',
-    progressSupplierName(row),
-    row.businessUnit,
-    <TightCell value={row.productLine} />,
-    <TightCell value={row.productSeries} />,
-    row.materialCode,
-    row.sku,
-    row.materialName || row.materialCode,
-    numberValue(row.operationStockQty),
-    row.remainingInboundQty,
-    <span className="progress-readonly-qty" title="来自采购订单累计入库数量，不能手动修改">{numberValue(row.shippedQty).toLocaleString('zh-CN')}</span>,
-    quantityInput('unpreparedQty', { readOnly: true, value: displayQty(unpreparedQty) }),
-    quantityInput('preparedNotStartedQty'),
-    quantityInput('inProductionQty'),
-    quantityInput('finishedQty'),
-    <span className="progress-contract-date" title={row.contractDeliveryDates || '暂无'}>{row.contractDeliveryDates || '暂无'}</span>,
-    dateInput('productionDeliveryDate'),
-    dateInput('unproducedEstimatedDeliveryDate'),
-    <select value={values.fulfillmentStatus} disabled={!row.canEdit} onChange={(event) => handleTextChange('fulfillmentStatus', event.target.value)}>
+    ['purchaseOwner', row.purchaseOwner], ['month', row.month], ['orderNo', row.orderNo], ['orderCreator', row.orderCreator],
+    ['documentStatus', row.documentStatus], ['purchaseOrg', row.purchaseOrg], ['supplier', row.supplier || '未填写'],
+    ['supplierShortName', progressSupplierName(row)], ['businessUnit', row.businessUnit],
+    ['productLine', <TightCell value={row.productLine} />], ['productSeries', <TightCell value={row.productSeries} />],
+    ['materialCode', row.materialCode], ['sku', row.sku], ['materialName', row.materialName || row.materialCode],
+    ['operationStockQty', numberValue(row.operationStockQty)], ['remainingInboundQty', row.remainingInboundQty],
+    ['shippedQty', <span className="progress-readonly-qty" title="来自采购订单累计入库数量，不能手动修改">{numberValue(row.shippedQty).toLocaleString('zh-CN')}</span>],
+    ['unpreparedQty', quantityInput('unpreparedQty', { readOnly: true, value: displayQty(unpreparedQty) })],
+    ['preparedNotStartedQty', quantityInput('preparedNotStartedQty')], ['inProductionQty', quantityInput('inProductionQty')],
+    ['finishedQty', quantityInput('finishedQty')],
+    ['contractDeliveryDates', <span className="progress-contract-date" title={row.contractDeliveryDates || '暂无'}>{row.contractDeliveryDates || '暂无'}</span>],
+    ['productionDeliveryDate', dateInput('productionDeliveryDate')],
+    ['unproducedEstimatedDeliveryDate', dateInput('unproducedEstimatedDeliveryDate')],
+    ['fulfillmentStatus', <select value={values.fulfillmentStatus} disabled={!row.canEdit} onChange={(event) => handleTextChange('fulfillmentStatus', event.target.value)}>
       <option value="">待维护</option>
       <option value="是">是</option>
       <option value="否">否</option>
-    </select>,
-    row.pretaxPriceMaintained ? pretaxPrice : <span className="progress-price-missing">未维护</span>,
-    normalFulfillmentQty,
-    normalFulfillmentQty * pretaxPrice,
-    abnormalFulfillmentQty,
-    abnormalFulfillmentQty * pretaxPrice,
-    textInput('unfulfilledReason', values.fulfillmentStatus === '否' ? '必填' : '未履约原因'),
-    textInput('reasonDetail', '原因详情'),
-    <input className="progress-remark-input" value={values.remark} placeholder="添加备注" disabled={!row.canEdit} onChange={(event) => handleTextChange('remark', event.target.value)} />,
-    row.oaFlowNo,
-    invalidQty || Math.abs(progressGap) > 0.000001
+    </select>],
+    ['pretaxPrice', <span className={row.pretaxPriceMaintained ? '' : 'progress-price-missing'}>{formatProgressPurchasePrice(pretaxPrice, row.pretaxPriceMaintained)}</span>],
+    ['normalFulfillmentQty', normalFulfillmentQty], ['normalFulfillmentAmount', normalFulfillmentQty * pretaxPrice],
+    ['abnormalFulfillmentQty', abnormalFulfillmentQty], ['abnormalFulfillmentAmount', abnormalFulfillmentQty * pretaxPrice],
+    ['unfulfilledReason', textInput('unfulfilledReason', values.fulfillmentStatus === '否' ? '必填' : '未履约原因')],
+    ['reasonDetail', textInput('reasonDetail', '原因详情')],
+    ['remark', <input className="progress-remark-input" value={values.remark} placeholder="添加备注" disabled={!row.canEdit} onChange={(event) => handleTextChange('remark', event.target.value)} />],
+    ['oaFlowNo', row.oaFlowNo],
+    ['validationStatus', invalidQty || Math.abs(progressGap) > 0.000001
       ? <span className="progress-adjustment-status">待人工调整（差额 {progressGap.toLocaleString()}）</span>
-      : <span className="progress-adjustment-ok">正常</span>,
-    <button type="button" className="compact-button" disabled={!row.canEdit || saving} onClick={save}>{saving ? '保存中...' : row.canEdit ? '提交' : '无权限'}</button>
+      : <span className="progress-adjustment-ok">正常</span>],
+    ['action', <button type="button" className="compact-button" disabled={!row.canEdit || saving} onClick={save}>{saving ? '保存中...' : row.canEdit ? '提交' : '无权限'}</button>]
   ];
+  const visible = new Set(visibleColumnKeys);
 
   return (
     <tr className={row.progressAdjustmentRequired || invalidQty ? 'progress-row-adjustment' : ''}>
-      {cells.map((cell, index) => <td key={index}>{cell}</td>)}
+      <td><input type="checkbox" checked={selected} disabled={!row.canEdit} onChange={(event) => onSelect?.(row.demandKey, event.target.checked)} /></td>
+      {cells.filter(([key]) => visible.has(key)).map(([key, cell]) => <td key={key}>{cell}</td>)}
     </tr>
   );
 }
@@ -5326,6 +5398,18 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
   const [clearBusy, setClearBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
+  const columnStorageKey = `gendanjindu:progress-columns:${user?.id || user?.name || 'user'}`;
+  const [visibleColumnKeys, setVisibleColumnKeys] = useState(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(columnStorageKey) || '[]');
+      const valid = Array.isArray(saved) ? saved.filter((key) => PROGRESS_COLUMNS.some(([columnKey]) => columnKey === key)) : [];
+      if (valid.length) return valid;
+    } catch {
+      // Ignore invalid preferences and use responsive defaults.
+    }
+    return defaultProgressColumnKeys();
+  });
+  const visibleProgressColumns = PROGRESS_COLUMNS.filter(([key]) => visibleColumnKeys.includes(key));
   const pageSize = 20;
   const visibleFiltered = filtered;
   const displayRows = onlyIssues
@@ -5367,6 +5451,10 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    window.localStorage.setItem(columnStorageKey, JSON.stringify(visibleColumnKeys));
+  }, [columnStorageKey, visibleColumnKeys]);
 
   function toggleProgressRow(demandKey, checked) {
     setSelectedKeys(checked ? [...new Set([...selectedKeys, demandKey])] : selectedKeys.filter((key) => key !== demandKey));
@@ -5458,7 +5546,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
         '运营备货数量', '未交付数量', '已发货数量',
         '未备料未生产', '已备料未生产', '生产中产品', '完工未发产品',
         '合同约定交期', '生产中交付时间', '未生产预计交付时间',
-        '是否正常履约', '不含税结算价', '正常履约数量', '正常履约金额',
+        '是否正常履约', '不含税采购价', '正常履约数量', '正常履约金额',
         '非正常履约数量', '非正常履约金额', '未履约原因', '原因详情', '备注',
         'OA备货流程号', '状态校验'
       ];
@@ -5503,7 +5591,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
             draft.productionDeliveryDate ?? row.productionDeliveryDate,
             draft.unproducedEstimatedDeliveryDate ?? row.unproducedEstimatedDeliveryDate,
             fulfillmentStatus || '待维护',
-            row.pretaxPriceMaintained ? numberValue(row.pretaxPrice) : '未维护',
+            exportProgressPurchasePrice(row.pretaxPrice, row.pretaxPriceMaintained),
             normalQty,
             normalQty * numberValue(row.pretaxPrice),
             abnormalQty,
@@ -5555,6 +5643,12 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
         <div className="section-heading-row">
           <h2>{title}</h2>
           <span className="section-count">共 {displayRows.length} 条，第 {currentPage} / {totalPages} 页</span>
+          <ProgressColumnSelector
+            columns={PROGRESS_COLUMNS}
+            value={visibleColumnKeys}
+            onChange={setVisibleColumnKeys}
+            onReset={() => setVisibleColumnKeys(defaultProgressColumnKeys())}
+          />
           {!onlyIssues && <button type="button" className="compact-button" disabled={exporting || !displayRows.length} onClick={handleExport}>{exporting ? `导出中 ${exportProgress}%` : '导出 Excel'}</button>}
           {!onlyIssues && exporting && <span className="progress-export-status">正在生成文件 {exportProgress}%</span>}
           {!onlyIssues && user?.role === '管理员' && (
@@ -5611,14 +5705,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
             />
             <span>全选</span>
           </label>
-        ), '采购组', '采购下单人', '月份', '采购订单号', '创建人', '单据状态', '采购组织', '供应商', '供应商简称',
-        '事业部', '产品线', '系列', '物料编码', 'SKU', '物料名称',
-        '运营备货数量', '未交付数量', '已发货数量',
-        '未备料未生产', '已备料未生产', '生产中产品', '完工未发产品',
-        '合同约定交期', '生产中交付时间', '未生产预计交付时间',
-        '是否正常履约', '不含税结算价', '正常履约数量', '正常履约金额',
-        '非正常履约数量', '非正常履约金额', '未履约原因', '原因详情', '备注',
-        'OA备货流程号', '状态校验', '操作']}
+        ), ...visibleProgressColumns.map(([, label]) => label)]}
         renderRow={(row) => (
           <ProgressEditor
             key={row.demandKey}
@@ -5626,6 +5713,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
             token={token}
             reloadDemands={reloadDemands}
             setMessage={setMessage}
+            visibleColumnKeys={visibleColumnKeys}
             selected={selectedKeys.includes(row.demandKey)}
             onSelect={toggleProgressRow}
             onDraftChange={(demandKey, payload) => setDrafts((current) => ({ ...current, [demandKey]: payload }))}

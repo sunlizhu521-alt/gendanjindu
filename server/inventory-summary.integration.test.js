@@ -336,7 +336,7 @@ test('manual inventory reconciliation compares business unit and material by cat
     ['inventorySummaryFile5', [{ sku: 'SKU-1', warehouseName: '102-US-海外二部-海上在途', documentStatus: '待收货', stockupQty: '4', receivedQty: '0' }]],
     ['inventorySummaryFile9', [{ subject: '主体一', lingxingWarehouseName: 'FBA源仓', kingdeeWarehouseName: 'FBA金蝶仓' }]],
     ['inventorySummaryFile10', [{ lingxingSku: 'SKU-1', identifier: 'M1' }]],
-    ['inventoryManualFile1', [{ businessUnit: '事业部A', warehouseName: 'FBA源仓', subject: '', materialCode: 'M1', quantity: '10.0' }]],
+    ['inventoryManualFile1', [{ businessUnit: '事业部A', warehouseName: 'FBA金蝶仓', subject: '', materialCode: 'M1', quantity: '10.0' }]],
     ['inventoryManualFile2', [
       { businessUnit: '事业部A', warehouseName: 'FBM仓', subject: '主体一', materialCode: 'M2', quantity: '4' },
       { businessUnit: '事业部A', warehouseName: 'FBM仓三', subject: '主体一', materialCode: 'M2', quantity: '2' }
@@ -384,22 +384,20 @@ test('manual inventory reconciliation compares business unit and material by cat
   assert.equal(result.manualReconciliation.unavailableFiles.length, 0);
 });
 
-test('manual inventory reconciliation does not report warehouse-grain differences when source totals match', () => {
+test('manual inventory reconciliation uses the mapped system warehouse and treats equal warehouse totals as no difference', () => {
   const rowsBySlot = new Map([
     ['productCategory', [{ materialCode: 'M1', sku: 'SKU-1', materialName: '成品一', productLine: '产品线A', productSeries: '系列A', productType: '全新品', pretaxPrice: '10' }]],
-    ['spare1', [
-      { subject: '主体一', warehouseName: '德国仓' },
-      { subject: '主体一', warehouseName: '法国仓' }
+    ['warehouseMaterialMap', [{ subject: '主体一', warehouseName: '欧洲共享仓', materialCode: 'M1', businessUnit: '事业部A' }]],
+    ['inventorySummaryFile1', [
+      { sku: 'SKU-1', warehouseName: '德国源仓', inventoryAttribute: '全部', endingInventoryQty: '269' },
+      { sku: 'SKU-1', warehouseName: '法国源仓', inventoryAttribute: '全部', endingInventoryQty: '58' }
     ]],
-    ['warehouseMaterialMap', [
-      { subject: '主体一', warehouseName: '德国仓', materialCode: 'M1', businessUnit: '事业部A' },
-      { subject: '主体一', warehouseName: '法国仓', materialCode: 'M1', businessUnit: '事业部A' }
+    ['inventorySummaryFile9', [
+      { subject: '主体一', lingxingWarehouseName: '德国源仓', kingdeeWarehouseName: '欧洲共享仓' },
+      { subject: '主体一', lingxingWarehouseName: '法国源仓', kingdeeWarehouseName: '欧洲共享仓' }
     ]],
-    ['inventorySummaryFile2', [
-      { identifier: 'M1', warehouseName: '德国仓', actualTotalQty: '269' },
-      { identifier: 'M1', warehouseName: '法国仓', actualTotalQty: '58' }
-    ]],
-    ['inventoryManualFile2', [
+    ['inventorySummaryFile10', [{ lingxingSku: 'SKU-1', identifier: 'M1' }]],
+    ['inventoryManualFile1', [
       { businessUnit: '事业部A', warehouseName: '欧洲共享仓', subject: '主体一', materialCode: 'M1', quantity: '327' }
     ]]
   ]);
@@ -408,7 +406,7 @@ test('manual inventory reconciliation does not report warehouse-grain difference
     getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: '2026-08-05 12:00:00' })
   });
   const comparison = result.manualReconciliation.rows.find((row) => row.materialCode === 'M1')?.categories['成品'];
-  const fbmRows = comparison.sources.filter((row) => row.sourceType === 'FBM库存');
+  const fbaRows = comparison.sources.filter((row) => row.sourceType === 'FBA库存');
   assert.deepEqual({
     inventoryStatus: comparison.inventory.status,
     overallStatus: comparison.status,
@@ -416,7 +414,7 @@ test('manual inventory reconciliation does not report warehouse-grain difference
     systemQty: comparison.inventory.systemQty,
     manualQty: comparison.inventory.manualQty,
     differenceQty: comparison.inventory.differenceQty,
-    sourceDifferenceTotal: fbmRows.reduce((sum, row) => sum + row.differenceQty, 0)
+    sourceDifferenceTotal: fbaRows.reduce((sum, row) => sum + row.differenceQty, 0)
   }, {
     inventoryStatus: '无差异',
     overallStatus: '无差异',
@@ -426,9 +424,36 @@ test('manual inventory reconciliation does not report warehouse-grain difference
     differenceQty: 0,
     sourceDifferenceTotal: 0
   });
-  assert.equal(fbmRows.length, 3);
-  assert.ok(fbmRows.every((row) => row.status === '无差异'));
-  assert.ok(fbmRows.every((row) => row.reason === '无差异'));
+  assert.equal(fbaRows.length, 1);
+  assert.equal(fbaRows[0].systemWarehouse, '德国源仓 & 法国源仓');
+  assert.equal(fbaRows[0].systemMappedWarehouse, '欧洲共享仓');
+  assert.equal(fbaRows[0].manualWarehouse, '欧洲共享仓');
+  assert.equal(fbaRows[0].status, '无差异');
+  assert.equal(fbaRows[0].reason, '无差异');
+});
+
+test('manual inventory reconciliation reports different mapped warehouses even when source totals match', () => {
+  const rowsBySlot = new Map([
+    ['productCategory', [{ materialCode: 'M1', sku: 'SKU-1', materialName: '成品一', productLine: '产品线A', productSeries: '系列A', productType: '全新品', pretaxPrice: '10' }]],
+    ['warehouseMaterialMap', [{ subject: '主体一', warehouseName: '系统金蝶仓', materialCode: 'M1', businessUnit: '事业部A' }]],
+    ['inventorySummaryFile1', [{ sku: 'SKU-1', warehouseName: '系统源仓', inventoryAttribute: '全部', endingInventoryQty: '10' }]],
+    ['inventorySummaryFile9', [{ subject: '主体一', lingxingWarehouseName: '系统源仓', kingdeeWarehouseName: '系统金蝶仓' }]],
+    ['inventorySummaryFile10', [{ lingxingSku: 'SKU-1', identifier: 'M1' }]],
+    ['inventoryManualFile1', [{ businessUnit: '事业部A', warehouseName: '手工仓', subject: '主体一', materialCode: 'M1', quantity: '10' }]]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: '2026-08-05 12:00:00' })
+  });
+  const comparison = result.manualReconciliation.rows.find((row) => row.materialCode === 'M1')?.categories['成品'];
+  const fbaRows = comparison.sources.filter((row) => row.sourceType === 'FBA库存');
+  assert.equal(comparison.inventory.systemQty, 10);
+  assert.equal(comparison.inventory.manualQty, 10);
+  assert.equal(comparison.inventory.differenceQty, 0);
+  assert.equal(comparison.inventory.status, '有差异');
+  assert.equal(comparison.status, '有差异');
+  assert.equal(fbaRows.length, 2);
+  assert.ok(fbaRows.every((row) => row.status === '有差异'));
 });
 
 test('manual inventory reconciliation marks an unapplied side as unavailable instead of zero difference', () => {
@@ -468,7 +493,7 @@ test('manual inventory reconciliation indexes production-scale facts and support
     ['inventorySummaryFile1', products.map((row) => ({ sku: row.sku, warehouseName: 'FBA源仓', inventoryAttribute: '全部', endingInventoryQty: '1' }))],
     ['inventorySummaryFile9', [{ subject: '主体一', lingxingWarehouseName: 'FBA源仓', kingdeeWarehouseName: 'FBA金蝶仓' }]],
     ['inventorySummaryFile10', products.map((row) => ({ lingxingSku: row.sku, identifier: row.materialCode }))],
-    ['inventoryManualFile1', products.map((row) => ({ businessUnit: '事业部A', warehouseName: 'FBA源仓', subject: '主体一', materialCode: row.materialCode, quantity: '1' }))]
+    ['inventoryManualFile1', products.map((row) => ({ businessUnit: '事业部A', warehouseName: 'FBA金蝶仓', subject: '主体一', materialCode: row.materialCode, quantity: '1' }))]
   ]);
   const startedAt = performance.now();
   const result = buildInventorySummaryModel({

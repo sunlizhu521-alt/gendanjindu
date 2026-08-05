@@ -1170,7 +1170,7 @@ function buildInventoryManualReconciliation({
     return index;
   }, new Map());
   const groupWarehouseFacts = (facts) => groupFacts(facts, (fact) => combinedKey(
-    text(fact.sourceWarehouseName || fact.mappedWarehouseName) || '未匹配'
+    text(fact.mappedWarehouseName || fact.sourceWarehouseName) || '未匹配'
   ));
   const pairWarehouseFacts = (systemFacts, manualFacts) => {
     const systemByWarehouse = groupWarehouseFacts(systemFacts);
@@ -1206,9 +1206,6 @@ function buildInventoryManualReconciliation({
         const systemMatches = (systemFactIndex.get(sourceKey) || []).filter((fact) => categoryMatches(fact, category));
         const manualMatches = (manualFactIndex.get(sourceKey) || []).filter((fact) => categoryMatches(fact, category));
         const availability = sourceAvailable(config);
-        const sourceSystemQty = manualReconciliationQuantity(systemMatches.reduce((sum, fact) => sum + fact.quantity, 0));
-        const sourceManualQty = manualReconciliationQuantity(manualMatches.reduce((sum, fact) => sum + fact.quantity, 0));
-        const sourceTotalsMatch = availability.available && manualReconciliationStatus(sourceSystemQty, sourceManualQty) === '无差异';
         return pairWarehouseFacts(systemMatches, manualMatches).map(({ warehouseKey, systemMatches: systemWarehouseMatches, manualMatches: manualWarehouseMatches }) => {
           const systemQty = manualReconciliationQuantity(systemWarehouseMatches.reduce((sum, fact) => sum + fact.quantity, 0));
           const manualQty = manualReconciliationQuantity(manualWarehouseMatches.reduce((sum, fact) => sum + fact.quantity, 0));
@@ -1218,10 +1215,7 @@ function buildInventoryManualReconciliation({
           if (availability.available) {
             const internal = internalSourceStatus.get(config.sourceType);
             const matchingIssues = anomalyIndex.get(combinedKey(config.sourceType, businessUnit, materialCode)) || [];
-            if (sourceTotalsMatch && differenceQty !== 0) {
-              status = '无差异';
-              reason = '无差异';
-            } else if (status === '无差异') reason = '无差异';
+            if (status === '无差异') reason = '无差异';
             else if (systemQty !== 0 && manualQty === 0) reason = '手工表缺少该仓库物料';
             else if (systemQty === 0 && manualQty !== 0 && matchingIssues.length) reason = `系统维度或过滤规则未计入：${[...new Set(matchingIssues)].join('；')}`;
             else if (systemQty === 0 && manualQty !== 0) reason = '系统底表未计入该仓库物料';
@@ -1253,11 +1247,12 @@ function buildInventoryManualReconciliation({
         const systemQty = manualReconciliationQuantity(groupRows.reduce((sum, row) => sum + row.systemQty, 0));
         const manualQty = manualReconciliationQuantity(groupRows.reduce((sum, row) => sum + row.manualQty, 0));
         const unavailable = groupRows.find((row) => row.status.startsWith('无法核对'));
+        const hasWarehouseDifference = groupRows.some((row) => row.status === '有差异');
         return {
           systemQty,
           manualQty,
           differenceQty: manualReconciliationQuantity(systemQty - manualQty),
-          status: unavailable?.status || manualReconciliationStatus(systemQty, manualQty)
+          status: unavailable?.status || (hasWarehouseDifference ? '有差异' : manualReconciliationStatus(systemQty, manualQty))
         };
       };
       const inventory = groupResult('在库');

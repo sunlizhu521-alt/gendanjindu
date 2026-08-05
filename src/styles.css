@@ -4008,6 +4008,34 @@ th {
   min-width: 132px;
 }
 
+.progress-columns-button {
+  border-color: #008f83;
+  background: #008f83;
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(0, 143, 131, .25);
+}
+
+.progress-columns-button:hover {
+  border-color: #00766d;
+  background: #00766d;
+}
+
+.progress-difference-button {
+  border-color: #f05a24;
+  background: #f05a24;
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(240, 90, 36, .25);
+}
+
+.progress-difference-button:hover {
+  border-color: #d94816;
+  background: #d94816;
+}
+
+.progress-internal-view-heading {
+  min-height: 36px;
+}
+
 .progress-column-menu {
   position: absolute;
   z-index: 2200;

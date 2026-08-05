@@ -107,9 +107,9 @@ test('差异分配合并到生产跟进内部并复用生产跟进权限', () =>
   const appRenderSource = appSource.slice(appSource.indexOf('function App()'));
 
   assert.match(progressSource, /const \[showDifferenceAllocation, setShowDifferenceAllocation\] = useState\(false\)/);
-  assert.match(progressSource, /清除跟单数据[\s\S]*?setShowDifferenceAllocation\(true\)[\s\S]*?>差异分配</);
+  assert.match(progressSource, /清除跟单数据[\s\S]*?setDifferenceAllocationView\(true\)[\s\S]*?>差异分配</);
   assert.match(progressSource, /<DifferenceAllocationPage token=\{token\}[\s\S]*?currentAppliedAt=\{currentAppliedAt\}/);
-  assert.match(progressSource, /setShowDifferenceAllocation\(false\)[\s\S]*?返回生产跟进/);
+  assert.match(progressSource, /setDifferenceAllocationView\(false\)[\s\S]*?返回生产跟进/);
   assert.doesNotMatch(navigationSource, /pages: \[[^\]]*'differenceAllocation'/);
   assert.doesNotMatch(appRenderSource, /shouldMount\('differenceAllocation'\)/);
   assert.doesNotMatch(serverSource, /requirePage\('differenceAllocation'\)/);
@@ -158,12 +158,18 @@ test('生产跟进使用固定默认显示列并按用户持久保存', () => {
   assert.doesNotMatch(exportSource, /visibleColumnKeys/);
 });
 
-test('修改显示列和差异分配入口使用一致UI', () => {
+test('修改显示列和差异分配入口醒目且切换后完整显示', () => {
   const progressSource = appSource.slice(
     appSource.indexOf('function ProgressColumnSelector('),
     appSource.indexOf('function DifferenceAllocationPage(')
   );
-  assert.match(progressSource, /className="ghost compact-button progress-toolbar-entry"[\s\S]*?修改显示列/);
-  assert.match(progressSource, /className="ghost compact-button progress-toolbar-entry"[\s\S]*?>差异分配<\/button>/);
+  assert.match(progressSource, /className="compact-button progress-toolbar-entry progress-columns-button"[\s\S]*?修改显示列/);
+  assert.match(progressSource, /className="compact-button progress-toolbar-entry progress-difference-button"[\s\S]*?>差异分配<\/button>/);
+  assert.match(progressSource, /function setDifferenceAllocationView\(open\)[\s\S]*?content\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\)[\s\S]*?window\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\)/);
+  assert.match(progressSource, /setDifferenceAllocationView\(true\)/);
+  assert.match(progressSource, /setDifferenceAllocationView\(false\)/);
   assert.match(styleSource, /\.progress-toolbar-entry\s*\{[\s\S]*?width: 132px;[\s\S]*?min-width: 132px;/);
+  assert.match(styleSource, /\.progress-columns-button\s*\{[\s\S]*?background: #008f83;[\s\S]*?color: #fff;/);
+  assert.match(styleSource, /\.progress-difference-button\s*\{[\s\S]*?background: #f05a24;[\s\S]*?color: #fff;/);
+  assert.match(styleSource, /\.progress-internal-view-heading\s*\{[\s\S]*?min-height: 36px;/);
 });

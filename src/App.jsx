@@ -5197,7 +5197,7 @@ function ProgressColumnSelector({ columns, value, onChange, onReset }) {
   };
   return (
     <div className="progress-column-selector" ref={rootRef}>
-      <button type="button" className="ghost compact-button progress-toolbar-entry" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+      <button type="button" className="compact-button progress-toolbar-entry progress-columns-button" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
         修改显示列 {selected.size}/{columns.length}
       </button>
       {open && (
@@ -5494,6 +5494,15 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
     setVisibleColumnKeys(defaultProgressColumnKeys());
   }
 
+  function setDifferenceAllocationView(open) {
+    setShowDifferenceAllocation(open);
+    window.requestAnimationFrame(() => {
+      const content = document.querySelector('.content');
+      if (content) content.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    });
+  }
+
   function toggleProgressRow(demandKey, checked) {
     setSelectedKeys(checked ? [...new Set([...selectedKeys, demandKey])] : selectedKeys.filter((key) => key !== demandKey));
   }
@@ -5666,7 +5675,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
       <>
         <div className="section-heading-row progress-internal-view-heading">
           <h2>生产跟进 / 差异分配</h2>
-          <button type="button" className="ghost compact-button" onClick={() => setShowDifferenceAllocation(false)}>返回生产跟进</button>
+          <button type="button" className="ghost compact-button" onClick={() => setDifferenceAllocationView(false)}>返回生产跟进</button>
         </div>
         <DifferenceAllocationPage token={token} user={user} setMessage={setMessage} currentAppliedAt={currentAppliedAt} />
       </>
@@ -5706,7 +5715,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
               清除跟单数据
             </button>
           )}
-          {!onlyIssues && <button type="button" className="ghost compact-button progress-toolbar-entry" onClick={() => setShowDifferenceAllocation(true)}>差异分配</button>}
+          {!onlyIssues && <button type="button" className="compact-button progress-toolbar-entry progress-difference-button" onClick={() => setDifferenceAllocationView(true)}>差异分配</button>}
         </div>
         {clearPanelOpen && user?.role === '管理员' && (
           <section className="progress-clear-panel" aria-label="清除跟单数据">

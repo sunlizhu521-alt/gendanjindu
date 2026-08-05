@@ -399,6 +399,14 @@ function uniqueProgressValues(values) {
     .sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
 }
 
+function uniqueSupplierShortNames(values) {
+  return uniqueProgressValues(values).sort((left, right) => {
+    if (left === '未匹配') return -1;
+    if (right === '未匹配') return 1;
+    return left.localeCompare(right, 'zh-Hans-CN');
+  });
+}
+
 const FILTER_CACHE_PREFIX = 'gendanjindu:filters:';
 
 function useSessionFilters(cacheKey, initialFilters) {
@@ -902,7 +910,7 @@ function InventoryPurchaseDashboard({ rows, loading }) {
     productLines: unique(sourceRows.map((row) => row.productLine)),
     productSeries: unique(sourceRows.map((row) => row.productSeries)),
     purchaseOwners: unique(sourceRows.map((row) => row.purchaseOwner)),
-    suppliers: unique(sourceRows.map((row) => row.orderSupplierShortName || row.supplierShortName || row.supplier))
+    suppliers: uniqueSupplierShortNames(sourceRows.map((row) => row.orderSupplierShortName || row.supplierShortName || row.supplier || '未匹配'))
   }), [sourceRows]);
   const filteredRows = useMemo(() => {
     const keyword = normalize(filters.keyword).toLowerCase();
@@ -3416,7 +3424,7 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
     const rowsFor = (field) => rows.filter((row) => matchesFilters(row, field));
     return {
       months: uniqueProgressValues(rowsFor('month').map((row) => row.month)),
-      suppliers: uniqueProgressValues(rowsFor('supplier').map((row) => progressSupplierName(row))),
+      suppliers: uniqueSupplierShortNames(rowsFor('supplier').map((row) => progressSupplierName(row))),
       supplierCounts: [...new Set(rowsFor('supplierCount').map((row) => Math.max(0, Math.trunc(numberValue(row.supplierCount)))))]
         .sort((left, right) => left - right)
         .map(supplierCountLabel),
@@ -3578,7 +3586,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       supplierCounts: [...new Set(rowsFor('supplierCount').map((row) => numberValue(row.supplierCount)))]
         .sort((a, b) => a - b)
         .map(supplierCountLabel),
-      supplierShortNames: unique(rowsFor('supplierShortName').map((row) => orderSupplierName(row))),
+      supplierShortNames: uniqueSupplierShortNames(rowsFor('supplierShortName').map((row) => orderSupplierName(row))),
       productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
       series: unique(rowsFor('series').map((row) => row.productSeries)),
       skus: unique(rowsFor('sku').map((row) => row.sku)),
@@ -5438,7 +5446,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
   ));
   const clearOptions = useMemo(() => ({
     purchaseOwners: uniqueProgressValues(clearFilterRows('purchaseOwners').map((row) => row.purchaseOwner)),
-    suppliers: uniqueProgressValues(clearFilterRows('suppliers').map((row) => progressSupplierName(row))),
+    suppliers: uniqueSupplierShortNames(clearFilterRows('suppliers').map((row) => progressSupplierName(row))),
     productLines: uniqueProgressValues(clearFilterRows('productLines').map((row) => row.productLine)),
     productSeries: uniqueProgressValues(clearFilterRows('productSeries').map((row) => row.productSeries))
   }), [trackableRows, clearFilters]);
@@ -6427,12 +6435,23 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       const requiresMultipleSheets = Number(slot.requiredSheetCount || 0) > 0;
       setLocal((prev) => {
         const prevState = prev[slot.id] || {};
-        const savedMapping = slot.manualFieldSelection ? {} : (prevState.savedMapping || prevState.mapping || record?.mapping || {});
-        const sheetMappings = slot.manualFieldSelection ? {} : { ...(prevState.sheetMappings || {}) };
-        const mapping = validMappingForColumns(sheetMappings[''] || savedMapping, columns, slot.fields, !slot.manualFieldSelection);
-        if (!slot.manualFieldSelection && record?.sheetName) {
+        const savedMapping = prevState.savedMapping || prevState.mapping || record?.mapping || {};
+        const hasSavedMapping = (slot.fields || []).some(([key]) => normalize(savedMapping[key]));
+        const sheetMappings = { ...(prevState.sheetMappings || {}) };
+        const mapping = validMappingForColumns(
+          sheetMappings[''] || savedMapping,
+          columns,
+          slot.fields,
+          !slot.manualFieldSelection && !hasSavedMapping
+        );
+        if (record?.sheetName) {
           const recordSheet = (payload.sheetPreviews || []).find((item) => item.sheetName === record.sheetName);
-          sheetMappings[record.sheetName] = validMappingForColumns(record.mapping || {}, recordSheet?.columns || columns, slot.fields);
+          sheetMappings[record.sheetName] = validMappingForColumns(
+            record.mapping || {},
+            recordSheet?.columns || columns,
+            slot.fields,
+            false
+          );
         }
         return {
           ...prev,
@@ -6492,11 +6511,13 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
     const currentKey = state.sheetName || '';
     const nextKey = sheetName || '';
     const sheetMappings = { ...(state.sheetMappings || {}), [currentKey]: state.mapping || {} };
+    const savedMapping = sheetMappings[nextKey] || state.savedMapping || {};
+    const hasSavedMapping = (slot.fields || []).some(([key]) => normalize(savedMapping[key]));
     const mapping = validMappingForColumns(
-      sheetMappings[nextKey] || (slot.manualFieldSelection ? {} : state.savedMapping || {}),
+      savedMapping,
       nextColumns,
       slot.fields,
-      !slot.manualFieldSelection
+      !slot.manualFieldSelection && !hasSavedMapping
     );
     const inspectRowCount = sheetName
       ? (sheet?.rowCount == null ? null : Number(sheet.rowCount || 0))
@@ -6744,7 +6765,16 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
                 <span className={`slot-state ${record?.applied ? 'applied' : record ? 'pending' : ''}`}>{record?.applied ? '已应用' : record ? '待应用' : '缺失'}</span>
               </div>
               <label className="drop-zone">
-                <input type="file" accept=".xlsx,.xls,.csv" disabled={busy} onChange={(event) => event.target.files?.[0] && inspect(slot, event.target.files[0])} />
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  disabled={busy}
+                  onClick={(event) => { event.currentTarget.value = ''; }}
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    if (file) inspect(slot, file);
+                  }}
+                />
                 <strong>{state.file?.name || record?.file_name || '上传维度表'}</strong>
                 <span>{busy ? '处理中，请稍候' : '点击选择 Excel / CSV'}</span>
               </label>
@@ -6796,7 +6826,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
                   requiredFields={slot.manualFieldSelection ? (slot.requiredFields || []) : []}
                   manual={Boolean(slot.manualFieldSelection)}
                   onChange={(mapping) => {
-                    const nextMapping = validMappingForColumns(mapping, state.columns, slot.fields, !slot.manualFieldSelection);
+                    const nextMapping = validMappingForColumns(mapping, state.columns, slot.fields, false);
                     const sheetKey = state.sheetName || '';
                     setLocal({ ...local, [slot.id]: { ...state, mapping: nextMapping, sheetMappings: { ...(state.sheetMappings || {}), [sheetKey]: nextMapping } } });
                   }}

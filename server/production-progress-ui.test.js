@@ -11,6 +11,7 @@ const styleSource = fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8'
 
 test('生产跟进显示采购订单匹配的供应商简称并支持供应家数筛选', () => {
   assert.match(appSource, /function progressSupplierName\(row\)\s*\{\s*return normalize\(row\.orderSupplierShortName\) \|\| '未匹配';/);
+  assert.match(appSource, /function uniqueSupplierShortNames\(values\)[\s\S]*?left === '未匹配'[\s\S]*?right === '未匹配'/);
   const progressSource = appSource.slice(
     appSource.indexOf('function ProgressPage('),
     appSource.indexOf('function DifferenceAllocationPage(')
@@ -21,6 +22,7 @@ test('生产跟进显示采购订单匹配的供应商简称并支持供应家�
   assert.match(progressSource, /'供应商简称',[\s\S]*?'事业部'/);
   assert.doesNotMatch(progressSource, /\bunique\(clearFilterRows/);
   assert.match(progressSource, /uniqueProgressValues\(clearFilterRows/);
+  assert.match(progressSource, /suppliers: uniqueSupplierShortNames\(clearFilterRows\('suppliers'\)/);
   assert.match(appSource, /<MultiSelectFilter label="是否多家供应" allLabel="全部供应家数"/);
   assert.match(appSource, /filters\.supplierCount\.includes\(supplyCount\)/);
   assert.match(appSource, /supplierCounts:[\s\S]*?sort\(\(left, right\) => left - right\)[\s\S]*?map\(supplierCountLabel\)/);

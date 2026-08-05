@@ -118,6 +118,23 @@ test('库存数据提供独立的底表文件和手工表库', () => {
   assert.match(server, /serializeInventoryUpload, async \(req, res\)/);
 });
 
+test('所有文件槽位重新选择文件时强制解析并保留仍有效的字段映射', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
+  const library = client.slice(
+    client.indexOf('function DimensionLibrary('),
+    client.indexOf('function TracePage(')
+  );
+
+  assert.match(library, /onClick=\{\(event\) => \{ event\.currentTarget\.value = ''; \}\}/);
+  assert.match(library, /const savedMapping = prevState\.savedMapping \|\| prevState\.mapping \|\| record\?\.mapping \|\| \{\}/);
+  assert.match(library, /const hasSavedMapping = \(slot\.fields \|\| \[\]\)\.some\(\(\[key\]\) => normalize\(savedMapping\[key\]\)\)/);
+  assert.match(library, /!slot\.manualFieldSelection && !hasSavedMapping/);
+  assert.doesNotMatch(library, /slot\.manualFieldSelection \? \{\} : \(prevState\.savedMapping/);
+  assert.match(library, /validMappingForColumns\(mapping, state\.columns, slot\.fields, false\)/);
+  assert.match(client, /value && validColumns\.has\(value\)[\s\S]*?: '';/);
+});
+
 test('file library slots stay responsive without clipping', () => {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const styles = fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8');

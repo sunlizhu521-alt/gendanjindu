@@ -306,7 +306,6 @@ const INVENTORY_STOCK_FIELDS = new Set([
   'domesticMainInventoryQty', 'domesticMainInventoryValue',
   'jdInventoryQty', 'jdInventoryValue'
 ]);
-const UNSELLABLE_PRODUCT_TYPES = new Set(['其他/成品', '全新品'].map(matchKey));
 
 function isIgnoredFbmWarehouse(value) {
   return IGNORED_FBM_WAREHOUSES.has(matchKey(value));
@@ -352,12 +351,12 @@ function isFbmReturnWarehouse(value) {
   return normalizedWarehouse(value).replace(/[()（）]/g, '').includes('退货');
 }
 
-function unsellableProductType(product, matchesWarehouse) {
-  return UNSELLABLE_PRODUCT_TYPES.has(matchKey(product?.productType)) && matchesWarehouse ? '不可售' : '';
+function unsellableInventoryType(matchesWarehouse) {
+  return matchesWarehouse ? '不可售' : '';
 }
 
 function inventoryFactProductType(product, ...warehouses) {
-  if (unsellableProductType(product, warehouses.some(isUnsellableWarehouse))) {
+  if (unsellableInventoryType(warehouses.some(isUnsellableWarehouse))) {
     return '不可售';
   }
   return baseInventoryProductType(product);
@@ -1596,7 +1595,12 @@ export function buildInventorySummaryModel({
       const subject = text(inventorySubject) || '未匹配';
       const hasStock = Object.keys(quantities).some((field) => INVENTORY_STOCK_FIELDS.has(field));
       const segmentType = text(inventoryProductType) || (hasStock
-        ? inventoryFactProductType(productResult.product, inventoryWarehouseName)
+        ? inventoryFactProductType(
+            productResult.product,
+            inventoryWarehouseName,
+            sourceContext.sourceWarehouseName,
+            sourceContext.kingdeeWarehouseName
+          )
         : baseInventoryProductType(productResult.product));
       factProductType = segmentType;
       row.inventorySubjects.add(subject);
@@ -1752,9 +1756,10 @@ export function buildInventorySummaryModel({
       inventorySubject: warehouseResult.subject,
       inventoryWarehouseName: warehouseResult.kingdeeWarehouseName,
       reconciliationId,
-      inventoryProductType: unsellableProductType(
-        product.product,
-        isUnsellableWarehouse(warehouseResult.kingdeeWarehouseName) || isFbmReturnWarehouse(raw.warehouseName)
+      inventoryProductType: unsellableInventoryType(
+        isUnsellableWarehouse(warehouseResult.kingdeeWarehouseName)
+          || isUnsellableWarehouse(raw.warehouseName)
+          || isFbmReturnWarehouse(raw.warehouseName)
       ),
       quantities: { fbmInventoryQty: qty, fbmInventoryValue: qty * product.product.pretaxPrice },
       sourceContext: {
@@ -1843,8 +1848,7 @@ export function buildInventorySummaryModel({
       inventorySubject: warehouseResult.subject,
       inventoryWarehouseName: text(raw.receivingWarehouseName),
       reconciliationId,
-      inventoryProductType: unsellableProductType(
-        product.product,
+      inventoryProductType: unsellableInventoryType(
         hasWarehouseCodePrefix(raw.receivingWarehouseName, ['777'])
       ),
       quantities: { fbmTransitQty: qty, fbmTransitValue: qty * product.product.pretaxPrice },
@@ -1875,7 +1879,7 @@ export function buildInventorySummaryModel({
         }
       : resolveWarehouseBusinessUnit(raw.subject, raw.warehouseName, materialCode);
     const directUnsellableWarehouse = hasWarehouseCodePrefix(raw.warehouseName);
-    const directUnsellableProduct = Boolean(unsellableProductType(product.product, directUnsellableWarehouse));
+    const directUnsellableProduct = Boolean(unsellableInventoryType(directUnsellableWarehouse));
     const inventoryBusinessUnit = warehouseResult.businessUnit;
     if (!inventoryBusinessUnit) {
       addAnomaly('国内在库', raw.materialCode, warehouseResult.issue || '事业部映射缺失', qty, 0, {
@@ -1899,8 +1903,7 @@ export function buildInventorySummaryModel({
       inventorySubject: text(raw.subject),
       inventoryWarehouseName: text(raw.warehouseName),
       reconciliationId,
-      inventoryProductType: unsellableProductType(
-        product.product,
+      inventoryProductType: unsellableInventoryType(
         isUnsellableWarehouse(warehouseResult.kingdeeWarehouseName) || directUnsellableWarehouse
       ),
       quantities: { domesticMainInventoryQty: qty, domesticMainInventoryValue: qty * product.product.pretaxPrice },

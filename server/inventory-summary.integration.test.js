@@ -434,6 +434,10 @@ test('inventory summary separates unsellable warehouse stock without losing norm
       {
         subject: '主体一', warehouseName: '555-G/退货仓/瑞朗德仓/医疗器械/国内&跨境',
         materialCode: 'M2', businessUnit: '国内事业部'
+      },
+      {
+        subject: '主体一', warehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境',
+        materialCode: 'M2', businessUnit: '国内事业部'
       }
     ]],
     ['inventorySummaryFile1', [
@@ -442,16 +446,21 @@ test('inventory summary separates unsellable warehouse stock without losing norm
     ]],
     ['inventorySummaryFile2', [
       { identifier: 'M1', warehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境', actualTotalQty: '20' },
-      { identifier: 'M1', warehouseName: '浙江仓（退货）', actualTotalQty: '7' }
+      { identifier: 'M1', warehouseName: '浙江仓（退货）', actualTotalQty: '7' },
+      { identifier: 'M2', warehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境', actualTotalQty: '6' }
     ]],
-    ['inventorySummaryFile3', [{ sku: 'SKU-1', warehouseName: 'WFS-RETURN', totalInventoryQty: '30' }]],
+    ['inventorySummaryFile3', [
+      { sku: 'SKU-1', warehouseName: 'WFS-RETURN', totalInventoryQty: '30' },
+      { sku: 'SKU-2', warehouseName: 'WFS-PART', totalInventoryQty: '7' }
+    ]],
     ['inventorySummaryFile6', [
       { subject: '主体一', warehouseName: '555-G/退货仓/瑞朗德仓/医疗器械/国内&跨境', materialCode: 'M1', domesticStockQty: '1' },
       { subject: '主体一', warehouseName: '555-O/退货仓/瑞朗德仓/医疗器械/国内&跨境', materialCode: 'M1', domesticStockQty: '2' },
       { subject: '主体一', warehouseName: '777-R/售后配件仓/瑞朗德仓/医疗器械/国内', materialCode: 'M1', domesticStockQty: '3' },
       { subject: '主体一', warehouseName: '001-M/待（退货）仓/瑞朗德仓/国内医疗器械', materialCode: 'M1', domesticStockQty: '4' },
       { subject: '未维护主体', warehouseName: '555-X/原始退货仓', materialCode: 'M1', domesticStockQty: '5' },
-      { subject: '主体一', warehouseName: '正常仓', materialCode: 'M1', domesticStockQty: '40' }
+      { subject: '主体一', warehouseName: '正常仓', materialCode: 'M1', domesticStockQty: '40' },
+      { subject: '主体一', warehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境', materialCode: 'M2', domesticStockQty: '8' }
     ]],
     ['inventorySummaryFile5', [{
       sku: 'SKU-1', warehouseName: '106-G-国内事业部-海上在途', receivingWarehouseName: '777-M/售后配件仓',
@@ -461,7 +470,8 @@ test('inventory summary separates unsellable warehouse stock without losing norm
     ['inventorySummaryFile9', [
       { subject: '主体一', lingxingWarehouseName: 'FBA-555', kingdeeWarehouseName: '555-M/退货仓/瑞朗德仓/医疗器械/国内&跨境' },
       { subject: '主体一', lingxingWarehouseName: 'FBA-555-PART', kingdeeWarehouseName: '555-G/退货仓/瑞朗德仓/医疗器械/国内&跨境' },
-      { subject: '主体一', lingxingWarehouseName: 'WFS-RETURN', kingdeeWarehouseName: '001-M/待（退货）仓/瑞朗德仓/国内医疗器械' }
+      { subject: '主体一', lingxingWarehouseName: 'WFS-RETURN', kingdeeWarehouseName: '001-M/待（退货）仓/瑞朗德仓/国内医疗器械' },
+      { subject: '主体一', lingxingWarehouseName: 'WFS-PART', kingdeeWarehouseName: '777-M/售后配件仓/瑞朗德仓/医疗器械/国内&跨境' }
     ]],
     ['inventorySummaryFile10', [
       { lingxingSku: 'SKU-1', identifier: 'M1' },
@@ -500,8 +510,15 @@ test('inventory summary separates unsellable warehouse stock without losing norm
   assert.equal(finishedSegments.reduce((sum, row) => sum + Number(row.domesticMainInventoryQty || 0), 0), 40);
   assert.equal(finishedSegments.reduce((sum, row) => sum + Number(row.jdInventoryQty || 0), 0), 50);
   assert.equal(sparePart?.baseProductType, '配件');
-  assert.equal(sparePart?.inventorySegmentBreakdown.some((row) => row.productType === '不可售'), false);
-  assert.equal(sparePart?.inventorySegmentBreakdown[0]?.productType, '配件');
+  const sparePartUnsellable = sparePart?.inventorySegmentBreakdown.filter((row) => row.productType === '不可售') || [];
+  assert.deepEqual({
+    fba: sparePartUnsellable.reduce((sum, row) => sum + Number(row.fbaInventoryQty || 0), 0),
+    fbm: sparePartUnsellable.reduce((sum, row) => sum + Number(row.fbmInventoryQty || 0), 0),
+    wfs: sparePartUnsellable.reduce((sum, row) => sum + Number(row.wfsInventoryQty || 0), 0),
+    domestic: sparePartUnsellable.reduce((sum, row) => sum + Number(row.domesticMainInventoryQty || 0), 0)
+  }, { fba: 5, fbm: 6, wfs: 7, domestic: 8 });
+  assert.equal(sparePart?.inventoryQty, 26);
+  assert.equal(sparePart?.inventorySegmentBreakdown.some((row) => row.productType === '配件'), false);
 });
 
 test('销售区域随商品分类进入汇总，未知区域进入维度缺失而2B区域不报错', () => {

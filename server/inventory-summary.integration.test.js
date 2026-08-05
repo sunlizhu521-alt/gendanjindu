@@ -336,7 +336,7 @@ test('manual inventory reconciliation compares business unit and material by cat
     ['inventorySummaryFile5', [{ sku: 'SKU-1', warehouseName: '102-US-海外二部-海上在途', documentStatus: '待收货', stockupQty: '4', receivedQty: '0' }]],
     ['inventorySummaryFile9', [{ subject: '主体一', lingxingWarehouseName: 'FBA源仓', kingdeeWarehouseName: 'FBA金蝶仓' }]],
     ['inventorySummaryFile10', [{ lingxingSku: 'SKU-1', identifier: 'M1' }]],
-    ['inventoryManualFile1', [{ businessUnit: '事业部A', warehouseName: 'FBA源仓', subject: '主体一', materialCode: 'M1', quantity: '10.0' }]],
+    ['inventoryManualFile1', [{ businessUnit: '事业部A', warehouseName: 'FBA源仓', subject: '', materialCode: 'M1', quantity: '10.0' }]],
     ['inventoryManualFile2', [
       { businessUnit: '事业部A', warehouseName: 'FBM仓', subject: '主体一', materialCode: 'M2', quantity: '4' },
       { businessUnit: '事业部A', warehouseName: 'FBM仓三', subject: '主体一', materialCode: 'M2', quantity: '2' }
@@ -352,6 +352,15 @@ test('manual inventory reconciliation compares business unit and material by cat
   const m2 = result.manualReconciliation.rows.find((row) => row.materialCode === 'M2');
   const m3 = result.manualReconciliation.rows.find((row) => row.materialCode === 'M3');
   assert.equal(m1.categories['成品'].inventory.status, '无差异');
+  const m1FbaSources = m1.categories['成品'].sources.filter((row) => row.sourceType === 'FBA库存');
+  assert.equal(m1FbaSources.length, 1);
+  assert.deepEqual({
+    systemQty: m1FbaSources[0].systemQty,
+    manualQty: m1FbaSources[0].manualQty,
+    status: m1FbaSources[0].status,
+    systemSubject: m1FbaSources[0].systemSubject,
+    manualSubject: m1FbaSources[0].manualSubject
+  }, { systemQty: 10, manualQty: 10, status: '无差异', systemSubject: '主体一', manualSubject: '' });
   assert.equal(m1.categories['成品'].transit.differenceQty, 2);
   assert.equal(m1.categories['成品'].status, '有差异');
   assert.equal(m2.categories['配件'].inventory.differenceQty, 5);
@@ -491,6 +500,7 @@ test('inventory summary separates unsellable warehouse stock without losing norm
       '333-M/不可售仓/杭州',
       '（杭州）电子成品仓',
       '888-G-采购成品仓虚拟仓-跨境医疗器械',
+      '888-US-采购成品仓虚拟仓-跨境医疗器械',
       '采购配件仓',
       '塑件车间仓库',
       '综合线组装仓库',
@@ -511,6 +521,7 @@ test('inventory summary separates unsellable warehouse stock without losing norm
         '333-M/不可售仓/杭州',
         '（杭州）电子成品仓',
         '888-G-采购成品仓虚拟仓-跨境医疗器械',
+        '888-US-采购成品仓虚拟仓-跨境医疗器械',
         '采购配件仓',
         '塑件车间仓库',
         '综合线组装仓库',
@@ -562,6 +573,7 @@ test('inventory summary separates unsellable warehouse stock without losing norm
       { identifier: 'M1', warehouseName: '333-M/不可售仓/杭州', actualTotalQty: '9' },
       { identifier: 'M1', warehouseName: '（杭州）电子成品仓', actualTotalQty: '11' },
       { identifier: 'M1', warehouseName: '888-G-采购成品仓虚拟仓-跨境医疗器械', actualTotalQty: '3' },
+      { identifier: 'M1', warehouseName: '888-US-采购成品仓虚拟仓-跨境医疗器械', actualTotalQty: '2' },
       { identifier: 'M1', warehouseName: '采购配件仓', actualTotalQty: '4' },
       { identifier: 'M1', warehouseName: '塑件车间仓库', actualTotalQty: '5' },
       { identifier: 'M1', warehouseName: '综合线组装仓库', actualTotalQty: '6' },
@@ -619,7 +631,7 @@ test('inventory summary separates unsellable warehouse stock without losing norm
 
   assert.equal(finished?.productType, '全新品');
   assert.equal(finished?.baseProductType, '成品');
-  assert.equal(finished?.inventoryQty, 205);
+  assert.equal(finished?.inventoryQty, 207);
   assert.equal(segmentedQty, finished?.inventoryQty);
   assert.deepEqual({
     fba: unsellableTotal('fbaInventoryQty'),
@@ -627,7 +639,7 @@ test('inventory summary separates unsellable warehouse stock without losing norm
     wfs: unsellableTotal('wfsInventoryQty'),
     domestic: unsellableTotal('domesticMainInventoryQty'),
     fbmTransit: unsellableTotal('fbmTransitQty')
-  }, { fba: 10, fbm: 65, wfs: 30, domestic: 10, fbmTransit: 8 });
+  }, { fba: 10, fbm: 67, wfs: 30, domestic: 10, fbmTransit: 8 });
   assert.equal(finishedSegments.reduce((sum, row) => sum + Number(row.domesticMainInventoryQty || 0), 0), 40);
   assert.equal(finishedSegments.reduce((sum, row) => sum + Number(row.jdInventoryQty || 0), 0), 50);
   assert.equal(sparePart?.baseProductType, '配件');

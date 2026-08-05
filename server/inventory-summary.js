@@ -337,7 +337,8 @@ function normalizedWarehouse(value) {
 }
 
 const FORCED_UNSELLABLE_WAREHOUSE_NAMES = new Set([
-  '888-G-采购成品仓虚拟仓-跨境医疗器械'
+  '888-G-采购成品仓虚拟仓-跨境医疗器械',
+  '888-US-采购成品仓虚拟仓-跨境医疗器械'
 ].map(normalizedWarehouse));
 const FORCED_UNSELLABLE_WAREHOUSE_KEYWORDS = [
   '配件仓',
@@ -1161,17 +1162,39 @@ function buildInventoryManualReconciliation({
         : standardConfigs
   );
   const detailText = (facts, field) => [...new Set(facts.map((fact) => text(fact[field])).filter(Boolean))].join(' & ');
-  const warehouseFactKey = (fact) => combinedKey(
-    text(fact.subject) || '未匹配',
-    text(fact.sourceWarehouseName || fact.mappedWarehouseName) || '未匹配'
-  );
-  const groupWarehouseFacts = (facts) => facts.reduce((index, fact) => {
-    const warehouseKey = warehouseFactKey(fact);
+  const groupFacts = (facts, keyForFact) => facts.reduce((index, fact) => {
+    const warehouseKey = keyForFact(fact);
     const bucket = index.get(warehouseKey) || [];
     bucket.push(fact);
     index.set(warehouseKey, bucket);
     return index;
   }, new Map());
+  const groupWarehouseFacts = (facts) => groupFacts(facts, (fact) => combinedKey(
+    text(fact.sourceWarehouseName || fact.mappedWarehouseName) || '未匹配'
+  ));
+  const pairWarehouseFacts = (systemFacts, manualFacts) => {
+    const systemByWarehouse = groupWarehouseFacts(systemFacts);
+    const manualByWarehouse = groupWarehouseFacts(manualFacts);
+    const warehouseKeys = new Set([...systemByWarehouse.keys(), ...manualByWarehouse.keys()]);
+    return [...warehouseKeys].flatMap((warehouseKey) => {
+      const systemWarehouseFacts = systemByWarehouse.get(warehouseKey) || [];
+      const manualWarehouseFacts = manualByWarehouse.get(warehouseKey) || [];
+      const systemSubjects = new Set(systemWarehouseFacts.map((fact) => matchKey(fact.subject)).filter(Boolean));
+      const manualSubjects = new Set(manualWarehouseFacts.map((fact) => matchKey(fact.subject)).filter(Boolean));
+      if (!systemSubjects.size || !manualSubjects.size) {
+        return [{ warehouseKey, systemMatches: systemWarehouseFacts, manualMatches: manualWarehouseFacts }];
+      }
+      const bySubject = (facts) => groupFacts(facts, (fact) => combinedKey(text(fact.subject) || '未匹配'));
+      const systemBySubject = bySubject(systemWarehouseFacts);
+      const manualBySubject = bySubject(manualWarehouseFacts);
+      const subjectKeys = new Set([...systemBySubject.keys(), ...manualBySubject.keys()]);
+      return [...subjectKeys].map((subjectKey) => ({
+        warehouseKey: combinedKey(warehouseKey, subjectKey),
+        systemMatches: systemBySubject.get(subjectKey) || [],
+        manualMatches: manualBySubject.get(subjectKey) || []
+      }));
+    });
+  };
 
   const rows = [...allKeys].map((key) => {
     const { businessUnit, materialCode } = keyIdentity.get(key);
@@ -1183,12 +1206,7 @@ function buildInventoryManualReconciliation({
         const systemMatches = (systemFactIndex.get(sourceKey) || []).filter((fact) => categoryMatches(fact, category));
         const manualMatches = (manualFactIndex.get(sourceKey) || []).filter((fact) => categoryMatches(fact, category));
         const availability = sourceAvailable(config);
-        const systemByWarehouse = groupWarehouseFacts(systemMatches);
-        const manualByWarehouse = groupWarehouseFacts(manualMatches);
-        const warehouseKeys = new Set([...systemByWarehouse.keys(), ...manualByWarehouse.keys()]);
-        return [...warehouseKeys].map((warehouseKey) => {
-          const systemWarehouseMatches = systemByWarehouse.get(warehouseKey) || [];
-          const manualWarehouseMatches = manualByWarehouse.get(warehouseKey) || [];
+        return pairWarehouseFacts(systemMatches, manualMatches).map(({ warehouseKey, systemMatches: systemWarehouseMatches, manualMatches: manualWarehouseMatches }) => {
           const systemQty = manualReconciliationQuantity(systemWarehouseMatches.reduce((sum, fact) => sum + fact.quantity, 0));
           const manualQty = manualReconciliationQuantity(manualWarehouseMatches.reduce((sum, fact) => sum + fact.quantity, 0));
           const differenceQty = manualReconciliationQuantity(systemQty - manualQty);

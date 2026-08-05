@@ -287,7 +287,7 @@ const QUANTITY_RECONCILIATION_GROUP_FIELDS = {
   在途: 'transitQty',
   未交付: 'unfulfilledQty'
 };
-const ZERO_QUANTITY_DIAGNOSTIC_SOURCE_TYPES = new Set(['京东在途']);
+const ZERO_QUANTITY_DIAGNOSTIC_SOURCE_TYPES = new Set(['京东在途', '供应计划分析']);
 const JD_INVENTORY_SUBJECT = '浙江迈德斯特医疗器械科技有限公司';
 const INVENTORY_SUBJECT_FIELDS = new Set([
   'fbaInventoryQty', 'fbaInventoryValue',
@@ -2157,7 +2157,7 @@ export function buildInventorySummaryModel({
         + Math.abs(Number(row.transitQty || 0))
         + Math.abs(Number(row.unfulfilledQty || 0));
       const salesRegion = text(row.salesRegion);
-      if (affectedQty <= 0.000001 || supportedSalesRegions.has(salesRegion)) return;
+      if (supportedSalesRegions.has(salesRegion)) return;
       addAnomaly('供应计划分析', `${row.businessUnit}+${row.materialCode}`, '销售区域缺失或无法识别', affectedQty, Math.abs(Number(row.scaleValue || 0)), {
         materialCode: row.materialCode,
         sku: row.sku,
@@ -2371,6 +2371,7 @@ export function buildInventoryDimensionDiagnostics(model = {}) {
       materialName: text(anomaly.materialName) || '未匹配',
       productLine: text(anomaly.productLine) || '未匹配',
       productSeries: text(anomaly.productSeries) || '未匹配',
+      salesRegion: text(anomaly.salesRegion) || '未填写',
       businessUnit: text(anomaly.businessUnit) || '未匹配',
       qty: Number(anomaly.qty || 0),
       value: Number(anomaly.value || 0)

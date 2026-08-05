@@ -4016,7 +4016,7 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, act
     const searchText = [
       row.targetTitle, row.issueCode, row.missingKey, row.sourceType, row.sourceKey, row.subject,
       row.sourceWarehouseName, row.kingdeeWarehouseName, row.storeName, row.sourceSku,
-      row.sku, row.materialCode, row.materialName, productLine, productSeries, row.businessUnit, row.maintenanceHint
+      row.sku, row.materialCode, row.materialName, productLine, productSeries, row.salesRegion, row.businessUnit, row.maintenanceHint
     ].join(' ').toLowerCase();
     return includesSelected(selectedTargets, row.targetTitle)
       && includesSelected(selectedTypes, row.sourceType)
@@ -4104,6 +4104,7 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, act
         产品名称: row.materialName,
         销售产品线: row.productLine,
         销售系列: row.productSeries,
+        当前销售区域: row.salesRegion,
         事业部: row.businessUnit,
         数量: row.qty,
         货值元: row.value,
@@ -4196,7 +4197,7 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, act
         <MultiSelectFilter label="库存组织" allLabel="全部库存组织" value={selectedInventoryOrganizations} options={inventoryOrganizationOptions} onChange={(value) => setFilters({ ...filters, inventoryOrganizations: value })} />
         <MultiSelectFilter label="产品线" allLabel="全部产品线" value={selectedProductLines} options={productLineOptions} onChange={(value) => setFilters({ ...filters, productLines: value })} />
         <MultiSelectFilter label="销售系列" allLabel="全部销售系列" value={selectedProductSeries} options={productSeriesOptions} onChange={(value) => setFilters({ ...filters, productSeries: value })} />
-        <input className="search-input" placeholder="搜索物料、SKU、仓库、问题、店铺、站点" value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} />
+        <input className="search-input" placeholder="搜索物料、SKU、仓库、问题、销售区域" value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} />
         <button type="button" className="ghost compact-button" onClick={() => setFilters({ targetTitles: [], inventoryTypes: [], issueStatuses: [], inventoryOrganizations: [], productLines: [], productSeries: [], keyword: '' })}>清空筛选</button>
         <button type="button" className="compact-button" onClick={exportMissing}>导出待维护 Excel</button>
       </div>
@@ -4213,11 +4214,11 @@ function DimensionMissingPage({ token, user, setMessage, refreshVersion = 0, act
       <section className="panel diagnostic-section inventory-diagnostic-section">
         <div className="section-heading-row"><h3>库存数据待维护明细</h3><span className="section-count">筛选后 {inventorySummaryIssues.length} / {payload.inventorySummaryIssues?.length || 0} 条</span></div>
         <DataTable className="compact-table diagnostic-table inventory-diagnostic-table" rows={inventoryIssuePagination.pageRows}
-          columns={['需要维护的表', '问题', '数据来源', '主体', '源仓库/店铺', '金蝶仓库', 'SKU/识别码', 'SKU', '物料编码', '产品名称', '销售产品线', '销售系列', '事业部', '数量', '货值（元）', '缺失键', '待补字段', '操作']}
+          columns={['需要维护的表', '问题', '数据来源', '主体', '源仓库/店铺', '金蝶仓库', 'SKU/识别码', 'SKU', '物料编码', '产品名称', '销售产品线', '销售系列', '当前销售区域', '事业部', '数量', '货值（元）', '缺失键', '待补字段', '操作']}
           render={(row) => [
             row.targetTitle, row.issueCode, row.sourceType, row.subject || '-', row.sourceWarehouseName || row.storeName || '-',
             row.kingdeeWarehouseName || '-', row.sourceSku || '-', row.sku || '未匹配', row.materialCode || '-',
-            row.materialName || '未匹配', row.productLine || '未匹配', row.productSeries || '未匹配', row.businessUnit,
+            row.materialName || '未匹配', row.productLine || '未匹配', row.productSeries || '未匹配', row.salesRegion || '未填写', row.businessUnit,
             numberValue(row.qty).toLocaleString(undefined, { maximumFractionDigits: 1 }),
             numberValue(row.value).toLocaleString(undefined, { maximumFractionDigits: 1 }),
             row.missingKey || '-', row.requiredFields?.join('、'), maintainButton(row)

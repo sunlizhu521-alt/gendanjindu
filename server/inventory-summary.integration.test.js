@@ -674,7 +674,11 @@ test('销售区域随商品分类进入汇总，未知区域进入维度缺失�
     ['productCategory', [
       { materialCode: 'M-US', sku: 'SKU-US', salesRegion: '美国', pretaxPrice: 10 },
       { materialCode: 'M-B2B', sku: 'SKU-B2B', salesRegion: '沙特', pretaxPrice: 10 },
-      { materialCode: 'M-MISSING', sku: 'SKU-MISSING', salesRegion: '无法区分', pretaxPrice: 10 }
+      { materialCode: 'M-MISSING', sku: 'SKU-MISSING', salesRegion: '无法区分', pretaxPrice: 10 },
+      { materialCode: 'M-ZERO', sku: 'SKU-ZERO', salesRegion: '', pretaxPrice: 10 }
+    ]],
+    ['inventorySummaryFile8', [
+      { date: '2026-06', businessUnit: '海外事业一部', materialCode: 'M-ZERO', salesQty: 10, salesAmount: 100 }
     ]],
     ['inventorySummaryFile12', [
       { businessUnit: '海外事业一部', materialCode: 'M-US', remainingQty: 5, deliveryStatus: '是' },
@@ -689,13 +693,19 @@ test('销售区域随商品分类进入汇总，未知区域进入维度缺失�
   assert.equal(model.rows.find((row) => row.materialCode === 'M-US')?.salesRegion, '美国');
   assert.equal(model.rows.find((row) => row.materialCode === 'M-B2B')?.salesRegion, '沙特');
   const regionIssues = model.anomalies.filter((row) => row.sourceType === '供应计划分析');
-  assert.equal(regionIssues.length, 1);
-  assert.equal(regionIssues[0].materialCode, 'M-MISSING');
-  assert.equal(regionIssues[0].qty, 7);
+  assert.equal(regionIssues.length, 2);
+  assert.deepEqual(regionIssues.map((row) => ({ materialCode: row.materialCode, qty: row.qty, salesRegion: row.salesRegion })), [
+    { materialCode: 'M-ZERO', qty: 0, salesRegion: '未填写' },
+    { materialCode: 'M-MISSING', qty: 7, salesRegion: '无法区分' }
+  ]);
   const diagnostics = buildInventoryDimensionDiagnostics(model);
   const issue = diagnostics.issues.find((row) => row.materialCode === 'M-MISSING');
   assert.equal(issue?.targetSlotId, 'productCategory');
   assert.equal(issue?.requiredFields.includes('销售区域'), true);
+  assert.equal(issue?.salesRegion, '无法区分');
+  const zeroImpactIssue = diagnostics.issues.find((row) => row.materialCode === 'M-ZERO');
+  assert.equal(zeroImpactIssue?.salesRegion, '未填写');
+  assert.equal(zeroImpactIssue?.qty, 0);
   assert.equal(diagnostics.issues.some((row) => row.materialCode === 'M-B2B'), false);
 });
 

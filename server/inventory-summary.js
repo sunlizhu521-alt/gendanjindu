@@ -2151,22 +2151,33 @@ export function buildInventorySummaryModel({
     };
   });
   if (salesRegionConfigured) {
-    const supportedSalesRegions = new Set(['美国', '欧洲', '中国', '沙特', '印度', '马来西亚', '越南', '新加坡', '韩国']);
+    const supportedSalesRegions = new Set(['美国', '欧洲', '中国', '沙特', '印度', '马来西亚', '越南', '新加坡', '韩国', '无法区分']);
+    const salesRegionIssuesByMaterial = new Map();
     rows.forEach((row) => {
+      const materialCode = text(row.materialCode);
+      if (!materialCode || materialCode === '未匹配') return;
       const affectedQty = Math.abs(Number(row.inventoryQty || 0))
         + Math.abs(Number(row.transitQty || 0))
         + Math.abs(Number(row.unfulfilledQty || 0));
       const salesRegion = text(row.salesRegion);
       if (supportedSalesRegions.has(salesRegion)) return;
-      addAnomaly('供应计划分析', `${row.businessUnit}+${row.materialCode}`, '销售区域缺失或无法识别', affectedQty, Math.abs(Number(row.scaleValue || 0)), {
-        materialCode: row.materialCode,
+      const current = salesRegionIssuesByMaterial.get(materialCode) || {
+        materialCode,
         sku: row.sku,
         materialName: row.materialName,
         productLine: row.productLine,
         productSeries: row.productSeries,
-        businessUnit: row.businessUnit,
-        salesRegion: salesRegion || '未填写'
-      });
+        businessUnit: '不适用',
+        salesRegion: salesRegion || '未填写',
+        qty: 0,
+        value: 0
+      };
+      current.qty += affectedQty;
+      current.value += Math.abs(Number(row.scaleValue || 0));
+      salesRegionIssuesByMaterial.set(materialCode, current);
+    });
+    salesRegionIssuesByMaterial.forEach((issue) => {
+      addAnomaly('供应计划分析', issue.materialCode, '销售区域缺失或无法识别', issue.qty, issue.value, issue);
     });
   }
   applyAbc(rows, 'salesQty', 'quantityAbc');

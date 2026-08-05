@@ -11,6 +11,7 @@ export const INVENTORY_RISK_CHANNELS = Object.freeze([
 ]);
 const CHANNEL_BY_SALES_REGION = new Map(INVENTORY_RISK_CHANNELS.map((channel) => [channel.salesRegion, channel]));
 const B2B_SALES_REGIONS = new Set(['沙特', '印度', '马来西亚', '越南', '新加坡', '韩国']);
+const IGNORED_SALES_REGIONS = new Set(['无法区分']);
 const DEFAULT_CHANNEL_PARAMS = Object.freeze({
   onHandSellableDays: 10,
   dispatchToShelfDays: 10,
@@ -64,6 +65,7 @@ function riskChannel(value) {
   const salesRegion = text(value);
   if (CHANNEL_BY_SALES_REGION.has(salesRegion)) return { status: 'included', ...CHANNEL_BY_SALES_REGION.get(salesRegion) };
   if (B2B_SALES_REGIONS.has(salesRegion)) return { status: 'b2b', salesRegion };
+  if (IGNORED_SALES_REGIONS.has(salesRegion)) return { status: 'ignored', salesRegion };
   return { status: 'missing', salesRegion };
 }
 

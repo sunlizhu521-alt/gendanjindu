@@ -669,12 +669,14 @@ test('inventory summary separates unsellable warehouse stock without losing norm
   assert.equal(k1Finished?.inventorySegmentBreakdown.some((row) => row.productType === '不可售'), false);
 });
 
-test('销售区域随商品分类进入汇总，未知区域进入维度缺失而2B区域不报错', () => {
+test('销售区域异常按物料去重，无法区分和2B区域不报错', () => {
   const rowsBySlot = new Map([
     ['productCategory', [
       { materialCode: 'M-US', sku: 'SKU-US', salesRegion: '美国', pretaxPrice: 10 },
       { materialCode: 'M-B2B', sku: 'SKU-B2B', salesRegion: '沙特', pretaxPrice: 10 },
-      { materialCode: 'M-MISSING', sku: 'SKU-MISSING', salesRegion: '无法区分', pretaxPrice: 10 },
+      { materialCode: 'M-IGNORED', sku: 'SKU-IGNORED', salesRegion: '无法区分', pretaxPrice: 10 },
+      { materialCode: 'M-MISSING', sku: 'SKU-MISSING', salesRegion: '海外', pretaxPrice: 10 },
+      { materialCode: 'M-EUROPE', sku: 'SKU-EUROPE', salesRegion: '欧美', pretaxPrice: 10 },
       { materialCode: 'M-ZERO', sku: 'SKU-ZERO', salesRegion: '', pretaxPrice: 10 }
     ]],
     ['inventorySummaryFile8', [
@@ -683,7 +685,10 @@ test('销售区域随商品分类进入汇总，未知区域进入维度缺失�
     ['inventorySummaryFile12', [
       { businessUnit: '海外事业一部', materialCode: 'M-US', remainingQty: 5, deliveryStatus: '是' },
       { businessUnit: '全球招商事业部', materialCode: 'M-B2B', remainingQty: 6, deliveryStatus: '是' },
-      { businessUnit: '海外事业二部', materialCode: 'M-MISSING', remainingQty: 7, deliveryStatus: '是' }
+      { businessUnit: '海外事业一部', materialCode: 'M-IGNORED', remainingQty: 4, deliveryStatus: '是' },
+      { businessUnit: '海外事业二部', materialCode: 'M-MISSING', remainingQty: 7, deliveryStatus: '是' },
+      { businessUnit: '全球招商事业部', materialCode: 'M-MISSING', remainingQty: 3, deliveryStatus: '是' },
+      { businessUnit: '海外事业一部', materialCode: 'M-EUROPE', remainingQty: 8, deliveryStatus: '是' }
     ]]
   ]);
   const model = buildInventorySummaryModel({
@@ -693,20 +698,24 @@ test('销售区域随商品分类进入汇总，未知区域进入维度缺失�
   assert.equal(model.rows.find((row) => row.materialCode === 'M-US')?.salesRegion, '美国');
   assert.equal(model.rows.find((row) => row.materialCode === 'M-B2B')?.salesRegion, '沙特');
   const regionIssues = model.anomalies.filter((row) => row.sourceType === '供应计划分析');
-  assert.equal(regionIssues.length, 2);
+  assert.equal(regionIssues.length, 3);
   assert.deepEqual(regionIssues.map((row) => ({ materialCode: row.materialCode, qty: row.qty, salesRegion: row.salesRegion })), [
     { materialCode: 'M-ZERO', qty: 0, salesRegion: '未填写' },
-    { materialCode: 'M-MISSING', qty: 7, salesRegion: '无法区分' }
+    { materialCode: 'M-MISSING', qty: 10, salesRegion: '海外' },
+    { materialCode: 'M-EUROPE', qty: 8, salesRegion: '欧美' }
   ]);
   const diagnostics = buildInventoryDimensionDiagnostics(model);
   const issue = diagnostics.issues.find((row) => row.materialCode === 'M-MISSING');
   assert.equal(issue?.targetSlotId, 'productCategory');
   assert.equal(issue?.requiredFields.includes('销售区域'), true);
-  assert.equal(issue?.salesRegion, '无法区分');
+  assert.equal(issue?.salesRegion, '海外');
+  assert.equal(issue?.businessUnit, '不适用');
+  assert.equal(issue?.sourceKey, 'M-MISSING');
   const zeroImpactIssue = diagnostics.issues.find((row) => row.materialCode === 'M-ZERO');
   assert.equal(zeroImpactIssue?.salesRegion, '未填写');
   assert.equal(zeroImpactIssue?.qty, 0);
   assert.equal(diagnostics.issues.some((row) => row.materialCode === 'M-B2B'), false);
+  assert.equal(diagnostics.issues.some((row) => row.materialCode === 'M-IGNORED'), false);
 });
 
 test('FBM inventory ignores zero quantities and excluded warehouse rows before mapping and aggregation', () => {

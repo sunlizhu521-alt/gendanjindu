@@ -221,16 +221,23 @@ test('销售区域映射三个渠道，2B和无法区分不进入风险计算', 
         summaryRow({ materialCode: '1002', sku: 'SKU-1002', salesRegion: '欧洲' }),
         summaryRow({ materialCode: '1003', sku: 'SKU-1003', salesRegion: '中国', businessUnit: '国内事业部' }),
         summaryRow({ materialCode: '1004', sku: 'SKU-1004', salesRegion: '沙特' }),
-        summaryRow({ materialCode: '1005', sku: 'SKU-1005', salesRegion: '无法区分' })
+        summaryRow({ materialCode: '1005', sku: 'SKU-1005', salesRegion: '无法区分' }),
+        summaryRow({ materialCode: '1006', sku: 'SKU-1006', salesRegion: '海外' }),
+        summaryRow({ materialCode: '1007', sku: 'SKU-1007', salesRegion: '欧美' })
       ],
-      anomalies: [{ id: 'risk-1005', sourceType: '库存风险', materialCode: '1005', businessUnit: '海外事业一部', qty: 100, issue: '销售区域缺失或无法识别' }]
+      anomalies: [
+        { id: 'risk-1006', sourceType: '供应计划分析', materialCode: '1006', businessUnit: '不适用', qty: 100, issue: '销售区域缺失或无法识别' },
+        { id: 'risk-1007', sourceType: '供应计划分析', materialCode: '1007', businessUnit: '不适用', qty: 100, issue: '销售区域缺失或无法识别' }
+      ]
     },
     forecastRows: [
       wideForecast({ 物料编码: '1001' }),
       wideForecast({ 物料编码: '1002' }),
       wideForecast({ 物料编码: '1003', 事业部: '国内事业部' }),
       wideForecast({ 物料编码: '1004' }),
-      wideForecast({ 物料编码: '1005' })
+      wideForecast({ 物料编码: '1005' }),
+      wideForecast({ 物料编码: '1006' }),
+      wideForecast({ 物料编码: '1007' })
     ],
     params: {
       channels: {
@@ -243,8 +250,10 @@ test('销售区域映射三个渠道，2B和无法区分不进入风险计算', 
   assert.deepEqual(new Set(payload.rows.map((row) => row.channel)), new Set(['海外-美国', '海外-欧洲', '国内']));
   assert.equal(payload.restricted.length, 3);
   assert.equal(payload.summary.b2bExcludedCount, 1);
-  assert.equal(payload.summary.channelMissingCount, 1);
-  assert.equal(payload.diagnostics.mappingIssues.some((row) => row.materialCode === '1005'), true);
+  assert.equal(payload.summary.channelMissingCount, 2);
+  assert.equal(payload.diagnostics.mappingIssues.some((row) => row.materialCode === '1005'), false);
+  assert.equal(payload.diagnostics.mappingIssues.some((row) => row.materialCode === '1006'), true);
+  assert.equal(payload.diagnostics.mappingIssues.some((row) => row.materialCode === '1007'), true);
 });
 
 test('处置阈值严格大于才命中，且停止采购优先于限制采购', () => {

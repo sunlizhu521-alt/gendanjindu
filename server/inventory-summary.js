@@ -336,14 +336,16 @@ function normalizedWarehouse(value) {
   return text(value).normalize('NFKC').replace(/\s+/g, '').toLowerCase();
 }
 
-function hasWarehouseCodePrefix(value, prefixes = ['555', '777']) {
+function hasWarehouseCodePrefix(value, prefixes = ['333', '555', '777']) {
   const warehouse = normalizedWarehouse(value);
   return prefixes.some((prefix) => new RegExp(`^${prefix}(?:[-/\\\\])`).test(warehouse));
 }
 
 function isForcedUnsellableWarehouse(value) {
   const warehouse = normalizedWarehouse(value);
-  return hasWarehouseCodePrefix(warehouse) || warehouse.includes('023');
+  return hasWarehouseCodePrefix(warehouse)
+    || warehouse.includes('023')
+    || warehouse.includes('(杭州)电子成品仓');
 }
 
 function isUnsellableWarehouse(value) {

@@ -410,7 +410,7 @@ function auditPageForRequest(req) {
   if (requestPath.startsWith('/api/inventory-summary')) return { key: 'inventorySummary', label: PAGE_LABELS.inventorySummary };
   if (requestPath.startsWith('/api/operation-logs')) return { key: 'operationLogs', label: PAGE_LABELS.operationLogs };
   if (requestPath.startsWith('/api/progress')) return { key: 'progressRefresh', label: PAGE_LABELS.progressRefresh };
-  if (requestPath.startsWith('/api/difference')) return { key: 'differenceAllocation', label: PAGE_LABELS.differenceAllocation };
+  if (requestPath.startsWith('/api/difference')) return { key: 'progressRefresh', label: PAGE_LABELS.progressRefresh };
   if (requestPath.startsWith('/api/imports/kingdee') || requestPath.startsWith('/api/mappings/kingdee')) return { key: 'kingdeeImport', label: PAGE_LABELS.kingdeeImport };
   if (requestPath.startsWith('/api/first-mile-board')) return { key: 'firstMileBoard', label: PAGE_LABELS.firstMileBoard };
   if (requestPath.startsWith('/api/cross-border-inventory')) return { key: 'crossBorderInventory', label: PAGE_LABELS.crossBorderInventory };
@@ -4458,20 +4458,20 @@ app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'
   res.json({ rows: demandRows(false, req.user) });
 });
 
-app.get('/api/diffs', requireAuth, requirePage('differenceAllocation'), (req, res) => {
+app.get('/api/diffs', requireAuth, requirePage('progressRefresh'), (req, res) => {
   res.json({ rows: all('SELECT * FROM demand_snapshot_diffs ORDER BY created_at DESC LIMIT 500') });
 });
 
-app.get('/api/difference-allocations', requireAuth, requirePage('differenceAllocation'), (req, res) => {
+app.get('/api/difference-allocations', requireAuth, requirePage('progressRefresh'), (req, res) => {
   const sessionId = normalize(req.query.sessionId);
   res.json({ rows: allocationRows(sessionId), actions: DIFF_ALLOCATION_ACTIONS, reasons: DIFF_ALLOCATION_REASONS });
 });
 
-app.get('/api/difference-allocations/latest', requireAuth, requirePage('differenceAllocation'), (req, res) => {
+app.get('/api/difference-allocations/latest', requireAuth, requirePage('progressRefresh'), (req, res) => {
   res.json(latestComparePayload(req.user));
 });
 
-app.get('/api/difference-allocations/unassigned-purchase-orders', requireAuth, requirePage('differenceAllocation'), (req, res) => {
+app.get('/api/difference-allocations/unassigned-purchase-orders', requireAuth, requirePage('progressRefresh'), (req, res) => {
   const pageSize = Math.min(100, Math.max(1, Math.floor(numberValue(req.query.pageSize) || 20)));
   const requestedPage = Math.max(1, Math.floor(numberValue(req.query.page) || 1));
   const allRows = unassignedPurchaseOrderRows();
@@ -4486,7 +4486,7 @@ app.get('/api/difference-allocations/unassigned-purchase-orders', requireAuth, r
   });
 });
 
-app.get('/api/difference-allocations/unassigned-purchase-orders/export', requireAuth, requirePage('differenceAllocation'), async (req, res) => {
+app.get('/api/difference-allocations/unassigned-purchase-orders/export', requireAuth, requirePage('progressRefresh'), async (req, res) => {
   const rows = unassignedPurchaseOrderRows();
   const headers = ['采购组织', '供应商', '创建人', '采购日期', '采购订单号', '物料编码', '物料名称', '原采购数量', '新采购数量'];
   const aoa = [headers, ...rows.map((row) => [
@@ -4511,7 +4511,7 @@ app.get('/api/difference-allocations/unassigned-purchase-orders/export', require
   res.send(buffer);
 });
 
-app.post('/api/difference-allocations/compare', requireAuth, requirePage('differenceAllocation'), upload.single('file'), (req, res) => {
+app.post('/api/difference-allocations/compare', requireAuth, requirePage('progressRefresh'), upload.single('file'), (req, res) => {
   const requestMapping = parseJson(req.body.mapping, {});
   const mapping = Object.keys(requestMapping).length ? requestMapping : savedMapping('kingdee');
   const sheetName = normalize(req.body.sheetName);
@@ -4577,7 +4577,7 @@ function saveDifferenceAllocation({ sessionId, row, user, actionType, reason, re
   );
 }
 
-app.post('/api/difference-allocations/:sessionId/rows/:rowId', requireAuth, requirePage('differenceAllocation'), (req, res) => {
+app.post('/api/difference-allocations/:sessionId/rows/:rowId', requireAuth, requirePage('progressRefresh'), (req, res) => {
   const session = get('SELECT * FROM difference_compare_sessions WHERE id = ?', [req.params.sessionId]);
   if (!session) return res.status(404).json({ error: '比对会话不存在' });
   const row = get('SELECT * FROM difference_compare_rows WHERE id = ? AND session_id = ?', [req.params.rowId, req.params.sessionId]);
@@ -4599,7 +4599,7 @@ app.post('/api/difference-allocations/:sessionId/rows/:rowId', requireAuth, requ
   res.json({ rows: allocationRows(req.params.sessionId), status: allocationStatus(req.params.sessionId) });
 });
 
-app.post('/api/difference-allocations/:sessionId/bulk-normal', requireAuth, requirePage('differenceAllocation'), (req, res) => {
+app.post('/api/difference-allocations/:sessionId/bulk-normal', requireAuth, requirePage('progressRefresh'), (req, res) => {
   const session = get('SELECT * FROM difference_compare_sessions WHERE id = ?', [req.params.sessionId]);
   if (!session) return res.status(404).json({ error: '比对会话不存在' });
   const rowIds = Array.isArray(req.body.rowIds) ? req.body.rowIds.map(normalize).filter(Boolean) : [];
@@ -4626,7 +4626,7 @@ app.post('/api/difference-allocations/:sessionId/bulk-normal', requireAuth, requ
   res.json({ updated: rows.length, rows: allocationRows(req.params.sessionId), status: allocationStatus(req.params.sessionId) });
 });
 
-app.post('/api/difference-allocations/:sessionId/apply', requireAuth, requirePage('differenceAllocation'), (req, res) => {
+app.post('/api/difference-allocations/:sessionId/apply', requireAuth, requirePage('progressRefresh'), (req, res) => {
   const session = get('SELECT * FROM difference_compare_sessions WHERE id = ?', [req.params.sessionId]);
   if (!session) return res.status(404).json({ error: '比对会话不存在' });
   if (session.status === 'applied' || session.status === 'snapshot_applied') return res.status(400).json({ error: '该快照已经应用' });

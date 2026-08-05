@@ -23,7 +23,6 @@ const PAGE_ORDER = [
   'inventoryManualLibrary',
   'operationBoard',
   'progressRefresh',
-  'differenceAllocation',
   'trace',
   'purchaseBoard',
   'firstMileBoard',
@@ -46,7 +45,6 @@ const PAGE_LABELS = {
   purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',
   progressRefresh: '生产跟进',
-  differenceAllocation: '差异分配',
   wangdianData: '国内数据',
   lingxingInventory: '领星库存',
   firstMileDatabase: '头程数据库',
@@ -63,7 +61,7 @@ const NAV_GROUPS = [
   { title: '国内数据', pages: ['domesticBoard', 'wangdianData'] },
   { title: '跨境数据', pages: ['crossBorderInventory', 'lingxingInventory'] },
   { title: '库存数据', pages: ['inventorySummary', 'inventoryRisk', 'inventoryPurchase', 'inventorySummaryLibrary', 'inventoryManualLibrary'] },
-  { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'differenceAllocation', 'trace', 'purchaseBoard'] },
+  { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'trace', 'purchaseBoard'] },
   { title: '头程数据', pages: ['firstMileBoard', 'firstMileDatabase'] },
   { title: '维护数据', pages: ['dimensionMissing', 'dimensionLibrary', 'kingdeeImport'] },
   { title: '系统操作', pages: ['permissions', 'operationLogs'] }
@@ -392,6 +390,10 @@ function supplierCountLabel(value) {
     return `${digits[Math.floor(count / 10)]}十${ones ? digits[ones] : ''}家供应`;
   }
   return `${count}家供应`;
+}
+
+function progressAllocationStatus(row) {
+  return row.progressAdjustmentRequired ? '待分配' : '无需分配';
 }
 
 function uniqueProgressValues(values) {
@@ -3403,7 +3405,7 @@ function clearInvalidFilterValues(filters, optionMap) {
 }
 
 function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
-  const [filters, setFilters] = useSessionFilters(cacheKey, { keyword: '', month: '', supplier: '', supplierCount: [], purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
+  const [filters, setFilters] = useSessionFilters(cacheKey, { keyword: '', month: '', supplier: '', supplierCount: [], allocationStatus: '', purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
   const matchesFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
     const displaySupplier = progressSupplierName(row);
@@ -3413,6 +3415,7 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
       && (omit === 'month' || !filters.month || row.month === filters.month)
       && (omit === 'supplier' || !filters.supplier || displaySupplier === filters.supplier)
       && (omit === 'supplierCount' || filters.supplierCount.length === 0 || filters.supplierCount.includes(supplyCount))
+      && (omit === 'allocationStatus' || !filters.allocationStatus || progressAllocationStatus(row) === filters.allocationStatus)
       && (omit === 'purchaseOrg' || !filters.purchaseOrg || row.purchaseOrg === filters.purchaseOrg)
       && (omit === 'businessUnit' || !filters.businessUnit || purchaseTrackingBusinessUnit(row.businessUnit) === filters.businessUnit)
       && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
@@ -3428,6 +3431,7 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
       supplierCounts: [...new Set(rowsFor('supplierCount').map((row) => Math.max(0, Math.trunc(numberValue(row.supplierCount)))))]
         .sort((left, right) => left - right)
         .map(supplierCountLabel),
+      allocationStatuses: ['待分配', '无需分配'],
       purchaseOrgs: uniqueProgressValues(rowsFor('purchaseOrg').map((row) => row.purchaseOrg)),
       businessUnits: uniqueProgressValues(rowsFor('businessUnit').map((row) => purchaseTrackingBusinessUnit(row.businessUnit))),
       productLines: uniqueProgressValues(rowsFor('productLine').map((row) => row.productLine)),
@@ -3441,6 +3445,7 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
       month: options.months,
       supplier: options.suppliers,
       supplierCount: options.supplierCounts,
+      allocationStatus: options.allocationStatuses,
       purchaseOrg: options.purchaseOrgs,
       businessUnit: options.businessUnits,
       productLine: options.productLines,
@@ -3455,13 +3460,14 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
 }
 
 function FilterBar({ filters, setFilters, options, onSubmit }) {
-  const clear = () => setFilters({ keyword: '', month: '', supplier: '', supplierCount: [], purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
+  const clear = () => setFilters({ keyword: '', month: '', supplier: '', supplierCount: [], allocationStatus: '', purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
   return (
     <div className="toolbar filters-row">
       <SelectField label="采购组织" value={filters.purchaseOrg} options={options.purchaseOrgs} onChange={(value) => setFilters({ ...filters, purchaseOrg: value })} />
       <MonthCalendarFilter label="创建月份" value={filters.month} options={options.months} multiple={false} onChange={(value) => setFilters({ ...filters, month: value })} />
       <SelectField label="供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
       <MultiSelectFilter label="是否多家供应" allLabel="全部供应家数" value={filters.supplierCount} options={options.supplierCounts} onChange={(value) => setFilters({ ...filters, supplierCount: value })} />
+      <SelectField label="分配状态" value={filters.allocationStatus} options={options.allocationStatuses} onChange={(value) => setFilters({ ...filters, allocationStatus: value })} />
       <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
       <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
       <SelectField label="系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
@@ -5404,6 +5410,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
   const [clearFilters, setClearFilters] = useState({ purchaseOwners: [], suppliers: [], productLines: [], productSeries: [] });
   const [clearPreview, setClearPreview] = useState(null);
   const [clearBusy, setClearBusy] = useState(false);
+  const [showDifferenceAllocation, setShowDifferenceAllocation] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const columnStorageKey = `gendanjindu:progress-columns:${user?.id || user?.name || 'user'}`;
@@ -5631,6 +5638,18 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
     }
   }
 
+  if (showDifferenceAllocation && !onlyIssues) {
+    return (
+      <>
+        <div className="section-heading-row progress-internal-view-heading">
+          <h2>生产跟进 / 差异分配</h2>
+          <button type="button" className="ghost compact-button" onClick={() => setShowDifferenceAllocation(false)}>返回生产跟进</button>
+        </div>
+        <DifferenceAllocationPage token={token} user={user} setMessage={setMessage} currentAppliedAt={currentAppliedAt} />
+      </>
+    );
+  }
+
   return (
     <>
       <div className="progress-sticky-top">
@@ -5664,6 +5683,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
               清除跟单数据
             </button>
           )}
+          {!onlyIssues && <button type="button" className="compact-button" onClick={() => setShowDifferenceAllocation(true)}>差异分配</button>}
         </div>
         {clearPanelOpen && user?.role === '管理员' && (
           <section className="progress-clear-panel" aria-label="清除跟单数据">
@@ -7451,7 +7471,6 @@ function App() {
         {shouldMount('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
         {shouldMount('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
         {shouldMount('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
-        {shouldMount('differenceAllocation') && <PagePane page="differenceAllocation" activeTab={activeTab}><DifferenceAllocationPage token={token} user={user} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('wangdianData') && <PagePane page="wangdianData" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="国内数据" slots={WANGDIAN_SLOTS} gridColumns={3} /></PagePane>}
         {shouldMount('lingxingInventory') && <PagePane page="lingxingInventory" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="领星库存" slots={LINGXING_INVENTORY_SLOTS} onDataApplied={refreshCrossBorderData} highlightSlotId={highlightSlotId} /></PagePane>}
         {shouldMount('firstMileDatabase') && <PagePane page="firstMileDatabase" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="头程数据库" slots={FIRST_MILE_DATABASE_SLOTS} gridColumns={3} onDataApplied={refreshFirstMileData} /></PagePane>}

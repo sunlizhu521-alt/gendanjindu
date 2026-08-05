@@ -84,3 +84,35 @@ test('生产跟进表格使用清晰竖线和交替行色', () => {
   assert.match(styleSource, /\.progress-table tbody tr:nth-child\(even\):not\(\.progress-row-adjustment\) input:not\(\[type="checkbox"\]\)/);
   assert.match(styleSource, /\.progress-row-adjustment > td[\s\S]*?background: #fff1f2 !important/);
 });
+
+test('生产跟进按待人工调整状态筛选待分配和无需分配', () => {
+  const filterSource = appSource.slice(
+    appSource.indexOf('function progressAllocationStatus('),
+    appSource.indexOf('function Login(')
+  );
+  assert.match(filterSource, /return row\.progressAdjustmentRequired \? '待分配' : '无需分配'/);
+  assert.match(filterSource, /allocationStatus: ''/);
+  assert.match(filterSource, /progressAllocationStatus\(row\) === filters\.allocationStatus/);
+  assert.match(filterSource, /allocationStatuses: \['待分配', '无需分配'\]/);
+  assert.match(filterSource, /label="分配状态"[\s\S]*?options=\{options\.allocationStatuses\}/);
+  assert.match(filterSource, /allocationStatus: options\.allocationStatuses/);
+});
+
+test('差异分配合并到生产跟进内部并复用生产跟进权限', () => {
+  const progressSource = appSource.slice(
+    appSource.indexOf('function ProgressPage('),
+    appSource.indexOf('function DifferenceAllocationPage(')
+  );
+  const navigationSource = appSource.slice(0, appSource.indexOf('const DIMENSION_SLOTS'));
+  const appRenderSource = appSource.slice(appSource.indexOf('function App()'));
+
+  assert.match(progressSource, /const \[showDifferenceAllocation, setShowDifferenceAllocation\] = useState\(false\)/);
+  assert.match(progressSource, /清除跟单数据[\s\S]*?setShowDifferenceAllocation\(true\)[\s\S]*?>差异分配</);
+  assert.match(progressSource, /<DifferenceAllocationPage token=\{token\}[\s\S]*?currentAppliedAt=\{currentAppliedAt\}/);
+  assert.match(progressSource, /setShowDifferenceAllocation\(false\)[\s\S]*?返回生产跟进/);
+  assert.doesNotMatch(navigationSource, /pages: \[[^\]]*'differenceAllocation'/);
+  assert.doesNotMatch(appRenderSource, /shouldMount\('differenceAllocation'\)/);
+  assert.doesNotMatch(serverSource, /requirePage\('differenceAllocation'\)/);
+  assert.match(serverSource, /requestPath\.startsWith\('\/api\/difference'\)\) return \{ key: 'progressRefresh', label: PAGE_LABELS\.progressRefresh \}/);
+  assert.match(serverSource, /app\.get\('\/api\/difference-allocations\/latest', requireAuth, requirePage\('progressRefresh'\)/);
+});

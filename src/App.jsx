@@ -358,6 +358,10 @@ function supplierName(row) {
   return normalize(row.supplierShortName) || normalize(row.supplier);
 }
 
+function progressSupplierName(row) {
+  return normalize(row.supplier) || normalize(row.orderSupplierShortName) || normalize(row.supplierShortName) || '未匹配';
+}
+
 function orderSupplierName(row) {
   return normalize(row.orderSupplierShortName) || '未匹配';
 }
@@ -3358,15 +3362,17 @@ function clearInvalidFilterValues(filters, optionMap) {
 }
 
 function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
-  const [filters, setFilters] = useSessionFilters(cacheKey, { keyword: '', month: '', supplier: '', purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
+  const [filters, setFilters] = useSessionFilters(cacheKey, { keyword: '', month: '', supplier: '', supplierCount: [], purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
   const unique = (values) => [...new Set(values.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'zh-Hans-CN'));
   const matchesFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
-    const displaySupplier = supplierName(row);
+    const displaySupplier = progressSupplierName(row);
+    const supplyCount = supplierCountLabel(row.supplierCount);
     const text = [row.demandKey, row.oaFlowNo, row.materialCode, row.supplier, displaySupplier, row.materialName, row.logisticsCode, row.sku, row.purchaseOwner, row.purchaseGroup].join(' ').toLowerCase();
     return (!keyword || text.includes(keyword))
       && (omit === 'month' || !filters.month || row.month === filters.month)
       && (omit === 'supplier' || !filters.supplier || displaySupplier === filters.supplier)
+      && (omit === 'supplierCount' || filters.supplierCount.length === 0 || filters.supplierCount.includes(supplyCount))
       && (omit === 'purchaseOrg' || !filters.purchaseOrg || row.purchaseOrg === filters.purchaseOrg)
       && (omit === 'businessUnit' || !filters.businessUnit || purchaseTrackingBusinessUnit(row.businessUnit) === filters.businessUnit)
       && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
@@ -3378,7 +3384,10 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
     const rowsFor = (field) => rows.filter((row) => matchesFilters(row, field));
     return {
       months: unique(rowsFor('month').map((row) => row.month)),
-      suppliers: unique(rowsFor('supplier').map((row) => supplierName(row))),
+      suppliers: unique(rowsFor('supplier').map((row) => progressSupplierName(row))),
+      supplierCounts: [...new Set(rowsFor('supplierCount').map((row) => Math.max(0, Math.trunc(numberValue(row.supplierCount)))))]
+        .sort((left, right) => left - right)
+        .map(supplierCountLabel),
       purchaseOrgs: unique(rowsFor('purchaseOrg').map((row) => row.purchaseOrg)),
       businessUnits: unique(rowsFor('businessUnit').map((row) => purchaseTrackingBusinessUnit(row.businessUnit))),
       productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
@@ -3391,6 +3400,7 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
     const next = clearInvalidFilterValues(filters, {
       month: options.months,
       supplier: options.suppliers,
+      supplierCount: options.supplierCounts,
       purchaseOrg: options.purchaseOrgs,
       businessUnit: options.businessUnits,
       productLine: options.productLines,
@@ -3405,12 +3415,13 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
 }
 
 function FilterBar({ filters, setFilters, options, onSubmit }) {
-  const clear = () => setFilters({ keyword: '', month: '', supplier: '', purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
+  const clear = () => setFilters({ keyword: '', month: '', supplier: '', supplierCount: [], purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
   return (
     <div className="toolbar filters-row">
       <SelectField label="采购组织" value={filters.purchaseOrg} options={options.purchaseOrgs} onChange={(value) => setFilters({ ...filters, purchaseOrg: value })} />
       <MonthCalendarFilter label="创建月份" value={filters.month} options={options.months} multiple={false} onChange={(value) => setFilters({ ...filters, month: value })} />
       <SelectField label="供应商" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
+      <MultiSelectFilter label="是否多家供应" allLabel="全部供应家数" value={filters.supplierCount} options={options.supplierCounts} onChange={(value) => setFilters({ ...filters, supplierCount: value })} />
       <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
       <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
       <SelectField label="系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
@@ -5189,7 +5200,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, selected = fals
     row.orderCreator,
     row.documentStatus,
     row.purchaseOrg,
-    supplierName(row),
+    progressSupplierName(row),
     row.businessUnit,
     <TightCell value={row.productLine} />,
     <TightCell value={row.productSeries} />,
@@ -5247,13 +5258,13 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
   const allVisibleEditableSelected = editableKeys.length > 0 && editableKeys.every((key) => selectedKeys.includes(key));
   const clearFilterRows = (omit = '') => trackableRows.filter((row) => (
     (omit === 'purchaseOwners' || clearFilters.purchaseOwners.length === 0 || clearFilters.purchaseOwners.includes(row.purchaseOwner))
-    && (omit === 'suppliers' || clearFilters.suppliers.length === 0 || clearFilters.suppliers.includes(supplierName(row)))
+    && (omit === 'suppliers' || clearFilters.suppliers.length === 0 || clearFilters.suppliers.includes(progressSupplierName(row)))
     && (omit === 'productLines' || clearFilters.productLines.length === 0 || clearFilters.productLines.includes(row.productLine))
     && (omit === 'productSeries' || clearFilters.productSeries.length === 0 || clearFilters.productSeries.includes(row.productSeries))
   ));
   const clearOptions = useMemo(() => ({
     purchaseOwners: unique(clearFilterRows('purchaseOwners').map((row) => row.purchaseOwner)),
-    suppliers: unique(clearFilterRows('suppliers').map((row) => supplierName(row))),
+    suppliers: unique(clearFilterRows('suppliers').map((row) => progressSupplierName(row))),
     productLines: unique(clearFilterRows('productLines').map((row) => row.productLine)),
     productSeries: unique(clearFilterRows('productSeries').map((row) => row.productSeries))
   }), [trackableRows, clearFilters]);
@@ -5357,7 +5368,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
             row.orderCreator,
             row.documentStatus,
             row.purchaseOrg,
-            supplierName(row),
+            progressSupplierName(row),
             row.businessUnit,
             row.productLine,
             row.productSeries,
@@ -5438,7 +5449,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
         )}
         <FilterBar filters={filters} setFilters={setFilters} options={options} />
         <section className="progress-chart-grid">
-          <ProgressStackedChart title="供应商未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => supplierName(row)} />
+          <ProgressStackedChart title="供应商未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => progressSupplierName(row)} />
           <ProgressStackedChart title="事业部未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => purchaseTrackingBusinessUnit(row.businessUnit)} />
           <ProgressStackedChart title="系列未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => row.productSeries} />
           <ProgressStackedChart title="SKU未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => row.sku} />

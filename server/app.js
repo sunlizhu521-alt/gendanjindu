@@ -3717,7 +3717,7 @@ function progressClearSelection(user, filters) {
     .filter((row) => {
       const values = {
         purchaseOwner: normalize(row.purchaseOwner),
-        supplierDisplayName: normalize(row.supplierShortName) || normalize(row.supplier),
+        supplierDisplayName: normalize(row.supplier),
         productLine: normalize(row.productLine),
         productSeries: normalize(row.productSeries)
       };
@@ -3739,7 +3739,7 @@ function progressClearPreview(user, filters) {
     sampleRows: rows.slice(0, 10).map((row) => ({
       demandKey: row.demandKey,
       purchaseOwner: row.purchaseOwner,
-      supplier: normalize(row.supplierShortName) || normalize(row.supplier),
+      supplier: normalize(row.supplier),
       productLine: row.productLine,
       productSeries: row.productSeries,
       materialCode: row.materialCode

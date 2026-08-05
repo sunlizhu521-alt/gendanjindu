@@ -359,7 +359,7 @@ function supplierName(row) {
 }
 
 function progressSupplierName(row) {
-  return normalize(row.supplier) || normalize(row.orderSupplierShortName) || normalize(row.supplierShortName) || '未匹配';
+  return normalize(row.orderSupplierShortName) || '未匹配';
 }
 
 function orderSupplierName(row) {
@@ -3424,7 +3424,7 @@ function FilterBar({ filters, setFilters, options, onSubmit }) {
     <div className="toolbar filters-row">
       <SelectField label="采购组织" value={filters.purchaseOrg} options={options.purchaseOrgs} onChange={(value) => setFilters({ ...filters, purchaseOrg: value })} />
       <MonthCalendarFilter label="创建月份" value={filters.month} options={options.months} multiple={false} onChange={(value) => setFilters({ ...filters, month: value })} />
-      <SelectField label="供应商" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
+      <SelectField label="供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
       <MultiSelectFilter label="是否多家供应" allLabel="全部供应家数" value={filters.supplierCount} options={options.supplierCounts} onChange={(value) => setFilters({ ...filters, supplierCount: value })} />
       <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
       <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
@@ -5359,7 +5359,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
   async function handleExport() {
     try {
       const XLSX = await import('xlsx');
-      const headers = ['采购组', '采购下单人', '月份', '采购订单号', '创建人', '单据状态', '采购组织', '供应商', '事业部', '产品线', '系列', '物料编码', 'SKU', '物料', '未交付数量', '在产品', '完工产品', '已发货数量', 'OA备货流程号', '批注'];
+      const headers = ['采购组', '采购下单人', '月份', '采购订单号', '创建人', '单据状态', '采购组织', '供应商简称', '事业部', '产品线', '系列', '物料编码', 'SKU', '物料', '未交付数量', '在产品', '完工产品', '已发货数量', 'OA备货流程号', '批注'];
       const aoa = [
         headers,
         ...displayRows.map((row) => {
@@ -5435,7 +5435,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
             </div>
             <div className="toolbar filters-row progress-clear-filters">
               <MultiSelectFilter label="采购下单人" allLabel="全部采购下单人" value={clearFilters.purchaseOwners} options={clearOptions.purchaseOwners} onChange={(value) => updateClearFilter('purchaseOwners', value)} />
-              <MultiSelectFilter label="供应商" allLabel="全部供应商" value={clearFilters.suppliers} options={clearOptions.suppliers} onChange={(value) => updateClearFilter('suppliers', value)} />
+              <MultiSelectFilter label="供应商简称" allLabel="全部供应商简称" value={clearFilters.suppliers} options={clearOptions.suppliers} onChange={(value) => updateClearFilter('suppliers', value)} />
               <MultiSelectFilter label="产品线" allLabel="全部产品线" value={clearFilters.productLines} options={clearOptions.productLines} onChange={(value) => updateClearFilter('productLines', value)} />
               <MultiSelectFilter label="系列" allLabel="全部系列" value={clearFilters.productSeries} options={clearOptions.productSeries} onChange={(value) => updateClearFilter('productSeries', value)} />
               <button type="button" className="ghost compact-button" onClick={() => { setClearFilters({ purchaseOwners: [], suppliers: [], productLines: [], productSeries: [] }); setClearPreview(null); }}>清空条件</button>
@@ -5453,7 +5453,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
         )}
         <FilterBar filters={filters} setFilters={setFilters} options={options} />
         <section className="progress-chart-grid">
-          <ProgressStackedChart title="供应商未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => progressSupplierName(row)} />
+          <ProgressStackedChart title="供应商简称未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => progressSupplierName(row)} />
           <ProgressStackedChart title="事业部未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => purchaseTrackingBusinessUnit(row.businessUnit)} />
           <ProgressStackedChart title="系列未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => row.productSeries} />
           <ProgressStackedChart title="SKU未交付 / 在产品 / 完工产品" rows={displayRows} groupBy={(row) => row.sku} />
@@ -5472,7 +5472,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
             />
             <span>全选</span>
           </label>
-        ), '采购组', '采购下单人', '月份', '采购订单号', '创建人', '单据状态', '采购组织', '供应商', '事业部', '产品线', '系列', '物料编码', 'SKU', '物料', '未交付数量', '在产品', '完工产品', '已发货数量', 'OA备货流程号', '批注', '操作']}
+        ), '采购组', '采购下单人', '月份', '采购订单号', '创建人', '单据状态', '采购组织', '供应商简称', '事业部', '产品线', '系列', '物料编码', 'SKU', '物料', '未交付数量', '在产品', '完工产品', '已发货数量', 'OA备货流程号', '批注', '操作']}
         renderRow={(row) => (
           <ProgressEditor
             key={row.demandKey}

@@ -2484,17 +2484,17 @@ test('inventory summary and domestic board use complete source models and enforc
     });
     assert.equal(emptyProgressClearPreview.status, 400);
 
-    const mergedSupplierClearPreview = await fetch(`http://127.0.0.1:${port}/api/progress/clear-preview`, {
+    const fullSupplierClearPreview = await fetch(`http://127.0.0.1:${port}/api/progress/clear-preview`, {
       method: 'POST',
       headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ suppliers: [m1Demand.supplierShortName] })
+      body: JSON.stringify({ suppliers: [m1Demand.supplier] })
     });
-    assert.equal(mergedSupplierClearPreview.status, 200);
-    assert.equal((await mergedSupplierClearPreview.json()).matchedDemands, 0);
+    assert.equal(fullSupplierClearPreview.status, 200);
+    assert.equal((await fullSupplierClearPreview.json()).matchedDemands, 0);
 
     const progressClearFilters = {
       purchaseOwners: [m1Demand.purchaseOwner],
-      suppliers: [m1Demand.supplier],
+      suppliers: [m1Demand.orderSupplierShortName],
       productLines: [m1Demand.productLine],
       productSeries: [m1Demand.productSeries]
     };

@@ -17,6 +17,7 @@ const tableNames = new Set([
 ]);
 const changedTables = [...tableNames]
   .filter((table) => !ignoredTables.has(table))
+  .filter((table) => !(baseline.tableCounts?.[table] === undefined && post.tableCounts?.[table] === 0))
   .filter((table) => baseline.tableCounts?.[table] !== post.tableCounts?.[table])
   .map((table) => `${table}:${baseline.tableCounts?.[table] ?? 'missing'}->${post.tableCounts?.[table] ?? 'missing'}`);
 

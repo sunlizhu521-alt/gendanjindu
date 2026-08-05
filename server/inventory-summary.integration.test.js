@@ -2092,6 +2092,38 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(summary.manualReconciliation, undefined);
     assert.deepEqual(manualReconciliationPayload.manualReconciliation.categories, ['全部', '成品+配件', '成品', '配件', '不可售']);
     assert.deepEqual(Object.keys(manualReconciliationPayload.manualReconciliation.summaryByCategory), ['成品+配件']);
+    assert.deepEqual(manualReconciliationPayload.notes, []);
+    const noteResponse = await fetch(`${endpoint}/manual-reconciliation/note`, {
+      method: 'PUT',
+      headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: '成品+配件', businessUnit: '国内事业部', materialCode: 'M1', remark: '等待业务确认' })
+    });
+    assert.equal(noteResponse.status, 200);
+    assert.equal((await noteResponse.json()).note.remark, '等待业务确认');
+    const notesAfterSave = await fetch(`${endpoint}/manual-reconciliation?category=${encodeURIComponent('成品+配件')}`, {
+      headers: { Authorization: 'Bearer admin-token' }
+    }).then((response) => response.json());
+    assert.equal(notesAfterSave.notes.length, 1);
+    assert.deepEqual({ ...notesAfterSave.notes[0], updatedAt: Boolean(notesAfterSave.notes[0].updatedAt) }, {
+      category: '成品+配件',
+      businessUnit: '国内事业部',
+      materialCode: 'M1',
+      remark: '等待业务确认',
+      updatedBy: 'Test Admin',
+      updatedAt: true
+    });
+    const unauthorizedNoteResponse = await fetch(`${endpoint}/manual-reconciliation/note`, {
+      method: 'PUT',
+      headers: { Authorization: 'Bearer limited-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: '成品+配件', businessUnit: '国内事业部', materialCode: 'M1', remark: '无权限修改' })
+    });
+    assert.equal(unauthorizedNoteResponse.status, 403);
+    const invalidNoteResponse = await fetch(`${endpoint}/manual-reconciliation/note`, {
+      method: 'PUT',
+      headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: '无效分类', businessUnit: '国内事业部', materialCode: 'M1', remark: '无效' })
+    });
+    assert.equal(invalidNoteResponse.status, 400);
     assert.equal(summary.quantityReconciliation.summary.sourceCount, 9);
     assert.equal(summary.quantityReconciliation.summary.missingQuantity, 0);
     assert.equal(summary.quantityReconciliation.summary.overlapQuantity, 0);

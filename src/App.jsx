@@ -1841,9 +1841,15 @@ function InventoryManualReconciliation({ token, onBack }) {
   const [filters, setFilters] = useState({ businessUnits: [], productLines: [], productSeries: [], sources: [], statuses: [], keyword: '' });
   const [expandedRows, setExpandedRows] = useState(new Set());
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
-  const pageSize = 50;
+  const [noteDrafts, setNoteDrafts] = useState({});
+  const [savedNotes, setSavedNotes] = useState({});
+  const [savingNoteKey, setSavingNoteKey] = useState('');
+  const [savedNoteKey, setSavedNoteKey] = useState('');
+  const [noteError, setNoteError] = useState('');
+  const noteKey = (businessUnit, materialCode) => `${businessUnit}\u001f${materialCode}`;
   const rows = useMemo(() => (reconciliation?.rows || []).map((row) => ({
     ...row,
     comparison: row.categories?.[category] || { inventory: {}, transit: {}, sources: [], status: '无法核对', reason: '缺少核对结果', hasData: false }
@@ -1861,7 +1867,7 @@ function InventoryManualReconciliation({ token, onBack }) {
     const keyword = filters.keyword.trim().toLowerCase();
     return rows.filter((row) => {
       const sourceMatch = !filters.sources.length || row.comparison.sources.some((source) => filters.sources.includes(source.label));
-      const keywordMatch = !keyword || [row.businessUnit, row.productLine, row.productSeries, row.materialCode, row.sku, row.materialName, row.comparison.reason]
+      const keywordMatch = !keyword || [row.businessUnit, row.productLine, row.productSeries, row.materialCode, row.sku, row.materialName, row.comparison.reason, noteDrafts[noteKey(row.businessUnit, row.materialCode)]]
         .some((value) => String(value || '').toLowerCase().includes(keyword));
       return selected(filters.businessUnits, row.businessUnit)
         && selected(filters.productLines, row.productLine)
@@ -1870,7 +1876,7 @@ function InventoryManualReconciliation({ token, onBack }) {
         && sourceMatch
         && keywordMatch;
     });
-  }, [rows, filters]);
+  }, [rows, filters, noteDrafts]);
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const pageRows = filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const summary = reconciliation?.summaryByCategory?.[category] || {};
@@ -1880,9 +1886,15 @@ function InventoryManualReconciliation({ token, onBack }) {
     let cancelled = false;
     setLoading(true);
     setError('');
+    setNoteError('');
     request(`/api/inventory-summary/manual-reconciliation?category=${encodeURIComponent(category)}`, { token })
       .then((payload) => {
-        if (!cancelled) setData(payload);
+        if (!cancelled) {
+          const notes = Object.fromEntries((payload.notes || []).map((note) => [noteKey(note.businessUnit, note.materialCode), note.remark || '']));
+          setData(payload);
+          setSavedNotes(notes);
+          setNoteDrafts(notes);
+        }
       })
       .catch((err) => {
         if (!cancelled) setError(err.message || '手工库存核对加载失败');
@@ -1898,7 +1910,7 @@ function InventoryManualReconciliation({ token, onBack }) {
   useEffect(() => {
     setCurrentPage(1);
     setExpandedRows(new Set());
-  }, [category, filters]);
+  }, [category, filters, pageSize]);
 
   const updateFilter = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
   const toggleExpanded = (id) => setExpandedRows((current) => {
@@ -1908,6 +1920,32 @@ function InventoryManualReconciliation({ token, onBack }) {
     return next;
   });
   const filteredSources = (row) => row.comparison.sources.filter((source) => !filters.sources.length || filters.sources.includes(source.label));
+  const saveNote = async (row) => {
+    const key = noteKey(row.businessUnit, row.materialCode);
+    setSavingNoteKey(key);
+    setSavedNoteKey('');
+    setNoteError('');
+    try {
+      const payload = await request('/api/inventory-summary/manual-reconciliation/note', {
+        token,
+        method: 'PUT',
+        body: JSON.stringify({
+          category,
+          businessUnit: row.businessUnit,
+          materialCode: row.materialCode,
+          remark: noteDrafts[key] || ''
+        })
+      });
+      const remark = payload.note?.remark || '';
+      setSavedNotes((current) => ({ ...current, [key]: remark }));
+      setNoteDrafts((current) => ({ ...current, [key]: remark }));
+      setSavedNoteKey(key);
+    } catch (err) {
+      setNoteError(err.message || '备注保存失败');
+    } finally {
+      setSavingNoteKey('');
+    }
+  };
   const exportRows = async () => {
     if (!filteredRows.length || exporting) return;
     setExporting(true);
@@ -1930,7 +1968,8 @@ function InventoryManualReconciliation({ token, onBack }) {
         手工在途量: row.comparison.transit.manualQty,
         在途差异: row.comparison.transit.differenceQty,
         是否有差异: row.comparison.status,
-        原因分析: row.comparison.reason
+        原因分析: row.comparison.reason,
+        备注: noteDrafts[noteKey(row.businessUnit, row.materialCode)] || ''
       }));
       const sourceRows = filteredRows.flatMap((row) => filteredSources(row).map((source) => ({
         分类: category,
@@ -2011,7 +2050,7 @@ function InventoryManualReconciliation({ token, onBack }) {
             <button type="button" className="ghost compact-button" onClick={() => setFilters({ businessUnits: [], productLines: [], productSeries: [], sources: [], statuses: [], keyword: '' })}>清空筛选</button>
             <button type="button" className="compact-button" disabled={exporting || !filteredRows.length} onClick={exportRows}>{exporting ? '正在生成Excel...' : '导出Excel'}</button>
           </div>
-          {exportError && <p className="inventory-manual-export-error" role="alert">{exportError}</p>}
+          {(exportError || noteError) && <p className="inventory-manual-export-error" role="alert">{exportError || noteError}</p>}
           {(reconciliation.unavailableFiles || []).length > 0 && (
             <div className="inventory-manual-unavailable" role="status">
               当前有 {reconciliation.unavailableFiles.length} 个核对文件未应用，对应来源显示“无法核对”。
@@ -2019,7 +2058,7 @@ function InventoryManualReconciliation({ token, onBack }) {
           )}
           <div className="inventory-manual-table-wrap">
             <table className="inventory-manual-table">
-              <thead><tr><th>明细</th><th>事业部</th><th>产品线</th><th>系列</th><th>物料编码</th><th>SKU</th><th>物料名称</th><th>系统在库量</th><th>手工在库量</th><th>在库差异</th><th>系统在途量</th><th>手工在途量</th><th>在途差异</th><th>是否有差异</th><th>原因分析</th></tr></thead>
+              <thead><tr><th>明细</th><th>事业部</th><th>产品线</th><th>系列</th><th>物料编码</th><th>SKU</th><th>物料名称</th><th>系统在库量</th><th>手工在库量</th><th>在库差异</th><th>系统在途量</th><th>手工在途量</th><th>在途差异</th><th>是否有差异</th><th>原因分析</th><th>备注</th></tr></thead>
               <tbody>
                 {pageRows.map((row) => (
                   <Fragment key={row.id}>
@@ -2029,9 +2068,34 @@ function InventoryManualReconciliation({ token, onBack }) {
                       <td>{formatQty(row.comparison.inventory.systemQty)}</td><td>{formatQty(row.comparison.inventory.manualQty)}</td><td>{formatQty(row.comparison.inventory.differenceQty)}</td>
                       <td>{formatQty(row.comparison.transit.systemQty)}</td><td>{formatQty(row.comparison.transit.manualQty)}</td><td>{formatQty(row.comparison.transit.differenceQty)}</td>
                       <td><span className={`inventory-manual-status status-${row.comparison.status}`}>{row.comparison.status}</span></td><td>{row.comparison.reason}</td>
+                      <td className="inventory-manual-note-cell">
+                        <div className="inventory-manual-note-editor">
+                          <input
+                            type="text"
+                            maxLength="500"
+                            aria-label={`${row.businessUnit}${row.materialCode}备注`}
+                            placeholder="填写备注"
+                            value={noteDrafts[noteKey(row.businessUnit, row.materialCode)] || ''}
+                            onChange={(event) => {
+                              const key = noteKey(row.businessUnit, row.materialCode);
+                              setNoteDrafts((current) => ({ ...current, [key]: event.target.value }));
+                              setSavedNoteKey('');
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="ghost compact-button"
+                            disabled={savingNoteKey === noteKey(row.businessUnit, row.materialCode) || (noteDrafts[noteKey(row.businessUnit, row.materialCode)] || '') === (savedNotes[noteKey(row.businessUnit, row.materialCode)] || '')}
+                            onClick={() => saveNote(row)}
+                          >
+                            {savingNoteKey === noteKey(row.businessUnit, row.materialCode) ? '保存中' : '保存'}
+                          </button>
+                          {savedNoteKey === noteKey(row.businessUnit, row.materialCode) && <span>已保存</span>}
+                        </div>
+                      </td>
                     </tr>
                     {expandedRows.has(row.id) && (
-                      <tr key={`${row.id}-details`} className="inventory-manual-detail-row"><td colSpan="15">
+                      <tr key={`${row.id}-details`} className="inventory-manual-detail-row"><td colSpan="16">
                         <table><thead><tr><th>来源</th><th>指标</th><th>系统数量</th><th>手工数量</th><th>差异</th><th>状态</th><th>原因</th><th>系统主体</th><th>系统来源仓库</th><th>系统映射仓库</th><th>手工主体</th><th>手工仓库</th></tr></thead>
                           <tbody>{filteredSources(row).map((source, index) => <tr key={`${source.label}-${source.group}-${index}`}><td>{source.label}</td><td>{source.group}</td><td>{formatQty(source.systemQty)}</td><td>{formatQty(source.manualQty)}</td><td>{formatQty(source.differenceQty)}</td><td>{source.status}</td><td>{source.reason}</td><td>{source.systemSubject || '-'}</td><td>{source.systemWarehouse || '-'}</td><td>{source.systemMappedWarehouse || '-'}</td><td>{source.manualSubject || '-'}</td><td>{source.manualWarehouse || '-'}</td></tr>)}</tbody>
                         </table>
@@ -2039,11 +2103,21 @@ function InventoryManualReconciliation({ token, onBack }) {
                     )}
                   </Fragment>
                 ))}
-                {!pageRows.length && <tr><td colSpan="15" className="empty-cell">当前筛选无核对记录</td></tr>}
+                {!pageRows.length && <tr><td colSpan="16" className="empty-cell">当前筛选无核对记录</td></tr>}
               </tbody>
             </table>
           </div>
-          <div className="inventory-manual-table-footer"><span>当前 {filteredRows.length} / {rows.length} 条</span>{totalPages > 1 && <TablePagination label="手工库存核对分页" currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} pageSize={pageSize} />}</div>
+          <div className="inventory-manual-table-footer">
+            <span>当前 {filteredRows.length} / {rows.length} 条</span>
+            <div className="inventory-manual-page-controls">
+              <label className="inventory-manual-page-size">每页
+                <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+                  {[20, 50, 100, 200].map((size) => <option key={size} value={size}>{size} 行</option>)}
+                </select>
+              </label>
+              {totalPages > 1 && <TablePagination label="手工库存核对分页" currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} pageSize={pageSize} />}
+            </div>
+          </div>
         </>
       )}
     </section>

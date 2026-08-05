@@ -3681,14 +3681,72 @@ app.get('/api/inventory-summary', requireAuth, requirePage('inventorySummary'), 
   res.json(inventorySummaryData());
 });
 
+const INVENTORY_MANUAL_RECONCILIATION_CATEGORIES = ['全部', '成品+配件', '成品', '配件', '不可售'];
+
+function inventoryManualReconciliationNoteKey(category, businessUnit, materialCode) {
+  return JSON.stringify([category, businessUnit, materialCode]);
+}
+
+function inventoryManualReconciliationNotes(category) {
+  return all(
+    `SELECT category, business_unit, material_code, remark, updated_by, updated_at
+     FROM inventory_manual_reconciliation_notes
+     WHERE category = ?
+     ORDER BY business_unit, material_code`,
+    [category]
+  ).map((row) => ({
+    category: row.category,
+    businessUnit: row.business_unit,
+    materialCode: row.material_code,
+    remark: row.remark,
+    updatedBy: row.updated_by,
+    updatedAt: row.updated_at
+  }));
+}
+
 app.get('/api/inventory-summary/manual-reconciliation', requireAuth, requirePage('inventorySummary'), (req, res) => {
-  const categories = ['全部', '成品+配件', '成品', '配件', '不可售'];
   const category = normalize(req.query.category);
-  if (!categories.includes(category)) {
+  if (!INVENTORY_MANUAL_RECONCILIATION_CATEGORIES.includes(category)) {
     return res.status(400).json({ error: '库存分类参数无效' });
   }
   res.setHeader('Cache-Control', 'no-store');
-  return res.json(inventorySummaryData({ manualCategory: category }));
+  return res.json({
+    ...inventorySummaryData({ manualCategory: category }),
+    notes: inventoryManualReconciliationNotes(category)
+  });
+});
+
+app.put('/api/inventory-summary/manual-reconciliation/note', requireAuth, requirePage('inventorySummary'), (req, res) => {
+  const category = normalize(req.body?.category);
+  const businessUnit = normalize(req.body?.businessUnit);
+  const materialCode = normalize(req.body?.materialCode);
+  const remark = normalize(req.body?.remark);
+  if (!INVENTORY_MANUAL_RECONCILIATION_CATEGORIES.includes(category)) {
+    return res.status(400).json({ error: '库存分类参数无效' });
+  }
+  if (!businessUnit || !materialCode) {
+    return res.status(400).json({ error: '事业部和物料编码不能为空' });
+  }
+  if (remark.length > 500) {
+    return res.status(400).json({ error: '备注不能超过500个字符' });
+  }
+  const updatedAt = nowText();
+  const updatedBy = req.user.name;
+  run(
+    `INSERT INTO inventory_manual_reconciliation_notes
+       (note_key, category, business_unit, material_code, remark, updated_by, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(note_key) DO UPDATE SET
+       remark = excluded.remark,
+       updated_by = excluded.updated_by,
+       updated_at = excluded.updated_at`,
+    [inventoryManualReconciliationNoteKey(category, businessUnit, materialCode), category, businessUnit, materialCode, remark, updatedBy, updatedAt]
+  );
+  saveDatabase();
+  return res.json({
+    ok: true,
+    note: { category, businessUnit, materialCode, remark, updatedBy, updatedAt }
+  });
 });
 
 app.post('/api/inventory-risk/query', requireAuth, requirePage('inventoryRisk'), (req, res) => {

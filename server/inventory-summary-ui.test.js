@@ -68,6 +68,11 @@ test('销售与库存看板展示仅数量的来源校准和遗漏重叠提醒',
   assert.match(client, /手工库存核对加载失败/);
   assert.match(client, /data\?\.manualReconciliation/);
   assert.match(client, /\/api\/inventory-summary\/manual-reconciliation\?category=/);
+  assert.match(client, /\/api\/inventory-summary\/manual-reconciliation\/note/);
+  assert.match(client, /const \[pageSize, setPageSize\] = useState\(50\)/);
+  assert.match(client, /\[20, 50, 100, 200\]/);
+  assert.match(client, /<th>备注<\/th>/);
+  assert.match(client, /备注: noteDrafts/);
   assert.match(client, /<InventoryManualReconciliation[\s\S]*?token=\{token\}/);
   assert.match(client, /系统在库量/);
   assert.match(client, /手工在途量/);
@@ -80,6 +85,9 @@ test('销售与库存看板展示仅数量的来源校准和遗漏重叠提醒',
   assert.match(styles, /\.inventory-reconciliation-table/);
   assert.match(styles, /\.inventory-dashboard-entry-actions/);
   assert.match(styles, /\.inventory-reconciliation-entry/);
+  assert.match(styles, /\.inventory-manual-filters\s*\{[\s\S]*?display:\s*flex;[\s\S]*?gap:\s*6px;/);
+  assert.match(styles, /\.inventory-manual-note-editor/);
+  assert.match(styles, /\.inventory-manual-page-size/);
 });
 
 test('库存数据提供独立的底表文件和手工表库', () => {

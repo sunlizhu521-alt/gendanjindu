@@ -329,6 +329,17 @@ function migrate() {
       updated_by TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS inventory_manual_reconciliation_notes (
+      note_key TEXT PRIMARY KEY,
+      category TEXT NOT NULL,
+      business_unit TEXT NOT NULL,
+      material_code TEXT NOT NULL,
+      remark TEXT NOT NULL DEFAULT '',
+      updated_by TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_inventory_manual_notes_category
+      ON inventory_manual_reconciliation_notes(category);
     CREATE TABLE IF NOT EXISTS demand_change_notes (
       id TEXT PRIMARY KEY,
       demand_key TEXT NOT NULL,

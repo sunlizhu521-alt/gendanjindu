@@ -2747,8 +2747,11 @@ function manualProgressBusinessUnit(value) {
 }
 
 function manualProgressCandidateMaps() {
+  const startedAt = Date.now();
   const demands = all('SELECT * FROM order_demands WHERE active = 1');
+  const demandsLoadedAt = Date.now();
   const lookups = dimensionLookups();
+  const lookupsLoadedAt = Date.now();
   const demandMap = new Map(demands.map((row) => [row.demand_key, row]));
   const exact = new Map();
   const byFallback = new Map();
@@ -2759,6 +2762,7 @@ function manualProgressCandidateMaps() {
       batchIds
     )
     : [];
+  const orderRowsLoadedAt = Date.now();
   const rowsByDemand = new Map();
   orderRows.forEach((row) => {
     if (!demandMap.has(row.demand_key)) return;
@@ -2835,6 +2839,15 @@ function manualProgressCandidateMaps() {
       });
     });
   });
+  console.info(`[Manual progress candidate maps] ${JSON.stringify({
+    demands: demands.length,
+    orders: orderRows.length,
+    demandLoadMs: demandsLoadedAt - startedAt,
+    lookupLoadMs: lookupsLoadedAt - demandsLoadedAt,
+    orderLoadMs: orderRowsLoadedAt - lookupsLoadedAt,
+    mapBuildMs: Date.now() - orderRowsLoadedAt,
+    totalMs: Date.now() - startedAt
+  })}`);
   return { demandMap, exact, byFallback };
 }
 
@@ -3155,6 +3168,36 @@ function uniqueManualField(rows, key) {
   return values.length === 1 ? values[0] : null;
 }
 
+function manualProgressValuesChanged(existing, values) {
+  if (!existing) return true;
+  const numericFields = [
+    ['unprepared_qty', 'unprepared'],
+    ['prepared_not_started_qty', 'prepared'],
+    ['in_production_qty', 'inProduction'],
+    ['finished_qty', 'finished'],
+    ['shipped_qty', 'shipped']
+  ];
+  if (numericFields.some(([stored, next]) => Math.abs(numberValue(existing[stored]) - numberValue(values[next])) > 0.000001)) {
+    return true;
+  }
+  return [
+    ['production_delivery_date', 'productionDeliveryDate'],
+    ['unproduced_estimated_delivery_date', 'unproducedEstimatedDeliveryDate'],
+    ['fulfillment_status', 'fulfillmentStatus'],
+    ['unfulfilled_reason', 'unfulfilledReason'],
+    ['reason_detail', 'reasonDetail'],
+    ['remark', 'remark']
+  ].some(([stored, next]) => normalize(existing[stored]) !== normalize(values[next]));
+}
+
+function manualProgressWriteParams(demandKeyValue, values, userName, now) {
+  return [
+    demandKeyValue, values.unprepared, values.prepared, values.inProduction, values.finished, values.shipped,
+    values.productionDeliveryDate, values.unproducedEstimatedDeliveryDate, values.fulfillmentStatus,
+    values.unfulfilledReason, values.reasonDetail, values.remark, userName, now
+  ];
+}
+
 function rollupManualProgress(userName, now, demandKeys = null) {
   const activeRows = all(
     `SELECT r.*, a.demand_key AS allocation_demand_key,
@@ -3179,10 +3222,14 @@ function rollupManualProgress(userName, now, demandKeys = null) {
     list.push(row);
     grouped.set(row.demandKey, list);
   });
+  const demandMap = new Map(all('SELECT * FROM order_demands WHERE active = 1').map((row) => [row.demand_key, row]));
+  const progressMap = new Map(all('SELECT * FROM supplier_progress').map((row) => [row.demand_key, row]));
+  const progressWrites = [];
+  const snapshotWrites = [];
   grouped.forEach((rows, demandKeyValue) => {
-    const demand = get('SELECT * FROM order_demands WHERE demand_key = ? AND active = 1', [demandKeyValue]);
+    const demand = demandMap.get(demandKeyValue);
     if (!demand) return;
-    const existing = progressForDemand(demandKeyValue);
+    const existing = progressMap.get(demandKeyValue);
     const remaining = Math.max(numberValue(demand.tracking_remaining_qty), 0);
     const allocatedUnprepared = rows.reduce((sum, row) => sum + row.allocationUnpreparedQty, 0);
     const prepared = rows.reduce((sum, row) => sum + row.allocationPreparedQty, 0);
@@ -3201,51 +3248,17 @@ function rollupManualProgress(userName, now, demandKeys = null) {
       inProduction,
       finished,
       shipped: numberValue(demand.tracking_inbound_qty),
-      productionDeliveryDate: field('productionDeliveryDate', existing.production_delivery_date || ''),
-      unproducedEstimatedDeliveryDate: field('unproducedEstimatedDeliveryDate', existing.unproduced_estimated_delivery_date || ''),
-      fulfillmentStatus: field('fulfillmentStatus', existing.fulfillment_status || ''),
-      unfulfilledReason: field('unfulfilledReason', existing.unfulfilled_reason || ''),
-      reasonDetail: field('reasonDetail', existing.reason_detail || ''),
-      remark: field('remark', existing.remark || '')
+      productionDeliveryDate: field('productionDeliveryDate', existing?.production_delivery_date || ''),
+      unproducedEstimatedDeliveryDate: field('unproducedEstimatedDeliveryDate', existing?.unproduced_estimated_delivery_date || ''),
+      fulfillmentStatus: field('fulfillmentStatus', existing?.fulfillment_status || ''),
+      unfulfilledReason: field('unfulfilledReason', existing?.unfulfilled_reason || ''),
+      reasonDetail: field('reasonDetail', existing?.reason_detail || ''),
+      remark: field('remark', existing?.remark || '')
     };
-    run(
-      `INSERT INTO supplier_progress (
-         demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty,
-         production_delivery_date, unproduced_estimated_delivery_date, fulfillment_status,
-         unfulfilled_reason, reason_detail, remark, updated_by, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(demand_key) DO UPDATE SET
-         unprepared_qty = excluded.unprepared_qty,
-         prepared_not_started_qty = excluded.prepared_not_started_qty,
-         in_production_qty = excluded.in_production_qty,
-         finished_qty = excluded.finished_qty,
-         shipped_qty = excluded.shipped_qty,
-         production_delivery_date = excluded.production_delivery_date,
-         unproduced_estimated_delivery_date = excluded.unproduced_estimated_delivery_date,
-         fulfillment_status = excluded.fulfillment_status,
-         unfulfilled_reason = excluded.unfulfilled_reason,
-         reason_detail = excluded.reason_detail,
-         remark = excluded.remark,
-         updated_by = excluded.updated_by,
-         updated_at = excluded.updated_at`,
-      [
-        demandKeyValue, values.unprepared, values.prepared, values.inProduction, values.finished, values.shipped,
-        values.productionDeliveryDate, values.unproducedEstimatedDeliveryDate, values.fulfillmentStatus,
-        values.unfulfilledReason, values.reasonDetail, values.remark, userName, now
-      ]
-    );
-    run(
-      `INSERT INTO supplier_progress_snapshots (
-         id, demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty,
-         production_delivery_date, unproduced_estimated_delivery_date, fulfillment_status,
-         unfulfilled_reason, reason_detail, remark, updated_by, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        randomUUID(), demandKeyValue, values.unprepared, values.prepared, values.inProduction, values.finished, values.shipped,
-        values.productionDeliveryDate, values.unproducedEstimatedDeliveryDate, values.fulfillmentStatus,
-        values.unfulfilledReason, values.reasonDetail, values.remark, userName, now
-      ]
-    );
+    if (!manualProgressValuesChanged(existing, values)) return;
+    const writeParams = manualProgressWriteParams(demandKeyValue, values, userName, now);
+    progressWrites.push(writeParams);
+    snapshotWrites.push([randomUUID(), ...writeParams]);
   });
   if (!demandKeys) {
     const currentManualKeys = new Set(grouped.keys());
@@ -3256,36 +3269,61 @@ function rollupManualProgress(userName, now, demandKeys = null) {
        WHERE r.active = 1 AND a.demand_key <> ''`
     ).map((row) => row.demand_key).filter((key) => !currentManualKeys.has(key));
     staleDemandKeys.forEach((demandKeyValue) => {
-      const demand = get('SELECT * FROM order_demands WHERE demand_key = ? AND active = 1', [demandKeyValue]);
+      const demand = demandMap.get(demandKeyValue);
       if (!demand) return;
       const remaining = Math.max(numberValue(demand.tracking_remaining_qty), 0);
-      run(
-        `INSERT INTO supplier_progress (
-           demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty,
-           production_delivery_date, unproduced_estimated_delivery_date, fulfillment_status,
-           unfulfilled_reason, reason_detail, remark, updated_by, updated_at
-         ) VALUES (?, ?, 0, 0, 0, ?, '', '', '', '', '', '', ?, ?)
-         ON CONFLICT(demand_key) DO UPDATE SET
-           unprepared_qty = excluded.unprepared_qty,
-           prepared_not_started_qty = 0,
-           in_production_qty = 0,
-           finished_qty = 0,
-           shipped_qty = excluded.shipped_qty,
-           production_delivery_date = '',
-           unproduced_estimated_delivery_date = '',
-           fulfillment_status = '',
-           unfulfilled_reason = '',
-           reason_detail = '',
-           remark = '',
-           updated_by = excluded.updated_by,
-           updated_at = excluded.updated_at`,
-        [demandKeyValue, remaining, numberValue(demand.tracking_inbound_qty), userName, now]
-      );
+      const values = {
+        unprepared: remaining,
+        prepared: 0,
+        inProduction: 0,
+        finished: 0,
+        shipped: numberValue(demand.tracking_inbound_qty),
+        productionDeliveryDate: '',
+        unproducedEstimatedDeliveryDate: '',
+        fulfillmentStatus: '',
+        unfulfilledReason: '',
+        reasonDetail: '',
+        remark: ''
+      };
+      if (manualProgressValuesChanged(progressMap.get(demandKeyValue), values)) {
+        progressWrites.push(manualProgressWriteParams(demandKeyValue, values, userName, now));
+      }
     });
   }
+  runMany(
+    `INSERT INTO supplier_progress (
+       demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty,
+       production_delivery_date, unproduced_estimated_delivery_date, fulfillment_status,
+       unfulfilled_reason, reason_detail, remark, updated_by, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(demand_key) DO UPDATE SET
+       unprepared_qty = excluded.unprepared_qty,
+       prepared_not_started_qty = excluded.prepared_not_started_qty,
+       in_production_qty = excluded.in_production_qty,
+       finished_qty = excluded.finished_qty,
+       shipped_qty = excluded.shipped_qty,
+       production_delivery_date = excluded.production_delivery_date,
+       unproduced_estimated_delivery_date = excluded.unproduced_estimated_delivery_date,
+       fulfillment_status = excluded.fulfillment_status,
+       unfulfilled_reason = excluded.unfulfilled_reason,
+       reason_detail = excluded.reason_detail,
+       remark = excluded.remark,
+       updated_by = excluded.updated_by,
+       updated_at = excluded.updated_at`,
+    progressWrites
+  );
+  runMany(
+    `INSERT INTO supplier_progress_snapshots (
+       id, demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty,
+       production_delivery_date, unproduced_estimated_delivery_date, fulfillment_status,
+       unfulfilled_reason, reason_detail, remark, updated_by, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    snapshotWrites
+  );
 }
 
 function reconcileActiveManualProgress(userName, now = nowText()) {
+  const startedAt = Date.now();
   const dbRows = all(
     `SELECT * FROM manual_progress_rows
      WHERE active = 1 AND stale = 0 AND deleted_at = '' AND row_type <> 'company_contract'`
@@ -3293,20 +3331,27 @@ function reconcileActiveManualProgress(userName, now = nowText()) {
   if (!dbRows.length) return { checked: 0, matched: 0, allocations: 0 };
   const models = dbRows.map(manualProgressDbModel);
   matchManualProgressRows(models);
-  let matched = 0;
-  models.forEach((row) => {
-    if ((row.allocations || []).length) matched++;
-    run(
-      `UPDATE manual_progress_rows
-       SET demand_key = ?, data_status = ?, validation_status = ?, validation_message = ?, candidate_json = ?, updated_by = ?, updated_at = ?
-       WHERE id = ?`,
-      [row.demandKey || '', row.dataStatus, row.validationStatus, row.validationMessage,
-        JSON.stringify(row.candidates || []), userName, now, row.id]
-    );
-  });
+  const matchedAt = Date.now();
+  const matched = models.filter((row) => (row.allocations || []).length).length;
+  runMany(
+    `UPDATE manual_progress_rows
+     SET demand_key = ?, data_status = ?, validation_status = ?, validation_message = ?, candidate_json = ?, updated_by = ?, updated_at = ?
+     WHERE id = ?`,
+    models.map((row) => [
+      row.demandKey || '', row.dataStatus, row.validationStatus, row.validationMessage,
+      JSON.stringify(row.candidates || []), userName, now, row.id
+    ])
+  );
+  const rowsUpdatedAt = Date.now();
   const batchIds = [...new Set(models.map((row) => row.batchId))];
+  const modelsByBatch = new Map();
+  models.forEach((row) => {
+    const rows = modelsByBatch.get(row.batchId) || [];
+    rows.push(row);
+    modelsByBatch.set(row.batchId, rows);
+  });
   batchIds.forEach((batchId) => {
-    replaceManualProgressAllocations(models.filter((row) => row.batchId === batchId), batchId, now);
+    replaceManualProgressAllocations(modelsByBatch.get(batchId) || [], batchId, now);
     run(
       `UPDATE manual_progress_allocations SET active = 1, updated_at = ?
        WHERE batch_id = ? AND source_row_id IN (
@@ -3316,12 +3361,23 @@ function reconcileActiveManualProgress(userName, now = nowText()) {
       [now, batchId, batchId]
     );
   });
+  const allocationsUpdatedAt = Date.now();
   rollupManualProgress(userName, now);
-  return {
+  const finishedAt = Date.now();
+  const result = {
     checked: models.length,
     matched,
-    allocations: models.reduce((sum, row) => sum + (row.allocations || []).length, 0)
+    allocations: models.reduce((sum, row) => sum + (row.allocations || []).length, 0),
+    timings: {
+      matchMs: matchedAt - startedAt,
+      rowWriteMs: rowsUpdatedAt - matchedAt,
+      allocationWriteMs: allocationsUpdatedAt - rowsUpdatedAt,
+      rollupMs: finishedAt - allocationsUpdatedAt,
+      totalMs: finishedAt - startedAt
+    }
   };
+  console.info(`[Manual progress reconcile stages] ${JSON.stringify(result.timings)}`);
+  return result;
 }
 
 function manualProgressSourcePayload(row) {
@@ -5367,9 +5423,12 @@ app.post('/api/progress/manual-import/:batchId/apply', requireAuth, requirePage(
 
 app.post('/api/progress/manual-import/reconcile', requireAuth, requirePage('progressRefresh'), requireAdmin, (req, res) => {
   try {
+    const startedAt = Date.now();
     const now = nowText();
     let result;
     transaction(() => { result = reconcileActiveManualProgress(req.user.name, now); });
+    result.elapsedMs = Date.now() - startedAt;
+    console.info(`[Manual progress reconcile] ${result.checked} rows, ${result.allocations} allocations, ${result.elapsedMs}ms`);
     req.auditTarget = `${result.checked} 条手工记录`;
     req.auditDetails = `重新匹配完成：已匹配 ${result.matched} 条`;
     res.json(result);

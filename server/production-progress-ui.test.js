@@ -189,3 +189,16 @@ test('修改显示列和差异分配入口醒目且切换后完整显示', () =>
   assert.match(styleSource, /\.progress-difference-button\s*\{[\s\S]*?background: #f05a24;[\s\S]*?color: #fff;/);
   assert.match(styleSource, /\.progress-internal-view-heading\s*\{[\s\S]*?min-height: 36px;/);
 });
+
+test('手工跟单重新匹配批量写入并跳过无变化快照', () => {
+  const reconcileSource = serverSource.slice(
+    serverSource.indexOf('function manualProgressValuesChanged('),
+    serverSource.indexOf('function manualProgressSourcePayload(')
+  );
+  assert.match(reconcileSource, /const demandMap = new Map\(all\('SELECT \* FROM order_demands WHERE active = 1'\)/);
+  assert.match(reconcileSource, /const progressMap = new Map\(all\('SELECT \* FROM supplier_progress'\)/);
+  assert.match(reconcileSource, /if \(!manualProgressValuesChanged\(existing, values\)\) return/);
+  assert.match(reconcileSource, /runMany\([\s\S]*?UPDATE manual_progress_rows/);
+  assert.match(reconcileSource, /runMany\([\s\S]*?INSERT INTO supplier_progress_snapshots/);
+  assert.doesNotMatch(reconcileSource, /get\('SELECT \* FROM order_demands WHERE demand_key = \? AND active = 1'/);
+});

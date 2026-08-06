@@ -24,7 +24,7 @@ test('生产跟进显示采购订单匹配的供应商简称并支持供应家�
   assert.match(progressSource, /uniqueProgressValues\(clearFilterRows/);
   assert.match(progressSource, /suppliers: uniqueSupplierShortNames\(clearFilterRows\('suppliers'\)/);
   assert.match(appSource, /<MultiSelectFilter label="是否多家供应" allLabel="全部供应家数"/);
-  assert.match(appSource, /filters\.supplierCount\.includes\(supplyCount\)/);
+  assert.match(appSource, /matchesSelected\(filters\.supplierCount, supplyCount\)/);
   assert.match(appSource, /supplierCounts:[\s\S]*?sort\(\(left, right\) => left - right\)[\s\S]*?map\(supplierCountLabel\)/);
 });
 
@@ -95,11 +95,27 @@ test('生产跟进按待人工调整状态筛选待分配和无需分配', () =>
     appSource.indexOf('function Login(')
   );
   assert.match(filterSource, /return row\.progressAdjustmentRequired \? '待分配' : '无需分配'/);
-  assert.match(filterSource, /allocationStatus: ''/);
-  assert.match(filterSource, /progressAllocationStatus\(row\) === filters\.allocationStatus/);
-  assert.match(filterSource, /allocationStatuses: \['待分配', '无需分配'\]/);
+  assert.match(filterSource, /allocationStatus: \[\]/);
+  assert.match(filterSource, /matchesSelected\(filters\.allocationStatus, progressAllocationStatus\(row\)\)/);
+  assert.match(filterSource, /allocationStatuses: \['待分配', '无需分配'\][\s\S]*?rowsFor\('allocationStatus'\)/);
   assert.match(filterSource, /label="分配状态"[\s\S]*?options=\{options\.allocationStatuses\}/);
   assert.match(filterSource, /allocationStatus: options\.allocationStatuses/);
+});
+
+test('production progress filters support linked multi-select options', () => {
+  const filterSource = appSource.slice(
+    appSource.indexOf('function useFilteredDemands('),
+    appSource.indexOf('function Login(')
+  );
+  assert.match(filterSource, /month: \[\], supplier: \[\], supplierCount: \[\]/);
+  assert.match(filterSource, /const rowsFor = \(field\) => rows\.filter\(\(row\) => matchesFilters\(row, field\)\)/);
+  assert.match(filterSource, /suppliers: uniqueSupplierShortNames\(rowsFor\('supplier'\)/);
+  assert.match(filterSource, /purchaseOwners: uniqueProgressValues\(rowsFor\('purchaseOwner'\)/);
+  assert.match(filterSource, /matchesSelected\(filters\.supplier, displaySupplier\)/);
+  assert.match(filterSource, /matchesSelected\(filters\.purchaseOwner, row\.purchaseOwner\)/);
+  assert.match(filterSource, /<MultiSelectFilter label="供应商简称"/);
+  assert.match(filterSource, /<MultiSelectFilter label="采购下单人"/);
+  assert.doesNotMatch(filterSource, /<SelectField label="(?:供应商简称|采购下单人)"/);
 });
 
 test('差异分配合并到生产跟进内部并复用生产跟进权限', () => {

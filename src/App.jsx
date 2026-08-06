@@ -3407,23 +3407,28 @@ function clearInvalidFilterValues(filters, optionMap) {
 }
 
 function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
-  const [filters, setFilters] = useSessionFilters(cacheKey, { keyword: '', month: '', supplier: '', supplierCount: [], allocationStatus: '', dataStatus: '', purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseOwner: '' });
+  const [filters, setFilters] = useSessionFilters(cacheKey, { keyword: '', month: [], supplier: [], supplierCount: [], allocationStatus: [], dataStatus: [], purchaseOrg: [], businessUnit: [], productLine: [], series: [], purchaseOwner: [] });
+  const selectedValues = (value) => Array.isArray(value) ? value : (normalize(value) ? [normalize(value)] : []);
+  const matchesSelected = (value, candidate) => {
+    const selected = selectedValues(value);
+    return selected.length === 0 || selected.includes(candidate);
+  };
   const matchesFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
     const displaySupplier = progressSupplierName(row);
     const supplyCount = supplierCountLabel(row.supplierCount);
     const text = [row.demandKey, row.oaFlowNo, row.orderNo, row.materialCode, row.supplier, displaySupplier, row.materialName, row.logisticsCode, row.sku, row.purchaseOwner, row.dataStatus].join(' ').toLowerCase();
     return (!keyword || text.includes(keyword))
-      && (omit === 'month' || !filters.month || row.month === filters.month)
-      && (omit === 'supplier' || !filters.supplier || displaySupplier === filters.supplier)
-      && (omit === 'supplierCount' || filters.supplierCount.length === 0 || filters.supplierCount.includes(supplyCount))
-      && (omit === 'allocationStatus' || !filters.allocationStatus || progressAllocationStatus(row) === filters.allocationStatus)
-      && (omit === 'dataStatus' || !filters.dataStatus || row.dataStatus === filters.dataStatus)
-      && (omit === 'purchaseOrg' || !filters.purchaseOrg || row.purchaseOrg === filters.purchaseOrg)
-      && (omit === 'businessUnit' || !filters.businessUnit || purchaseTrackingBusinessUnit(row.businessUnit) === filters.businessUnit)
-      && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
-      && (omit === 'series' || !filters.series || row.productSeries === filters.series)
-      && (omit === 'purchaseOwner' || !filters.purchaseOwner || row.purchaseOwner === filters.purchaseOwner);
+      && (omit === 'month' || matchesSelected(filters.month, row.month))
+      && (omit === 'supplier' || matchesSelected(filters.supplier, displaySupplier))
+      && (omit === 'supplierCount' || matchesSelected(filters.supplierCount, supplyCount))
+      && (omit === 'allocationStatus' || matchesSelected(filters.allocationStatus, progressAllocationStatus(row)))
+      && (omit === 'dataStatus' || matchesSelected(filters.dataStatus, row.dataStatus))
+      && (omit === 'purchaseOrg' || matchesSelected(filters.purchaseOrg, row.purchaseOrg))
+      && (omit === 'businessUnit' || matchesSelected(filters.businessUnit, purchaseTrackingBusinessUnit(row.businessUnit)))
+      && (omit === 'productLine' || matchesSelected(filters.productLine, row.productLine))
+      && (omit === 'series' || matchesSelected(filters.series, row.productSeries))
+      && (omit === 'purchaseOwner' || matchesSelected(filters.purchaseOwner, row.purchaseOwner));
   };
   const options = useMemo(() => {
     const rowsFor = (field) => rows.filter((row) => matchesFilters(row, field));
@@ -3433,7 +3438,8 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
       supplierCounts: [...new Set(rowsFor('supplierCount').map((row) => Math.max(0, Math.trunc(numberValue(row.supplierCount)))))]
         .sort((left, right) => left - right)
         .map(supplierCountLabel),
-      allocationStatuses: ['待分配', '无需分配'],
+      allocationStatuses: ['待分配', '无需分配']
+        .filter((value) => rowsFor('allocationStatus').some((row) => progressAllocationStatus(row) === value)),
       dataStatuses: ['采购订单数据', '手工已匹配', '手工待匹配', '采购订单已关闭', '采购订单剩余为0', '待人工调整', '字段冲突待维护', '公司大合同', '本次手工表未出现', '校验失败']
         .filter((value) => rowsFor('dataStatus').some((row) => row.dataStatus === value)),
       purchaseOrgs: uniqueProgressValues(rowsFor('purchaseOrg').map((row) => row.purchaseOrg)),
@@ -3463,19 +3469,19 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
 }
 
 function FilterBar({ filters, setFilters, options, onSubmit }) {
-  const clear = () => setFilters({ keyword: '', month: '', supplier: '', supplierCount: [], allocationStatus: '', dataStatus: '', purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseOwner: '' });
+  const clear = () => setFilters({ keyword: '', month: [], supplier: [], supplierCount: [], allocationStatus: [], dataStatus: [], purchaseOrg: [], businessUnit: [], productLine: [], series: [], purchaseOwner: [] });
   return (
     <div className="toolbar filters-row">
-      <SelectField label="采购组织" value={filters.purchaseOrg} options={options.purchaseOrgs} onChange={(value) => setFilters({ ...filters, purchaseOrg: value })} />
-      <MonthCalendarFilter label="创建月份" value={filters.month} options={options.months} multiple={false} onChange={(value) => setFilters({ ...filters, month: value })} />
-      <SelectField label="供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
+      <MultiSelectFilter label="采购组织" allLabel="全部采购组织" value={filters.purchaseOrg} options={options.purchaseOrgs} onChange={(value) => setFilters({ ...filters, purchaseOrg: value })} />
+      <MonthCalendarFilter label="创建月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
+      <MultiSelectFilter label="供应商简称" allLabel="全部供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
       <MultiSelectFilter label="是否多家供应" allLabel="全部供应家数" value={filters.supplierCount} options={options.supplierCounts} onChange={(value) => setFilters({ ...filters, supplierCount: value })} />
-      <SelectField label="分配状态" value={filters.allocationStatus} options={options.allocationStatuses} onChange={(value) => setFilters({ ...filters, allocationStatus: value })} />
-      <SelectField label="数据状态" value={filters.dataStatus} options={options.dataStatuses} onChange={(value) => setFilters({ ...filters, dataStatus: value })} />
-      <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
-      <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
-      <SelectField label="系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
-      <SelectField label="采购下单人" value={filters.purchaseOwner} options={options.purchaseOwners} onChange={(value) => setFilters({ ...filters, purchaseOwner: value })} />
+      <MultiSelectFilter label="分配状态" allLabel="全部分配状态" value={filters.allocationStatus} options={options.allocationStatuses} onChange={(value) => setFilters({ ...filters, allocationStatus: value })} />
+      <MultiSelectFilter label="数据状态" allLabel="全部数据状态" value={filters.dataStatus} options={options.dataStatuses} onChange={(value) => setFilters({ ...filters, dataStatus: value })} />
+      <MultiSelectFilter label="事业部" allLabel="全部事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
+      <MultiSelectFilter label="产品线" allLabel="全部产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
+      <MultiSelectFilter label="系列" allLabel="全部系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
+      <MultiSelectFilter label="采购下单人" allLabel="全部采购下单人" value={filters.purchaseOwner} options={options.purchaseOwners} onChange={(value) => setFilters({ ...filters, purchaseOwner: value })} />
       <input
         className="search-input"
         placeholder="搜索供应商、物料、OA备货流程号、物流编码、SKU、采购人"

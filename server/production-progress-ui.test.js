@@ -123,14 +123,30 @@ test('生产跟进采购订单父行展示指定业务摘要', () => {
     appSource.indexOf('function ProgressPage('),
     appSource.indexOf('function DifferenceAllocationPage(')
   );
-  assert.match(progressSource, /供应商简称：\{supplierShortNames\}/);
-  assert.match(progressSource, /月份：\{months\}/);
-  assert.match(progressSource, /事业部：\{businessUnits\}/);
-  assert.match(progressSource, /系列：\{productSeries\}/);
+  assert.match(progressSource, /供应商简称：\{supplierLabel\}/);
+  assert.match(progressSource, /!groupBySupplier && <span>月份：\{months\}<\/span>/);
+  assert.match(progressSource, /!groupBySupplier && <span>事业部：\{businessUnits\}<\/span>/);
+  assert.match(progressSource, /!groupBySupplier && <span>系列：\{productSeries\}<\/span>/);
   assert.match(progressSource, /数量：\{group\.operationStockQty\.toLocaleString\('zh-CN'\)\}/);
   assert.doesNotMatch(progressSource, /\{group\.rows\.length\} 条物料明细/);
   assert.doesNotMatch(progressSource, /未交付 \{group\.remainingQty/);
   assert.doesNotMatch(progressSource, /已发货 \{group\.shippedQty/);
+});
+
+test('生产跟进支持按供应商简称汇总并切换分页', () => {
+  const progressSource = appSource.slice(
+    appSource.indexOf('function ProgressPage('),
+    appSource.indexOf('function DifferenceAllocationPage(')
+  );
+  assert.match(progressSource, /const \[groupBySupplier, setGroupBySupplier\] = useState\(false\)/);
+  assert.match(progressSource, /const supplierGroups = useMemo\(\(\) => \{[\s\S]*?orderNos: new Set\(\)[\s\S]*?group\.orderNos\.add\(row\.orderNo\)/);
+  assert.match(progressSource, /const activeGroups = groupBySupplier \? supplierGroups : orderGroups/);
+  assert.match(progressSource, /Math\.ceil\(activeGroups\.length \/ pageSize\)/);
+  assert.match(progressSource, /activeGroups\.slice\(\(currentPage - 1\) \* pageSize, currentPage \* pageSize\)/);
+  assert.match(progressSource, />按供应商<\/button>/);
+  assert.match(progressSource, /setGroupBySupplier\(\(value\) => !value\)[\s\S]*?setExpandedOrders\(new Set\(\)\)[\s\S]*?setCurrentPage\(1\)/);
+  assert.match(progressSource, /groupBySupplier && <span>订单数：\{group\.orderNos\.size\}<\/span>/);
+  assert.match(styleSource, /\.progress-supplier-group-button\.active\s*\{[\s\S]*?background: #2563eb/);
 });
 
 test('差异分配合并到生产跟进内部并复用生产跟进权限', () => {

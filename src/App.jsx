@@ -5790,6 +5790,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [expandedOrders, setExpandedOrders] = useState(() => new Set());
+  const [groupBySupplier, setGroupBySupplier] = useState(false);
   const columnStorageKey = `gendanjindu:progress-columns:${user?.id || user?.name || 'user'}`;
   const initialColumnPreference = useRef();
   if (!initialColumnPreference.current) initialColumnPreference.current = readProgressColumnPreference(columnStorageKey);
@@ -5829,10 +5830,33 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
       return rightMonth.localeCompare(leftMonth) || left.orderNo.localeCompare(right.orderNo, 'zh-Hans-CN');
     });
   }, [displayRows]);
-  const totalPages = Math.max(1, Math.ceil(orderGroups.length / pageSize));
+  const supplierGroups = useMemo(() => {
+    const map = new Map();
+    displayRows.forEach((row) => {
+      const supplier = progressSupplierName(row) || '未匹配';
+      const group = map.get(supplier) || {
+        key: `supplier:${supplier}`,
+        supplierShortName: supplier,
+        rows: [],
+        remainingQty: 0,
+        shippedQty: 0,
+        operationStockQty: 0,
+        orderNos: new Set()
+      };
+      group.rows.push(row);
+      group.remainingQty += numberValue(row.remainingInboundQty);
+      group.shippedQty += numberValue(row.shippedQty);
+      group.operationStockQty += numberValue(row.operationStockQty);
+      if (row.orderNo) group.orderNos.add(row.orderNo);
+      map.set(supplier, group);
+    });
+    return [...map.values()].sort((a, b) => a.supplierShortName.localeCompare(b.supplierShortName, 'zh-Hans-CN'));
+  }, [displayRows]);
+  const activeGroups = groupBySupplier ? supplierGroups : orderGroups;
+  const totalPages = Math.max(1, Math.ceil(activeGroups.length / pageSize));
   const pageGroups = useMemo(
-    () => orderGroups.slice((currentPage - 1) * pageSize, currentPage * pageSize),
-    [orderGroups, currentPage]
+    () => activeGroups.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [activeGroups, currentPage]
   );
   const pageRows = useMemo(
     () => pageGroups.flatMap((group) => expandedOrders.has(group.key) ? group.rows : []),
@@ -6123,7 +6147,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
         </section>
         <div className="section-heading-row">
           <h2>{title}</h2>
-          <span className="section-count">共 {orderGroups.length} 个采购订单组、{displayRows.length} 条物料明细，第 {currentPage} / {totalPages} 页</span>
+          <span className="section-count">共 {activeGroups.length} 个{groupBySupplier ? '供应商' : '采购订单组'}、{displayRows.length} 条物料明细，第 {currentPage} / {totalPages} 页</span>
           <ProgressColumnSelector
             columns={PROGRESS_COLUMNS}
             value={visibleColumnKeys}
@@ -6136,6 +6160,17 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
             <button type="button" className="danger compact-button" onClick={() => setClearPanelOpen((open) => !open)}>
               清除跟单数据
             </button>
+          )}
+          {!onlyIssues && (
+            <button
+              type="button"
+              className={`compact-button progress-toolbar-entry progress-supplier-group-button${groupBySupplier ? ' active' : ''}`}
+              onClick={() => {
+                setGroupBySupplier((value) => !value);
+                setExpandedOrders(new Set());
+                setCurrentPage(1);
+              }}
+            >按供应商</button>
           )}
           {!onlyIssues && <button type="button" className="compact-button progress-toolbar-entry progress-difference-button" onClick={() => setDifferenceAllocationView(true)}>差异分配</button>}
         </div>
@@ -6181,7 +6216,9 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
         showHeader={false}
         renderRow={(group) => {
           const expanded = expandedOrders.has(group.key);
-          const supplierShortNames = uniqueSupplierShortNames(group.rows.map((row) => progressSupplierName(row))).join('、') || '未匹配';
+          const supplierLabel = groupBySupplier
+            ? group.supplierShortName
+            : (uniqueSupplierShortNames(group.rows.map((row) => progressSupplierName(row))).join('、') || '未匹配');
           const months = uniqueProgressValues(group.rows.map((row) => row.month)).join('、') || '未填写';
           const businessUnits = uniqueProgressValues(group.rows.map((row) => purchaseTrackingBusinessUnit(row.businessUnit))).join('、') || '未填写';
           const productSeries = uniqueProgressValues(group.rows.map((row) => row.productSeries)).join('、') || '未填写';
@@ -6189,12 +6226,14 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
             <Fragment key={group.key}>
               <tr className="progress-order-parent-row">
                 <td colSpan={visibleProgressColumns.length + 1}>
-                  <button type="button" className="progress-order-toggle" onClick={() => toggleOrderGroup(group.key)} aria-expanded={expanded} aria-label={`展开采购订单 ${group.orderNo}`}>
+                  <button type="button" className="progress-order-toggle" onClick={() => toggleOrderGroup(group.key)} aria-expanded={expanded} aria-label={groupBySupplier ? `展开供应商 ${supplierLabel}` : `展开采购订单 ${group.orderNo}`}>
                     <b>{expanded ? '−' : '+'}</b>
-                    <strong>供应商简称：{supplierShortNames}</strong>
-                    <span>月份：{months}</span>
-                    <span>事业部：{businessUnits}</span>
-                    <span>系列：{productSeries}</span>
+                    <strong>供应商简称：{supplierLabel}</strong>
+                    {!groupBySupplier && <span>月份：{months}</span>}
+                    {!groupBySupplier && <span>事业部：{businessUnits}</span>}
+                    {!groupBySupplier && <span>系列：{productSeries}</span>}
+                    {groupBySupplier && <span>订单数：{group.orderNos.size}</span>}
+                    {groupBySupplier && <span>事业部：{businessUnits}</span>}
                     <span>数量：{group.operationStockQty.toLocaleString('zh-CN')}</span>
                   </button>
                 </td>
@@ -6233,7 +6272,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
           ))}
         </div>
         <button type="button" className="ghost compact-button" disabled={currentPage === totalPages} onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}>下一页</button>
-        <span className="section-count">每页 20 个采购订单组</span>
+        <span className="section-count">每页 20 个{groupBySupplier ? '供应商' : '采购订单组'}</span>
       </nav>
     </>
   );

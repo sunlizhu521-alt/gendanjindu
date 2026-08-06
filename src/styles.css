@@ -4032,6 +4032,18 @@ th {
   background: #d94816;
 }
 
+.progress-supplier-group-button.active {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(37, 99, 235, .25);
+}
+
+.progress-supplier-group-button.active:hover {
+  border-color: #1d4ed8;
+  background: #1d4ed8;
+}
+
 .progress-internal-view-heading {
   min-height: 36px;
 }

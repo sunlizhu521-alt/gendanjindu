@@ -6205,6 +6205,22 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
             )}
           </section>
         )}
+        <div className="supplier-tags-bar">
+          {(() => {
+            const allSuppliers = uniqueSupplierShortNames(displayRows.map((row) => progressSupplierName(row)));
+            const activeSupplier = filters.supplier.length === 1 ? filters.supplier[0] : '';
+            return allSuppliers.map((name) => (
+              <button
+                key={name}
+                type="button"
+                className={`supplier-tag${name === activeSupplier ? ' active' : ''}`}
+                onClick={() => setFilters({ ...filters, supplier: name === activeSupplier ? [] : [name] })}
+              >
+                {name}
+              </button>
+            ));
+          })()}
+        </div>
         <FilterBar filters={filters} setFilters={setFilters} options={options} />
       </div>
       <DataTable
@@ -6254,6 +6270,21 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
                         onKeyDown={(event) => event.stopPropagation()}
                       >
                         {supplierLabel}
+                      </button>
+                      {' '}
+                      <button
+                        type="button"
+                        className="supplier-lookonly-btn"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setFilters({
+                            ...filters,
+                            supplier: uniqueSupplierShortNames(group.rows.map((row) => progressSupplierName(row)))
+                          });
+                        }}
+                        onKeyDown={(event) => event.stopPropagation()}
+                      >
+                        只看
                       </button>
                     </strong>
                     {!groupBySupplier && <span>月份：{months}</span>}

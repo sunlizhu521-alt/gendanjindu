@@ -163,6 +163,22 @@ test('生产跟进采购订单按供应商聚合排序且简称可点击筛选',
   assert.doesNotMatch(progressSource, /<button[^>]*className="progress-order-toggle"[\s\S]*?<button[^>]*className="supplier-filter-link"/);
 });
 
+test('生产跟进提供供应商标签栏和只看按钮', () => {
+  const progressSource = appSource.slice(
+    appSource.indexOf('function ProgressPage('),
+    appSource.indexOf('function DifferenceAllocationPage(')
+  );
+  assert.match(progressSource, /className="supplier-tags-bar"[\s\S]*?uniqueSupplierShortNames\(displayRows\.map\(\(row\) => progressSupplierName\(row\)\)\)/);
+  assert.match(progressSource, /const activeSupplier = filters\.supplier\.length === 1 \? filters\.supplier\[0\] : ''/);
+  assert.match(progressSource, /className=\{`supplier-tag\$\{name === activeSupplier \? ' active' : ''\}`\}/);
+  assert.match(progressSource, /supplier: name === activeSupplier \? \[\] : \[name\]/);
+  assert.match(progressSource, /className="supplier-lookonly-btn"[\s\S]*?>[\s\S]*?只看[\s\S]*?<\/button>/);
+  assert.match(progressSource, /className="supplier-lookonly-btn"[\s\S]*?event\.stopPropagation\(\)[\s\S]*?supplier: uniqueSupplierShortNames\(group\.rows\.map\(\(row\) => progressSupplierName\(row\)\)\)/);
+  assert.match(styleSource, /\.supplier-tags-bar\s*\{[\s\S]*?display: flex[\s\S]*?flex-wrap: wrap/);
+  assert.match(styleSource, /\.supplier-tag\.active\s*\{[\s\S]*?background: #2563eb/);
+  assert.match(styleSource, /\.supplier-lookonly-btn\s*\{[\s\S]*?background: #eff6ff/);
+});
+
 test('生产跟进不再展示任何柱形图', () => {
   const progressSource = appSource.slice(
     appSource.indexOf('function ProgressPage('),

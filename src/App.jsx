@@ -6181,19 +6181,21 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
         showHeader={false}
         renderRow={(group) => {
           const expanded = expandedOrders.has(group.key);
-          const statuses = [...new Set(group.rows.map((row) => row.dataStatus || '采购订单数据'))].join('、');
+          const supplierShortNames = uniqueSupplierShortNames(group.rows.map((row) => progressSupplierName(row))).join('、') || '未匹配';
+          const months = uniqueProgressValues(group.rows.map((row) => row.month)).join('、') || '未填写';
+          const businessUnits = uniqueProgressValues(group.rows.map((row) => purchaseTrackingBusinessUnit(row.businessUnit))).join('、') || '未填写';
+          const productSeries = uniqueProgressValues(group.rows.map((row) => row.productSeries)).join('、') || '未填写';
           return (
             <Fragment key={group.key}>
               <tr className="progress-order-parent-row">
                 <td colSpan={visibleProgressColumns.length + 1}>
-                  <button type="button" className="progress-order-toggle" onClick={() => toggleOrderGroup(group.key)} aria-expanded={expanded}>
+                  <button type="button" className="progress-order-toggle" onClick={() => toggleOrderGroup(group.key)} aria-expanded={expanded} aria-label={`展开采购订单 ${group.orderNo}`}>
                     <b>{expanded ? '−' : '+'}</b>
-                    <strong>{group.orderNo}</strong>
-                    <span>{group.rows.length} 条物料明细</span>
-                    <span>运营备货 {group.operationStockQty.toLocaleString('zh-CN')}</span>
-                    <span>未交付 {group.remainingQty.toLocaleString('zh-CN')}</span>
-                    <span>已发货 {group.shippedQty.toLocaleString('zh-CN')}</span>
-                    <em>{statuses}</em>
+                    <strong>供应商简称：{supplierShortNames}</strong>
+                    <span>月份：{months}</span>
+                    <span>事业部：{businessUnits}</span>
+                    <span>系列：{productSeries}</span>
+                    <span>数量：{group.operationStockQty.toLocaleString('zh-CN')}</span>
                   </button>
                 </td>
               </tr>

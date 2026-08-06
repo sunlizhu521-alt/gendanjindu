@@ -6734,6 +6734,15 @@ th {
   background: #eaf7fa !important;
 }
 
+.progress-order-detail-header th {
+  position: static;
+  z-index: auto;
+  border-color: #b9d4dc;
+  background: #dceef4;
+  color: #234b5b;
+  font-weight: 800;
+}
+
 .progress-order-toggle {
   display: flex;
   width: 100%;

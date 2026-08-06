@@ -172,6 +172,8 @@ test('生产跟进支持手工登记表预览、数据状态筛选和采购订�
   assert.match(progressSource, /function ManualProgressImportPanel/);
   assert.match(progressSource, /导入手工登记表/);
   assert.match(progressSource, /progress-order-parent-row/);
+  assert.match(progressSource, /showHeader=\{false\}/);
+  assert.match(progressSource, /expanded && \([\s\S]*?progress-order-detail-header[\s\S]*?progressTableColumns\.map/);
   assert.match(progressSource, /group\.rows\.map/);
   assert.match(serverSource, /\/api\/progress\/manual-import\/preview/);
   assert.match(serverSource, /\/api\/progress\/manual-import\/:batchId\/apply/);

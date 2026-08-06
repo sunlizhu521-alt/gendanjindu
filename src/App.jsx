@@ -2961,13 +2961,13 @@ function FirstMileDimensionChart({ title, rows, groupBy }) {
   );
 }
 
-function DataTable({ columns, rows, render, renderRow, className = '' }) {
+function DataTable({ columns, rows, render, renderRow, className = '', showHeader = true }) {
   return (
     <div className={`table-wrap ${className}`}>
       <table>
-        <thead>
+        {showHeader && <thead>
           <tr>{columns.map((column, index) => <th key={typeof column === 'string' ? column : `column-${index}`}>{column}</th>)}</tr>
-        </thead>
+        </thead>}
         <tbody>
           {rows.length === 0 ? (
             <tr><td className="empty" colSpan={columns.length}>暂无数据</td></tr>
@@ -6083,6 +6083,18 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
     );
   }
 
+  const progressTableColumns = [(
+    <label className="select-all-header" title="勾选当前显示的可编辑行">
+      <input
+        type="checkbox"
+        checked={allVisibleEditableSelected}
+        disabled={!editableKeys.length}
+        onChange={(event) => toggleAllVisibleEditableRows(event.target.checked)}
+      />
+      <span>全选</span>
+    </label>
+  ), ...visibleProgressColumns.map(([, label]) => label)];
+
   return (
     <>
       <div className="progress-sticky-top">
@@ -6157,17 +6169,8 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
       <DataTable
         className="progress-table"
         rows={pageGroups}
-        columns={[(
-          <label className="select-all-header" title="勾选当前显示的可编辑行">
-            <input
-              type="checkbox"
-              checked={allVisibleEditableSelected}
-              disabled={!editableKeys.length}
-              onChange={(event) => toggleAllVisibleEditableRows(event.target.checked)}
-            />
-            <span>全选</span>
-          </label>
-        ), ...visibleProgressColumns.map(([, label]) => label)]}
+        columns={progressTableColumns}
+        showHeader={false}
         renderRow={(group) => {
           const expanded = expandedOrders.has(group.key);
           const statuses = [...new Set(group.rows.map((row) => row.dataStatus || '采购订单数据'))].join('、');
@@ -6186,6 +6189,13 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
                   </button>
                 </td>
               </tr>
+              {expanded && (
+                <tr className="progress-order-detail-header">
+                  {progressTableColumns.map((column, index) => (
+                    <th key={typeof column === 'string' ? column : `column-${index}`}>{column}</th>
+                  ))}
+                </tr>
+              )}
               {expanded && group.rows.map((row) => (
                 <ProgressEditor
                   key={row.demandKey}

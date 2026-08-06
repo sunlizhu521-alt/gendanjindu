@@ -10,8 +10,8 @@ const defaults = {
   forecastMonths: 6,
   historicalMonths: 6,
   channels: {
-    overseasUs: { onHandSellableDays: 10, restrictThresholdDays: 40 },
-    domestic: { onHandSellableDays: 10, restrictThresholdDays: 40 }
+    overseasUs: { onHandSellableDays: 10, contractSigningDays: 10, restrictThresholdDays: 40 },
+    domestic: { onHandSellableDays: 10, contractSigningDays: 10, restrictThresholdDays: 40 }
   }
 };
 
@@ -29,8 +29,8 @@ test('供应计划分析参数保存后可在刷新初始化时恢复', () => {
     forecastMonths: 9,
     historicalMonths: 12,
     channels: {
-      overseasUs: { onHandSellableDays: 18, restrictThresholdDays: 75 },
-      domestic: { onHandSellableDays: 15, restrictThresholdDays: 60 }
+      overseasUs: { onHandSellableDays: 18, contractSigningDays: 10, restrictThresholdDays: 75 },
+      domestic: { onHandSellableDays: 15, contractSigningDays: 10, restrictThresholdDays: 60 }
     }
   }, defaults, storage);
 
@@ -38,8 +38,8 @@ test('供应计划分析参数保存后可在刷新初始化时恢复', () => {
     forecastMonths: 9,
     historicalMonths: 12,
     channels: {
-      overseasUs: { onHandSellableDays: 18, restrictThresholdDays: 75 },
-      domestic: { onHandSellableDays: 15, restrictThresholdDays: 60 }
+      overseasUs: { onHandSellableDays: 18, contractSigningDays: 10, restrictThresholdDays: 75 },
+      domestic: { onHandSellableDays: 15, contractSigningDays: 10, restrictThresholdDays: 60 }
     }
   });
 });
@@ -56,5 +56,6 @@ test('损坏或越界的持久化参数安全回退默认值', () => {
   assert.equal(loaded.historicalMonths, 6);
   assert.equal(loaded.channels.overseasUs.onHandSellableDays, 10);
   assert.equal(loaded.channels.overseasUs.restrictThresholdDays, 55);
+  assert.equal(loaded.channels.overseasUs.contractSigningDays, 10);
   assert.deepEqual(loaded.channels.domestic, defaults.channels.domestic);
 });

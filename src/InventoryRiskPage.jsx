@@ -14,6 +14,7 @@ const DEFAULT_CHANNEL_PARAMS = {
   transportDays: 10,
   bookingDays: 10,
   averageLeadTimeDays: 10,
+  contractSigningDays: 10,
   restrictThresholdDays: 40,
   stopThresholdDays: 50
 };
@@ -28,7 +29,8 @@ const PERIOD_FIELDS = [
   ['dispatchToShelfDays', '发货到上架'],
   ['transportDays', '海运/运输'],
   ['bookingDays', '订舱/预约'],
-  ['averageLeadTimeDays', '平均交期']
+  ['averageLeadTimeDays', '平均交期'],
+  ['contractSigningDays', '合同签订']
 ];
 
 const EMPTY_RISK_FILTERS = Object.freeze({
@@ -78,7 +80,7 @@ function derivedChannelDays(settings) {
     return Number.isFinite(number) ? number : 0;
   };
   const spotDays = value('onHandSellableDays') + value('dispatchToShelfDays') + value('transportDays') + value('bookingDays');
-  return { spotDays, fullChainDays: spotDays + value('averageLeadTimeDays') };
+  return { spotDays, fullChainDays: value('averageLeadTimeDays') + value('contractSigningDays') };
 }
 
 function RiskParameterMatrix({ params, onChannelChange, onRootChange }) {
@@ -100,6 +102,7 @@ function RiskParameterMatrix({ params, onChannelChange, onRootChange }) {
             {PERIOD_FIELDS.slice(0, 4).map(([, label]) => <div className="matrix-heading" key={label}>{label}</div>)}
             <div className="matrix-heading calculated">现货天数</div>
             <div className="matrix-heading">平均交期</div>
+            <div className="matrix-heading">合同签订</div>
             <div className="matrix-heading calculated">全链路天数</div>
             {RISK_CHANNELS.flatMap(({ key, label }) => {
               const settings = params.channels[key];
@@ -109,12 +112,13 @@ function RiskParameterMatrix({ params, onChannelChange, onRootChange }) {
                 ...PERIOD_FIELDS.slice(0, 4).map(([field]) => <input key={`${key}-${field}`} aria-label={`${label}${field}`} type="number" min="0" step="1" value={settings[field]} onChange={(event) => onChannelChange(key, field, event.target.value)} />),
                 <output className="matrix-output" key={`${key}-spot`}>{numberText(derived.spotDays)}</output>,
                 <input key={`${key}-averageLeadTimeDays`} aria-label={`${label}averageLeadTimeDays`} type="number" min="0" step="1" value={settings.averageLeadTimeDays} onChange={(event) => onChannelChange(key, 'averageLeadTimeDays', event.target.value)} />,
+                <input key={`${key}-contractSigningDays`} aria-label={`${label}contractSigningDays`} type="number" min="0" step="1" value={settings.contractSigningDays} onChange={(event) => onChannelChange(key, 'contractSigningDays', event.target.value)} />,
                 <output className="matrix-output" key={`${key}-full`}>{numberText(derived.fullChainDays)}</output>
               ];
             })}
           </div>
         </div>
-        <p className="inventory-risk-parameter-note">现货天数 = 在库量可销天数 + 发货到上架 + 海运/运输 + 订舱/预约；全链路天数 = 现货天数 + 平均交期。</p>
+        <p className="inventory-risk-parameter-note">现货天数 = 在库量可销天数 + 发货到上架 + 海运/运输 + 订舱/预约；全链路天数 = 平均交期 + 合同签订。</p>
       </fieldset>
 
       <fieldset className="inventory-risk-matrix-fieldset">

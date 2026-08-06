@@ -24,7 +24,7 @@ export const INVENTORY_RISK_EXPORT_COLUMNS = [
 
 const INVENTORY_RISK_PARAMETER_COLUMNS = [
   '渠道', '在库量可销天数', '发货到上架', '海运/运输', '订舱/预约', '现货天数',
-  '平均交期', '全链路天数', '限制采购阈值', '停止采购阈值', '预测月数', '历史月数',
+  '平均交期', '合同签订', '全链路天数', '限制采购阈值', '停止采购阈值', '预测月数', '历史月数',
   '预测开始月份', '预测结束月份', '历史开始月份', '历史结束月份', '生成时间'
 ];
 
@@ -65,6 +65,7 @@ export function inventoryRiskParameterRows(payload = {}) {
     '订舱/预约': settings.bookingDays,
     '现货天数': settings.spotDays,
     '平均交期': settings.averageLeadTimeDays,
+    '合同签订': settings.contractSigningDays,
     '全链路天数': settings.fullChainDays,
     '限制采购阈值': settings.restrictThresholdDays,
     '停止采购阈值': settings.stopThresholdDays,

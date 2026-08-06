@@ -4,7 +4,8 @@ import xlsx from 'xlsx';
 import {
   buildInventoryRiskWorkbook,
   INVENTORY_RISK_EXPORT_COLUMNS,
-  inventoryRiskExportRows
+  inventoryRiskExportRows,
+  inventoryRiskParameterRows
 } from './inventory-risk-export.js';
 
 const expectedHeaders = [
@@ -28,6 +29,22 @@ test('库存风险导出严格使用页面列顺序并保留供应商简称', ()
   assert.equal(row.数据来源, 'FBA库存报表：美国仓 → 映射：101-US');
   assert.equal(row.未交付供应商简称, '供应商甲&供应商乙');
   assert.equal(row.合计数量, 60);
+});
+
+test('计算参数导出合同签订并使用新全链路公式结果', () => {
+  const [row] = inventoryRiskParameterRows({
+    params: {
+      forecastMonths: 6,
+      historicalMonths: 6,
+      channels: {
+        overseasUs: { averageLeadTimeDays: 35, contractSigningDays: 12, fullChainDays: 47 }
+      }
+    },
+    periods: {}
+  });
+  assert.equal(row.平均交期, 35);
+  assert.equal(row.合同签订, 12);
+  assert.equal(row.全链路天数, 47);
 });
 
 test('库存风险工作簿在诊断为空或含嵌套字段时仍可导出', () => {

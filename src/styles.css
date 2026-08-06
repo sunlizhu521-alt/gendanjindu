@@ -208,7 +208,7 @@
   min-width: max-content;
 }
 
-.inventory-risk-period-matrix { grid-template-columns: 112px repeat(7, 108px); }
+.inventory-risk-period-matrix { grid-template-columns: 112px repeat(8, 108px); }
 .inventory-risk-rule-matrix { grid-template-columns: 112px repeat(2, 140px); }
 
 .inventory-risk-parameter-matrix .matrix-heading {

@@ -18,6 +18,7 @@ const DEFAULT_CHANNEL_PARAMS = Object.freeze({
   transportDays: 10,
   bookingDays: 10,
   averageLeadTimeDays: 10,
+  contractSigningDays: 10,
   restrictThresholdDays: 40,
   stopThresholdDays: 50
 });
@@ -241,7 +242,7 @@ export function normalizeInventoryRiskParams(input = {}) {
       + normalized.dispatchToShelfDays
       + normalized.transportDays
       + normalized.bookingDays;
-    normalized.fullChainDays = normalized.spotDays + normalized.averageLeadTimeDays;
+    normalized.fullChainDays = normalized.averageLeadTimeDays + normalized.contractSigningDays;
     return [key, normalized];
   }));
   return {
@@ -517,6 +518,7 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
       bookingDays: channelSettings.bookingDays,
       spotDays: channelSettings.spotDays,
       averageLeadTimeDays: channelSettings.averageLeadTimeDays,
+      contractSigningDays: channelSettings.contractSigningDays,
       fullChainDays: channelSettings.fullChainDays,
       restrictThresholdDays: channelSettings.restrictThresholdDays,
       stopThresholdDays: channelSettings.stopThresholdDays,

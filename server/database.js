@@ -391,6 +391,14 @@ function migrate() {
       validation_message TEXT NOT NULL DEFAULT '',
       conflict_fields_json TEXT NOT NULL DEFAULT '[]',
       raw_json TEXT NOT NULL DEFAULT '{}',
+      candidate_json TEXT NOT NULL DEFAULT '[]',
+      confirmed_demand_key TEXT NOT NULL DEFAULT '',
+      confirmed_order_no TEXT NOT NULL DEFAULT '',
+      confirmed_by TEXT NOT NULL DEFAULT '',
+      confirmed_at TEXT NOT NULL DEFAULT '',
+      deleted_by TEXT NOT NULL DEFAULT '',
+      deleted_at TEXT NOT NULL DEFAULT '',
+      delete_reason TEXT NOT NULL DEFAULT '',
       active INTEGER NOT NULL DEFAULT 0,
       stale INTEGER NOT NULL DEFAULT 0,
       updated_by TEXT NOT NULL DEFAULT '',
@@ -399,6 +407,32 @@ function migrate() {
     CREATE INDEX IF NOT EXISTS idx_manual_progress_rows_batch ON manual_progress_rows(batch_id, source_row_no);
     CREATE INDEX IF NOT EXISTS idx_manual_progress_rows_active ON manual_progress_rows(active, stale, data_status);
     CREATE INDEX IF NOT EXISTS idx_manual_progress_rows_demand ON manual_progress_rows(demand_key);
+    CREATE TABLE IF NOT EXISTS manual_progress_allocations (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL,
+      source_row_id TEXT NOT NULL,
+      source_row_no INTEGER NOT NULL,
+      order_no TEXT NOT NULL DEFAULT '',
+      material_code TEXT NOT NULL DEFAULT '',
+      demand_key TEXT NOT NULL DEFAULT '',
+      match_status TEXT NOT NULL DEFAULT '',
+      match_reason TEXT NOT NULL DEFAULT '',
+      is_closed INTEGER NOT NULL DEFAULT 0,
+      order_qty REAL NOT NULL DEFAULT 0,
+      inbound_qty REAL NOT NULL DEFAULT 0,
+      remaining_qty REAL NOT NULL DEFAULT 0,
+      allocated_unprepared_qty REAL NOT NULL DEFAULT 0,
+      allocated_prepared_qty REAL NOT NULL DEFAULT 0,
+      allocated_in_production_qty REAL NOT NULL DEFAULT 0,
+      allocated_finished_qty REAL NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_manual_progress_allocations_batch
+      ON manual_progress_allocations(batch_id, source_row_no);
+    CREATE INDEX IF NOT EXISTS idx_manual_progress_allocations_demand
+      ON manual_progress_allocations(active, demand_key);
     CREATE TABLE IF NOT EXISTS inventory_manual_reconciliation_notes (
       note_key TEXT PRIMARY KEY,
       category TEXT NOT NULL,
@@ -623,6 +657,20 @@ function migrate() {
   if (!sessionColumns.includes('expires_at')) {
     run("ALTER TABLE sessions ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''");
   }
+
+  const manualProgressColumns = all('PRAGMA table_info(manual_progress_rows)').map((row) => row.name);
+  [
+    ['candidate_json', "TEXT NOT NULL DEFAULT '[]'"],
+    ['confirmed_demand_key', "TEXT NOT NULL DEFAULT ''"],
+    ['confirmed_order_no', "TEXT NOT NULL DEFAULT ''"],
+    ['confirmed_by', "TEXT NOT NULL DEFAULT ''"],
+    ['confirmed_at', "TEXT NOT NULL DEFAULT ''"],
+    ['deleted_by', "TEXT NOT NULL DEFAULT ''"],
+    ['deleted_at', "TEXT NOT NULL DEFAULT ''"],
+    ['delete_reason', "TEXT NOT NULL DEFAULT ''"]
+  ].forEach(([column, definition]) => {
+    if (!manualProgressColumns.includes(column)) run(`ALTER TABLE manual_progress_rows ADD COLUMN ${column} ${definition}`);
+  });
 
   migrateDemandKeysToCurrentShape();
 }

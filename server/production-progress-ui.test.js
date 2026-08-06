@@ -63,7 +63,7 @@ test('生产跟进四阶段、履约字段和导出状态完整呈现', () => {
   assert.match(progressSource, /不含税采购价/);
   assert.match(appSource, /配件无采购价/);
   assert.doesNotMatch(progressSource.slice(progressSource.indexOf('<DataTable'), progressSource.indexOf('function DifferenceAllocationPage(')), /'采购组'/);
-  assert.match(serverSource, /return displayRows\.filter\(\(row\) => canEditDemand\(user, \{ purchase_owner: row\.purchaseOwner \}\)\)/);
+  assert.match(serverSource, /return displayRows\.filter\(\(row\) => !row\.adminOnly && canEditDemand\(user, \{ purchase_owner: row\.purchaseOwner \}\)\)/);
 });
 
 test('采购未交付减少时保留四阶段原值并交由人工调整', () => {

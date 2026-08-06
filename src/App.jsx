@@ -3432,7 +3432,7 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
         .sort((left, right) => left - right)
         .map(supplierCountLabel),
       allocationStatuses: ['待分配', '无需分配'],
-      dataStatuses: ['采购订单数据', '手工已匹配', '手工待匹配', '公司大合同', '本次手工表未出现', '校验失败']
+      dataStatuses: ['采购订单数据', '手工已匹配', '手工待匹配', '采购订单已关闭', '采购订单剩余为0', '待人工调整', '字段冲突待维护', '公司大合同', '本次手工表未出现', '校验失败']
         .filter((value) => rowsFor('dataStatus').some((row) => row.dataStatus === value)),
       purchaseOrgs: uniqueProgressValues(rowsFor('purchaseOrg').map((row) => row.purchaseOrg)),
       businessUnits: uniqueProgressValues(rowsFor('businessUnit').map((row) => purchaseTrackingBusinessUnit(row.businessUnit))),
@@ -5227,6 +5227,8 @@ function ManualProgressImportPanel({ token, reloadDemands, setMessage }) {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [latest, setLatest] = useState(null);
+  const [candidateChoices, setCandidateChoices] = useState({});
+  const [history, setHistory] = useState([]);
 
   useEffect(() => {
     request('/api/progress/manual-import/latest', { token })
@@ -5270,7 +5272,14 @@ function ManualProgressImportPanel({ token, reloadDemands, setMessage }) {
       setProgress(80);
       await reloadDemands();
       setProgress(100);
-      setPreview((current) => ({ ...current, status: 'applied', alreadyApplied: true, appliedAt: payload.appliedAt || current?.appliedAt }));
+      const rowPayload = await request(`/api/progress/manual-import/${encodeURIComponent(preview.batchId)}/rows`, { token });
+      setPreview((current) => ({
+        ...current,
+        status: 'applied',
+        alreadyApplied: true,
+        appliedAt: payload.appliedAt || current?.appliedAt,
+        rows: rowPayload.rows || current?.rows || []
+      }));
       setLatest({
         id: preview.batchId,
         fileName: preview.fileName,
@@ -5295,9 +5304,65 @@ function ManualProgressImportPanel({ token, reloadDemands, setMessage }) {
     try {
       const payload = await request('/api/progress/manual-import/reconcile', { token, method: 'POST', body: '{}' });
       await reloadDemands();
+      if (preview?.batchId) {
+        const rowPayload = await request(`/api/progress/manual-import/${encodeURIComponent(preview.batchId)}/rows`, { token });
+        setPreview((current) => current ? { ...current, rows: rowPayload.rows || [] } : current);
+      }
       setMessage(`重新匹配完成：检查 ${payload.checked || 0} 行，匹配 ${payload.matched || 0} 行。`);
     } catch (error) {
       setMessage('重新匹配失败：' + error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmCandidate(row) {
+    if (busy) return;
+    const fallback = row.candidates?.[0];
+    const choice = candidateChoices[row.id] || (fallback ? `${fallback.demandKey}\t${fallback.orderNo || ''}` : '');
+    if (!choice) {
+      setMessage('当前记录没有可确认的采购订单候选，请先刷新采购订单并重新匹配。');
+      return;
+    }
+    const [demandKey, orderNo = ''] = choice.split('\t');
+    setBusy(true);
+    try {
+      await request(`/api/progress/manual-import/rows/${encodeURIComponent(row.id)}/confirm`, {
+        token,
+        method: 'POST',
+        body: JSON.stringify({ demandKey, orderNo })
+      });
+      const rowPayload = await request(`/api/progress/manual-import/${encodeURIComponent(preview.batchId)}/rows`, { token });
+      setPreview((current) => ({ ...current, rows: rowPayload.rows || [] }));
+      await reloadDemands();
+      setMessage(`源行 ${row.sourceRowNo} 已由管理员确认匹配。`);
+    } catch (error) {
+      setMessage('确认匹配失败：' + error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteManualRow(row) {
+    if (busy) return;
+    const reason = window.prompt(`请输入删除源行 ${row.sourceRowNo} 的原因`);
+    if (!normalize(reason)) {
+      setMessage('未填写删除原因，未执行删除。');
+      return;
+    }
+    setBusy(true);
+    try {
+      await request(`/api/progress/manual-import/rows/${encodeURIComponent(row.id)}/delete`, {
+        token,
+        method: 'POST',
+        body: JSON.stringify({ reason: normalize(reason) })
+      });
+      const rowPayload = await request(`/api/progress/manual-import/${encodeURIComponent(preview.batchId)}/rows`, { token });
+      setPreview((current) => ({ ...current, rows: rowPayload.rows || [] }));
+      await reloadDemands();
+      setMessage(`源行 ${row.sourceRowNo} 已软删除，删除记录已写入审计。`);
+    } catch (error) {
+      setMessage('删除失败：' + error.message);
     } finally {
       setBusy(false);
     }
@@ -5330,11 +5395,64 @@ function ManualProgressImportPanel({ token, reloadDemands, setMessage }) {
     }
   }
 
+  async function inspectLatest() {
+    if (!latest?.id || busy) return;
+    setBusy(true);
+    try {
+      const payload = await request(`/api/progress/manual-import/${encodeURIComponent(latest.id)}/rows`, { token });
+      setPreview({
+        batchId: latest.id,
+        fileName: latest.fileName,
+        sheetName: latest.sheetName,
+        status: payload.status,
+        alreadyApplied: payload.status === 'applied',
+        summary: latest.summary || {},
+        rows: payload.rows || []
+      });
+      setOpen(true);
+      setMessage('已加载当前手工登记表的校验、候选和订单分配明细。');
+    } catch (error) {
+      setMessage('加载当前手工登记表失败：' + error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function inspectHistory() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const payload = await request('/api/progress/manual-import/history', { token });
+      setHistory(payload.rows || []);
+      setOpen(true);
+      setMessage(`已加载最近 ${payload.rows?.length || 0} 个手工登记表批次。`);
+    } catch (error) {
+      setMessage('加载导入历史失败：' + error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function inspectBatch(batch) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const payload = await request(`/api/progress/manual-import/${encodeURIComponent(batch.id)}/rows`, { token });
+      setPreview({ ...batch, batchId: batch.id, alreadyApplied: batch.status === 'applied', rows: payload.rows || [] });
+    } catch (error) {
+      setMessage('加载批次明细失败：' + error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const summary = preview?.summary || {};
   const summaryItems = [
     ['源数据', summary.sourceRows], ['已匹配', summary.matchedRows], ['待匹配', summary.manualUnmatchedRows],
     ['公司大合同', summary.companyContractRows], ['自动补差', summary.autoFilledRows],
-    ['校验失败', summary.validationErrorRows], ['重复组', summary.duplicateGroups], ['重复明细', summary.duplicateRows]
+    ['校验失败', summary.validationErrorRows], ['待人工调整', summary.pendingAdjustmentRows],
+    ['关闭订单', summary.closedOrderRows], ['剩余为0', summary.zeroRemainingOrderRows], ['字段冲突', summary.conflictRows],
+    ['分配明细', summary.allocationRows], ['重复组', summary.duplicateGroups], ['重复明细', summary.duplicateRows]
   ];
   return (
     <section className={`manual-progress-import${open ? ' open' : ''}`}>
@@ -5345,6 +5463,8 @@ function ManualProgressImportPanel({ token, reloadDemands, setMessage }) {
         </div>
         <div className="manual-progress-import-actions">
           <button type="button" className="compact-button" onClick={() => setOpen((value) => !value)}>{open ? '收起导入' : '导入手工登记表'}</button>
+          {latest && <button type="button" className="ghost compact-button" disabled={busy} onClick={inspectLatest}>查看当前批次</button>}
+          <button type="button" className="ghost compact-button" disabled={busy} onClick={inspectHistory}>批次历史</button>
           <button type="button" className="ghost compact-button" disabled={busy} onClick={reconcile}>重新匹配</button>
         </div>
       </div>
@@ -5357,6 +5477,20 @@ function ManualProgressImportPanel({ token, reloadDemands, setMessage }) {
             {preview && <button type="button" className="ghost compact-button" disabled={busy} onClick={exportDetails}>导出校验明细</button>}
           </div>
           {progress > 0 && <div className="manual-progress-bar"><i style={{ width: `${progress}%` }} /><span>{progress}%</span></div>}
+          {history.length > 0 && (
+            <div className="manual-progress-history">
+              {history.map((batch) => (
+                <button
+                  type="button"
+                  key={batch.id}
+                  className={batch.id === latest?.id ? 'active' : ''}
+                  onClick={() => inspectBatch(batch)}
+                >
+                  <b>{batch.fileName}</b><span>{batch.status}｜{numberValue(batch.rowCount).toLocaleString('zh-CN')} 行｜{batch.appliedAt || batch.importedAt}</span>
+                </button>
+              ))}
+            </div>
+          )}
           {preview && (
             <>
               <div className="manual-progress-summary">
@@ -5364,15 +5498,36 @@ function ManualProgressImportPanel({ token, reloadDemands, setMessage }) {
               </div>
               <div className="manual-progress-preview-table">
                 <table>
-                  <thead><tr><th>源行</th><th>状态</th><th>采购订单号</th><th>物料编码</th><th>事业部</th><th>供应商简称</th><th>校验说明</th></tr></thead>
+                  <thead><tr><th>源行</th><th>状态</th><th>采购订单号</th><th>物料编码</th><th>事业部</th><th>供应商简称</th><th>订单分配</th><th>校验说明</th><th>管理员操作</th></tr></thead>
                   <tbody>
                     {(preview.rows || []).length === 0
-                      ? <tr><td colSpan="7" className="empty">暂无异常或待匹配明细</td></tr>
+                      ? <tr><td colSpan="9" className="empty">暂无异常或待匹配明细</td></tr>
                       : (preview.rows || []).map((row) => (
                         <tr key={row.sourceRowNo}>
                           <td>{row.sourceRowNo}</td><td>{row.dataStatus}</td><td>{row.orderNo || '无采购订单'}</td>
                           <td>{row.materialCode || '未维护'}</td><td>{row.businessUnit}</td><td>{row.supplierShortName}</td>
+                          <td>{(row.allocations || []).length
+                            ? row.allocations.map((allocation) => `${allocation.orderNo || '无订单'}：${allocation.unpreparedQty}/${allocation.preparedNotStartedQty}/${allocation.inProductionQty}/${allocation.finishedQty}${allocation.isClosed ? '（已关闭）' : ''}`).join('；')
+                            : '未分配'}</td>
                           <td>{[row.validationMessage, ...(row.conflictFields || [])].filter(Boolean).join('；') || '正常'}</td>
+                          <td>{preview.alreadyApplied && !row.orderNo && !row.deletedAt ? (
+                            <div className="manual-progress-row-actions">
+                              {(row.candidates || []).length > 0 && <>
+                                <select
+                                  value={candidateChoices[row.id] || `${row.candidates[0].demandKey}\t${row.candidates[0].orderNo || ''}`}
+                                  onChange={(event) => setCandidateChoices((current) => ({ ...current, [row.id]: event.target.value }))}
+                                >
+                                  {row.candidates.map((candidate) => (
+                                    <option key={`${candidate.demandKey}|${candidate.orderNo}`} value={`${candidate.demandKey}\t${candidate.orderNo || ''}`}>
+                                      {candidate.orderNo || '无订单'}｜{candidate.businessUnit}｜{candidate.supplierShortName}｜剩余{candidate.remainingQty}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button type="button" className="compact-button" disabled={busy} onClick={() => confirmCandidate(row)}>确认匹配</button>
+                              </>}
+                              <button type="button" className="ghost compact-button" disabled={busy} onClick={() => deleteManualRow(row)}>软删除</button>
+                            </div>
+                          ) : row.deletedAt ? `已删除：${row.deleteReason}` : '-'}</td>
                         </tr>
                       ))}
                   </tbody>
@@ -5567,6 +5722,8 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
       ? <span className="progress-adjustment-status" title={row.validationMessage}>明细冲突待维护</span>
       : row.validationStatus === 'error'
         ? <span className="progress-adjustment-status" title={row.validationMessage}>校验失败</span>
+        : row.validationStatus === 'pending'
+          ? <span className="progress-adjustment-status" title={row.validationMessage}>待人工调整</span>
         : invalidQty || Math.abs(progressGap) > 0.000001
       ? <span className="progress-adjustment-status">待人工调整（差额 {progressGap.toLocaleString()}）</span>
       : <span className="progress-adjustment-ok">正常</span>],
@@ -5607,7 +5764,10 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
 
 function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '生产跟进', onlyIssues = false, currentAppliedAt = '' }) {
   const trackableRows = useMemo(
-    () => rows.filter((row) => row.active && numberValue(row.remainingInboundQty) > 0),
+    () => rows.filter((row) => row.active && (
+      numberValue(row.remainingInboundQty) > 0
+      || (row.dataStatus && row.dataStatus !== '采购订单数据')
+    )),
     [rows]
   );
   const { filters, setFilters, options, filtered } = useFilteredDemands(trackableRows, onlyIssues ? 'progressIssues' : 'progressRefresh');

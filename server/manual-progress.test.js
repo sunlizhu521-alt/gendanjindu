@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { groupManualProgressRows, parseManualProgressRows } from './manual-progress.js';
+import {
+  allocateIntegerByWeights,
+  groupManualProgressRows,
+  manualOrderNumbers,
+  parseManualProgressRows
+} from './manual-progress.js';
 
 function baseRow(overrides = {}) {
   return {
@@ -64,4 +69,27 @@ test('相同采购订单物料保留全部明细并识别冲突', () => {
   const groups = groupManualProgressRows(result.rows);
   assert.equal(groups.length, 1);
   assert.equal(groups[0].sourceRows.length, 2);
+});
+
+test('多个采购订单拆分并去重', () => {
+  assert.deepEqual(manualOrderNumbers('CG1 + CG2、CG1'), ['CG1', 'CG2']);
+  assert.deepEqual(manualOrderNumbers('/'), []);
+});
+
+test('最大余数法按权重分配整数并保持总数一致', () => {
+  const items = [
+    { orderNo: 'A', weight: 5 },
+    { orderNo: 'B', weight: 3 },
+    { orderNo: 'C', weight: 2 }
+  ];
+  const result = allocateIntegerByWeights(7, items);
+  assert.deepEqual(result, [4, 2, 1]);
+  assert.equal(result.reduce((sum, value) => sum + value, 0), 7);
+  assert.deepEqual(allocateIntegerByWeights(9, items.map((item) => ({ ...item, weight: 0 }))), [0, 0, 0]);
+});
+
+test('手工四阶段出现小数时阻止应用，避免整数分配改变原总数', () => {
+  const result = parseManualProgressRows([baseRow({ 未交付数量: 10.5 })]);
+  assert.equal(result.rows[0].validationStatus, 'error');
+  assert.match(result.rows[0].validationMessage, /必须是整数/);
 });

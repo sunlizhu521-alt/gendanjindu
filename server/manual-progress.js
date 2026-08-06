@@ -53,6 +53,36 @@ function unique(values) {
   return [...new Set(values.map(manualValue).filter(Boolean))];
 }
 
+export function manualOrderNumbers(value) {
+  return [...new Set(manualValue(value)
+    .split(/[+&＆、,，;；\n]+/)
+    .map(manualValue)
+    .filter(Boolean))];
+}
+
+export function allocateIntegerByWeights(value, items) {
+  const total = Math.max(0, Math.round(numberValue(value)));
+  const weights = items.map((item) => Math.max(0, numberValue(item.weight)));
+  const weightTotal = weights.reduce((sum, weight) => sum + weight, 0);
+  if (!items.length || !total || weightTotal <= 0) return items.map(() => 0);
+  const exact = weights.map((weight) => total * weight / weightTotal);
+  const result = exact.map(Math.floor);
+  let remainder = total - result.reduce((sum, amount) => sum + amount, 0);
+  const order = items.map((item, index) => ({
+    index,
+    fraction: exact[index] - result[index],
+    weight: weights[index],
+    stable: manualValue(item.orderNo || item.key || index)
+  })).sort((a, b) => (
+    b.fraction - a.fraction
+    || b.weight - a.weight
+    || a.stable.localeCompare(b.stable, 'zh-CN')
+    || a.index - b.index
+  ));
+  for (let index = 0; index < remainder; index++) result[order[index % order.length].index] += 1;
+  return result;
+}
+
 function sourceBaseKey(row) {
   return [
     row.orderNo || 'NO_ORDER', row.oaFlowNo, row.month, row.businessUnit,
@@ -107,15 +137,22 @@ export function parseManualProgressRows(rows, { headerRow = 1 } = {}) {
     row.rowType = rowTypeFor(row);
     const assignedWithoutUnprepared = row.preparedNotStartedQty + row.inProductionQty + row.finishedQty;
     const suppliedTotal = row.unpreparedQty + assignedWithoutUnprepared;
+    const hasFractionalQuantity = [
+      row.manualRemainingQty, row.unpreparedQty, row.preparedNotStartedQty, row.inProductionQty, row.finishedQty
+    ].some((quantity) => !Number.isInteger(quantity));
     row.autoFilledQty = suppliedTotal < row.manualRemainingQty ? row.manualRemainingQty - suppliedTotal : 0;
     row.unpreparedQty += row.autoFilledQty;
     row.overAllocatedQty = Math.max(suppliedTotal - row.manualRemainingQty, 0);
-    row.validationStatus = row.overAllocatedQty > 0 ? 'error' : 'valid';
-    row.validationMessage = row.overAllocatedQty > 0
-      ? `四阶段合计超过未交付数量 ${row.overAllocatedQty}`
-      : row.autoFilledQty > 0
-        ? `自动补入未备料未生产 ${row.autoFilledQty}`
-        : '';
+    const validationErrors = [];
+    if (hasFractionalQuantity) validationErrors.push('四阶段和未交付数量必须是整数');
+    if (row.overAllocatedQty > 0) validationErrors.push(`四阶段合计超过未交付数量 ${row.overAllocatedQty}`);
+    if (row.fulfillmentStatus && !['是', '否'].includes(row.fulfillmentStatus)) validationErrors.push('是否正常履约只能填写是或否');
+    if (row.fulfillmentStatus === '否' && !row.unfulfilledReason) validationErrors.push('非正常履约必须填写未履约原因');
+    row.validationStatus = validationErrors.length ? 'error' : 'valid';
+    row.validationMessage = [
+      ...validationErrors,
+      ...(row.autoFilledQty > 0 ? [`自动补入未备料未生产 ${row.autoFilledQty}`] : [])
+    ].join('；');
     const baseKey = sourceBaseKey(row);
     const occurrence = (occurrences.get(baseKey) || 0) + 1;
     occurrences.set(baseKey, occurrence);

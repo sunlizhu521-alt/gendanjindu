@@ -6668,6 +6668,50 @@ th {
   max-height: 260px;
 }
 
+.manual-progress-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 320px;
+}
+
+.manual-progress-row-actions select {
+  min-width: 190px;
+  max-width: 360px;
+}
+
+.manual-progress-history {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 8px 0;
+}
+
+.manual-progress-history button {
+  min-width: 260px;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  text-align: left;
+}
+
+.manual-progress-history button.active {
+  border-color: #0f766e;
+  background: #ecfdf5;
+}
+
+.manual-progress-history b,
+.manual-progress-history span {
+  display: block;
+  white-space: nowrap;
+}
+
+.manual-progress-history span {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+}
+
 .manual-progress-preview-table table,
 .progress-source-detail-wrap table {
   width: 100%;

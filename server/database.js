@@ -339,6 +339,66 @@ function migrate() {
       updated_by TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS manual_progress_import_batches (
+      id TEXT PRIMARY KEY,
+      file_hash TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      sheet_name TEXT NOT NULL DEFAULT '',
+      row_count INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'preview',
+      summary_json TEXT NOT NULL DEFAULT '{}',
+      imported_by TEXT NOT NULL,
+      imported_at TEXT NOT NULL,
+      applied_at TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_manual_progress_batches_hash ON manual_progress_import_batches(file_hash);
+    CREATE TABLE IF NOT EXISTS manual_progress_rows (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL,
+      source_row_no INTEGER NOT NULL,
+      source_key TEXT NOT NULL,
+      group_key TEXT NOT NULL DEFAULT '',
+      row_type TEXT NOT NULL,
+      data_status TEXT NOT NULL,
+      demand_key TEXT NOT NULL DEFAULT '',
+      order_no TEXT NOT NULL DEFAULT '',
+      month TEXT NOT NULL DEFAULT '',
+      business_unit TEXT NOT NULL DEFAULT '',
+      supplier_short_name TEXT NOT NULL DEFAULT '',
+      purchase_owner TEXT NOT NULL DEFAULT '',
+      purchase_group TEXT NOT NULL DEFAULT '',
+      oa_flow_no TEXT NOT NULL DEFAULT '',
+      operator_name TEXT NOT NULL DEFAULT '',
+      product_line TEXT NOT NULL DEFAULT '',
+      product_series TEXT NOT NULL DEFAULT '',
+      material_code TEXT NOT NULL DEFAULT '',
+      sku TEXT NOT NULL DEFAULT '',
+      material_name TEXT NOT NULL DEFAULT '',
+      manual_remaining_qty REAL NOT NULL DEFAULT 0,
+      unprepared_qty REAL NOT NULL DEFAULT 0,
+      prepared_not_started_qty REAL NOT NULL DEFAULT 0,
+      in_production_qty REAL NOT NULL DEFAULT 0,
+      finished_qty REAL NOT NULL DEFAULT 0,
+      source_shipped_qty REAL NOT NULL DEFAULT 0,
+      source_contract_delivery_date TEXT NOT NULL DEFAULT '',
+      production_delivery_date TEXT NOT NULL DEFAULT '',
+      unproduced_estimated_delivery_date TEXT NOT NULL DEFAULT '',
+      fulfillment_status TEXT NOT NULL DEFAULT '',
+      unfulfilled_reason TEXT NOT NULL DEFAULT '',
+      reason_detail TEXT NOT NULL DEFAULT '',
+      remark TEXT NOT NULL DEFAULT '',
+      validation_status TEXT NOT NULL DEFAULT 'valid',
+      validation_message TEXT NOT NULL DEFAULT '',
+      conflict_fields_json TEXT NOT NULL DEFAULT '[]',
+      raw_json TEXT NOT NULL DEFAULT '{}',
+      active INTEGER NOT NULL DEFAULT 0,
+      stale INTEGER NOT NULL DEFAULT 0,
+      updated_by TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_manual_progress_rows_batch ON manual_progress_rows(batch_id, source_row_no);
+    CREATE INDEX IF NOT EXISTS idx_manual_progress_rows_active ON manual_progress_rows(active, stale, data_status);
+    CREATE INDEX IF NOT EXISTS idx_manual_progress_rows_demand ON manual_progress_rows(demand_key);
     CREATE TABLE IF NOT EXISTS inventory_manual_reconciliation_notes (
       note_key TEXT PRIMARY KEY,
       category TEXT NOT NULL,

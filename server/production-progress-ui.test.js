@@ -63,7 +63,7 @@ test('生产跟进四阶段、履约字段和导出状态完整呈现', () => {
   assert.match(progressSource, /不含税采购价/);
   assert.match(appSource, /配件无采购价/);
   assert.doesNotMatch(progressSource.slice(progressSource.indexOf('<DataTable'), progressSource.indexOf('function DifferenceAllocationPage(')), /'采购组'/);
-  assert.match(serverSource, /return rows\.filter\(\(row\) => canEditDemand\(user, \{ purchase_owner: row\.purchaseOwner \}\)\)/);
+  assert.match(serverSource, /return displayRows\.filter\(\(row\) => canEditDemand\(user, \{ purchase_owner: row\.purchaseOwner \}\)\)/);
 });
 
 test('采购未交付减少时保留四阶段原值并交由人工调整', () => {
@@ -136,7 +136,7 @@ test('生产跟进使用固定默认显示列并按用户持久保存', () => {
   assert.deepEqual(
     [...defaultColumnsMatch[1].matchAll(/'([^']+)'/g)].map((match) => match[1]),
     [
-      'month', 'orderNo', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
+      'month', 'orderNo', 'dataStatus', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
       'operationStockQty', 'remainingInboundQty', 'shippedQty', 'unpreparedQty', 'preparedNotStartedQty',
       'inProductionQty', 'finishedQty', 'fulfillmentStatus', 'oaFlowNo', 'action'
     ]
@@ -156,6 +156,22 @@ test('生产跟进使用固定默认显示列并按用户持久保存', () => {
   assert.match(exportSource, /const headers = \[[\s\S]*?'状态校验'/);
   assert.match(exportSource, /\.\.\.displayRows\.map/);
   assert.doesNotMatch(exportSource, /visibleColumnKeys/);
+});
+
+test('生产跟进支持手工登记表预览、数据状态筛选和采购订单折叠', () => {
+  const progressSource = appSource.slice(
+    appSource.indexOf('function useFilteredDemands('),
+    appSource.indexOf('function DifferenceAllocationPage(')
+  );
+  assert.match(progressSource, /label="数据状态"/);
+  assert.doesNotMatch(progressSource, /label="采购组"/);
+  assert.match(progressSource, /function ManualProgressImportPanel/);
+  assert.match(progressSource, /导入手工登记表/);
+  assert.match(progressSource, /progress-order-parent-row/);
+  assert.match(progressSource, /group\.rows\.map/);
+  assert.match(serverSource, /\/api\/progress\/manual-import\/preview/);
+  assert.match(serverSource, /\/api\/progress\/manual-import\/:batchId\/apply/);
+  assert.match(serverSource, /本次手工表未出现/);
 });
 
 test('修改显示列和差异分配入口醒目且切换后完整显示', () => {

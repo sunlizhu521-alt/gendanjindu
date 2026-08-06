@@ -3405,22 +3405,22 @@ function clearInvalidFilterValues(filters, optionMap) {
 }
 
 function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
-  const [filters, setFilters] = useSessionFilters(cacheKey, { keyword: '', month: '', supplier: '', supplierCount: [], allocationStatus: '', purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
+  const [filters, setFilters] = useSessionFilters(cacheKey, { keyword: '', month: '', supplier: '', supplierCount: [], allocationStatus: '', dataStatus: '', purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseOwner: '' });
   const matchesFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
     const displaySupplier = progressSupplierName(row);
     const supplyCount = supplierCountLabel(row.supplierCount);
-    const text = [row.demandKey, row.oaFlowNo, row.materialCode, row.supplier, displaySupplier, row.materialName, row.logisticsCode, row.sku, row.purchaseOwner, row.purchaseGroup].join(' ').toLowerCase();
+    const text = [row.demandKey, row.oaFlowNo, row.orderNo, row.materialCode, row.supplier, displaySupplier, row.materialName, row.logisticsCode, row.sku, row.purchaseOwner, row.dataStatus].join(' ').toLowerCase();
     return (!keyword || text.includes(keyword))
       && (omit === 'month' || !filters.month || row.month === filters.month)
       && (omit === 'supplier' || !filters.supplier || displaySupplier === filters.supplier)
       && (omit === 'supplierCount' || filters.supplierCount.length === 0 || filters.supplierCount.includes(supplyCount))
       && (omit === 'allocationStatus' || !filters.allocationStatus || progressAllocationStatus(row) === filters.allocationStatus)
+      && (omit === 'dataStatus' || !filters.dataStatus || row.dataStatus === filters.dataStatus)
       && (omit === 'purchaseOrg' || !filters.purchaseOrg || row.purchaseOrg === filters.purchaseOrg)
       && (omit === 'businessUnit' || !filters.businessUnit || purchaseTrackingBusinessUnit(row.businessUnit) === filters.businessUnit)
       && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
       && (omit === 'series' || !filters.series || row.productSeries === filters.series)
-      && (omit === 'purchaseGroup' || !filters.purchaseGroup || row.purchaseGroup === filters.purchaseGroup)
       && (omit === 'purchaseOwner' || !filters.purchaseOwner || row.purchaseOwner === filters.purchaseOwner);
   };
   const options = useMemo(() => {
@@ -3432,11 +3432,12 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
         .sort((left, right) => left - right)
         .map(supplierCountLabel),
       allocationStatuses: ['待分配', '无需分配'],
+      dataStatuses: ['采购订单数据', '手工已匹配', '手工待匹配', '公司大合同', '本次手工表未出现', '校验失败']
+        .filter((value) => rowsFor('dataStatus').some((row) => row.dataStatus === value)),
       purchaseOrgs: uniqueProgressValues(rowsFor('purchaseOrg').map((row) => row.purchaseOrg)),
       businessUnits: uniqueProgressValues(rowsFor('businessUnit').map((row) => purchaseTrackingBusinessUnit(row.businessUnit))),
       productLines: uniqueProgressValues(rowsFor('productLine').map((row) => row.productLine)),
       series: uniqueProgressValues(rowsFor('series').map((row) => row.productSeries)),
-      purchaseGroups: uniqueProgressValues(rowsFor('purchaseGroup').map((row) => row.purchaseGroup)),
       purchaseOwners: uniqueProgressValues(rowsFor('purchaseOwner').map((row) => row.purchaseOwner))
     };
   }, [rows, filters]);
@@ -3446,11 +3447,11 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
       supplier: options.suppliers,
       supplierCount: options.supplierCounts,
       allocationStatus: options.allocationStatuses,
+      dataStatus: options.dataStatuses,
       purchaseOrg: options.purchaseOrgs,
       businessUnit: options.businessUnits,
       productLine: options.productLines,
       series: options.series,
-      purchaseGroup: options.purchaseGroups,
       purchaseOwner: options.purchaseOwners
     });
     if (next) setFilters(next);
@@ -3460,7 +3461,7 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
 }
 
 function FilterBar({ filters, setFilters, options, onSubmit }) {
-  const clear = () => setFilters({ keyword: '', month: '', supplier: '', supplierCount: [], allocationStatus: '', purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseGroup: '', purchaseOwner: '' });
+  const clear = () => setFilters({ keyword: '', month: '', supplier: '', supplierCount: [], allocationStatus: '', dataStatus: '', purchaseOrg: '', businessUnit: '', productLine: '', series: '', purchaseOwner: '' });
   return (
     <div className="toolbar filters-row">
       <SelectField label="采购组织" value={filters.purchaseOrg} options={options.purchaseOrgs} onChange={(value) => setFilters({ ...filters, purchaseOrg: value })} />
@@ -3468,10 +3469,10 @@ function FilterBar({ filters, setFilters, options, onSubmit }) {
       <SelectField label="供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
       <MultiSelectFilter label="是否多家供应" allLabel="全部供应家数" value={filters.supplierCount} options={options.supplierCounts} onChange={(value) => setFilters({ ...filters, supplierCount: value })} />
       <SelectField label="分配状态" value={filters.allocationStatus} options={options.allocationStatuses} onChange={(value) => setFilters({ ...filters, allocationStatus: value })} />
+      <SelectField label="数据状态" value={filters.dataStatus} options={options.dataStatuses} onChange={(value) => setFilters({ ...filters, dataStatus: value })} />
       <SelectField label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
       <SelectField label="产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
       <SelectField label="系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
-      <SelectField label="采购组" value={filters.purchaseGroup} options={options.purchaseGroups} onChange={(value) => setFilters({ ...filters, purchaseGroup: value })} />
       <SelectField label="采购下单人" value={filters.purchaseOwner} options={options.purchaseOwners} onChange={(value) => setFilters({ ...filters, purchaseOwner: value })} />
       <input
         className="search-input"
@@ -5141,6 +5142,7 @@ function KingdeeImport({ token, user, reloadDemands, setMessage }) {
 
 const PROGRESS_COLUMNS = [
   ['purchaseOwner', '采购下单人'], ['month', '月份'], ['orderNo', '采购订单号'], ['orderCreator', '创建人'],
+  ['dataStatus', '数据状态'],
   ['documentStatus', '单据状态'], ['purchaseOrg', '采购组织'], ['supplier', '供应商'], ['supplierShortName', '供应商简称'],
   ['businessUnit', '事业部'], ['productLine', '产品线'], ['productSeries', '系列'], ['materialCode', '物料编码'],
   ['sku', 'SKU'], ['materialName', '物料名称'], ['operationStockQty', '运营备货数量'], ['remainingInboundQty', '未交付数量'],
@@ -5150,11 +5152,11 @@ const PROGRESS_COLUMNS = [
   ['fulfillmentStatus', '是否正常履约'], ['pretaxPrice', '不含税采购价'], ['normalFulfillmentQty', '正常履约数量'],
   ['normalFulfillmentAmount', '正常履约金额'], ['abnormalFulfillmentQty', '非正常履约数量'],
   ['abnormalFulfillmentAmount', '非正常履约金额'], ['unfulfilledReason', '未履约原因'], ['reasonDetail', '原因详情'],
-  ['remark', '备注'], ['oaFlowNo', 'OA备货流程号'], ['validationStatus', '状态校验'], ['action', '操作']
+  ['remark', '备注'], ['oaFlowNo', 'OA备货流程号'], ['sourceRows', '源行明细'], ['validationStatus', '状态校验'], ['action', '操作']
 ];
 
 const PROGRESS_DEFAULT_COLUMNS = [
-  'month', 'orderNo', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
+  'month', 'orderNo', 'dataStatus', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
   'operationStockQty', 'remainingInboundQty', 'shippedQty', 'unpreparedQty', 'preparedNotStartedQty',
   'inProductionQty', 'finishedQty', 'fulfillmentStatus', 'oaFlowNo', 'action'
 ];
@@ -5218,6 +5220,172 @@ function ProgressColumnSelector({ columns, value, onChange, onReset }) {
   );
 }
 
+function ManualProgressImportPanel({ token, reloadDemands, setMessage }) {
+  const [open, setOpen] = useState(false);
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [latest, setLatest] = useState(null);
+
+  useEffect(() => {
+    request('/api/progress/manual-import/latest', { token })
+      .then((payload) => setLatest(payload.batch || null))
+      .catch(() => {});
+  }, [token]);
+
+  async function previewFile() {
+    if (!file || busy) return;
+    setBusy(true);
+    setProgress(10);
+    setMessage('正在上传并逐行解析手工登记表，进度 10%。');
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      setProgress(35);
+      const payload = await request('/api/progress/manual-import/preview', { token, method: 'POST', body: form });
+      setProgress(100);
+      setPreview(payload);
+      setMessage(`解析完成：${payload.summary?.sourceRows || 0} 行全部登记，已匹配 ${payload.summary?.matchedRows || 0} 行。`);
+    } catch (error) {
+      setPreview(null);
+      setMessage('手工登记表解析失败：' + error.message);
+    } finally {
+      setBusy(false);
+      window.setTimeout(() => setProgress(0), 1000);
+    }
+  }
+
+  async function applyPreview() {
+    if (!preview?.batchId || busy) return;
+    setBusy(true);
+    setProgress(20);
+    setMessage('正在校验并应用手工跟单数据，进度 20%。');
+    try {
+      const payload = await request(`/api/progress/manual-import/${encodeURIComponent(preview.batchId)}/apply`, {
+        token,
+        method: 'POST',
+        body: JSON.stringify({ expectedRows: preview.summary?.sourceRows || 0 })
+      });
+      setProgress(80);
+      await reloadDemands();
+      setProgress(100);
+      setPreview((current) => ({ ...current, status: 'applied', alreadyApplied: true, appliedAt: payload.appliedAt || current?.appliedAt }));
+      setLatest({
+        id: preview.batchId,
+        fileName: preview.fileName,
+        sheetName: preview.sheetName,
+        rowCount: preview.summary?.sourceRows || 0,
+        appliedAt: payload.appliedAt || '',
+        summary: preview.summary
+      });
+      setMessage(`手工登记表已应用：${preview.summary?.sourceRows || 0} 行均有可追溯状态。`);
+    } catch (error) {
+      setMessage('手工登记表应用失败：' + error.message);
+    } finally {
+      setBusy(false);
+      window.setTimeout(() => setProgress(0), 1000);
+    }
+  }
+
+  async function reconcile() {
+    if (busy) return;
+    setBusy(true);
+    setMessage('正在使用最新采购订单重新匹配手工待匹配数据。');
+    try {
+      const payload = await request('/api/progress/manual-import/reconcile', { token, method: 'POST', body: '{}' });
+      await reloadDemands();
+      setMessage(`重新匹配完成：检查 ${payload.checked || 0} 行，匹配 ${payload.matched || 0} 行。`);
+    } catch (error) {
+      setMessage('重新匹配失败：' + error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function exportDetails() {
+    if (!preview?.batchId || busy) return;
+    setBusy(true);
+    setMessage('正在生成手工登记表校验明细。');
+    try {
+      const response = await fetch(`${API}/api/progress/manual-import/${encodeURIComponent(preview.batchId)}/export`, {
+        headers: authHeaders(token)
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || `请求失败（${response.status}）`);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `手工登记表校验_${todayText()}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setMessage('手工登记表校验明细已导出。');
+    } catch (error) {
+      setMessage('校验明细导出失败：' + error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const summary = preview?.summary || {};
+  const summaryItems = [
+    ['源数据', summary.sourceRows], ['已匹配', summary.matchedRows], ['待匹配', summary.manualUnmatchedRows],
+    ['公司大合同', summary.companyContractRows], ['自动补差', summary.autoFilledRows],
+    ['校验失败', summary.validationErrorRows], ['重复组', summary.duplicateGroups], ['重复明细', summary.duplicateRows]
+  ];
+  return (
+    <section className={`manual-progress-import${open ? ' open' : ''}`}>
+      <div className="manual-progress-import-head">
+        <div>
+          <strong>手工登记表</strong>
+          <span>{latest ? `当前：${latest.fileName}，${numberValue(latest.rowCount).toLocaleString('zh-CN')} 行，${latest.appliedAt}` : '管理员上传后先预览，全部源行均保留审计。'}</span>
+        </div>
+        <div className="manual-progress-import-actions">
+          <button type="button" className="compact-button" onClick={() => setOpen((value) => !value)}>{open ? '收起导入' : '导入手工登记表'}</button>
+          <button type="button" className="ghost compact-button" disabled={busy} onClick={reconcile}>重新匹配</button>
+        </div>
+      </div>
+      {open && (
+        <div className="manual-progress-import-body">
+          <div className="manual-progress-file-row">
+            <input type="file" accept=".xlsx,.xls,.csv" onChange={(event) => { setFile(event.target.files?.[0] || null); setPreview(null); }} />
+            <button type="button" className="compact-button" disabled={!file || busy} onClick={previewFile}>{busy ? '处理中...' : '解析预览'}</button>
+            {preview && <button type="button" className="compact-button" disabled={busy || preview.alreadyApplied} onClick={applyPreview}>{preview.alreadyApplied ? '已应用' : '确认应用'}</button>}
+            {preview && <button type="button" className="ghost compact-button" disabled={busy} onClick={exportDetails}>导出校验明细</button>}
+          </div>
+          {progress > 0 && <div className="manual-progress-bar"><i style={{ width: `${progress}%` }} /><span>{progress}%</span></div>}
+          {preview && (
+            <>
+              <div className="manual-progress-summary">
+                {summaryItems.map(([label, value]) => <span key={label}><small>{label}</small><b>{numberValue(value).toLocaleString('zh-CN')}</b></span>)}
+              </div>
+              <div className="manual-progress-preview-table">
+                <table>
+                  <thead><tr><th>源行</th><th>状态</th><th>采购订单号</th><th>物料编码</th><th>事业部</th><th>供应商简称</th><th>校验说明</th></tr></thead>
+                  <tbody>
+                    {(preview.rows || []).length === 0
+                      ? <tr><td colSpan="7" className="empty">暂无异常或待匹配明细</td></tr>
+                      : (preview.rows || []).map((row) => (
+                        <tr key={row.sourceRowNo}>
+                          <td>{row.sourceRowNo}</td><td>{row.dataStatus}</td><td>{row.orderNo || '无采购订单'}</td>
+                          <td>{row.materialCode || '未维护'}</td><td>{row.businessUnit}</td><td>{row.supplierShortName}</td>
+                          <td>{[row.validationMessage, ...(row.conflictFields || [])].filter(Boolean).join('；') || '正常'}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKeys, selected = false, onSelect, onDraftChange }) {
   const displayQty = (value) => (numberValue(value) ? String(numberValue(value)) : '');
   const [values, setValues] = useState({
@@ -5234,6 +5402,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
   });
   const [saving, setSaving] = useState(false);
   const [quantityEdited, setQuantityEdited] = useState(false);
+  const [showSources, setShowSources] = useState(false);
 
   const remainingQty = numberValue(row.remainingInboundQty);
   const manuallyAssignedQty = numberValue(values.preparedNotStartedQty)
@@ -5366,6 +5535,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
 
   const cells = [
     ['purchaseOwner', row.purchaseOwner], ['month', row.month], ['orderNo', row.orderNo], ['orderCreator', row.orderCreator],
+    ['dataStatus', <span className={`progress-data-status status-${row.dataStatus || '采购订单数据'}`}>{row.dataStatus || '采购订单数据'}</span>],
     ['documentStatus', row.documentStatus], ['purchaseOrg', row.purchaseOrg], ['supplier', row.supplier || '未填写'],
     ['supplierShortName', progressSupplierName(row)], ['businessUnit', row.businessUnit],
     ['productLine', <TightCell value={row.productLine} />], ['productSeries', <TightCell value={row.productSeries} />],
@@ -5390,7 +5560,14 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
     ['reasonDetail', textInput('reasonDetail', '原因详情')],
     ['remark', <input className="progress-remark-input" value={values.remark} placeholder="添加备注" disabled={!row.canEdit} onChange={(event) => handleTextChange('remark', event.target.value)} />],
     ['oaFlowNo', row.oaFlowNo],
-    ['validationStatus', invalidQty || Math.abs(progressGap) > 0.000001
+    ['sourceRows', row.manualSourceRows?.length
+      ? <button type="button" className="ghost compact-button" onClick={() => setShowSources((value) => !value)}>{showSources ? '收起' : `查看${row.manualSourceRows.length}行`}</button>
+      : '系统数据'],
+    ['validationStatus', row.validationStatus === 'conflict'
+      ? <span className="progress-adjustment-status" title={row.validationMessage}>明细冲突待维护</span>
+      : row.validationStatus === 'error'
+        ? <span className="progress-adjustment-status" title={row.validationMessage}>校验失败</span>
+        : invalidQty || Math.abs(progressGap) > 0.000001
       ? <span className="progress-adjustment-status">待人工调整（差额 {progressGap.toLocaleString()}）</span>
       : <span className="progress-adjustment-ok">正常</span>],
     ['action', <button type="button" className="compact-button" disabled={!row.canEdit || saving} onClick={save}>{saving ? '保存中...' : row.canEdit ? '提交' : '无权限'}</button>]
@@ -5398,10 +5575,33 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
   const visible = new Set(visibleColumnKeys);
 
   return (
-    <tr className={row.progressAdjustmentRequired || invalidQty ? 'progress-row-adjustment' : ''}>
-      <td><input type="checkbox" checked={selected} disabled={!row.canEdit} onChange={(event) => onSelect?.(row.demandKey, event.target.checked)} /></td>
-      {cells.filter(([key]) => visible.has(key)).map(([key, cell]) => <td key={key}>{cell}</td>)}
-    </tr>
+    <>
+      <tr className={row.progressAdjustmentRequired || invalidQty || row.validationStatus === 'error' ? 'progress-row-adjustment' : ''}>
+        <td><input type="checkbox" checked={selected} disabled={!row.canEdit} onChange={(event) => onSelect?.(row.demandKey, event.target.checked)} /></td>
+        {cells.filter(([key]) => visible.has(key)).map(([key, cell]) => <td key={key}>{cell}</td>)}
+      </tr>
+      {showSources && row.manualSourceRows?.length > 0 && (
+        <tr className="progress-source-detail-row">
+          <td colSpan={visibleColumnKeys.length + 1}>
+            <div className="progress-source-detail-wrap">
+              <table>
+                <thead><tr><th>源行</th><th>物料编码</th><th>SKU</th><th>手工未交付</th><th>未备料</th><th>已备料</th><th>生产中</th><th>完工未发</th><th>履约</th><th>生产交付</th><th>备注</th><th>校验</th></tr></thead>
+                <tbody>{row.manualSourceRows.map((source) => (
+                  <tr key={source.id}>
+                    <td>{source.sourceRowNo}</td><td>{source.materialCode || '未维护'}</td><td>{source.sku || '未维护'}</td>
+                    <td>{numberValue(source.manualRemainingQty)}</td><td>{numberValue(source.unpreparedQty)}</td>
+                    <td>{numberValue(source.preparedNotStartedQty)}</td><td>{numberValue(source.inProductionQty)}</td>
+                    <td>{numberValue(source.finishedQty)}</td><td>{source.fulfillmentStatus || '待维护'}</td>
+                    <td>{source.productionDeliveryDate || '-'}</td><td>{source.remark || '-'}</td>
+                    <td>{source.validationMessage || (source.conflictFields || []).join('、') || '正常'}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
@@ -5421,6 +5621,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
   const [showDifferenceAllocation, setShowDifferenceAllocation] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
+  const [expandedOrders, setExpandedOrders] = useState(() => new Set());
   const columnStorageKey = `gendanjindu:progress-columns:${user?.id || user?.name || 'user'}`;
   const initialColumnPreference = useRef();
   if (!initialColumnPreference.current) initialColumnPreference.current = readProgressColumnPreference(columnStorageKey);
@@ -5436,10 +5637,38 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
   const displayRows = onlyIssues
     ? visibleFiltered.filter((row) => numberValue(row.gap) !== 0 || !row.progressUpdatedAt)
     : visibleFiltered;
-  const totalPages = Math.max(1, Math.ceil(displayRows.length / pageSize));
+  const orderGroups = useMemo(() => {
+    const map = new Map();
+    displayRows.forEach((row) => {
+      const key = row.orderNo ? `order:${row.orderNo}` : `manual:${row.demandKey}`;
+      const group = map.get(key) || {
+        key,
+        orderNo: row.orderNo || (row.dataStatus === '公司大合同' ? '公司大合同' : '无采购订单'),
+        rows: [],
+        remainingQty: 0,
+        shippedQty: 0,
+        operationStockQty: 0
+      };
+      group.rows.push(row);
+      group.remainingQty += numberValue(row.remainingInboundQty);
+      group.shippedQty += numberValue(row.shippedQty);
+      group.operationStockQty += numberValue(row.operationStockQty);
+      map.set(key, group);
+    });
+    return [...map.values()].sort((left, right) => {
+      const leftMonth = left.rows[0]?.month || '';
+      const rightMonth = right.rows[0]?.month || '';
+      return rightMonth.localeCompare(leftMonth) || left.orderNo.localeCompare(right.orderNo, 'zh-Hans-CN');
+    });
+  }, [displayRows]);
+  const totalPages = Math.max(1, Math.ceil(orderGroups.length / pageSize));
+  const pageGroups = useMemo(
+    () => orderGroups.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [orderGroups, currentPage]
+  );
   const pageRows = useMemo(
-    () => displayRows.slice((currentPage - 1) * pageSize, currentPage * pageSize),
-    [displayRows, currentPage]
+    () => pageGroups.flatMap((group) => expandedOrders.has(group.key) ? group.rows : []),
+    [pageGroups, expandedOrders]
   );
   const pageNumbers = useMemo(() => {
     const visiblePages = totalPages <= 7
@@ -5515,6 +5744,15 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
     setSelectedKeys(selectedKeys.filter((key) => !editableKeys.includes(key)));
   }
 
+  function toggleOrderGroup(key) {
+    setExpandedOrders((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
   function updateClearFilter(key, value) {
     setClearFilters((current) => ({ ...current, [key]: value }));
     setClearPreview(null);
@@ -5588,7 +5826,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
       setExportProgress(35);
       setMessage('正在整理生产跟进字段，导出进度 35%。');
       const headers = [
-        '采购组', '采购下单人', '月份', '采购订单号', '创建人', '单据状态', '采购组织', '供应商', '供应商简称',
+        '数据状态', '源行号', '校验说明', '采购组', '采购下单人', '月份', '采购订单号', '创建人', '单据状态', '采购组织', '供应商', '供应商简称',
         '事业部', '产品线', '系列', '物料编码', 'SKU', '物料名称',
         '运营备货数量', '未交付数量', '已发货数量',
         '未备料未生产', '已备料未生产', '生产中产品', '完工未发产品',
@@ -5612,6 +5850,9 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
             - numberValue(draftUnprepared) - numberValue(draftPrepared)
             - numberValue(draftInProduction) - numberValue(draftFinished);
           return [
+            row.dataStatus || '采购订单数据',
+            (row.manualSourceRows || []).map((source) => source.sourceRowNo).join('、'),
+            row.validationMessage || '',
             row.purchaseGroup,
             row.purchaseOwner,
             row.month,
@@ -5686,6 +5927,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
     <>
       <div className="progress-sticky-top">
         <AppliedTimeNote value={currentAppliedAt} />
+        {!onlyIssues && user?.role === '管理员' && <ManualProgressImportPanel token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}
         <section className="progress-logic-note" aria-label="生产跟进数量口径">
           <div className="progress-logic-definitions">
             <span><b className="progress-logic-tag unprepared">未备料未生产</b>尚未开始备料的未交付数量</span>
@@ -5701,7 +5943,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
         </section>
         <div className="section-heading-row">
           <h2>{title}</h2>
-          <span className="section-count">共 {displayRows.length} 条，第 {currentPage} / {totalPages} 页</span>
+          <span className="section-count">共 {orderGroups.length} 个采购订单组、{displayRows.length} 条物料明细，第 {currentPage} / {totalPages} 页</span>
           <ProgressColumnSelector
             columns={PROGRESS_COLUMNS}
             value={visibleColumnKeys}
@@ -5754,7 +5996,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
       </div>
       <DataTable
         className="progress-table"
-        rows={pageRows}
+        rows={pageGroups}
         columns={[(
           <label className="select-all-header" title="勾选当前显示的可编辑行">
             <input
@@ -5766,19 +6008,40 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
             <span>全选</span>
           </label>
         ), ...visibleProgressColumns.map(([, label]) => label)]}
-        renderRow={(row) => (
-          <ProgressEditor
-            key={row.demandKey}
-            row={row}
-            token={token}
-            reloadDemands={reloadDemands}
-            setMessage={setMessage}
-            visibleColumnKeys={visibleColumnKeys}
-            selected={selectedKeys.includes(row.demandKey)}
-            onSelect={toggleProgressRow}
-            onDraftChange={(demandKey, payload) => setDrafts((current) => ({ ...current, [demandKey]: payload }))}
-          />
-        )}
+        renderRow={(group) => {
+          const expanded = expandedOrders.has(group.key);
+          const statuses = [...new Set(group.rows.map((row) => row.dataStatus || '采购订单数据'))].join('、');
+          return (
+            <Fragment key={group.key}>
+              <tr className="progress-order-parent-row">
+                <td colSpan={visibleProgressColumns.length + 1}>
+                  <button type="button" className="progress-order-toggle" onClick={() => toggleOrderGroup(group.key)} aria-expanded={expanded}>
+                    <b>{expanded ? '−' : '+'}</b>
+                    <strong>{group.orderNo}</strong>
+                    <span>{group.rows.length} 条物料明细</span>
+                    <span>运营备货 {group.operationStockQty.toLocaleString('zh-CN')}</span>
+                    <span>未交付 {group.remainingQty.toLocaleString('zh-CN')}</span>
+                    <span>已发货 {group.shippedQty.toLocaleString('zh-CN')}</span>
+                    <em>{statuses}</em>
+                  </button>
+                </td>
+              </tr>
+              {expanded && group.rows.map((row) => (
+                <ProgressEditor
+                  key={row.demandKey}
+                  row={row}
+                  token={token}
+                  reloadDemands={reloadDemands}
+                  setMessage={setMessage}
+                  visibleColumnKeys={visibleColumnKeys}
+                  selected={selectedKeys.includes(row.demandKey)}
+                  onSelect={toggleProgressRow}
+                  onDraftChange={(demandKey, payload) => setDrafts((current) => ({ ...current, [demandKey]: payload }))}
+                />
+              ))}
+            </Fragment>
+          );
+        }}
       />
       <nav className="table-pagination" aria-label="生产跟进分页">
         <button type="button" className="ghost compact-button" disabled={currentPage === 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}>上一页</button>
@@ -5790,7 +6053,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
           ))}
         </div>
         <button type="button" className="ghost compact-button" disabled={currentPage === totalPages} onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}>下一页</button>
-        <span className="section-count">每页 20 条</span>
+        <span className="section-count">每页 20 个采购订单组</span>
       </nav>
     </>
   );

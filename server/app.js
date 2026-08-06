@@ -10,7 +10,7 @@ import unzipper from 'unzipper';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import xlsx from 'xlsx';
 import { all, get, initDatabase, run, runMany, saveDatabase, transaction } from './database.js';
@@ -29,6 +29,7 @@ import {
 } from './inventory-risk.js';
 import { buildInventoryRiskWorkbook } from './inventory-risk-export.js';
 import { buildStyledExcelBuffer } from '../shared/excel-export.js';
+import { groupManualProgressRows, parseManualProgressRows } from './manual-progress.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -2724,6 +2725,485 @@ function canEditDemand(user, demand) {
   return splitDelimited(owner).includes(normalize(user.name));
 }
 
+function manualProgressSupplierParts(value) {
+  return [...new Set(normalize(value).split(/[&+、,，;；]/).map(normalize).filter(Boolean))];
+}
+
+function manualProgressMatchPart(value) {
+  return normalizeMatchPart(value);
+}
+
+function manualProgressMatchKey(values) {
+  return values.map(manualProgressMatchPart).join('|');
+}
+
+function manualProgressBusinessUnit(value) {
+  return normalize(value).split('*')[0].trim();
+}
+
+function manualProgressCandidateMaps() {
+  const demands = all('SELECT * FROM order_demands WHERE active = 1');
+  const context = demandLoadContext(demands);
+  const demandMap = new Map(demands.map((row) => [row.demand_key, row]));
+  const exact = new Map();
+  const byOa = new Map();
+  const byFallback = new Map();
+  const add = (target, key, demandKeyValue) => {
+    if (!key || key.split('|').some((part) => !part)) return;
+    const list = target.get(key) || [];
+    if (!list.includes(demandKeyValue)) list.push(demandKeyValue);
+    target.set(key, list);
+  };
+  demands.forEach((demand) => {
+    const orderRows = context.orderRowsByDemand.get(demandBatchKey(demand.source_batch_id, demand.demand_key)) || [];
+    const creators = uniqueCreators(orderRows);
+    const enriched = enrichDemandFields(demand.supplier, demand.material_code, creators, context.lookups);
+    const purchaseOwner = realPurchaseOwner(enriched.purchaseOwner) || UNASSIGNED_PURCHASE_OWNER;
+    const shortNames = manualProgressSupplierParts(orderSupplierShortName(context.lookups, demand.supplier, demand.material_code));
+    const orderNos = [...new Set(orderRows.map((row) => normalize(row.order_no)).filter(Boolean))];
+    orderNos.forEach((orderNo) => add(exact, manualProgressMatchKey([orderNo, demand.material_code]), demand.demand_key));
+    const oaFlowNos = splitDelimited(demand.oa_flow_no || orderedOaFlowNos(orderRows, rawOaFlowNo));
+    shortNames.forEach((shortName) => {
+      oaFlowNos.forEach((oaFlowNo) => add(byOa, manualProgressMatchKey([
+        oaFlowNo, manualProgressBusinessUnit(demand.business_unit), demand.material_code, shortName
+      ]), demand.demand_key));
+      add(byFallback, manualProgressMatchKey([
+        demand.month, manualProgressBusinessUnit(demand.business_unit), demand.material_code, shortName, purchaseOwner
+      ]), demand.demand_key);
+    });
+  });
+  return { demandMap, exact, byOa, byFallback };
+}
+
+function matchManualProgressRows(rows) {
+  const maps = manualProgressCandidateMaps();
+  rows.forEach((row) => {
+    const retainedMessages = String(row.validationMessage || '')
+      .split('；')
+      .map((message) => message.trim())
+      .filter(Boolean)
+      .filter((message) => ![
+        '未匹配到采购需求',
+        '匹配到',
+        '手工已分配数量超过系统未交付数量',
+        '手工未交付合计'
+      ].some((prefix) => message.startsWith(prefix)));
+    row.validationMessage = retainedMessages.join('；');
+    row.validationStatus = retainedMessages.some((message) => message.includes('四阶段合计超过未交付数量'))
+      ? 'error'
+      : 'valid';
+    row.demandKey = '';
+    if (row.validationStatus === 'error') {
+      row.dataStatus = '校验失败';
+      return;
+    }
+    if (row.rowType === 'company_contract') {
+      row.dataStatus = '公司大合同';
+      return;
+    }
+    let candidates = [];
+    if (row.orderNo && row.materialCode) {
+      candidates = maps.exact.get(manualProgressMatchKey([row.orderNo, row.materialCode])) || [];
+    } else if (row.oaFlowNo) {
+      candidates = manualProgressSupplierParts(row.supplierShortName).flatMap((shortName) => (
+        maps.byOa.get(manualProgressMatchKey([row.oaFlowNo, row.businessUnit, row.materialCode, shortName])) || []
+      ));
+    } else {
+      candidates = manualProgressSupplierParts(row.supplierShortName).flatMap((shortName) => (
+        maps.byFallback.get(manualProgressMatchKey([
+          row.month, row.businessUnit, row.materialCode, shortName, row.purchaseOwner
+        ])) || []
+      ));
+    }
+    candidates = [...new Set(candidates)];
+    if (candidates.length === 1) {
+      row.demandKey = candidates[0];
+      row.dataStatus = '手工已匹配';
+      return;
+    }
+    row.dataStatus = '手工待匹配';
+    const reason = candidates.length > 1 ? `匹配到 ${candidates.length} 条采购需求` : '未匹配到采购需求';
+    row.validationMessage = [row.validationMessage, reason].filter(Boolean).join('；');
+  });
+
+  const byDemand = new Map();
+  rows.filter((row) => row.demandKey && row.validationStatus !== 'error').forEach((row) => {
+    const list = byDemand.get(row.demandKey) || [];
+    list.push(row);
+    byDemand.set(row.demandKey, list);
+  });
+  byDemand.forEach((list, demandKeyValue) => {
+    const demand = maps.demandMap.get(demandKeyValue);
+    const systemRemaining = Math.max(numberValue(demand?.tracking_remaining_qty), 0);
+    const manualRemaining = list.reduce((sum, row) => sum + numberValue(row.manualRemainingQty), 0);
+    const assigned = list.reduce((sum, row) => sum
+      + numberValue(row.preparedNotStartedQty) + numberValue(row.inProductionQty) + numberValue(row.finishedQty), 0);
+    if (assigned - systemRemaining > 0.000001) {
+      list.forEach((row) => {
+        row.validationStatus = 'error';
+        row.dataStatus = '校验失败';
+        row.validationMessage = [row.validationMessage, `手工已分配数量超过系统未交付数量 ${assigned - systemRemaining}`].filter(Boolean).join('；');
+      });
+      return;
+    }
+    if (Math.abs(manualRemaining - systemRemaining) > 0.000001) {
+      list.forEach((row) => {
+        row.validationMessage = [row.validationMessage, `手工未交付合计 ${manualRemaining}，系统未交付 ${systemRemaining}，以系统为准`].filter(Boolean).join('；');
+      });
+    }
+  });
+  return rows;
+}
+
+function manualProgressSummary(rows, baseSummary = {}) {
+  const count = (status) => rows.filter((row) => row.dataStatus === status).length;
+  return {
+    ...baseSummary,
+    matchedRows: count('手工已匹配'),
+    manualUnmatchedRows: count('手工待匹配'),
+    companyContractRows: count('公司大合同'),
+    validationErrorRows: count('校验失败'),
+    staleRows: count('本次手工表未出现')
+  };
+}
+
+function manualProgressRowParams(batchId, row, now, userName) {
+  return [
+    randomUUID(), batchId, row.sourceRowNo, row.sourceKey, row.groupKey || '', row.rowType,
+    row.dataStatus, row.demandKey || '', row.orderNo, row.month, row.businessUnit,
+    row.supplierShortName, row.purchaseOwner, row.purchaseGroup, row.oaFlowNo, row.operatorName,
+    row.productLine, row.productSeries, row.materialCode, row.sku, row.materialName,
+    row.manualRemainingQty, row.unpreparedQty, row.preparedNotStartedQty, row.inProductionQty,
+    row.finishedQty, row.sourceShippedQty, row.sourceContractDeliveryDate,
+    row.productionDeliveryDate, row.unproducedEstimatedDeliveryDate, row.fulfillmentStatus,
+    row.unfulfilledReason, row.reasonDetail, row.remark, row.validationStatus,
+    row.validationMessage, JSON.stringify(row.conflictFields || []), JSON.stringify(row.raw || {}),
+    userName, now
+  ];
+}
+
+function manualProgressDbModel(row) {
+  return {
+    id: row.id,
+    batchId: row.batch_id,
+    sourceRowNo: numberValue(row.source_row_no),
+    sourceKey: row.source_key,
+    groupKey: row.group_key,
+    rowType: row.row_type,
+    dataStatus: row.data_status,
+    demandKey: row.demand_key,
+    orderNo: row.order_no,
+    month: row.month,
+    businessUnit: row.business_unit,
+    supplierShortName: row.supplier_short_name,
+    purchaseOwner: row.purchase_owner,
+    purchaseGroup: row.purchase_group,
+    oaFlowNo: row.oa_flow_no,
+    operatorName: row.operator_name,
+    productLine: row.product_line,
+    productSeries: row.product_series,
+    materialCode: row.material_code,
+    sku: row.sku,
+    materialName: row.material_name,
+    manualRemainingQty: numberValue(row.manual_remaining_qty),
+    unpreparedQty: numberValue(row.unprepared_qty),
+    preparedNotStartedQty: numberValue(row.prepared_not_started_qty),
+    inProductionQty: numberValue(row.in_production_qty),
+    finishedQty: numberValue(row.finished_qty),
+    sourceShippedQty: numberValue(row.source_shipped_qty),
+    sourceContractDeliveryDate: row.source_contract_delivery_date,
+    productionDeliveryDate: row.production_delivery_date,
+    unproducedEstimatedDeliveryDate: row.unproduced_estimated_delivery_date,
+    fulfillmentStatus: row.fulfillment_status,
+    unfulfilledReason: row.unfulfilled_reason,
+    reasonDetail: row.reason_detail,
+    remark: row.remark,
+    validationStatus: row.validation_status,
+    validationMessage: row.validation_message,
+    conflictFields: parseJson(row.conflict_fields_json, []),
+    raw: parseJson(row.raw_json, {}),
+    active: Boolean(row.active),
+    stale: Boolean(row.stale)
+  };
+}
+
+function uniqueManualField(rows, key) {
+  const values = [...new Set(rows.map((row) => normalize(row[key])).filter(Boolean))];
+  return values.length === 1 ? values[0] : null;
+}
+
+function rollupManualProgress(userName, now, demandKeys = null) {
+  const activeRows = all(
+    `SELECT * FROM manual_progress_rows
+     WHERE active = 1 AND stale = 0 AND demand_key <> '' AND validation_status <> 'error'`
+  ).map(manualProgressDbModel);
+  const grouped = new Map();
+  activeRows.forEach((row) => {
+    if (demandKeys && !demandKeys.has(row.demandKey)) return;
+    const list = grouped.get(row.demandKey) || [];
+    list.push(row);
+    grouped.set(row.demandKey, list);
+  });
+  grouped.forEach((rows, demandKeyValue) => {
+    const demand = get('SELECT * FROM order_demands WHERE demand_key = ? AND active = 1', [demandKeyValue]);
+    if (!demand) return;
+    const existing = progressForDemand(demandKeyValue);
+    const remaining = Math.max(numberValue(demand.tracking_remaining_qty), 0);
+    const prepared = rows.reduce((sum, row) => sum + row.preparedNotStartedQty, 0);
+    const inProduction = rows.reduce((sum, row) => sum + row.inProductionQty, 0);
+    const finished = rows.reduce((sum, row) => sum + row.finishedQty, 0);
+    if (prepared + inProduction + finished - remaining > 0.000001) return;
+    const unprepared = Math.max(remaining - prepared - inProduction - finished, 0);
+    const field = (key, fallback) => {
+      const value = uniqueManualField(rows, key);
+      return value === null ? fallback : value;
+    };
+    const values = {
+      unprepared,
+      prepared,
+      inProduction,
+      finished,
+      shipped: numberValue(demand.tracking_inbound_qty),
+      productionDeliveryDate: field('productionDeliveryDate', existing.production_delivery_date || ''),
+      unproducedEstimatedDeliveryDate: field('unproducedEstimatedDeliveryDate', existing.unproduced_estimated_delivery_date || ''),
+      fulfillmentStatus: field('fulfillmentStatus', existing.fulfillment_status || ''),
+      unfulfilledReason: field('unfulfilledReason', existing.unfulfilled_reason || ''),
+      reasonDetail: field('reasonDetail', existing.reason_detail || ''),
+      remark: field('remark', existing.remark || '')
+    };
+    run(
+      `INSERT INTO supplier_progress (
+         demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty,
+         production_delivery_date, unproduced_estimated_delivery_date, fulfillment_status,
+         unfulfilled_reason, reason_detail, remark, updated_by, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(demand_key) DO UPDATE SET
+         unprepared_qty = excluded.unprepared_qty,
+         prepared_not_started_qty = excluded.prepared_not_started_qty,
+         in_production_qty = excluded.in_production_qty,
+         finished_qty = excluded.finished_qty,
+         shipped_qty = excluded.shipped_qty,
+         production_delivery_date = excluded.production_delivery_date,
+         unproduced_estimated_delivery_date = excluded.unproduced_estimated_delivery_date,
+         fulfillment_status = excluded.fulfillment_status,
+         unfulfilled_reason = excluded.unfulfilled_reason,
+         reason_detail = excluded.reason_detail,
+         remark = excluded.remark,
+         updated_by = excluded.updated_by,
+         updated_at = excluded.updated_at`,
+      [
+        demandKeyValue, values.unprepared, values.prepared, values.inProduction, values.finished, values.shipped,
+        values.productionDeliveryDate, values.unproducedEstimatedDeliveryDate, values.fulfillmentStatus,
+        values.unfulfilledReason, values.reasonDetail, values.remark, userName, now
+      ]
+    );
+    run(
+      `INSERT INTO supplier_progress_snapshots (
+         id, demand_key, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty, shipped_qty,
+         production_delivery_date, unproduced_estimated_delivery_date, fulfillment_status,
+         unfulfilled_reason, reason_detail, remark, updated_by, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        randomUUID(), demandKeyValue, values.unprepared, values.prepared, values.inProduction, values.finished, values.shipped,
+        values.productionDeliveryDate, values.unproducedEstimatedDeliveryDate, values.fulfillmentStatus,
+        values.unfulfilledReason, values.reasonDetail, values.remark, userName, now
+      ]
+    );
+  });
+}
+
+function reconcileActiveManualProgress(userName, now = nowText()) {
+  const dbRows = all(
+    `SELECT * FROM manual_progress_rows
+     WHERE active = 1 AND stale = 0 AND row_type <> 'company_contract'`
+  );
+  if (!dbRows.length) return { checked: 0, matched: 0 };
+  const models = dbRows.map(manualProgressDbModel);
+  matchManualProgressRows(models);
+  let matched = 0;
+  models.forEach((row) => {
+    if (row.demandKey) matched++;
+    run(
+      `UPDATE manual_progress_rows
+       SET demand_key = ?, data_status = ?, validation_status = ?, validation_message = ?, updated_by = ?, updated_at = ?
+       WHERE id = ?`,
+      [row.demandKey || '', row.dataStatus, row.validationStatus, row.validationMessage, userName, now, row.id]
+    );
+  });
+  rollupManualProgress(userName, now);
+  return { checked: models.length, matched };
+}
+
+function manualProgressSourcePayload(row) {
+  return {
+    id: row.id,
+    sourceRowNo: row.sourceRowNo,
+    dataStatus: row.dataStatus,
+    orderNo: row.orderNo,
+    oaFlowNo: row.oaFlowNo,
+    businessUnit: row.businessUnit,
+    supplierShortName: row.supplierShortName,
+    purchaseOwner: row.purchaseOwner,
+    materialCode: row.materialCode,
+    sku: row.sku,
+    materialName: row.materialName,
+    manualRemainingQty: row.manualRemainingQty,
+    unpreparedQty: row.unpreparedQty,
+    preparedNotStartedQty: row.preparedNotStartedQty,
+    inProductionQty: row.inProductionQty,
+    finishedQty: row.finishedQty,
+    sourceShippedQty: row.sourceShippedQty,
+    sourceContractDeliveryDate: row.sourceContractDeliveryDate,
+    productionDeliveryDate: row.productionDeliveryDate,
+    unproducedEstimatedDeliveryDate: row.unproducedEstimatedDeliveryDate,
+    fulfillmentStatus: row.fulfillmentStatus,
+    unfulfilledReason: row.unfulfilledReason,
+    reasonDetail: row.reasonDetail,
+    remark: row.remark,
+    validationStatus: row.validationStatus,
+    validationMessage: row.validationMessage,
+    conflictFields: row.conflictFields,
+    original: row.raw
+  };
+}
+
+function systemOrderQuantities(demandKeyValue, orderNo, materialCode) {
+  const demand = get('SELECT source_batch_id FROM order_demands WHERE demand_key = ?', [demandKeyValue]);
+  if (!demand?.source_batch_id || !orderNo) return null;
+  const rows = all(
+    `SELECT quantity, inbound_qty, remaining_inbound_qty, close_status
+     FROM kingdee_orders
+     WHERE batch_id = ? AND demand_key = ? AND order_no = ? AND material_code = ?`,
+    [demand.source_batch_id, demandKeyValue, orderNo, materialCode]
+  ).filter((row) => !normalize(row.close_status) || normalize(row.close_status) === TRACKING_CLOSE_STATUS);
+  if (!rows.length) return null;
+  return rows.reduce((result, row) => ({
+    orderQty: result.orderQty + numberValue(row.quantity),
+    inboundQty: result.inboundQty + numberValue(row.inbound_qty),
+    remainingQty: result.remainingQty + numberValue(row.remaining_inbound_qty)
+  }), { orderQty: 0, inboundQty: 0, remainingQty: 0 });
+}
+
+function manualProgressDisplayRows(systemRows) {
+  const sourceRows = all(
+    `SELECT * FROM manual_progress_rows
+     WHERE active = 1
+     ORDER BY stale, batch_id, group_key, source_row_no`
+  ).map(manualProgressDbModel);
+  if (!sourceRows.length) return systemRows.map((row) => ({ ...row, dataStatus: '采购订单数据', manualSourceRows: [] }));
+  const systemMap = new Map(systemRows.map((row) => [row.demandKey, row]));
+  const groups = new Map();
+  sourceRows.forEach((row) => {
+    const key = `${row.batchId}|${row.groupKey}`;
+    const list = groups.get(key) || [];
+    list.push(row);
+    groups.set(key, list);
+  });
+  const currentMatchedDemandKeys = new Set(sourceRows
+    .filter((row) => !row.stale && row.demandKey && row.validationStatus !== 'error')
+    .map((row) => row.demandKey));
+  const visibleSystemRows = systemRows
+    .filter((row) => !currentMatchedDemandKeys.has(row.demandKey))
+    .map((row) => ({ ...row, dataStatus: '采购订单数据', manualSourceRows: [] }));
+  const lookups = dimensionLookups();
+  const manualRows = [...groups.values()].map((rows) => {
+    const first = rows[0];
+    const system = first.demandKey ? systemMap.get(first.demandKey) : null;
+    const orderQty = system ? systemOrderQuantities(first.demandKey, first.orderNo, first.materialCode) : null;
+    const remainingInboundQty = orderQty
+      ? Math.max(orderQty.remainingQty, 0)
+      : system && !first.orderNo
+        ? Math.max(numberValue(system.remainingInboundQty), 0)
+        : rows.reduce((sum, row) => sum + row.manualRemainingQty, 0);
+    const shippedQty = orderQty
+      ? numberValue(orderQty.inboundQty)
+      : system && !first.orderNo
+        ? numberValue(system.shippedQty)
+        : rows.reduce((sum, row) => sum + row.sourceShippedQty, 0);
+    const preparedNotStartedQty = rows.reduce((sum, row) => sum + row.preparedNotStartedQty, 0);
+    const inProductionQty = rows.reduce((sum, row) => sum + row.inProductionQty, 0);
+    const finishedQty = rows.reduce((sum, row) => sum + row.finishedQty, 0);
+    const unpreparedQty = Math.max(remainingInboundQty - preparedNotStartedQty - inProductionQty - finishedQty, 0);
+    const progressTotal = unpreparedQty + preparedNotStartedQty + inProductionQty + finishedQty;
+    const conflictFields = [...new Set(rows.flatMap((row) => row.conflictFields || []))];
+    const field = (key, fallback = '') => {
+      const value = uniqueManualField(rows, key);
+      return value === null ? fallback : value;
+    };
+    const enriched = system || enrichDemandFields('', first.materialCode, '', lookups);
+    const fulfillmentStatus = field('fulfillmentStatus', system?.fulfillmentStatus || '');
+    const pretaxPrice = numberValue(system?.pretaxPrice ?? enriched.pretaxPrice);
+    const normalFulfillmentQty = fulfillmentStatus === '是' ? remainingInboundQty : 0;
+    const abnormalFulfillmentQty = fulfillmentStatus === '否' ? remainingInboundQty : 0;
+    const validationMessages = [...new Set(rows.map((row) => row.validationMessage).filter(Boolean))];
+    return {
+      ...(system || {}),
+      demandKey: `manual:${first.id}`,
+      underlyingDemandKey: first.demandKey || '',
+      manualGroupId: first.id,
+      manualBatchId: first.batchId,
+      displayKey: first.orderNo || first.oaFlowNo || `手工-${first.sourceRowNo}`,
+      month: first.month,
+      businessUnit: first.businessUnit,
+      operatorName: first.operatorName,
+      supplier: system?.supplier || '',
+      supplierShortName: first.supplierShortName,
+      orderSupplierShortName: first.supplierShortName || UNMATCHED_SUPPLIER_SHORT_NAME,
+      supplierCount: system?.supplierCount || 0,
+      materialCode: first.materialCode,
+      sku: first.sku || system?.sku || enriched.sku || '',
+      materialName: first.materialName || system?.materialName || enriched.materialName || '',
+      productLine: first.productLine || system?.productLine || enriched.productLine || '',
+      productSeries: first.productSeries || system?.productSeries || enriched.productSeries || '',
+      purchaseGroup: first.purchaseGroup,
+      purchaseOwner: first.purchaseOwner,
+      purchaseOrg: system?.purchaseOrg || '',
+      orderNo: first.orderNo,
+      documentStatus: system?.documentStatus || '',
+      contractDeliveryDates: system?.contractDeliveryDates || field('sourceContractDeliveryDate'),
+      oaFlowNo: first.oaFlowNo || system?.oaFlowNo || '',
+      orderCreator: system?.orderCreator || '',
+      currentOrderQty: orderQty?.orderQty ?? numberValue(system?.currentOrderQty),
+      totalPurchaseQty: orderQty?.orderQty ?? numberValue(system?.totalPurchaseQty),
+      totalInboundQty: shippedQty,
+      trackingOrderQty: orderQty?.orderQty ?? numberValue(system?.trackingOrderQty),
+      trackingInboundQty: shippedQty,
+      remainingInboundQty,
+      operationStockQty: remainingInboundQty + shippedQty,
+      active: true,
+      unpreparedQty,
+      preparedNotStartedQty,
+      inProductionQty,
+      finishedQty,
+      shippedQty,
+      progressTotal,
+      gap: remainingInboundQty - progressTotal,
+      progressAdjustmentRequired: Math.abs(remainingInboundQty - progressTotal) > 0.000001,
+      productionDeliveryDate: field('productionDeliveryDate', system?.productionDeliveryDate || ''),
+      unproducedEstimatedDeliveryDate: field('unproducedEstimatedDeliveryDate', system?.unproducedEstimatedDeliveryDate || ''),
+      fulfillmentStatus,
+      pretaxPrice,
+      pretaxPriceMaintained: Boolean(system?.pretaxPriceMaintained ?? enriched.pretaxPriceMaintained),
+      normalFulfillmentQty,
+      abnormalFulfillmentQty,
+      normalFulfillmentAmount: normalFulfillmentQty * pretaxPrice,
+      abnormalFulfillmentAmount: abnormalFulfillmentQty * pretaxPrice,
+      unfulfilledReason: field('unfulfilledReason', system?.unfulfilledReason || ''),
+      reasonDetail: field('reasonDetail', system?.reasonDetail || ''),
+      remark: field('remark', system?.remark || ''),
+      progressUpdatedBy: first.raw?.updatedBy || '',
+      progressUpdatedAt: '',
+      dataStatus: first.stale ? '本次手工表未出现' : first.dataStatus,
+      validationStatus: rows.some((row) => row.validationStatus === 'error') ? 'error' : conflictFields.length ? 'conflict' : 'valid',
+      validationMessage: [...validationMessages, ...(conflictFields.length ? [`明细冲突：${conflictFields.join('、')}`] : [])].join('；'),
+      conflictFields,
+      manualSourceRows: rows.map(manualProgressSourcePayload),
+      canEdit: !first.stale && first.validationStatus !== 'error' && (!system || system.canEdit)
+    };
+  });
+  return [...visibleSystemRows, ...manualRows];
+}
+
 function demandRows(includeInactive = false, user = null) {
   const where = includeInactive ? '' : 'WHERE active = 1';
   const demands = all(`SELECT * FROM order_demands ${where} ORDER BY month DESC, business_unit, supplier, material_code`);
@@ -2818,8 +3298,9 @@ function demandRows(includeInactive = false, user = null) {
       canEdit: user ? canEditDemand(user, { ...demand, purchase_owner: purchaseOwner, order_creator: orderCreator }) : false
     };
   });
-  if (!user || user.role === ROLE_ADMIN) return rows;
-  return rows.filter((row) => canEditDemand(user, { purchase_owner: row.purchaseOwner }));
+  const displayRows = includeInactive ? rows : manualProgressDisplayRows(rows);
+  if (!user || user.role === ROLE_ADMIN) return displayRows;
+  return displayRows.filter((row) => canEditDemand(user, { purchase_owner: row.purchaseOwner }));
 }
 
 function uniqueOrderNos(rows) {
@@ -3764,6 +4245,7 @@ function applyKingdeeSnapshot({
     [JSON.stringify(mapping), userName, now]
   );
   applyDimensionEnrichment();
+  reconcileActiveManualProgress(userName, now);
   return batchId;
 }
 
@@ -4330,6 +4812,220 @@ app.get('/api/demands', requireAuth, (req, res) => {
   res.json({ rows: demandRows(req.query.includeInactive === '1', req.user), currentAppliedAt: currentAppliedAt() });
 });
 
+function manualProgressPreviewRows(batchId, limit = 80) {
+  return all(
+    `SELECT source_row_no, data_status, order_no, oa_flow_no, business_unit, supplier_short_name,
+            purchase_owner, material_code, sku, manual_remaining_qty, validation_status,
+            validation_message, conflict_fields_json
+     FROM manual_progress_rows
+     WHERE batch_id = ?
+     ORDER BY CASE WHEN validation_status = 'error' THEN 0 WHEN data_status = '手工待匹配' THEN 1 ELSE 2 END,
+              source_row_no
+     LIMIT ?`,
+    [batchId, limit]
+  ).map((row) => ({
+    sourceRowNo: numberValue(row.source_row_no),
+    dataStatus: row.data_status,
+    orderNo: row.order_no,
+    oaFlowNo: row.oa_flow_no,
+    businessUnit: row.business_unit,
+    supplierShortName: row.supplier_short_name,
+    purchaseOwner: row.purchase_owner,
+    materialCode: row.material_code,
+    sku: row.sku,
+    manualRemainingQty: numberValue(row.manual_remaining_qty),
+    validationStatus: row.validation_status,
+    validationMessage: row.validation_message,
+    conflictFields: parseJson(row.conflict_fields_json, [])
+  }));
+}
+
+app.post('/api/progress/manual-import/preview', requireAuth, requirePage('progressRefresh'), requireAdmin, upload.single('file'), (req, res) => {
+  try {
+    if (!req.file?.buffer?.length) return res.status(400).json({ error: '请选择手工登记表文件' });
+    const parsedWorkbook = workbookRows(req.file, null, { includePreviews: true });
+    const targetSheet = parsedWorkbook.sheets.find((sheet) => normalize(sheet.sheetName) === '采购总览')
+      || (parsedWorkbook.sheets.length === 1 ? parsedWorkbook.sheets[0] : null);
+    if (!targetSheet) return res.status(400).json({ error: '请保留“采购总览”工作表；多工作表文件无法确定导入范围' });
+    const requiredColumns = ['采购下单人', '下单月份', '事业部', '采购订单号', '供应商简称', '物料编码', '未交付数量', '已备料未生产', '生产中产品', '完工未发产品'];
+    const missingColumns = requiredColumns.filter((column) => !targetSheet.columns.includes(column));
+    if (missingColumns.length) return res.status(400).json({ error: `缺少必要字段：${missingColumns.join('、')}` });
+    const fileHash = createHash('sha256').update(req.file.buffer).digest('hex');
+    const existing = get(
+      `SELECT * FROM manual_progress_import_batches
+       WHERE file_hash = ? AND status = 'applied'
+       ORDER BY applied_at DESC LIMIT 1`,
+      [fileHash]
+    );
+    if (existing) {
+      return res.json({
+        batchId: existing.id,
+        fileHash,
+        fileName: existing.file_name,
+        sheetName: existing.sheet_name,
+        status: existing.status,
+        alreadyApplied: true,
+        summary: parseJson(existing.summary_json, {}),
+        rows: manualProgressPreviewRows(existing.id)
+      });
+    }
+    const parsed = parseManualProgressRows(targetSheet.rows, { headerRow: targetSheet.headerRow });
+    const groups = groupManualProgressRows(parsed.rows);
+    groups.forEach((group) => group.sourceRows.forEach((row) => { row.groupKey = group.groupKey; }));
+    matchManualProgressRows(parsed.rows);
+    const summary = manualProgressSummary(parsed.rows, parsed.summary);
+    const batchId = randomUUID();
+    const now = nowText();
+    transaction(() => {
+      run(
+        `INSERT INTO manual_progress_import_batches
+          (id, file_hash, file_name, sheet_name, row_count, status, summary_json, imported_by, imported_at, applied_at)
+         VALUES (?, ?, ?, ?, ?, 'preview', ?, ?, ?, '')`,
+        [batchId, fileHash, safeFilename(req.file), targetSheet.sheetName, parsed.rows.length, JSON.stringify(summary), req.user.name, now]
+      );
+      runMany(
+        `INSERT INTO manual_progress_rows (
+           id, batch_id, source_row_no, source_key, group_key, row_type, data_status, demand_key,
+           order_no, month, business_unit, supplier_short_name, purchase_owner, purchase_group,
+           oa_flow_no, operator_name, product_line, product_series, material_code, sku, material_name,
+           manual_remaining_qty, unprepared_qty, prepared_not_started_qty, in_production_qty, finished_qty,
+           source_shipped_qty, source_contract_delivery_date, production_delivery_date,
+           unproduced_estimated_delivery_date, fulfillment_status, unfulfilled_reason, reason_detail, remark,
+           validation_status, validation_message, conflict_fields_json, raw_json, updated_by, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        parsed.rows.map((row) => manualProgressRowParams(batchId, row, now, req.user.name))
+      );
+    });
+    req.auditTarget = safeFilename(req.file);
+    req.auditDetails = `手工登记表预览：${parsed.rows.length} 行；已匹配 ${summary.matchedRows}；待匹配 ${summary.manualUnmatchedRows}；公司大合同 ${summary.companyContractRows}；校验失败 ${summary.validationErrorRows}`;
+    res.json({
+      batchId,
+      fileHash,
+      fileName: safeFilename(req.file),
+      sheetName: targetSheet.sheetName,
+      status: 'preview',
+      alreadyApplied: false,
+      summary,
+      rows: manualProgressPreviewRows(batchId)
+    });
+  } catch (error) {
+    res.status(error.status || 400).json({ error: error.message || '手工登记表解析失败' });
+  }
+});
+
+app.post('/api/progress/manual-import/:batchId/apply', requireAuth, requirePage('progressRefresh'), requireAdmin, (req, res) => {
+  try {
+    const batch = get('SELECT * FROM manual_progress_import_batches WHERE id = ?', [req.params.batchId]);
+    if (!batch) return res.status(404).json({ error: '导入预览不存在，请重新上传文件' });
+    if (batch.status === 'applied') {
+      return res.json({ batchId: batch.id, alreadyApplied: true, summary: parseJson(batch.summary_json, {}) });
+    }
+    if (batch.status !== 'preview') return res.status(409).json({ error: '当前预览状态不可应用' });
+    const expectedRows = Math.max(0, Math.floor(numberValue(req.body.expectedRows)));
+    const storedRows = numberValue(get('SELECT COUNT(*) AS count FROM manual_progress_rows WHERE batch_id = ?', [batch.id])?.count);
+    if (!expectedRows || expectedRows !== storedRows || expectedRows !== numberValue(batch.row_count)) {
+      return res.status(409).json({ error: '源数据行数已变化，请重新上传并核对预览' });
+    }
+    const now = nowText();
+    let reconciliation;
+    transaction(() => {
+      run(
+        `UPDATE manual_progress_rows
+         SET stale = 1, data_status = '本次手工表未出现', updated_by = ?, updated_at = ?
+         WHERE active = 1`,
+        [req.user.name, now]
+      );
+      const sourceKeys = all('SELECT source_key FROM manual_progress_rows WHERE batch_id = ?', [batch.id]);
+      runMany(
+        `UPDATE manual_progress_rows SET active = 0 WHERE active = 1 AND source_key = ?`,
+        sourceKeys.map((row) => [row.source_key])
+      );
+      run(
+        `UPDATE manual_progress_rows
+         SET active = 1, stale = 0, updated_by = ?, updated_at = ?
+         WHERE batch_id = ?`,
+        [req.user.name, now, batch.id]
+      );
+      run(
+        `UPDATE manual_progress_import_batches SET status = 'applied', applied_at = ? WHERE id = ?`,
+        [now, batch.id]
+      );
+      reconciliation = reconcileActiveManualProgress(req.user.name, now);
+    });
+    req.auditTarget = batch.file_name;
+    req.auditDetails = `应用手工登记表 ${storedRows} 行；重新匹配 ${reconciliation.matched}/${reconciliation.checked} 行`;
+    res.json({
+      batchId: batch.id,
+      appliedAt: now,
+      alreadyApplied: false,
+      summary: parseJson(batch.summary_json, {}),
+      reconciliation
+    });
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message || '手工登记表应用失败' });
+  }
+});
+
+app.post('/api/progress/manual-import/reconcile', requireAuth, requirePage('progressRefresh'), requireAdmin, (req, res) => {
+  try {
+    const now = nowText();
+    let result;
+    transaction(() => { result = reconcileActiveManualProgress(req.user.name, now); });
+    req.auditTarget = `${result.checked} 条手工记录`;
+    req.auditDetails = `重新匹配完成：已匹配 ${result.matched} 条`;
+    res.json(result);
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message || '重新匹配失败' });
+  }
+});
+
+app.get('/api/progress/manual-import/latest', requireAuth, requirePage('progressRefresh'), (req, res) => {
+  const batch = get(
+    `SELECT * FROM manual_progress_import_batches
+     WHERE status = 'applied' ORDER BY applied_at DESC LIMIT 1`
+  );
+  if (!batch) return res.json({ batch: null });
+  res.json({
+    batch: {
+      id: batch.id,
+      fileName: batch.file_name,
+      sheetName: batch.sheet_name,
+      rowCount: numberValue(batch.row_count),
+      appliedAt: batch.applied_at,
+      importedBy: batch.imported_by,
+      summary: parseJson(batch.summary_json, {})
+    }
+  });
+});
+
+app.get('/api/progress/manual-import/:batchId/export', requireAuth, requirePage('progressRefresh'), requireAdmin, async (req, res) => {
+  const batch = get('SELECT * FROM manual_progress_import_batches WHERE id = ?', [req.params.batchId]);
+  if (!batch) return res.status(404).json({ error: '导入批次不存在' });
+  const rows = all('SELECT * FROM manual_progress_rows WHERE batch_id = ? ORDER BY source_row_no', [batch.id]);
+  const headers = [
+    '源行号', '数据状态', '校验状态', '校验说明', '冲突字段', '采购订单号', 'OA备货流程号',
+    '事业部', '供应商简称', '采购下单人', '采购组', '产品线', '系列', '物料编码', 'SKU', '物料名称',
+    '手工未交付数量', '未备料未生产', '已备料未生产', '生产中产品', '完工未发产品', '手工已发货数量',
+    '合同约定交期', '生产中交付时间', '未生产预计交付时间', '是否正常履约', '未履约原因', '原因详情', '备注'
+  ];
+  const aoa = [headers, ...rows.map((row) => [
+    numberValue(row.source_row_no), row.data_status, row.validation_status, row.validation_message,
+    parseJson(row.conflict_fields_json, []).join('、'), row.order_no, row.oa_flow_no,
+    row.business_unit, row.supplier_short_name, row.purchase_owner, row.purchase_group,
+    row.product_line, row.product_series, row.material_code, row.sku, row.material_name,
+    numberValue(row.manual_remaining_qty), numberValue(row.unprepared_qty), numberValue(row.prepared_not_started_qty),
+    numberValue(row.in_production_qty), numberValue(row.finished_qty), numberValue(row.source_shipped_qty),
+    row.source_contract_delivery_date, row.production_delivery_date, row.unproduced_estimated_delivery_date,
+    row.fulfillment_status, row.unfulfilled_reason, row.reason_detail, row.remark
+  ])];
+  const workbook = xlsx.utils.book_new();
+  xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet(aoa), '手工导入明细');
+  const buffer = Buffer.from(await buildStyledExcelBuffer(xlsx, workbook));
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="manual-progress.xlsx"; filename*=UTF-8''${encodeURIComponent(`手工登记表校验_${batch.applied_at || batch.imported_at}.xlsx`)}`);
+  res.send(buffer);
+});
+
 app.post('/api/progress/clear-preview', requireAuth, requirePage('progressRefresh'), requireAdmin, (req, res) => {
   try {
     const filters = progressClearFilters(req.body);
@@ -4374,7 +5070,94 @@ app.post('/api/progress/clear', requireAuth, requirePage('progressRefresh'), req
   }
 });
 
+function updateManualProgressGroup(req, res, manualRowId) {
+  const firstDbRow = get('SELECT * FROM manual_progress_rows WHERE id = ? AND active = 1', [manualRowId]);
+  if (!firstDbRow) return res.status(404).json({ error: '手工跟单明细不存在或已被新快照替换' });
+  const first = manualProgressDbModel(firstDbRow);
+  const groupDbRows = all(
+    `SELECT * FROM manual_progress_rows
+     WHERE batch_id = ? AND group_key = ? AND active = 1
+     ORDER BY source_row_no`,
+    [first.batchId, first.groupKey]
+  );
+  const system = first.demandKey ? get('SELECT * FROM order_demands WHERE demand_key = ? AND active = 1', [first.demandKey]) : null;
+  if (system) {
+    const creator = oldCreatorsForDemand(system.demand_key);
+    const enriched = enrichDemandFields(system.supplier, system.material_code, creator);
+    if (!canEditDemand(req.user, { ...system, purchase_owner: enriched.purchaseOwner })) {
+      return res.status(403).json({ error: '没有该采购订单物料的维护权限' });
+    }
+  } else if (req.user.role !== ROLE_ADMIN && !splitDelimited(first.purchaseOwner).includes(normalize(req.user.name))) {
+    return res.status(403).json({ error: '没有该手工记录的维护权限' });
+  }
+  const orderQty = system ? systemOrderQuantities(first.demandKey, first.orderNo, first.materialCode) : null;
+  const remaining = orderQty
+    ? Math.max(orderQty.remainingQty, 0)
+    : system
+      ? Math.max(numberValue(system.tracking_remaining_qty), 0)
+      : groupDbRows.reduce((sum, row) => sum + numberValue(row.manual_remaining_qty), 0);
+  const prepared = progressQuantityValue(req.body.preparedNotStartedQty, 0, '已备料未生产');
+  const inProduction = progressQuantityValue(req.body.inProductionQty, 0, '生产中产品');
+  const finished = progressQuantityValue(req.body.finishedQty, 0, '完工未发产品');
+  if (prepared + inProduction + finished - remaining > 0.000001) {
+    return res.status(400).json({ error: '已备料未生产、生产中产品、完工未发产品合计不能超过未交付数量' });
+  }
+  const unprepared = Math.max(remaining - prepared - inProduction - finished, 0);
+  const fulfillmentStatus = normalize(req.body.fulfillmentStatus);
+  if (fulfillmentStatus && !['是', '否'].includes(fulfillmentStatus)) {
+    return res.status(400).json({ error: '是否正常履约只能选择“是”或“否”' });
+  }
+  const unfulfilledReason = normalize(req.body.unfulfilledReason);
+  if (fulfillmentStatus === '否' && !unfulfilledReason) {
+    return res.status(400).json({ error: '非正常履约必须填写未履约原因' });
+  }
+  const values = {
+    unprepared,
+    prepared,
+    inProduction,
+    finished,
+    productionDeliveryDate: progressDateValue(req.body.productionDeliveryDate, '生产中交付时间'),
+    unproducedEstimatedDeliveryDate: progressDateValue(req.body.unproducedEstimatedDeliveryDate, '未生产预计交付时间'),
+    fulfillmentStatus,
+    unfulfilledReason,
+    reasonDetail: normalize(req.body.reasonDetail),
+    remark: normalize(req.body.remark)
+  };
+  const now = nowText();
+  transaction(() => {
+    run(
+      `UPDATE manual_progress_rows
+       SET unprepared_qty = ?, prepared_not_started_qty = ?, in_production_qty = ?, finished_qty = ?,
+           production_delivery_date = ?, unproduced_estimated_delivery_date = ?, fulfillment_status = ?,
+           unfulfilled_reason = ?, reason_detail = ?, remark = ?, conflict_fields_json = '[]',
+           validation_status = 'valid', validation_message = '', updated_by = ?, updated_at = ?
+       WHERE id = ?`,
+      [
+        values.unprepared, values.prepared, values.inProduction, values.finished,
+        values.productionDeliveryDate, values.unproducedEstimatedDeliveryDate, values.fulfillmentStatus,
+        values.unfulfilledReason, values.reasonDetail, values.remark, req.user.name, now, first.id
+      ]
+    );
+    run(
+      `UPDATE manual_progress_rows
+       SET unprepared_qty = 0, prepared_not_started_qty = 0, in_production_qty = 0, finished_qty = 0,
+           production_delivery_date = '', unproduced_estimated_delivery_date = '', fulfillment_status = '',
+           unfulfilled_reason = '', reason_detail = '', remark = '', conflict_fields_json = '[]',
+           validation_status = 'valid', validation_message = '', updated_by = ?, updated_at = ?
+       WHERE batch_id = ? AND group_key = ? AND active = 1 AND id <> ?`,
+      [req.user.name, now, first.batchId, first.groupKey, first.id]
+    );
+    if (first.demandKey) rollupManualProgress(req.user.name, now, new Set([first.demandKey]));
+  });
+  req.auditTarget = first.orderNo || first.oaFlowNo || `源行 ${first.sourceRowNo}`;
+  req.auditDetails = `更新手工生产跟进组 ${first.groupKey}`;
+  return res.json({ rows: demandRows(false, req.user) });
+}
+
 app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'), (req, res) => {
+  if (String(req.params.demandKey).startsWith('manual:')) {
+    return updateManualProgressGroup(req, res, String(req.params.demandKey).slice('manual:'.length));
+  }
   const demand = get('SELECT * FROM order_demands WHERE demand_key = ?', [req.params.demandKey]);
   if (!demand) return res.status(404).json({ error: '需求不存在' });
   const progress = progressForDemand(demand.demand_key);
@@ -4967,7 +5750,7 @@ app.post('/api/inventory', requireAuth, requirePage('inventory'), (req, res) => 
 app.get('/api/progress/export', requireAuth, async (req, res) => {
   const rows = demandRows(false, req.user).filter((row) => numberValue(row.remainingInboundQty) > 0);
   const headers = [
-    'demandKey', '采购组', '采购下单人', '月份', '采购订单号', '创建人', 'OA备货流程号', '采购组织',
+    'demandKey', '数据状态', '源行号', '校验说明', '采购组', '采购下单人', '月份', '采购订单号', '创建人', 'OA备货流程号', '采购组织',
     '事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称',
     '运营备货数量', '未交付数量', '已发货数量',
     '未备料未生产', '已备料未生产', '生产中产品', '完工未发产品',
@@ -4978,7 +5761,8 @@ app.get('/api/progress/export', requireAuth, async (req, res) => {
   const aoa = [headers];
   rows.forEach((row) => {
     aoa.push([
-      row.demandKey, row.purchaseGroup, row.purchaseOwner, row.month, row.orderNo, row.orderCreator, row.oaFlowNo, row.purchaseOrg,
+      row.demandKey, row.dataStatus || '采购订单数据', (row.manualSourceRows || []).map((source) => source.sourceRowNo).join('、'), row.validationMessage || '',
+      row.purchaseGroup, row.purchaseOwner, row.month, row.orderNo, row.orderCreator, row.oaFlowNo, row.purchaseOrg,
       row.businessUnit, row.orderSupplierShortName || UNMATCHED_SUPPLIER_SHORT_NAME,
       row.productLine, row.productSeries, row.materialCode, row.sku, row.materialName || row.materialCode,
       row.operationStockQty, row.remainingInboundQty, row.shippedQty,

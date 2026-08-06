@@ -3196,7 +3196,17 @@ function manualProgressWriteParams(demandKeyValue, values, userName, now) {
   ];
 }
 
-function rollupManualProgress(userName, now, demandKeys = null) {
+function latestAppliedManualProgressBatch() {
+  return get(
+    `SELECT * FROM manual_progress_import_batches
+     WHERE status = 'applied'
+     ORDER BY applied_at DESC, imported_at DESC, rowid DESC
+     LIMIT 1`
+  );
+}
+
+function rollupManualProgress(userName, now, demandKeys = null, batchId = '') {
+  if (!batchId) return;
   const rawActiveRows = all(
     `SELECT r.*, a.source_row_id AS allocation_source_row_id,
             a.order_no AS allocation_order_no, a.remaining_qty AS allocation_remaining_qty,
@@ -3205,8 +3215,10 @@ function rollupManualProgress(userName, now, demandKeys = null) {
             a.allocated_in_production_qty, a.allocated_finished_qty
      FROM manual_progress_allocations a
      JOIN manual_progress_rows r ON r.id = a.source_row_id
-     WHERE a.active = 1 AND r.active = 1 AND r.stale = 0 AND r.deleted_at = ''
-       AND r.validation_status = 'valid' AND a.demand_key <> '' AND a.is_closed = 0`
+     WHERE a.batch_id = ? AND r.batch_id = ?
+       AND a.active = 1 AND r.active = 1 AND r.stale = 0 AND r.deleted_at = ''
+       AND r.validation_status = 'valid' AND a.demand_key <> '' AND a.is_closed = 0`,
+    [batchId, batchId]
   ).map((row) => ({
     ...manualProgressDbModel(row),
     demandKey: row.allocation_demand_key,
@@ -3277,10 +3289,10 @@ function rollupManualProgress(userName, now, demandKeys = null) {
   if (!demandKeys) {
     const currentManualKeys = new Set(grouped.keys());
     const staleDemandKeys = all(
-      `SELECT DISTINCT a.demand_key
-       FROM manual_progress_allocations a
-       JOIN manual_progress_rows r ON r.id = a.source_row_id
-       WHERE r.active = 1 AND a.demand_key <> ''`
+      `SELECT DISTINCT demand_key
+       FROM manual_progress_allocations
+       WHERE batch_id <> ? AND demand_key <> ''`,
+      [batchId]
     ).map((row) => row.demand_key).filter((key) => !currentManualKeys.has(key));
     staleDemandKeys.forEach((demandKeyValue) => {
       const demand = demandMap.get(demandKeyValue);
@@ -3336,13 +3348,15 @@ function rollupManualProgress(userName, now, demandKeys = null) {
   );
 }
 
-function reconcileActiveManualProgress(userName, now = nowText()) {
+function reconcileActiveManualProgress(userName, now = nowText(), requestedBatchId = '') {
   const startedAt = Date.now();
+  const batchId = normalize(requestedBatchId) || normalize(latestAppliedManualProgressBatch()?.id);
+  if (!batchId) return { checked: 0, matched: 0, allocations: 0 };
   const dbRows = all(
     `SELECT * FROM manual_progress_rows
-     WHERE active = 1 AND stale = 0 AND deleted_at = '' AND row_type <> 'company_contract'`
+     WHERE batch_id = ? AND active = 1 AND stale = 0 AND deleted_at = '' AND row_type <> 'company_contract'`,
+    [batchId]
   );
-  if (!dbRows.length) return { checked: 0, matched: 0, allocations: 0 };
   const models = dbRows.map(manualProgressDbModel);
   matchManualProgressRows(models);
   const matchedAt = Date.now();
@@ -3357,26 +3371,17 @@ function reconcileActiveManualProgress(userName, now = nowText()) {
     ])
   );
   const rowsUpdatedAt = Date.now();
-  const batchIds = [...new Set(models.map((row) => row.batchId))];
-  const modelsByBatch = new Map();
-  models.forEach((row) => {
-    const rows = modelsByBatch.get(row.batchId) || [];
-    rows.push(row);
-    modelsByBatch.set(row.batchId, rows);
-  });
-  batchIds.forEach((batchId) => {
-    replaceManualProgressAllocations(modelsByBatch.get(batchId) || [], batchId, now);
-    run(
-      `UPDATE manual_progress_allocations SET active = 1, updated_at = ?
-       WHERE batch_id = ? AND source_row_id IN (
-         SELECT id FROM manual_progress_rows
-         WHERE batch_id = ? AND active = 1 AND stale = 0 AND deleted_at = '' AND validation_status = 'valid'
-       )`,
-      [now, batchId, batchId]
-    );
-  });
+  replaceManualProgressAllocations(models, batchId, now);
+  run(
+    `UPDATE manual_progress_allocations SET active = 1, updated_at = ?
+     WHERE batch_id = ? AND source_row_id IN (
+       SELECT id FROM manual_progress_rows
+       WHERE batch_id = ? AND active = 1 AND stale = 0 AND deleted_at = '' AND validation_status = 'valid'
+     )`,
+    [now, batchId, batchId]
+  );
   const allocationsUpdatedAt = Date.now();
-  rollupManualProgress(userName, now);
+  rollupManualProgress(userName, now, null, batchId);
   const finishedAt = Date.now();
   const result = {
     checked: models.length,
@@ -3525,10 +3530,13 @@ function distributedManualProgressAllocations(row) {
 }
 
 function manualProgressDisplayRows(systemRows, user = null) {
+  const batchId = normalize(latestAppliedManualProgressBatch()?.id);
+  if (!batchId) return systemRows.map((row) => ({ ...row, dataStatus: '采购订单数据', manualSourceRows: [] }));
   const sourceRows = all(
     `SELECT * FROM manual_progress_rows
-     WHERE active = 1 AND deleted_at = ''
-     ORDER BY stale, batch_id, group_key, source_row_no`
+     WHERE batch_id = ? AND active = 1 AND stale = 0 AND deleted_at = ''
+     ORDER BY group_key, source_row_no`,
+    [batchId]
   ).map(manualProgressDbModel);
   const allocationMap = new Map();
   if (sourceRows.length) {
@@ -5482,16 +5490,11 @@ app.post('/api/progress/manual-import/:batchId/apply', requireAuth, requirePage(
     transaction(() => {
       run(
         `UPDATE manual_progress_rows
-         SET stale = 1, data_status = '本次手工表未出现', updated_by = ?, updated_at = ?
-         WHERE active = 1`,
-        [req.user.name, now]
+         SET active = 0, stale = 1, data_status = '本次手工表未出现', updated_by = ?, updated_at = ?
+         WHERE active = 1 AND batch_id <> ?`,
+        [req.user.name, now, batch.id]
       );
       run('UPDATE manual_progress_allocations SET active = 0 WHERE active = 1');
-      const sourceKeys = all('SELECT source_key FROM manual_progress_rows WHERE batch_id = ?', [batch.id]);
-      runMany(
-        `UPDATE manual_progress_rows SET active = 0 WHERE active = 1 AND source_key = ?`,
-        sourceKeys.map((row) => [row.source_key])
-      );
       run(
         `UPDATE manual_progress_rows
          SET active = 1, stale = 0, updated_by = ?, updated_at = ?
@@ -5510,7 +5513,7 @@ app.post('/api/progress/manual-import/:batchId/apply', requireAuth, requirePage(
         `UPDATE manual_progress_import_batches SET status = 'applied', applied_at = ? WHERE id = ?`,
         [now, batch.id]
       );
-      reconciliation = reconcileActiveManualProgress(req.user.name, now);
+      reconciliation = reconcileActiveManualProgress(req.user.name, now, batch.id);
     });
     req.auditTarget = batch.file_name;
     req.auditDetails = `应用手工登记表 ${storedRows} 行；重新匹配 ${reconciliation.matched}/${reconciliation.checked} 行`;
@@ -5636,10 +5639,7 @@ app.get('/api/progress/manual-import/history', requireAuth, requirePage('progres
 });
 
 app.get('/api/progress/manual-import/latest', requireAuth, requirePage('progressRefresh'), (req, res) => {
-  const batch = get(
-    `SELECT * FROM manual_progress_import_batches
-     WHERE status = 'applied' ORDER BY applied_at DESC LIMIT 1`
-  );
+  const batch = latestAppliedManualProgressBatch();
   if (!batch) return res.json({ batch: null });
   res.json({
     batch: {

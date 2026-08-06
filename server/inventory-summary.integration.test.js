@@ -2260,7 +2260,7 @@ test('inventory summary and domestic board use complete source models and enforc
     `INSERT INTO manual_progress_import_batches
       (id, file_hash, file_name, sheet_name, row_count, status, summary_json, imported_by, imported_at, applied_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ['manual-current-fields-batch', 'manual-current-fields-hash', '手工跟单测试.xlsx', 'Sheet1', 1, 'applied', '{}', 'Test Admin', now, now]
+    ['manual-current-fields-batch', 'manual-current-fields-hash', '手工跟单测试.xlsx', 'Sheet1', 2, 'applied', '{}', 'Test Admin', now, now]
   );
   database.run(
     `INSERT INTO manual_progress_rows
@@ -2287,19 +2287,13 @@ test('inventory summary and domestic board use complete source models and enforc
     ]
   );
   database.run(
-    `INSERT INTO manual_progress_import_batches
-      (id, file_hash, file_name, sheet_name, row_count, status, summary_json, imported_by, imported_at, applied_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ['manual-short-name-batch', 'manual-short-name-hash', '手工跟单简称回退测试.xlsx', 'Sheet1', 1, 'applied', '{}', 'Test Admin', now, now]
-  );
-  database.run(
     `INSERT INTO manual_progress_rows
       (id, batch_id, source_row_no, source_key, group_key, row_type, data_status, demand_key, order_no,
        month, business_unit, supplier_short_name, purchase_owner, material_code, manual_remaining_qty,
        unprepared_qty, source_shipped_qty, validation_status, raw_json, candidate_json, active, stale, updated_by, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      'manual-short-name-row', 'manual-short-name-batch', 2, 'manual-short-name-source',
+      'manual-short-name-row', 'manual-current-fields-batch', 3, 'manual-short-name-source',
       'order|cgdd012997|1002010305', 'purchase_order', '手工已匹配', 'manual-short-name-fallback', 'CGDD012997',
       '2026-08', '海外事业一部', '申裕', '', '1002010305', 10, 10, 2, 'valid', '{}',
       JSON.stringify([{ demandKey: 'manual-short-name-fallback', orderNo: 'CGDD012997', supplier: '采购订单供应商全称', supplierShortName: '未匹配', purchaseOwner: '', orderCreator: '' }]),
@@ -2312,8 +2306,27 @@ test('inventory summary and domestic board use complete source models and enforc
        order_qty, inbound_qty, remaining_qty, allocated_unprepared_qty, active, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      'manual-short-name-allocation', 'manual-short-name-batch', 'manual-short-name-row', 2,
+      'manual-short-name-allocation', 'manual-current-fields-batch', 'manual-short-name-row', 3,
       'CGDD012997', '1002010305', 'manual-short-name-fallback', 'matched', 12, 2, 10, 10, 1, now, now
+    ]
+  );
+  database.run(
+    `INSERT INTO manual_progress_import_batches
+      (id, file_hash, file_name, sheet_name, row_count, status, summary_json, imported_by, imported_at, applied_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ['manual-old-duplicate-batch', 'manual-old-duplicate-hash', '旧手工跟单测试.xlsx', 'Sheet1', 1, 'applied', '{}', 'Test Admin', '2026-01-01 00:00:00', '2026-01-01 00:00:00']
+  );
+  database.run(
+    `INSERT INTO manual_progress_rows
+      (id, batch_id, source_row_no, source_key, group_key, row_type, data_status, demand_key, order_no,
+       month, business_unit, supplier_short_name, purchase_owner, material_code, manual_remaining_qty,
+       unprepared_qty, validation_status, raw_json, candidate_json, active, stale, updated_by, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      'manual-old-duplicate-row', 'manual-old-duplicate-batch', 2, 'manual-old-duplicate-source',
+      'order|cgdd012997|1002010305', 'purchase_order', '本次手工表未出现', 'manual-short-name-fallback', 'CGDD012997',
+      '2026-08', '海外事业一部', '申裕', '', '1002010305', 10, 10, 'valid', '{}', '[]',
+      1, 1, 'Test Admin', '2026-01-01 00:00:00'
     ]
   );
   putDimension('lingxingWfsInventory', 'WFS inventory', [
@@ -2633,6 +2646,11 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(shortNameFallbackRow?.orderCreator, '陈晨');
     assert.equal(shortNameFallbackRow?.purchaseOrg, '浙江采购组织');
     assert.equal(shortNameFallbackRow?.documentStatus, '已审核');
+    assert.equal(
+      demandRows.filter((row) => row.orderNo === 'CGDD012997' && row.materialCode === '1002010305').length,
+      1
+    );
+    assert.ok(!demandRows.some((row) => row.dataStatus === '本次手工表未出现'));
     assert.ok(!demandRows.some((row) => row.purchaseOwner === '陈晨'));
     const firstMileRows = (await firstMileResponse.json()).rows;
     assert.equal(firstMileRows.find((row) => row.materialCode === 'M1')?.model, 'Model One');

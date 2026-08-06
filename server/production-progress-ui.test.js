@@ -178,6 +178,9 @@ test('生产跟进支持手工登记表预览、数据状态筛选和采购订�
   assert.match(serverSource, /\/api\/progress\/manual-import\/preview/);
   assert.match(serverSource, /\/api\/progress\/manual-import\/:batchId\/apply/);
   assert.match(serverSource, /本次手工表未出现/);
+  assert.match(serverSource, /function latestAppliedManualProgressBatch\(\)/);
+  assert.match(serverSource, /WHERE batch_id = \? AND active = 1 AND stale = 0 AND deleted_at = ''/);
+  assert.match(serverSource, /SET active = 0, stale = 1, data_status = '本次手工表未出现'/);
 });
 
 test('修改显示列和差异分配入口醒目且切换后完整显示', () => {

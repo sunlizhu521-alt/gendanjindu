@@ -5825,6 +5825,10 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
       map.set(key, group);
     });
     return [...map.values()].sort((left, right) => {
+      const leftSupplier = uniqueSupplierShortNames(left.rows.map((row) => progressSupplierName(row))).join('、') || '';
+      const rightSupplier = uniqueSupplierShortNames(right.rows.map((row) => progressSupplierName(row))).join('、') || '';
+      const cmp = leftSupplier.localeCompare(rightSupplier, 'zh-Hans-CN');
+      if (cmp !== 0) return cmp;
       const leftMonth = left.rows[0]?.month || '';
       const rightMonth = right.rows[0]?.month || '';
       return rightMonth.localeCompare(leftMonth) || left.orderNo.localeCompare(right.orderNo, 'zh-Hans-CN');
@@ -6220,16 +6224,45 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
             <Fragment key={group.key}>
               <tr className="progress-order-parent-row">
                 <td colSpan={visibleProgressColumns.length + 1}>
-                  <button type="button" className="progress-order-toggle" onClick={() => toggleOrderGroup(group.key)} aria-expanded={expanded} aria-label={groupBySupplier ? `展开供应商 ${supplierLabel}` : `展开采购订单 ${group.orderNo}`}>
+                  <div
+                    className="progress-order-toggle"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => toggleOrderGroup(group.key)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        toggleOrderGroup(group.key);
+                      }
+                    }}
+                    aria-expanded={expanded}
+                    aria-label={groupBySupplier ? `展开供应商 ${supplierLabel}` : `展开采购订单 ${group.orderNo}`}
+                  >
                     <b>{expanded ? '−' : '+'}</b>
-                    <strong>供应商简称：{supplierLabel}</strong>
+                    <strong>
+                      供应商简称：
+                      <button
+                        type="button"
+                        className="supplier-filter-link"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setFilters({
+                            ...filters,
+                            supplier: uniqueSupplierShortNames(group.rows.map((row) => progressSupplierName(row)))
+                          });
+                        }}
+                        onKeyDown={(event) => event.stopPropagation()}
+                      >
+                        {supplierLabel}
+                      </button>
+                    </strong>
                     {!groupBySupplier && <span>月份：{months}</span>}
                     {!groupBySupplier && <span>事业部：{businessUnits}</span>}
                     {!groupBySupplier && <span>系列：{productSeries}</span>}
                     {groupBySupplier && <span>订单数：{group.orderNos.size}</span>}
                     {groupBySupplier && <span>事业部：{businessUnits}</span>}
                     <span>数量：{group.operationStockQty.toLocaleString('zh-CN')}</span>
-                  </button>
+                  </div>
                 </td>
               </tr>
               {expanded && (

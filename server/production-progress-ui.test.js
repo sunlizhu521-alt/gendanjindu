@@ -122,7 +122,7 @@ test('生产跟进采购订单父行展示指定业务摘要', () => {
     appSource.indexOf('function ProgressPage('),
     appSource.indexOf('function DifferenceAllocationPage(')
   );
-  assert.match(progressSource, /供应商简称：\{supplierLabel\}/);
+  assert.match(progressSource, /供应商简称：[\s\S]*?className="supplier-filter-link"[\s\S]*?\{supplierLabel\}/);
   assert.match(progressSource, /!groupBySupplier && <span>月份：\{months\}<\/span>/);
   assert.match(progressSource, /!groupBySupplier && <span>事业部：\{businessUnits\}<\/span>/);
   assert.match(progressSource, /!groupBySupplier && <span>系列：\{productSeries\}<\/span>/);
@@ -146,6 +146,21 @@ test('生产跟进支持按供应商简称汇总并切换分页', () => {
   assert.match(progressSource, /setGroupBySupplier\(\(value\) => !value\)[\s\S]*?setExpandedOrders\(new Set\(\)\)[\s\S]*?setCurrentPage\(1\)/);
   assert.match(progressSource, /groupBySupplier && <span>订单数：\{group\.orderNos\.size\}<\/span>/);
   assert.match(styleSource, /\.progress-supplier-group-button\.active\s*\{[\s\S]*?background: #2563eb/);
+});
+
+test('生产跟进采购订单按供应商聚合排序且简称可点击筛选', () => {
+  const progressSource = appSource.slice(
+    appSource.indexOf('function ProgressPage('),
+    appSource.indexOf('function DifferenceAllocationPage(')
+  );
+  assert.match(progressSource, /const leftSupplier = uniqueSupplierShortNames\(left\.rows\.map\(\(row\) => progressSupplierName\(row\)\)\)\.join\('、'\) \|\| ''/);
+  assert.match(progressSource, /const rightSupplier = uniqueSupplierShortNames\(right\.rows\.map\(\(row\) => progressSupplierName\(row\)\)\)\.join\('、'\) \|\| ''/);
+  assert.match(progressSource, /const cmp = leftSupplier\.localeCompare\(rightSupplier, 'zh-Hans-CN'\)/);
+  assert.match(progressSource, /if \(cmp !== 0\) return cmp/);
+  assert.match(progressSource, /className="progress-order-toggle"[\s\S]*?role="button"[\s\S]*?tabIndex=\{0\}/);
+  assert.match(progressSource, /className="supplier-filter-link"[\s\S]*?event\.stopPropagation\(\)[\s\S]*?supplier: uniqueSupplierShortNames\(group\.rows\.map\(\(row\) => progressSupplierName\(row\)\)\)/);
+  assert.match(styleSource, /\.supplier-filter-link\s*\{[\s\S]*?color: #2563eb/);
+  assert.doesNotMatch(progressSource, /<button[^>]*className="progress-order-toggle"[\s\S]*?<button[^>]*className="supplier-filter-link"/);
 });
 
 test('生产跟进不再展示任何柱形图', () => {

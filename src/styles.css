@@ -6784,6 +6784,29 @@ th {
   font-size: 14px;
 }
 
+.supplier-filter-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #2563eb;
+  cursor: pointer;
+  font: inherit;
+  font-weight: inherit;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
+
+.supplier-filter-link:hover {
+  color: #1d4ed8;
+  text-decoration-style: solid;
+}
+
+.supplier-filter-link:focus-visible {
+  border-radius: 2px;
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
 .progress-order-toggle span {
   color: #46616f;
   font-size: 12px;

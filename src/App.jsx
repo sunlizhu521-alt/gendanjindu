@@ -6202,12 +6202,6 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
           </section>
         )}
         <FilterBar filters={filters} setFilters={setFilters} options={options} />
-        <section className="progress-chart-grid">
-          <ProgressStackedChart title="供应商简称四阶段分布" rows={displayRows} groupBy={(row) => progressSupplierName(row)} />
-          <ProgressStackedChart title="事业部四阶段分布" rows={displayRows} groupBy={(row) => purchaseTrackingBusinessUnit(row.businessUnit)} />
-          <ProgressStackedChart title="系列四阶段分布" rows={displayRows} groupBy={(row) => row.productSeries} />
-          <ProgressStackedChart title="SKU四阶段分布" rows={displayRows} groupBy={(row) => row.sku} />
-        </section>
       </div>
       <DataTable
         className="progress-table"

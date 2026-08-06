@@ -16,7 +16,6 @@ test('生产跟进显示采购订单匹配的供应商简称并支持供应家�
     appSource.indexOf('function ProgressPage('),
     appSource.indexOf('function DifferenceAllocationPage(')
   );
-  assert.match(progressSource, /groupBy=\{\(row\) => progressSupplierName\(row\)\}/);
   assert.match(progressSource, /progressSupplierName\(row\)/);
   assert.match(progressSource, /label="供应商简称" allLabel="全部供应商简称"/);
   assert.match(progressSource, /'供应商简称',[\s\S]*?'事业部'/);
@@ -147,6 +146,20 @@ test('生产跟进支持按供应商简称汇总并切换分页', () => {
   assert.match(progressSource, /setGroupBySupplier\(\(value\) => !value\)[\s\S]*?setExpandedOrders\(new Set\(\)\)[\s\S]*?setCurrentPage\(1\)/);
   assert.match(progressSource, /groupBySupplier && <span>订单数：\{group\.orderNos\.size\}<\/span>/);
   assert.match(styleSource, /\.progress-supplier-group-button\.active\s*\{[\s\S]*?background: #2563eb/);
+});
+
+test('生产跟进不再展示任何柱形图', () => {
+  const progressSource = appSource.slice(
+    appSource.indexOf('function ProgressPage('),
+    appSource.indexOf('function DifferenceAllocationPage(')
+  );
+  const operationSource = appSource.slice(
+    appSource.indexOf('function Dashboard('),
+    appSource.indexOf('function DifferencePage(')
+  );
+  assert.doesNotMatch(progressSource, /<ProgressStackedChart/);
+  assert.doesNotMatch(progressSource, /className="progress-chart-grid"/);
+  assert.match(operationSource, /<ProgressStackedChart/);
 });
 
 test('差异分配合并到生产跟进内部并复用生产跟进权限', () => {

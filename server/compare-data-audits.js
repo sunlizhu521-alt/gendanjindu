@@ -19,8 +19,8 @@ const markerValue = (audit, key) => {
     return String(raw);
   }
 };
-const manualProgressMigration = markerValue(baseline, 'manual-progress-parser-version') !== '2'
-  && markerValue(post, 'manual-progress-parser-version') === '2';
+const manualProgressMigration = markerValue(baseline, 'manual-progress-parser-version') !== '3'
+  && markerValue(post, 'manual-progress-parser-version') === '3';
 const manualMigrationTables = new Set([
   'import_mappings',
   'manual_progress_allocations',

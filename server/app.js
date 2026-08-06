@@ -31,8 +31,10 @@ import { buildInventoryRiskWorkbook } from './inventory-risk-export.js';
 import { buildStyledExcelBuffer } from '../shared/excel-export.js';
 import {
   allocateIntegerByWeights,
+  allocateNumberByWeights,
   groupManualProgressRows,
   manualOrderNumbers,
+  manualProgressSourceValues,
   parseManualProgressRows
 } from './manual-progress.js';
 
@@ -1583,6 +1585,13 @@ function resolveSupplierAssignment(lookups, supplier, materialCode) {
   return {};
 }
 
+function purchaseOwnersForSupplierShortNames(lookups, supplierShortNames, materialCode) {
+  const owners = supplierShortNames.flatMap((supplierShortName) => (
+    lookups.assignmentRowsByKey.get(assignmentKey(supplierShortName, materialCode)) || []
+  )).map(assignmentOwner).flatMap(splitDelimited).filter(Boolean);
+  return [...new Set(owners)].join('+') || UNASSIGNED_PURCHASE_OWNER;
+}
+
 function resolveAssignment(lookups, supplier, materialCode) {
   const supplierAssignment = resolveSupplierAssignment(lookups, supplier, materialCode);
   if (assignmentOwner(supplierAssignment)) return supplierAssignment;
@@ -2778,10 +2787,8 @@ function manualProgressCandidateMaps() {
   };
   demands.forEach((demand) => {
     const demandOrderRows = rowsByDemand.get(demand.demand_key) || [];
-    const creators = uniqueCreators(demandOrderRows);
-    const enriched = enrichDemandFields(demand.supplier, demand.material_code, creators, lookups);
-    const purchaseOwner = realPurchaseOwner(enriched.purchaseOwner) || UNASSIGNED_PURCHASE_OWNER;
     const shortNames = manualProgressSupplierParts(orderSupplierShortName(lookups, demand.supplier, demand.material_code));
+    const purchaseOwner = purchaseOwnersForSupplierShortNames(lookups, shortNames, demand.material_code);
     const groupedOrders = new Map();
     demandOrderRows.forEach((row) => {
       const orderNo = normalize(row.order_no);
@@ -2794,13 +2801,15 @@ function manualProgressCandidateMaps() {
         supplier: demand.supplier,
         supplierShortName: shortNames.join('&') || UNMATCHED_SUPPLIER_SHORT_NAME,
         purchaseOwner,
+        purchaseOrg: demand.purchase_org || '',
         month: demand.month,
         orderQty: 0,
         inboundQty: 0,
         remainingQty: 0,
         hasOpenRow: false,
         documentStatuses: [],
-        closeStatuses: []
+        closeStatuses: [],
+        creators: []
       };
       current.orderQty += numberValue(row.quantity);
       current.inboundQty += numberValue(row.inbound_qty);
@@ -2808,11 +2817,14 @@ function manualProgressCandidateMaps() {
       if (normalize(row.close_status) === TRACKING_CLOSE_STATUS) current.hasOpenRow = true;
       if (normalize(row.document_status) && !current.documentStatuses.includes(normalize(row.document_status))) current.documentStatuses.push(normalize(row.document_status));
       if (normalize(row.close_status) && !current.closeStatuses.includes(normalize(row.close_status))) current.closeStatuses.push(normalize(row.close_status));
+      if (normalize(row.creator) && !current.creators.includes(normalize(row.creator))) current.creators.push(normalize(row.creator));
       groupedOrders.set(orderNo, current);
     });
     groupedOrders.forEach((candidate) => {
       candidate.isClosed = !candidate.hasOpenRow;
       candidate.weight = candidate.isClosed ? 0 : candidate.remainingQty;
+      candidate.orderCreator = candidate.creators.join('、');
+      candidate.documentStatus = candidate.documentStatuses.join('、');
       add(exact, manualProgressMatchKey([candidate.orderNo, candidate.materialCode]), candidate);
       shortNames.forEach((shortName) => add(byFallback, manualProgressMatchKey([
         demand.month, manualProgressBusinessUnit(demand.business_unit), demand.material_code, shortName, purchaseOwner
@@ -2861,6 +2873,9 @@ function manualProgressCandidatePayload(candidate) {
     supplier: candidate.supplier,
     supplierShortName: candidate.supplierShortName,
     purchaseOwner: candidate.purchaseOwner,
+    purchaseOrg: candidate.purchaseOrg || '',
+    orderCreator: candidate.orderCreator || '',
+    documentStatus: candidate.documentStatus || '',
     orderQty: numberValue(candidate.orderQty),
     inboundQty: numberValue(candidate.inboundQty),
     remainingQty: numberValue(candidate.remainingQty),
@@ -2996,6 +3011,7 @@ function matchManualProgressRows(rows) {
       candidates = [confirmed];
     }
     row.allocations = manualProgressAllocationRows(row, candidates);
+    row.candidates = candidates.map(manualProgressCandidatePayload);
     const demandKeys = [...new Set(candidates.map((candidate) => candidate.demandKey))];
     row.demandKey = demandKeys.length === 1 ? demandKeys[0] : '';
     row.dataStatus = candidates.every((candidate) => candidate.isClosed)
@@ -3010,36 +3026,6 @@ function matchManualProgressRows(rows) {
     }
   });
 
-  const byDemand = new Map();
-  rows.filter((row) => row.validationStatus === 'valid').forEach((row) => {
-    row.allocations.filter((allocation) => !allocation.isClosed).forEach((allocation) => {
-      const list = byDemand.get(allocation.demandKey) || [];
-      list.push({ row, allocation });
-      byDemand.set(allocation.demandKey, list);
-    });
-  });
-  byDemand.forEach((list, demandKeyValue) => {
-    const demand = maps.demandMap.get(demandKeyValue);
-    const systemRemaining = Math.max(numberValue(demand?.tracking_remaining_qty), 0);
-    const assigned = list.reduce((sum, item) => sum
-      + numberValue(item.allocation.allocatedUnpreparedQty)
-      + numberValue(item.allocation.allocatedPreparedQty)
-      + numberValue(item.allocation.allocatedInProductionQty)
-      + numberValue(item.allocation.allocatedFinishedQty), 0);
-    if (assigned - systemRemaining > 0.000001) {
-      list.forEach(({ row }) => {
-        row.validationStatus = 'pending';
-        row.dataStatus = '待人工调整';
-        row.validationMessage = [row.validationMessage, `手工四阶段合计超过金蝶当前未交付数量 ${assigned - systemRemaining}`].filter(Boolean).join('；');
-      });
-      return;
-    }
-    if (assigned < systemRemaining) {
-      list.forEach(({ row }) => {
-        row.validationMessage = [row.validationMessage, `金蝶未交付增加，差额 ${systemRemaining - assigned} 自动计入未备料未生产`].filter(Boolean).join('；');
-      });
-    }
-  });
   return rows;
 }
 
@@ -3080,6 +3066,9 @@ function manualProgressRowParams(batchId, row, now, userName) {
 }
 
 function manualProgressDbModel(row) {
+  const raw = parseJson(row.raw_json, {});
+  const sourceValues = manualProgressSourceValues(raw);
+  const storedDate = (stored, source) => /^\d{4}-\d{2}-\d{2}$/.test(normalize(stored)) ? normalize(stored) : source || normalize(stored);
   return {
     id: row.id,
     batchId: row.batch_id,
@@ -3108,9 +3097,14 @@ function manualProgressDbModel(row) {
     inProductionQty: numberValue(row.in_production_qty),
     finishedQty: numberValue(row.finished_qty),
     sourceShippedQty: numberValue(row.source_shipped_qty),
-    sourceContractDeliveryDate: row.source_contract_delivery_date,
-    productionDeliveryDate: row.production_delivery_date,
-    unproducedEstimatedDeliveryDate: row.unproduced_estimated_delivery_date,
+    sourcePretaxPrice: sourceValues.sourcePretaxPrice,
+    sourceNormalQty: sourceValues.sourceNormalQty,
+    sourceNormalAmount: sourceValues.sourceNormalAmount,
+    sourceAbnormalQty: sourceValues.sourceAbnormalQty,
+    sourceAbnormalAmount: sourceValues.sourceAbnormalAmount,
+    sourceContractDeliveryDate: storedDate(row.source_contract_delivery_date, sourceValues.sourceContractDeliveryDate),
+    productionDeliveryDate: storedDate(row.production_delivery_date, sourceValues.productionDeliveryDate),
+    unproducedEstimatedDeliveryDate: storedDate(row.unproduced_estimated_delivery_date, sourceValues.unproducedEstimatedDeliveryDate),
     fulfillmentStatus: row.fulfillment_status,
     unfulfilledReason: row.unfulfilled_reason,
     reasonDetail: row.reason_detail,
@@ -3118,7 +3112,7 @@ function manualProgressDbModel(row) {
     validationStatus: row.validation_status,
     validationMessage: row.validation_message,
     conflictFields: parseJson(row.conflict_fields_json, []),
-    raw: parseJson(row.raw_json, {}),
+    raw,
     candidates: parseJson(row.candidate_json, []),
     confirmedDemandKey: row.confirmed_demand_key,
     confirmedOrderNo: row.confirmed_order_no,
@@ -3168,6 +3162,10 @@ function uniqueManualField(rows, key) {
   return values.length === 1 ? values[0] : null;
 }
 
+function joinedManualField(rows, key) {
+  return [...new Set(rows.map((row) => normalize(row[key])).filter(Boolean))].sort().join('、');
+}
+
 function manualProgressValuesChanged(existing, values) {
   if (!existing) return true;
   const numericFields = [
@@ -3199,8 +3197,10 @@ function manualProgressWriteParams(demandKeyValue, values, userName, now) {
 }
 
 function rollupManualProgress(userName, now, demandKeys = null) {
-  const activeRows = all(
-    `SELECT r.*, a.demand_key AS allocation_demand_key,
+  const rawActiveRows = all(
+    `SELECT r.*, a.source_row_id AS allocation_source_row_id,
+            a.order_no AS allocation_order_no, a.remaining_qty AS allocation_remaining_qty,
+            a.demand_key AS allocation_demand_key,
             a.allocated_unprepared_qty, a.allocated_prepared_qty,
             a.allocated_in_production_qty, a.allocated_finished_qty
      FROM manual_progress_allocations a
@@ -3213,8 +3213,25 @@ function rollupManualProgress(userName, now, demandKeys = null) {
     allocationUnpreparedQty: numberValue(row.allocated_unprepared_qty),
     allocationPreparedQty: numberValue(row.allocated_prepared_qty),
     allocationInProductionQty: numberValue(row.allocated_in_production_qty),
-    allocationFinishedQty: numberValue(row.allocated_finished_qty)
+    allocationFinishedQty: numberValue(row.allocated_finished_qty),
+    allocationRemainingQty: numberValue(row.allocation_remaining_qty),
+    allocationOrderNo: row.allocation_order_no,
+    allocationSourceRowId: row.allocation_source_row_id
   }));
+  const rowsBySource = new Map();
+  rawActiveRows.forEach((row) => {
+    const rows = rowsBySource.get(row.allocationSourceRowId) || [];
+    rows.push(row);
+    rowsBySource.set(row.allocationSourceRowId, rows);
+  });
+  rowsBySource.forEach((rows) => {
+    const shipped = allocateIntegerByWeights(rows[0].sourceShippedQty, rows.map((row) => ({
+      orderNo: row.allocationOrderNo,
+      weight: row.allocationRemainingQty
+    })));
+    rows.forEach((row, index) => { row.allocationShippedQty = shipped[index]; });
+  });
+  const activeRows = rawActiveRows;
   const grouped = new Map();
   activeRows.forEach((row) => {
     if (demandKeys && !demandKeys.has(row.demandKey)) return;
@@ -3230,14 +3247,11 @@ function rollupManualProgress(userName, now, demandKeys = null) {
     const demand = demandMap.get(demandKeyValue);
     if (!demand) return;
     const existing = progressMap.get(demandKeyValue);
-    const remaining = Math.max(numberValue(demand.tracking_remaining_qty), 0);
     const allocatedUnprepared = rows.reduce((sum, row) => sum + row.allocationUnpreparedQty, 0);
     const prepared = rows.reduce((sum, row) => sum + row.allocationPreparedQty, 0);
     const inProduction = rows.reduce((sum, row) => sum + row.allocationInProductionQty, 0);
     const finished = rows.reduce((sum, row) => sum + row.allocationFinishedQty, 0);
-    const allocatedTotal = allocatedUnprepared + prepared + inProduction + finished;
-    if (allocatedTotal - remaining > 0.000001) return;
-    const unprepared = allocatedUnprepared + Math.max(remaining - allocatedTotal, 0);
+    const unprepared = allocatedUnprepared;
     const field = (key, fallback) => {
       const value = uniqueManualField(rows, key);
       return value === null ? fallback : value;
@@ -3247,7 +3261,7 @@ function rollupManualProgress(userName, now, demandKeys = null) {
       prepared,
       inProduction,
       finished,
-      shipped: numberValue(demand.tracking_inbound_qty),
+      shipped: rows.reduce((sum, row) => sum + numberValue(row.allocationShippedQty), 0),
       productionDeliveryDate: field('productionDeliveryDate', existing?.production_delivery_date || ''),
       unproducedEstimatedDeliveryDate: field('unproducedEstimatedDeliveryDate', existing?.unproduced_estimated_delivery_date || ''),
       fulfillmentStatus: field('fulfillmentStatus', existing?.fulfillment_status || ''),
@@ -3399,6 +3413,10 @@ function manualProgressSourcePayload(row) {
     inProductionQty: row.inProductionQty,
     finishedQty: row.finishedQty,
     sourceShippedQty: row.sourceShippedQty,
+    sourceNormalQty: row.sourceNormalQty,
+    sourceNormalAmount: row.sourceNormalAmount,
+    sourceAbnormalQty: row.sourceAbnormalQty,
+    sourceAbnormalAmount: row.sourceAbnormalAmount,
     sourceContractDeliveryDate: row.sourceContractDeliveryDate,
     productionDeliveryDate: row.productionDeliveryDate,
     unproducedEstimatedDeliveryDate: row.unproducedEstimatedDeliveryDate,
@@ -3439,6 +3457,30 @@ function systemOrderQuantities(demandKeyValue, orderNo, materialCode) {
   }), { orderQty: 0, inboundQty: 0, remainingQty: 0 });
 }
 
+function distributedManualProgressAllocations(row) {
+  const allocations = row.allocations || [];
+  const weighted = allocations.map((allocation) => ({
+    ...allocation,
+    weight: allocation.isClosed ? 0 : allocation.remainingQty
+  }));
+  const shipped = allocateIntegerByWeights(row.sourceShippedQty, weighted);
+  const normalQty = allocateIntegerByWeights(row.sourceNormalQty, weighted);
+  const abnormalQty = allocateIntegerByWeights(row.sourceAbnormalQty, weighted);
+  const normalAmount = allocateNumberByWeights(row.sourceNormalAmount, weighted);
+  const abnormalAmount = allocateNumberByWeights(row.sourceAbnormalAmount, weighted);
+  return weighted.map((allocation, index) => ({
+    ...allocation,
+    sourceShippedQty: shipped[index],
+    sourceNormalQty: normalQty[index],
+    sourceNormalAmount: normalAmount[index],
+    sourceAbnormalQty: abnormalQty[index],
+    sourceAbnormalAmount: abnormalAmount[index],
+    matchCandidate: (row.candidates || []).find((candidate) => (
+      candidate.demandKey === allocation.demandKey && candidate.orderNo === allocation.orderNo
+    )) || null
+  }));
+}
+
 function manualProgressDisplayRows(systemRows, user = null) {
   const sourceRows = all(
     `SELECT * FROM manual_progress_rows
@@ -3475,7 +3517,7 @@ function manualProgressDisplayRows(systemRows, user = null) {
   if (!sourceRows.length) return systemRows.map((row) => ({ ...row, dataStatus: '采购订单数据', manualSourceRows: [] }));
   const displaySourceRows = sourceRows.flatMap((row) => {
     if (!row.allocations.length) return [row];
-    return row.allocations.map((allocation) => ({
+    return distributedManualProgressAllocations(row).map((allocation) => ({
       ...row,
       groupKey: `allocation|${allocation.orderNo}|${row.materialCode}|${allocation.demandKey}`,
       demandKey: allocation.demandKey,
@@ -3486,7 +3528,12 @@ function manualProgressDisplayRows(systemRows, user = null) {
       preparedNotStartedQty: allocation.preparedNotStartedQty,
       inProductionQty: allocation.inProductionQty,
       finishedQty: allocation.finishedQty,
-      sourceShippedQty: allocation.inboundQty,
+      sourceShippedQty: allocation.sourceShippedQty,
+      sourceNormalQty: allocation.sourceNormalQty,
+      sourceNormalAmount: allocation.sourceNormalAmount,
+      sourceAbnormalQty: allocation.sourceAbnormalQty,
+      sourceAbnormalAmount: allocation.sourceAbnormalAmount,
+      matchCandidate: allocation.matchCandidate,
       allocations: [allocation]
     }));
   });
@@ -3509,36 +3556,28 @@ function manualProgressDisplayRows(systemRows, user = null) {
     const first = rows[0];
     const system = first.demandKey ? systemMap.get(first.demandKey) : null;
     const orderQty = system ? systemOrderQuantities(first.demandKey, first.orderNo, first.materialCode) : null;
-    const firstAllocation = first.allocations?.[0];
-    const remainingInboundQty = firstAllocation?.isClosed
-      ? 0
-      : orderQty
-      ? Math.max(orderQty.remainingQty, 0)
-      : system && !first.orderNo
-        ? Math.max(numberValue(system.remainingInboundQty), 0)
-        : rows.reduce((sum, row) => sum + row.manualRemainingQty, 0);
-    const shippedQty = firstAllocation?.isClosed
-      ? numberValue(firstAllocation.inboundQty)
-      : orderQty
-      ? numberValue(orderQty.inboundQty)
-      : system && !first.orderNo
-        ? numberValue(system.shippedQty)
-        : rows.reduce((sum, row) => sum + row.sourceShippedQty, 0);
+    const candidate = first.matchCandidate || first.candidates?.find((item) => (
+      item.demandKey === first.demandKey && (!first.orderNo || item.orderNo === first.orderNo)
+    )) || null;
+    const remainingInboundQty = rows.reduce((sum, row) => sum + row.manualRemainingQty, 0);
+    const shippedQty = rows.reduce((sum, row) => sum + row.sourceShippedQty, 0);
+    const unpreparedQty = rows.reduce((sum, row) => sum + row.unpreparedQty, 0);
     const preparedNotStartedQty = rows.reduce((sum, row) => sum + row.preparedNotStartedQty, 0);
     const inProductionQty = rows.reduce((sum, row) => sum + row.inProductionQty, 0);
     const finishedQty = rows.reduce((sum, row) => sum + row.finishedQty, 0);
-    const unpreparedQty = Math.max(remainingInboundQty - preparedNotStartedQty - inProductionQty - finishedQty, 0);
     const progressTotal = unpreparedQty + preparedNotStartedQty + inProductionQty + finishedQty;
     const conflictFields = [...new Set(rows.flatMap((row) => row.conflictFields || []))];
     const field = (key, fallback = '') => {
       const value = uniqueManualField(rows, key);
       return value === null ? fallback : value;
     };
-    const enriched = system || enrichDemandFields('', first.materialCode, '', lookups);
-    const fulfillmentStatus = field('fulfillmentStatus', system?.fulfillmentStatus || '');
-    const pretaxPrice = numberValue(system?.pretaxPrice ?? enriched.pretaxPrice);
-    const normalFulfillmentQty = fulfillmentStatus === '是' ? remainingInboundQty : 0;
-    const abnormalFulfillmentQty = fulfillmentStatus === '否' ? remainingInboundQty : 0;
+    const enriched = enrichDemandFields('', first.materialCode, '', lookups);
+    const fulfillmentStatus = field('fulfillmentStatus');
+    const pretaxPrice = numberValue(enriched.pretaxPrice);
+    const normalFulfillmentQty = rows.reduce((sum, row) => sum + row.sourceNormalQty, 0);
+    const abnormalFulfillmentQty = rows.reduce((sum, row) => sum + row.sourceAbnormalQty, 0);
+    const normalFulfillmentAmount = rows.reduce((sum, row) => sum + row.sourceNormalAmount, 0);
+    const abnormalFulfillmentAmount = rows.reduce((sum, row) => sum + row.sourceAbnormalAmount, 0);
     const validationMessages = [...new Set(rows.map((row) => row.validationMessage).filter(Boolean))];
     return {
       ...(system || {}),
@@ -3548,25 +3587,25 @@ function manualProgressDisplayRows(systemRows, user = null) {
       manualBatchId: first.batchId,
       displayKey: first.orderNo || first.oaFlowNo || `手工-${first.sourceRowNo}`,
       month: system?.month || first.month,
-      businessUnit: system?.businessUnit || first.businessUnit,
+      businessUnit: candidate?.businessUnit || system?.businessUnit || first.businessUnit,
       operatorName: system?.operatorName || first.operatorName,
-      supplier: system?.supplier || '',
-      supplierShortName: system?.orderSupplierShortName || UNMATCHED_SUPPLIER_SHORT_NAME,
-      orderSupplierShortName: system?.orderSupplierShortName || UNMATCHED_SUPPLIER_SHORT_NAME,
+      supplier: candidate?.supplier || system?.supplier || '',
+      supplierShortName: candidate?.supplierShortName || UNMATCHED_SUPPLIER_SHORT_NAME,
+      orderSupplierShortName: candidate?.supplierShortName || UNMATCHED_SUPPLIER_SHORT_NAME,
       supplierCount: system?.supplierCount || 0,
       materialCode: first.materialCode,
-      sku: system?.sku || enriched.sku || first.sku || '',
-      materialName: system?.materialName || enriched.materialName || first.materialName || '',
-      productLine: system?.productLine || enriched.productLine || first.productLine || '',
-      productSeries: system?.productSeries || enriched.productSeries || first.productSeries || '',
-      purchaseGroup: system?.purchaseGroup || first.purchaseGroup,
-      purchaseOwner: system?.purchaseOwner || first.purchaseOwner,
-      purchaseOrg: system?.purchaseOrg || '',
+      sku: enriched.sku || '',
+      materialName: enriched.materialName || '',
+      productLine: enriched.productLine || '',
+      productSeries: enriched.productSeries || '',
+      purchaseGroup: '',
+      purchaseOwner: candidate?.purchaseOwner || UNASSIGNED_PURCHASE_OWNER,
+      purchaseOrg: candidate?.purchaseOrg || system?.purchaseOrg || '',
       orderNo: first.orderNo,
-      documentStatus: system?.documentStatus || '',
-      contractDeliveryDates: system?.contractDeliveryDates || field('sourceContractDeliveryDate'),
+      documentStatus: candidate?.documentStatus || '',
+      contractDeliveryDates: joinedManualField(rows, 'sourceContractDeliveryDate'),
       oaFlowNo: first.oaFlowNo || system?.oaFlowNo || '',
-      orderCreator: system?.orderCreator || '',
+      orderCreator: candidate?.orderCreator || '',
       currentOrderQty: orderQty?.orderQty ?? numberValue(system?.currentOrderQty),
       totalPurchaseQty: orderQty?.orderQty ?? numberValue(system?.totalPurchaseQty),
       totalInboundQty: shippedQty,
@@ -3583,18 +3622,18 @@ function manualProgressDisplayRows(systemRows, user = null) {
       progressTotal,
       gap: remainingInboundQty - progressTotal,
       progressAdjustmentRequired: Math.abs(remainingInboundQty - progressTotal) > 0.000001,
-      productionDeliveryDate: field('productionDeliveryDate', system?.productionDeliveryDate || ''),
-      unproducedEstimatedDeliveryDate: field('unproducedEstimatedDeliveryDate', system?.unproducedEstimatedDeliveryDate || ''),
+      productionDeliveryDate: field('productionDeliveryDate'),
+      unproducedEstimatedDeliveryDate: field('unproducedEstimatedDeliveryDate'),
       fulfillmentStatus,
       pretaxPrice,
-      pretaxPriceMaintained: Boolean(system?.pretaxPriceMaintained ?? enriched.pretaxPriceMaintained),
+      pretaxPriceMaintained: Boolean(enriched.pretaxPriceMaintained),
       normalFulfillmentQty,
       abnormalFulfillmentQty,
-      normalFulfillmentAmount: normalFulfillmentQty * pretaxPrice,
-      abnormalFulfillmentAmount: abnormalFulfillmentQty * pretaxPrice,
-      unfulfilledReason: field('unfulfilledReason', system?.unfulfilledReason || ''),
-      reasonDetail: field('reasonDetail', system?.reasonDetail || ''),
-      remark: field('remark', system?.remark || ''),
+      normalFulfillmentAmount,
+      abnormalFulfillmentAmount,
+      unfulfilledReason: field('unfulfilledReason'),
+      reasonDetail: field('reasonDetail'),
+      remark: field('remark'),
       progressUpdatedBy: first.raw?.updatedBy || '',
       progressUpdatedAt: '',
       dataStatus: first.stale ? '本次手工表未出现' : first.dataStatus,
@@ -5289,7 +5328,7 @@ app.post('/api/progress/manual-import/preview', requireAuth, requirePage('progre
     const requiredColumns = ['采购下单人', '下单月份', '事业部', '采购订单号', '供应商简称', '物料编码', '未交付数量', '已备料未生产', '生产中产品', '完工未发产品'];
     const missingColumns = requiredColumns.filter((column) => !targetSheet.columns.includes(column));
     if (missingColumns.length) return res.status(400).json({ error: `缺少必要字段：${missingColumns.join('、')}` });
-    const fileHash = createHash('sha256').update(req.file.buffer).update(':manual-progress-v2').digest('hex');
+    const fileHash = createHash('sha256').update(req.file.buffer).update(':manual-progress-v3').digest('hex');
     const existing = get(
       `SELECT * FROM manual_progress_import_batches
        WHERE file_hash = ? AND status = 'applied'
@@ -6820,7 +6859,7 @@ try {
   console.error('[Difference repair] startup rebuild failed:', error);
 }
 try {
-  const manualProgressParserVersion = '2';
+  const manualProgressParserVersion = '3';
   const appliedVersion = normalize(parseJson(
     get("SELECT mapping_json FROM import_mappings WHERE kind = 'manual-progress-parser-version'")?.mapping_json,
     ''

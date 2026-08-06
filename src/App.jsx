@@ -5570,8 +5570,8 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
     ? numberValue(values.unpreparedQty)
     : Math.max(calculatedUnpreparedQty, 0);
   const progressGap = remainingQty - unpreparedQty - manuallyAssignedQty;
-  const normalFulfillmentQty = values.fulfillmentStatus === '是' ? remainingQty : 0;
-  const abnormalFulfillmentQty = values.fulfillmentStatus === '否' ? remainingQty : 0;
+  const normalFulfillmentQty = numberValue(row.normalFulfillmentQty);
+  const abnormalFulfillmentQty = numberValue(row.abnormalFulfillmentQty);
   const pretaxPrice = numberValue(row.pretaxPrice);
 
   const toPayload = (nextValues, preserveUnprepared = false) => {
@@ -5696,11 +5696,11 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
     ['productLine', <TightCell value={row.productLine} />], ['productSeries', <TightCell value={row.productSeries} />],
     ['materialCode', row.materialCode], ['sku', row.sku], ['materialName', row.materialName || row.materialCode],
     ['operationStockQty', numberValue(row.operationStockQty)], ['remainingInboundQty', row.remainingInboundQty],
-    ['shippedQty', <span className="progress-readonly-qty" title="来自采购订单累计入库数量，不能手动修改">{numberValue(row.shippedQty).toLocaleString('zh-CN')}</span>],
+    ['shippedQty', <span className="progress-readonly-qty" title="来自手工登记表已发货数量，不能手动修改">{numberValue(row.shippedQty).toLocaleString('zh-CN')}</span>],
     ['unpreparedQty', quantityInput('unpreparedQty', { readOnly: true, value: displayQty(unpreparedQty) })],
     ['preparedNotStartedQty', quantityInput('preparedNotStartedQty')], ['inProductionQty', quantityInput('inProductionQty')],
     ['finishedQty', quantityInput('finishedQty')],
-    ['contractDeliveryDates', <span className="progress-contract-date" title={row.contractDeliveryDates || '暂无'}>{row.contractDeliveryDates || '暂无'}</span>],
+    ['contractDeliveryDates', <span className="progress-contract-date" title={row.contractDeliveryDates ? `来自手工登记表：${row.contractDeliveryDates}` : '暂无'}>{row.contractDeliveryDates || '暂无'}</span>],
     ['productionDeliveryDate', dateInput('productionDeliveryDate')],
     ['unproducedEstimatedDeliveryDate', dateInput('unproducedEstimatedDeliveryDate')],
     ['fulfillmentStatus', <select value={values.fulfillmentStatus} disabled={!row.canEdit} onChange={(event) => handleTextChange('fulfillmentStatus', event.target.value)}>
@@ -5709,8 +5709,8 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
       <option value="否">否</option>
     </select>],
     ['pretaxPrice', <span className={row.pretaxPriceMaintained ? '' : 'progress-price-missing'}>{formatProgressPurchasePrice(pretaxPrice, row.pretaxPriceMaintained)}</span>],
-    ['normalFulfillmentQty', normalFulfillmentQty], ['normalFulfillmentAmount', normalFulfillmentQty * pretaxPrice],
-    ['abnormalFulfillmentQty', abnormalFulfillmentQty], ['abnormalFulfillmentAmount', abnormalFulfillmentQty * pretaxPrice],
+    ['normalFulfillmentQty', normalFulfillmentQty], ['normalFulfillmentAmount', numberValue(row.normalFulfillmentAmount)],
+    ['abnormalFulfillmentQty', abnormalFulfillmentQty], ['abnormalFulfillmentAmount', numberValue(row.abnormalFulfillmentAmount)],
     ['unfulfilledReason', textInput('unfulfilledReason', values.fulfillmentStatus === '否' ? '必填' : '未履约原因')],
     ['reasonDetail', textInput('reasonDetail', '原因详情')],
     ['remark', <input className="progress-remark-input" value={values.remark} placeholder="添加备注" disabled={!row.canEdit} onChange={(event) => handleTextChange('remark', event.target.value)} />],
@@ -6000,8 +6000,8 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
         ...displayRows.map((row) => {
           const draft = drafts[row.demandKey] || {};
           const fulfillmentStatus = draft.fulfillmentStatus ?? row.fulfillmentStatus ?? '';
-          const normalQty = fulfillmentStatus === '是' ? numberValue(row.remainingInboundQty) : 0;
-          const abnormalQty = fulfillmentStatus === '否' ? numberValue(row.remainingInboundQty) : 0;
+          const normalQty = numberValue(row.normalFulfillmentQty);
+          const abnormalQty = numberValue(row.abnormalFulfillmentQty);
           const draftUnprepared = draft.unpreparedQty ?? row.unpreparedQty;
           const draftPrepared = draft.preparedNotStartedQty ?? row.preparedNotStartedQty;
           const draftInProduction = draft.inProductionQty ?? row.inProductionQty;
@@ -6041,9 +6041,9 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
             fulfillmentStatus || '待维护',
             exportProgressPurchasePrice(row.pretaxPrice, row.pretaxPriceMaintained),
             normalQty,
-            normalQty * numberValue(row.pretaxPrice),
+            numberValue(row.normalFulfillmentAmount),
             abnormalQty,
-            abnormalQty * numberValue(row.pretaxPrice),
+            numberValue(row.abnormalFulfillmentAmount),
             draft.unfulfilledReason ?? row.unfulfilledReason,
             draft.reasonDetail ?? row.reasonDetail,
             draft.remark ?? row.remark ?? '',

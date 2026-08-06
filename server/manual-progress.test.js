@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   allocateIntegerByWeights,
+  allocateNumberByWeights,
   groupManualProgressRows,
   manualOrderNumbers,
   parseManualProgressRows
@@ -29,7 +30,12 @@ function baseRow(overrides = {}) {
     生产中产品: 3,
     完工未发产品: 1,
     已发货数量: 5,
+    合同约定交期: '2026-09-18 12:30:00',
     '是否正常履约（以通知通知供应商是否取消备货为准）': '是',
+    正常履约数量: 10,
+    正常履约金额: 1234.5,
+    非正常履约数量: 0,
+    非正常履约金额: 0,
     备注: '正常',
     ...overrides
   };
@@ -42,7 +48,16 @@ test('手工跟单解析保留每个源行并自动补足未备料数量', () =>
   assert.equal(result.rows[0].sourceRowNo, 2);
   assert.equal(result.rows[0].businessUnit, '国内事业部');
   assert.equal(result.rows[0].unpreparedQty, 4);
+  assert.equal(result.rows[0].sourceShippedQty, 5);
+  assert.equal(result.rows[0].sourceContractDeliveryDate, '2026-09-18');
+  assert.equal(result.rows[0].sourceNormalQty, 10);
+  assert.equal(result.rows[0].sourceNormalAmount, 1234.5);
   assert.equal(result.rows[0].validationStatus, 'valid');
+});
+
+test('手工表Excel日期序列转换为仅日期格式', () => {
+  const result = parseManualProgressRows([baseRow({ 合同约定交期: 46265 })]);
+  assert.equal(result.rows[0].sourceContractDeliveryDate, '2026-08-31');
 });
 
 test('无订单业务、公司大合同和超额行分别标记', () => {
@@ -86,6 +101,14 @@ test('最大余数法按权重分配整数并保持总数一致', () => {
   assert.deepEqual(result, [4, 2, 1]);
   assert.equal(result.reduce((sum, value) => sum + value, 0), 7);
   assert.deepEqual(allocateIntegerByWeights(9, items.map((item) => ({ ...item, weight: 0 }))), [0, 0, 0]);
+});
+
+test('手工履约金额按订单权重拆分并保持原金额一致', () => {
+  const items = [{ orderNo: 'A', weight: 2 }, { orderNo: 'B', weight: 1 }];
+  const result = allocateNumberByWeights(1000.1, items);
+  assert.equal(result.length, 2);
+  assert.ok(Math.abs(result.reduce((sum, value) => sum + value, 0) - 1000.1) < 0.000001);
+  assert.deepEqual(allocateNumberByWeights(1000.1, items.map((item) => ({ ...item, weight: 0 }))), [0, 0]);
 });
 
 test('手工四阶段出现小数时阻止应用，避免整数分配改变原总数', () => {

@@ -32,6 +32,13 @@ function monthValue(value) {
 function dateValue(value) {
   const source = manualValue(value);
   if (!source) return '';
+  if (/^\d+(?:\.\d+)?$/.test(source)) {
+    const serial = Number(source);
+    if (serial >= 1 && serial <= 2958465) {
+      const date = new Date(Date.UTC(1899, 11, 30) + Math.floor(serial) * 86400000);
+      return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+    }
+  }
   const normalized = source.replace(/[年月/.]/g, '-').replace(/日/g, '');
   const match = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (!match) return source;
@@ -43,6 +50,19 @@ function rowValue(row, aliases) {
     if (Object.prototype.hasOwnProperty.call(row, alias)) return row[alias];
   }
   return '';
+}
+
+export function manualProgressSourceValues(source) {
+  return {
+    sourcePretaxPrice: numberValue(rowValue(source, ['结算单价\n不含税', '结算单价不含税', '不含税采购价'])),
+    sourceNormalQty: nonNegative(rowValue(source, ['正常履约数量'])),
+    sourceNormalAmount: numberValue(rowValue(source, ['正常履约金额'])),
+    sourceAbnormalQty: nonNegative(rowValue(source, ['非正常履约数量'])),
+    sourceAbnormalAmount: numberValue(rowValue(source, ['非正常履约金额'])),
+    sourceContractDeliveryDate: dateValue(rowValue(source, ['合同约定交期'])),
+    productionDeliveryDate: dateValue(rowValue(source, ['生产中交付时间'])),
+    unproducedEstimatedDeliveryDate: dateValue(rowValue(source, ['未生产预计交付时间']))
+  };
 }
 
 function stablePart(value) {
@@ -83,6 +103,16 @@ export function allocateIntegerByWeights(value, items) {
   return result;
 }
 
+export function allocateNumberByWeights(value, items) {
+  const total = numberValue(value);
+  const weights = items.map((item) => Math.max(0, numberValue(item.weight)));
+  const weightTotal = weights.reduce((sum, weight) => sum + weight, 0);
+  if (!items.length || !total || weightTotal <= 0) return items.map(() => 0);
+  const result = weights.map((weight) => total * weight / weightTotal);
+  result[result.length - 1] += total - result.reduce((sum, amount) => sum + amount, 0);
+  return result;
+}
+
 function sourceBaseKey(row) {
   return [
     row.orderNo || 'NO_ORDER', row.oaFlowNo, row.month, row.businessUnit,
@@ -114,21 +144,14 @@ export function parseManualProgressRows(rows, { headerRow = 1 } = {}) {
       materialCode: manualValue(rowValue(source, ['物料编码'])),
       sku: manualValue(rowValue(source, ['SKU'])),
       materialName: manualValue(rowValue(source, ['物料名称'])),
-      sourcePretaxPrice: numberValue(rowValue(source, ['结算单价\n不含税', '结算单价不含税', '不含税采购价'])),
+      ...manualProgressSourceValues(source),
       manualRemainingQty: nonNegative(rowValue(source, ['未交付数量'])),
       unpreparedQty: nonNegative(rowValue(source, ['已下单未备料未生产', '未备料未生产'])),
       preparedNotStartedQty: nonNegative(rowValue(source, ['已备料未生产'])),
       inProductionQty: nonNegative(rowValue(source, ['生产中产品', '在产品'])),
       finishedQty: nonNegative(rowValue(source, ['完工未发产品', '完工产品'])),
       sourceShippedQty: nonNegative(rowValue(source, ['已发货数量'])),
-      sourceContractDeliveryDate: dateValue(rowValue(source, ['合同约定交期'])),
-      productionDeliveryDate: dateValue(rowValue(source, ['生产中交付时间'])),
-      unproducedEstimatedDeliveryDate: dateValue(rowValue(source, ['未生产预计交付时间'])),
       fulfillmentStatus: manualValue(rowValue(source, ['是否正常履约（以通知通知供应商是否取消备货为准）', '是否正常履约'])),
-      sourceNormalQty: nonNegative(rowValue(source, ['正常履约数量'])),
-      sourceNormalAmount: numberValue(rowValue(source, ['正常履约金额'])),
-      sourceAbnormalQty: nonNegative(rowValue(source, ['非正常履约数量'])),
-      sourceAbnormalAmount: numberValue(rowValue(source, ['非正常履约金额'])),
       unfulfilledReason: manualValue(rowValue(source, ['未履约原因'])),
       reasonDetail: manualValue(rowValue(source, ['原因详情'])),
       remark: manualValue(rowValue(source, ['备注'])),

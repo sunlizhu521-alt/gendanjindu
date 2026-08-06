@@ -61,6 +61,10 @@ const criticalTotals = {
   inventoryQty: scalar('SELECT COALESCE(SUM(stock_qty), 0) FROM inventory'),
   appliedDimensionFiles: scalar('SELECT COUNT(*) FROM dimension_files WHERE applied = 1')
 };
+const migrationMarkers = Object.fromEntries(rows(
+  `SELECT kind, mapping_json FROM import_mappings
+   WHERE kind IN ('manual-progress-parser-version')`
+).map((row) => [String(row.kind), String(row.mapping_json || '')]));
 
 console.log(JSON.stringify({
   file: dbFile,
@@ -68,7 +72,8 @@ console.log(JSON.stringify({
   modifiedAt: stat.mtime.toISOString(),
   integrity: 'ok',
   tableCounts,
-  criticalTotals
+  criticalTotals,
+  migrationMarkers
 }));
 
 db.close();

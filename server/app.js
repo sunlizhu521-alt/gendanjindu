@@ -3442,14 +3442,31 @@ function manualProgressSourcePayload(row) {
 
 function systemOrderDetails(demandKeyValue, orderNo, materialCode) {
   const demand = get('SELECT source_batch_id FROM order_demands WHERE demand_key = ?', [demandKeyValue]);
-  if (!demand?.source_batch_id || !orderNo) return null;
-  const rows = all(
-    `SELECT quantity, inbound_qty, remaining_inbound_qty, close_status,
-            supplier, creator, purchase_org, document_status
-     FROM kingdee_orders
-     WHERE batch_id = ? AND demand_key = ? AND order_no = ? AND material_code = ?`,
-    [demand.source_batch_id, demandKeyValue, orderNo, materialCode]
+  if (!orderNo || !materialCode) return null;
+  const selectFields = `k.demand_key, k.quantity, k.inbound_qty, k.remaining_inbound_qty, k.close_status,
+    k.supplier, k.creator, k.purchase_org, k.document_status`;
+  const matchesOrderMaterial = (row) => (
+    normalizeMatchPart(row.order_no) === normalizeMatchPart(orderNo)
+    && normalizeMatchPart(row.material_code) === normalizeMatchPart(materialCode)
   );
+  let rows = demand?.source_batch_id
+    ? all(
+      `SELECT ${selectFields}, k.order_no, k.material_code
+       FROM kingdee_orders k
+       WHERE k.batch_id = ? AND k.demand_key = ?`,
+      [demand.source_batch_id, demandKeyValue]
+    ).filter(matchesOrderMaterial)
+    : [];
+  if (!rows.length) {
+    rows = all(
+      `SELECT ${selectFields}, k.order_no, k.material_code
+       FROM kingdee_orders k
+       JOIN order_demands d
+         ON d.demand_key = k.demand_key AND d.source_batch_id = k.batch_id AND d.active = 1
+       WHERE k.order_no = ? OR k.material_code = ?`,
+      [orderNo, materialCode]
+    ).filter(matchesOrderMaterial);
+  }
   if (!rows.length) return null;
   const quantityRows = rows.filter((row) => !normalize(row.close_status) || normalize(row.close_status) === TRACKING_CLOSE_STATUS);
   const quantities = quantityRows.reduce((result, row) => ({
@@ -3460,11 +3477,22 @@ function systemOrderDetails(demandKeyValue, orderNo, materialCode) {
   return {
     ...quantities,
     hasQuantityRows: quantityRows.length > 0,
+    demandKey: uniqueDelimitedValues(rows.map((row) => row.demand_key)),
+    suppliers: [...new Set(rows.map((row) => normalize(row.supplier)).filter(Boolean))],
     supplier: uniqueDelimitedValues(rows.map((row) => row.supplier)),
     orderCreator: uniqueDelimitedValues(rows.map((row) => row.creator)),
     purchaseOrg: uniqueDelimitedValues(rows.map((row) => row.purchase_org)),
     documentStatus: uniqueDelimitedValues(rows.map((row) => row.document_status))
   };
+}
+
+function firstMatchedSupplierShortName(...values) {
+  for (const value of values) {
+    const names = manualProgressSupplierParts(value)
+      .filter((name) => name !== UNMATCHED_SUPPLIER_SHORT_NAME);
+    if (names.length) return [...new Set(names)].join('&');
+  }
+  return UNMATCHED_SUPPLIER_SHORT_NAME;
 }
 
 function systemOrderQuantities(demandKeyValue, orderNo, materialCode) {
@@ -3569,8 +3597,9 @@ function manualProgressDisplayRows(systemRows, user = null) {
   const lookups = dimensionLookups();
   const manualRows = [...groups.values()].map((rows) => {
     const first = rows[0];
-    const system = first.demandKey ? systemMap.get(first.demandKey) : null;
-    const orderDetails = system ? systemOrderDetails(first.demandKey, first.orderNo, first.materialCode) : null;
+    const initialSystem = first.demandKey ? systemMap.get(first.demandKey) : null;
+    const orderDetails = systemOrderDetails(first.demandKey, first.orderNo, first.materialCode);
+    const system = initialSystem || (orderDetails?.demandKey ? systemMap.get(orderDetails.demandKey) : null);
     const orderQty = orderDetails?.hasQuantityRows ? orderDetails : null;
     const candidate = first.matchCandidate || first.candidates?.find((item) => (
       item.demandKey === first.demandKey && (!first.orderNo || item.orderNo === first.orderNo)
@@ -3588,9 +3617,18 @@ function manualProgressDisplayRows(systemRows, user = null) {
       return value === null ? fallback : value;
     };
     const currentSupplier = orderDetails?.supplier || candidate?.supplier || system?.supplier || '';
-    const currentSupplierShortName = currentSupplier
-      ? orderSupplierShortName(lookups, currentSupplier, first.materialCode)
-      : candidate?.supplierShortName || system?.orderSupplierShortName || system?.supplierShortName || UNMATCHED_SUPPLIER_SHORT_NAME;
+    const orderMatchedSupplierShortName = [...new Set(
+      (orderDetails?.suppliers || (currentSupplier ? [currentSupplier] : []))
+        .flatMap((supplier) => manualProgressSupplierParts(orderSupplierShortName(lookups, supplier, first.materialCode)))
+        .filter((name) => name !== UNMATCHED_SUPPLIER_SHORT_NAME)
+    )].join('&');
+    const currentSupplierShortName = firstMatchedSupplierShortName(
+      orderMatchedSupplierShortName,
+      first.supplierShortName,
+      candidate?.supplierShortName,
+      system?.orderSupplierShortName,
+      system?.supplierShortName
+    );
     const currentPurchaseOwner = purchaseOwnersForSupplierShortNames(
       lookups,
       manualProgressSupplierParts(currentSupplierShortName),

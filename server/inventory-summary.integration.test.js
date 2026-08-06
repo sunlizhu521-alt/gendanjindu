@@ -2052,6 +2052,7 @@ test('inventory summary and domestic board use complete source models and enforc
     ['|2026-08|测试事业部|Exact Supplier|M7', '2026-08', '测试事业部', 'Exact Supplier', 'M7', 0, 0, 0, 0, 0, 1, '', '', '', '', now],
     ['|2026-08|测试事业部|Vendor 8 A|M8', '2026-08', '测试事业部', 'Vendor 8 A', 'M8', 0, 0, 0, 0, 0, 1, '', '', '', '', now],
     ['manual-current-fields', '2026-08', '海外事业一部', '锐世迈医疗科技有限公司', '1007010984', 10, 0, 10, 0, 10, 1, '', '浙江采购组织', '', 'batch-current-fields', now],
+    ['manual-short-name-fallback', '2026-08', '海外事业一部', '采购订单供应商全称', '1002010305', 12, 2, 12, 2, 10, 1, '', '浙江采购组织', '', 'batch-short-name-fallback', now],
     ['inactive', '2026-03', '国内事业部', 'Supplier E', 'M5', 9999, 0, 9999, 0, 9999, 0, '', '', '', '', now]
   ].forEach((params) => database.run(demandSql, params));
   database.run("UPDATE order_demands SET purchase_owner = '陈晨' WHERE demand_key IN (?, ?)", ['active-june', 'active-july']);
@@ -2078,6 +2079,17 @@ test('inventory summary and domestic board use complete source models and enforc
       'order-current-fields', 'batch-current-fields', 'manual-current-fields', '2026-08', '海外事业一部',
       '锐世迈医疗科技有限公司', '1007010984', '浙江采购组织', '陈晨', 'CGDD013047', 10, 0, 10,
       '已审核', '未关闭', '{}'
+    ]
+  );
+  database.run(
+    `INSERT INTO kingdee_orders
+      (id, batch_id, demand_key, month, business_unit, supplier, material_code, purchase_org, creator,
+       order_no, quantity, inbound_qty, remaining_inbound_qty, document_status, close_status, raw_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      'order-short-name-fallback', 'batch-short-name-fallback', 'manual-short-name-fallback', '2026-08',
+      '海外事业一部', '采购订单供应商全称', '1002010305', '浙江采购组织', '陈晨', 'CGDD012997',
+      12, 2, 10, '已审核', '未关闭', '{}'
     ]
   );
 
@@ -2166,6 +2178,13 @@ test('inventory summary and domestic board use complete source models and enforc
       materialName: '手工轮椅测试物料',
       productLine: '手动轮椅',
       productSeries: 'U31'
+    },
+    {
+      materialCode: '1002010305',
+      sku: 'TEST-SHENYU',
+      materialName: '申裕测试物料',
+      productLine: '测试产品线',
+      productSeries: '测试系列'
     }
   ]);
   putDimension('purchaseAssignment', 'Purchase assignment', [
@@ -2229,6 +2248,12 @@ test('inventory summary and domestic board use complete source models and enforc
       supplier: '锐世迈医疗科技有限公司',
       supplierShortName: '锐世迈',
       purchaseOwner: '李奇'
+    },
+    {
+      materialCode: '1002010305',
+      supplier: '采购分工供应商全称',
+      supplierShortName: '申裕',
+      purchaseOwner: '李奇'
     }
   ]);
   database.run(
@@ -2259,6 +2284,36 @@ test('inventory summary and domestic board use complete source models and enforc
     [
       'manual-current-fields-allocation', 'manual-current-fields-batch', 'manual-current-fields-row', 2,
       'CGDD013047', '1007010984', 'manual-current-fields', 'matched', 10, 10, 1, now, now
+    ]
+  );
+  database.run(
+    `INSERT INTO manual_progress_import_batches
+      (id, file_hash, file_name, sheet_name, row_count, status, summary_json, imported_by, imported_at, applied_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ['manual-short-name-batch', 'manual-short-name-hash', '手工跟单简称回退测试.xlsx', 'Sheet1', 1, 'applied', '{}', 'Test Admin', now, now]
+  );
+  database.run(
+    `INSERT INTO manual_progress_rows
+      (id, batch_id, source_row_no, source_key, group_key, row_type, data_status, demand_key, order_no,
+       month, business_unit, supplier_short_name, purchase_owner, material_code, manual_remaining_qty,
+       unprepared_qty, source_shipped_qty, validation_status, raw_json, candidate_json, active, stale, updated_by, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      'manual-short-name-row', 'manual-short-name-batch', 2, 'manual-short-name-source',
+      'order|cgdd012997|1002010305', 'purchase_order', '手工已匹配', 'manual-short-name-fallback', 'CGDD012997',
+      '2026-08', '海外事业一部', '申裕', '', '1002010305', 10, 10, 2, 'valid', '{}',
+      JSON.stringify([{ demandKey: 'manual-short-name-fallback', orderNo: 'CGDD012997', supplier: '采购订单供应商全称', supplierShortName: '未匹配', purchaseOwner: '', orderCreator: '' }]),
+      1, 0, 'Test Admin', now
+    ]
+  );
+  database.run(
+    `INSERT INTO manual_progress_allocations
+      (id, batch_id, source_row_id, source_row_no, order_no, material_code, demand_key, match_status,
+       order_qty, inbound_qty, remaining_qty, allocated_unprepared_qty, active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      'manual-short-name-allocation', 'manual-short-name-batch', 'manual-short-name-row', 2,
+      'CGDD012997', '1002010305', 'manual-short-name-fallback', 'matched', 12, 2, 10, 10, 1, now, now
     ]
   );
   putDimension('lingxingWfsInventory', 'WFS inventory', [
@@ -2570,6 +2625,14 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(currentFieldsRow?.orderCreator, '陈晨');
     assert.equal(currentFieldsRow?.purchaseOrg, '浙江采购组织');
     assert.equal(currentFieldsRow?.documentStatus, '已审核');
+    const shortNameFallbackRow = demandRows.find((row) => row.orderNo === 'CGDD012997' && row.materialCode === '1002010305');
+    assert.equal(shortNameFallbackRow?.supplier, '采购订单供应商全称');
+    assert.equal(shortNameFallbackRow?.supplierShortName, '申裕');
+    assert.equal(shortNameFallbackRow?.orderSupplierShortName, '申裕');
+    assert.equal(shortNameFallbackRow?.purchaseOwner, '李奇');
+    assert.equal(shortNameFallbackRow?.orderCreator, '陈晨');
+    assert.equal(shortNameFallbackRow?.purchaseOrg, '浙江采购组织');
+    assert.equal(shortNameFallbackRow?.documentStatus, '已审核');
     assert.ok(!demandRows.some((row) => row.purchaseOwner === '陈晨'));
     const firstMileRows = (await firstMileResponse.json()).rows;
     assert.equal(firstMileRows.find((row) => row.materialCode === 'M1')?.model, 'Model One');

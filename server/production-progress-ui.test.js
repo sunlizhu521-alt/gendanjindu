@@ -242,3 +242,18 @@ test('手工跟单重新匹配批量写入并跳过无变化快照', () => {
   assert.match(reconcileSource, /runMany\([\s\S]*?INSERT INTO supplier_progress_snapshots/);
   assert.doesNotMatch(reconcileSource, /get\('SELECT \* FROM order_demands WHERE demand_key = \? AND active = 1'/);
 });
+
+test('手工登记表模糊匹配兼容采购下单人维度变更', () => {
+  const candidateSource = serverSource.slice(
+    serverSource.indexOf('function manualProgressCandidateMaps()'),
+    serverSource.indexOf('function manualProgressCandidatePayload(')
+  );
+  const matchSource = serverSource.slice(
+    serverSource.indexOf('function matchManualProgressRows('),
+    serverSource.indexOf('function manualProgressSummary(')
+  );
+  assert.equal((candidateSource.match(/manualProgressMatchKey\(\[\.\.\.parts, shortName, purchaseOwner\]\)/g) || []).length, 2);
+  assert.equal((candidateSource.match(/manualProgressMatchKey\(\[\.\.\.parts, shortName, UNASSIGNED_PURCHASE_OWNER\]\)/g) || []).length, 2);
+  assert.equal((candidateSource.match(/manualProgressMatchKey\(\[\.\.\.parts, shortName, ''\]\)/g) || []).length, 2);
+  assert.match(matchSource, /manualProgressMatchKey\(\[\.\.\.parts, row\.purchaseOwner\]\)[\s\S]*?manualProgressMatchKey\(\[\.\.\.parts, UNASSIGNED_PURCHASE_OWNER\]\)[\s\S]*?manualProgressMatchKey\(\[\.\.\.parts, ''\]\)/);
+});

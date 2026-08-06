@@ -2833,15 +2833,16 @@ function manualProgressCandidateMaps() {
       candidate.orderCreator = candidate.creators.join('、');
       candidate.documentStatus = candidate.documentStatuses.join('、');
       add(exact, manualProgressMatchKey([candidate.orderNo, candidate.materialCode]), candidate);
-      shortNames.forEach((shortName) => add(byFallback, manualProgressMatchKey([
-        demand.month, manualProgressBusinessUnit(demand.business_unit), demand.material_code, shortName, purchaseOwner
-      ]), candidate));
+      shortNames.forEach((shortName) => {
+        const parts = [demand.month, manualProgressBusinessUnit(demand.business_unit), demand.material_code];
+        add(byFallback, manualProgressMatchKey([...parts, shortName, purchaseOwner]), candidate);
+        add(byFallback, manualProgressMatchKey([...parts, shortName, '']), candidate);
+        add(byFallback, manualProgressMatchKey([...parts, shortName, UNASSIGNED_PURCHASE_OWNER]), candidate);
+      });
     });
     shortNames.forEach((shortName) => {
       if (groupedOrders.size) return;
-      add(byFallback, manualProgressMatchKey([
-        demand.month, manualProgressBusinessUnit(demand.business_unit), demand.material_code, shortName, purchaseOwner
-      ]), {
+      const candidate = {
         demandKey: demand.demand_key,
         orderNo: '',
         materialCode: demand.material_code,
@@ -2855,7 +2856,11 @@ function manualProgressCandidateMaps() {
         remainingQty: Math.max(numberValue(demand.tracking_remaining_qty), 0),
         weight: Math.max(numberValue(demand.tracking_remaining_qty), 0),
         isClosed: numberValue(demand.tracking_order_qty) <= 0
-      });
+      };
+      const parts = [demand.month, manualProgressBusinessUnit(demand.business_unit), demand.material_code];
+      add(byFallback, manualProgressMatchKey([...parts, shortName, purchaseOwner]), candidate);
+      add(byFallback, manualProgressMatchKey([...parts, shortName, '']), candidate);
+      add(byFallback, manualProgressMatchKey([...parts, shortName, UNASSIGNED_PURCHASE_OWNER]), candidate);
     });
   });
   console.info(`[Manual progress candidate maps] ${JSON.stringify({
@@ -2994,11 +2999,13 @@ function matchManualProgressRows(rows) {
         return;
       }
     } else {
-      candidates = manualProgressSupplierParts(row.supplierShortName).flatMap((shortName) => (
-        maps.byFallback.get(manualProgressMatchKey([
-          row.month, row.businessUnit, row.materialCode, shortName, row.purchaseOwner
-        ])) || []
-      ));
+      candidates = manualProgressSupplierParts(row.supplierShortName).flatMap((shortName) => {
+        const parts = [row.month, row.businessUnit, row.materialCode, shortName];
+        return maps.byFallback.get(manualProgressMatchKey([...parts, row.purchaseOwner]))
+          || maps.byFallback.get(manualProgressMatchKey([...parts, UNASSIGNED_PURCHASE_OWNER]))
+          || maps.byFallback.get(manualProgressMatchKey([...parts, '']))
+          || [];
+      });
       candidates = [...new Map(candidates.map((candidate) => [`${candidate.demandKey}|${candidate.orderNo}`, candidate])).values()];
       row.candidates = candidates.map(manualProgressCandidatePayload);
       const confirmed = candidates.find((candidate) => (

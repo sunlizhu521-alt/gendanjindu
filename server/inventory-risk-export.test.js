@@ -37,14 +37,14 @@ test('计算参数导出合同签订并使用新全链路公式结果', () => {
       forecastMonths: 6,
       historicalMonths: 6,
       channels: {
-        overseasUs: { averageLeadTimeDays: 35, contractSigningDays: 12, fullChainDays: 47 }
+        overseasUs: { spotDays: 40, averageLeadTimeDays: 35, contractSigningDays: 12, fullChainDays: 87 }
       }
     },
     periods: {}
   });
   assert.equal(row.平均交期, 35);
   assert.equal(row.合同签订, 12);
-  assert.equal(row.全链路天数, 47);
+  assert.equal(row.全链路天数, 87);
 });
 
 test('库存风险工作簿在诊断为空或含嵌套字段时仍可导出', () => {

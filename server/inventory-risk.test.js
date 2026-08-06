@@ -345,9 +345,9 @@ test('参数归一化计算渠道周期并阻止负数', () => {
   const params = normalizeInventoryRiskParams({});
   assert.equal(params.channels.overseasUs.spotDays, 40);
   assert.equal(params.channels.overseasUs.contractSigningDays, 10);
-  assert.equal(params.channels.overseasUs.fullChainDays, 20);
+  assert.equal(params.channels.overseasUs.fullChainDays, 60);
   const custom = normalizeInventoryRiskParams({ channels: { overseasUs: { averageLeadTimeDays: 35, contractSigningDays: 12 } } });
-  assert.equal(custom.channels.overseasUs.fullChainDays, 47);
+  assert.equal(custom.channels.overseasUs.fullChainDays, 87);
   assert.throws(() => normalizeInventoryRiskParams({ channels: { domestic: { bookingDays: -1 } } }), /非负数字/);
 });
 
@@ -409,7 +409,7 @@ test('供应计划分析页面、权限与API均注册在gendanjindu', () => {
   assert.match(riskPage, /在库量可销天数/);
   assert.match(riskPage, /全链路天数/);
   assert.match(riskPage, /合同签订/);
-  assert.match(riskPage, /全链路天数 = 平均交期 \+ 合同签订/);
+  assert.match(riskPage, /全链路天数 = 现货天数 \+ 平均交期 \+ 合同签订/);
   assert.match(riskPage, /海外-美国/);
   assert.match(riskPage, /海外-欧洲/);
   assert.match(riskPage, /'海外事业一部',[\s\S]*'海外事业二部',[\s\S]*'国内事业部',[\s\S]*'全球招商事业部',[\s\S]*'销售部-工厂'/);

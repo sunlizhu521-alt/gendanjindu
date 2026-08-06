@@ -80,7 +80,10 @@ function derivedChannelDays(settings) {
     return Number.isFinite(number) ? number : 0;
   };
   const spotDays = value('onHandSellableDays') + value('dispatchToShelfDays') + value('transportDays') + value('bookingDays');
-  return { spotDays, fullChainDays: value('averageLeadTimeDays') + value('contractSigningDays') };
+  return {
+    spotDays,
+    fullChainDays: spotDays + value('averageLeadTimeDays') + value('contractSigningDays')
+  };
 }
 
 function RiskParameterMatrix({ params, onChannelChange, onRootChange }) {
@@ -118,7 +121,7 @@ function RiskParameterMatrix({ params, onChannelChange, onRootChange }) {
             })}
           </div>
         </div>
-        <p className="inventory-risk-parameter-note">现货天数 = 在库量可销天数 + 发货到上架 + 海运/运输 + 订舱/预约；全链路天数 = 平均交期 + 合同签订。</p>
+        <p className="inventory-risk-parameter-note">现货天数 = 在库量可销天数 + 发货到上架 + 海运/运输 + 订舱/预约；全链路天数 = 现货天数 + 平均交期 + 合同签订。</p>
       </fieldset>
 
       <fieldset className="inventory-risk-matrix-fieldset">

@@ -242,7 +242,9 @@ export function normalizeInventoryRiskParams(input = {}) {
       + normalized.dispatchToShelfDays
       + normalized.transportDays
       + normalized.bookingDays;
-    normalized.fullChainDays = normalized.averageLeadTimeDays + normalized.contractSigningDays;
+    normalized.fullChainDays = normalized.spotDays
+      + normalized.averageLeadTimeDays
+      + normalized.contractSigningDays;
     return [key, normalized];
   }));
   return {

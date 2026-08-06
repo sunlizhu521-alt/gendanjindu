@@ -3440,21 +3440,36 @@ function manualProgressSourcePayload(row) {
   };
 }
 
-function systemOrderQuantities(demandKeyValue, orderNo, materialCode) {
+function systemOrderDetails(demandKeyValue, orderNo, materialCode) {
   const demand = get('SELECT source_batch_id FROM order_demands WHERE demand_key = ?', [demandKeyValue]);
   if (!demand?.source_batch_id || !orderNo) return null;
   const rows = all(
-    `SELECT quantity, inbound_qty, remaining_inbound_qty, close_status
+    `SELECT quantity, inbound_qty, remaining_inbound_qty, close_status,
+            supplier, creator, purchase_org, document_status
      FROM kingdee_orders
      WHERE batch_id = ? AND demand_key = ? AND order_no = ? AND material_code = ?`,
     [demand.source_batch_id, demandKeyValue, orderNo, materialCode]
-  ).filter((row) => !normalize(row.close_status) || normalize(row.close_status) === TRACKING_CLOSE_STATUS);
+  );
   if (!rows.length) return null;
-  return rows.reduce((result, row) => ({
+  const quantityRows = rows.filter((row) => !normalize(row.close_status) || normalize(row.close_status) === TRACKING_CLOSE_STATUS);
+  const quantities = quantityRows.reduce((result, row) => ({
     orderQty: result.orderQty + numberValue(row.quantity),
     inboundQty: result.inboundQty + numberValue(row.inbound_qty),
     remainingQty: result.remainingQty + numberValue(row.remaining_inbound_qty)
   }), { orderQty: 0, inboundQty: 0, remainingQty: 0 });
+  return {
+    ...quantities,
+    hasQuantityRows: quantityRows.length > 0,
+    supplier: uniqueDelimitedValues(rows.map((row) => row.supplier)),
+    orderCreator: uniqueDelimitedValues(rows.map((row) => row.creator)),
+    purchaseOrg: uniqueDelimitedValues(rows.map((row) => row.purchase_org)),
+    documentStatus: uniqueDelimitedValues(rows.map((row) => row.document_status))
+  };
+}
+
+function systemOrderQuantities(demandKeyValue, orderNo, materialCode) {
+  const details = systemOrderDetails(demandKeyValue, orderNo, materialCode);
+  return details?.hasQuantityRows ? details : null;
 }
 
 function distributedManualProgressAllocations(row) {
@@ -3555,7 +3570,8 @@ function manualProgressDisplayRows(systemRows, user = null) {
   const manualRows = [...groups.values()].map((rows) => {
     const first = rows[0];
     const system = first.demandKey ? systemMap.get(first.demandKey) : null;
-    const orderQty = system ? systemOrderQuantities(first.demandKey, first.orderNo, first.materialCode) : null;
+    const orderDetails = system ? systemOrderDetails(first.demandKey, first.orderNo, first.materialCode) : null;
+    const orderQty = orderDetails?.hasQuantityRows ? orderDetails : null;
     const candidate = first.matchCandidate || first.candidates?.find((item) => (
       item.demandKey === first.demandKey && (!first.orderNo || item.orderNo === first.orderNo)
     )) || null;
@@ -3571,7 +3587,16 @@ function manualProgressDisplayRows(systemRows, user = null) {
       const value = uniqueManualField(rows, key);
       return value === null ? fallback : value;
     };
-    const enriched = enrichDemandFields('', first.materialCode, '', lookups);
+    const currentSupplier = orderDetails?.supplier || candidate?.supplier || system?.supplier || '';
+    const currentSupplierShortName = currentSupplier
+      ? orderSupplierShortName(lookups, currentSupplier, first.materialCode)
+      : candidate?.supplierShortName || system?.orderSupplierShortName || system?.supplierShortName || UNMATCHED_SUPPLIER_SHORT_NAME;
+    const currentPurchaseOwner = purchaseOwnersForSupplierShortNames(
+      lookups,
+      manualProgressSupplierParts(currentSupplierShortName),
+      first.materialCode
+    );
+    const enriched = enrichDemandFields(currentSupplier, first.materialCode, orderDetails?.orderCreator || '', lookups);
     const fulfillmentStatus = field('fulfillmentStatus');
     const pretaxPrice = numberValue(enriched.pretaxPrice);
     const normalFulfillmentQty = rows.reduce((sum, row) => sum + row.sourceNormalQty, 0);
@@ -3589,9 +3614,9 @@ function manualProgressDisplayRows(systemRows, user = null) {
       month: system?.month || first.month,
       businessUnit: candidate?.businessUnit || system?.businessUnit || first.businessUnit,
       operatorName: system?.operatorName || first.operatorName,
-      supplier: candidate?.supplier || system?.supplier || '',
-      supplierShortName: candidate?.supplierShortName || UNMATCHED_SUPPLIER_SHORT_NAME,
-      orderSupplierShortName: candidate?.supplierShortName || UNMATCHED_SUPPLIER_SHORT_NAME,
+      supplier: currentSupplier,
+      supplierShortName: currentSupplierShortName,
+      orderSupplierShortName: currentSupplierShortName,
       supplierCount: system?.supplierCount || 0,
       materialCode: first.materialCode,
       sku: enriched.sku || '',
@@ -3599,13 +3624,16 @@ function manualProgressDisplayRows(systemRows, user = null) {
       productLine: enriched.productLine || '',
       productSeries: enriched.productSeries || '',
       purchaseGroup: '',
-      purchaseOwner: candidate?.purchaseOwner || UNASSIGNED_PURCHASE_OWNER,
-      purchaseOrg: candidate?.purchaseOrg || system?.purchaseOrg || '',
+      purchaseOwner: realPurchaseOwner(currentPurchaseOwner)
+        || realPurchaseOwner(candidate?.purchaseOwner)
+        || realPurchaseOwner(system?.purchaseOwner)
+        || UNASSIGNED_PURCHASE_OWNER,
+      purchaseOrg: orderDetails?.purchaseOrg || candidate?.purchaseOrg || system?.purchaseOrg || '',
       orderNo: first.orderNo,
-      documentStatus: candidate?.documentStatus || '',
+      documentStatus: orderDetails?.documentStatus || candidate?.documentStatus || system?.documentStatus || '',
       contractDeliveryDates: joinedManualField(rows, 'sourceContractDeliveryDate'),
       oaFlowNo: first.oaFlowNo || system?.oaFlowNo || '',
-      orderCreator: candidate?.orderCreator || '',
+      orderCreator: orderDetails?.orderCreator || candidate?.orderCreator || system?.orderCreator || '',
       currentOrderQty: orderQty?.orderQty ?? numberValue(system?.currentOrderQty),
       totalPurchaseQty: orderQty?.orderQty ?? numberValue(system?.totalPurchaseQty),
       totalInboundQty: shippedQty,

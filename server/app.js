@@ -1455,6 +1455,13 @@ function rowAliasValue(row, aliases = []) {
   return '';
 }
 
+function productDimensionMaterialName(product, materialCode = '') {
+  const materialKey = normalizeMatchPart(materialCode || rowAliasValue(product, ['materialCode', '物料编码', '品号']));
+  const sourceName = rowAliasValue(product, ['金蝶名称', '物料名称', '商品名称', '产品名称', '中文名称', 'SKU名称']);
+  return [sourceName, normalize(product?.materialName)]
+    .find((value) => value && normalizeMatchPart(value) !== materialKey) || '';
+}
+
 function assignmentMaterialCode(row) {
   return rowAliasValue(row, ['materialCode', '物料编码', '商品编码', '存货编码', '产品编码']);
 }
@@ -2581,7 +2588,7 @@ function enrichDemandFields(supplier, materialCode, orderCreator = '', lookups =
   return {
     sku: normalize(product.sku),
     logisticsCode: normalize(product.logisticsCode),
-    materialName: normalize(product.materialName),
+    materialName: productDimensionMaterialName(product, materialCode),
     productLine: normalize(product.productLine),
     productSeries: normalize(product.productSeries),
     pretaxPrice: numberValue(product.pretaxPrice),
@@ -2606,7 +2613,7 @@ function applyDimensionEnrichment() {
     return [
       normalize(product.sku),
       normalize(product.logisticsCode),
-      normalize(product.materialName),
+      productDimensionMaterialName(product, demand.material_code),
       normalize(product.productLine),
       normalize(product.productSeries),
       supplierSpecificShortName,
@@ -3782,7 +3789,7 @@ function demandRows(includeInactive = false, user = null) {
       active: Boolean(demand.active),
       sku: demand.sku || enriched.sku || '',
       logisticsCode: demand.logistics_code || enriched.logisticsCode || '',
-      materialName: demand.material_name || enriched.materialName || '',
+      materialName: enriched.materialName || demand.material_name || '',
       productLine: demand.product_line || enriched.productLine || '',
       productSeries: demand.product_series || enriched.productSeries || '',
       purchaseGroup,

@@ -2175,9 +2175,10 @@ test('inventory summary and domestic board use complete source models and enforc
     {
       materialCode: '1007010984',
       sku: 'U31-E-GY',
-      materialName: '手工轮椅测试物料',
+      materialName: '1007010984',
       productLine: '手动轮椅',
-      productSeries: 'U31'
+      productSeries: 'U31',
+      raw: { 金蝶名称: '手工轮椅测试物料' }
     },
     {
       materialCode: '1002010305',
@@ -2634,6 +2635,7 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(currentFieldsRow?.supplier, '锐世迈医疗科技有限公司');
     assert.equal(currentFieldsRow?.supplierShortName, '锐世迈');
     assert.equal(currentFieldsRow?.orderSupplierShortName, '锐世迈');
+    assert.equal(currentFieldsRow?.materialName, '手工轮椅测试物料');
     assert.equal(currentFieldsRow?.purchaseOwner, '李奇');
     assert.equal(currentFieldsRow?.orderCreator, '陈晨');
     assert.equal(currentFieldsRow?.purchaseOrg, '浙江采购组织');

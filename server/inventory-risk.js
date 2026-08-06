@@ -385,6 +385,8 @@ function addAggregate(map, row) {
     undeliveredQty: 0,
     unfulfilledSupplierShortNames: new Set(),
     dataSources: new Set(),
+    warehouseLocations: new Set(),
+    sites: new Set(),
     salesByMonth: new Map()
   };
   current.onHandQty += numberValue(row.inventoryQty);
@@ -403,6 +405,8 @@ function addAggregate(map, row) {
     const storeName = text(item.storeName);
     const receivingWarehouse = text(item.receivingWarehouseName);
     const mappedWarehouse = text(item.mappedWarehouseName);
+    current.warehouseLocations.add(text(item.warehouseLocation) || '未匹配');
+    current.sites.add(text(item.site) || '未匹配');
     if (sourceWarehouse) locations.push(sourceWarehouse);
     else if (storeName) locations.push(`店铺：${storeName}`);
     if (receivingWarehouse && !locations.includes(receivingWarehouse)) locations.push(`收货：${receivingWarehouse}`);
@@ -489,6 +493,8 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
       ? (row.onHandQty + row.inTransitQty + row.undeliveredQty) / dailyForecast + channelSettings.averageLeadTimeDays
       : 999;
     const action = actionFor(transitTurnoverDays, fullChainCoverageDays, channelSettings);
+    const warehouseLocations = [...row.warehouseLocations];
+    const sites = [...row.sites];
     const resultRow = {
       id: key,
       materialCode: row.materialCode,
@@ -503,6 +509,10 @@ export function buildInventoryRiskAnalysis({ inventoryModel = {}, forecastRows =
       channel: row.channel,
       businessUnit: row.businessUnit,
       businessUnits: row.businessUnit,
+      warehouseLocations: warehouseLocations.length ? warehouseLocations : ['未匹配'],
+      warehouseLocation: warehouseLocations.join('、') || '未匹配',
+      sites: sites.length ? sites : ['未匹配'],
+      site: sites.join('、') || '未匹配',
       dataSource: [...row.dataSources].join('；') || '无仓库数据',
       onHandQty: row.onHandQty,
       inTransitQty: row.inTransitQty,

@@ -543,7 +543,7 @@ const HEADER_HINTS = [
   '物料编码', '物流编码', 'SKU', '物料名称', '产品名称', '供应商', '供应商简称',
   '产品明细供应商', '产品线明细供应商', '采购下单人', '创建人', '采购组', '采购组织', '产品线', '系列',
   '事业部', '采购日期', '创建日期', '采购数量', '下单数量', '入库数量', '采购订单号', 'OA备货流程号',
-  '仓库编码', '仓库代码', '仓库名称', '站点', '站点名称', '一级仓库分类', '二级仓库分类', '一级分类', '二级分类'
+  '仓库编码', '仓库代码', '仓库名称', '仓位位置', '仓库位置', '站点', '站点名称', '一级仓库分类', '二级仓库分类', '一级分类', '二级分类'
 ];
 
 function compactHeader(value) {
@@ -2111,7 +2111,7 @@ const CROSS_BORDER_TARGETS = {
   lingxingWarehouseMap: { title: '领星&金蝶仓库对照', page: 'dimensionLibrary', fields: ['领星仓库名称', '金蝶仓库名称'] },
   productCategory: { title: '商品分类', page: 'dimensionLibrary', fields: ['物料编码', 'SKU', '物料名称', '销售产品线', '销售系列', '型号', '销售区域'] },
   warehouseMaterialMap: { title: '仓库与物料对照表', page: 'dimensionLibrary', fields: ['金蝶仓库名称', '物料编码', '事业部'] },
-  spare1: { title: '仓库名称', page: 'dimensionLibrary', fields: ['金蝶仓库名称', '站点', '一级仓库分类', '二级仓库分类'] }
+  spare1: { title: '仓库名称', page: 'dimensionLibrary', fields: ['金蝶仓库名称', '仓位位置', '站点', '一级仓库分类', '二级仓库分类'] }
 };
 
 function strictNumberValue(value) {
@@ -6190,6 +6190,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         subject: pick(row, mapping.subject) || pickDimensionAlias(row, ['主体', '使用组织', '库存组织']),
         warehouseCode: pick(row, mapping.warehouseCode) || pickDimensionAlias(row, ['仓库编码', '仓库代码', '仓库编号', '金蝶仓库编码', '仓库ID']),
         warehouseName: pick(row, mapping.warehouseName) || pickDimensionAlias(row, ['仓库名称', '仓库名', '金蝶仓库名称']),
+        warehouseLocation: pick(row, mapping.warehouseLocation) || pickDimensionAlias(row, ['仓位位置', '仓库位置', '仓位']),
         marketplace: pick(row, mapping.marketplace) || pickDimensionAlias(row, ['站点', '站点名称', '国家站点', '销售站点', '国家/地区']),
         level1WarehouseCategory: pick(row, mapping.level1WarehouseCategory) || pickDimensionAlias(row, ['一级仓库分类', '仓库一级分类', '一级分类', '仓库大类', '一级仓库类型']),
         level2WarehouseCategory: pick(row, mapping.level2WarehouseCategory) || pickDimensionAlias(row, ['二级仓库分类', '仓库二级分类', '二级分类', '仓库小类', '二级仓库类型'])

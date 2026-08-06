@@ -35,6 +35,8 @@ const PERIOD_FIELDS = [
 
 const EMPTY_RISK_FILTERS = Object.freeze({
   businessUnits: [],
+  warehouseLocations: [],
+  sites: [],
   productLines: [],
   productSeries: [],
   models: [],
@@ -72,6 +74,14 @@ function numberText(value, maximumFractionDigits = 1) {
 function splitSupplierShortNames(value) {
   const names = String(value || '').split(/[&+、,，;；]/).map((item) => item.trim()).filter(Boolean);
   return names.length ? [...new Set(names)] : ['未匹配'];
+}
+
+function riskRowValues(row, arrayKey, valueKey) {
+  const values = Array.isArray(row?.[arrayKey])
+    ? row[arrayKey]
+    : [row?.[valueKey]];
+  const normalized = values.map((value) => String(value || '').trim()).filter(Boolean);
+  return normalized.length ? [...new Set(normalized)] : ['未匹配'];
 }
 
 function derivedChannelDays(settings) {
@@ -441,6 +451,8 @@ export default function InventoryRiskPage({ token, active }) {
   );
   const matchesFilters = (row, omit = '') => (
     (omit === 'businessUnits' || filters.businessUnits.length === 0 || filters.businessUnits.includes(row.businessUnit))
+    && (omit === 'warehouseLocations' || filters.warehouseLocations.length === 0 || riskRowValues(row, 'warehouseLocations', 'warehouseLocation').some((value) => filters.warehouseLocations.includes(value)))
+    && (omit === 'sites' || filters.sites.length === 0 || riskRowValues(row, 'sites', 'site').some((value) => filters.sites.includes(value)))
     && (omit === 'productLines' || filters.productLines.length === 0 || filters.productLines.includes(row.productLine))
     && (omit === 'productSeries' || filters.productSeries.length === 0 || filters.productSeries.includes(row.productSeries))
     && (omit === 'models' || filters.models.length === 0 || filters.models.includes(row.model))
@@ -454,6 +466,12 @@ export default function InventoryRiskPage({ token, active }) {
       .filter((row) => matchesFilters(row, key))
       .map((row) => row[valueKey])
       .filter(Boolean))];
+    const multiValuesFor = (key, arrayKey, valueKey) => [...new Set(actionRows
+      .filter((row) => matchesFilters(row, key))
+      .flatMap((row) => riskRowValues(row, arrayKey, valueKey)))];
+    const sortWarehouseOption = (left, right) => (
+      (left === '未匹配') - (right === '未匹配') || left.localeCompare(right, 'zh-CN', { numeric: true })
+    );
     const supplierTotals = new Map();
     actionRows.filter((row) => matchesFilters(row, 'supplierShortNames')).forEach((row) => {
       splitSupplierShortNames(row.unfulfilledSupplierShortName).forEach((name) => {
@@ -462,6 +480,8 @@ export default function InventoryRiskPage({ token, active }) {
     });
     return {
       businessUnits: valuesFor('businessUnits', 'businessUnit').sort(compareBusinessUnitFilterOptions),
+      warehouseLocations: multiValuesFor('warehouseLocations', 'warehouseLocations', 'warehouseLocation').sort(sortWarehouseOption),
+      sites: multiValuesFor('sites', 'sites', 'site').sort(sortWarehouseOption),
       productLines: valuesFor('productLines', 'productLine').sort((a, b) => a.localeCompare(b, 'zh-CN')),
       productSeries: valuesFor('productSeries', 'productSeries').sort((a, b) => a.localeCompare(b, 'zh-CN')),
       models: valuesFor('models', 'model').sort((a, b) => a.localeCompare(b, 'zh-CN', { numeric: true })),
@@ -541,6 +561,8 @@ export default function InventoryRiskPage({ token, active }) {
         <>
           <section className="inventory-risk-filters" aria-label="供应计划分析筛选器">
             <RiskMultiSelectFilter label="事业部" allLabel="全部事业部" value={filters.businessUnits} options={filterOptions.businessUnits} onChange={(value) => setFilters((current) => ({ ...current, businessUnits: value }))} />
+            <RiskMultiSelectFilter label="仓位位置" allLabel="全部仓位位置" value={filters.warehouseLocations} options={filterOptions.warehouseLocations} onChange={(value) => setFilters((current) => ({ ...current, warehouseLocations: value }))} />
+            <RiskMultiSelectFilter label="站点" allLabel="全部站点" value={filters.sites} options={filterOptions.sites} onChange={(value) => setFilters((current) => ({ ...current, sites: value }))} />
             <RiskMultiSelectFilter label="产品线" allLabel="全部产品线" value={filters.productLines} options={filterOptions.productLines} onChange={(value) => setFilters((current) => ({ ...current, productLines: value }))} />
             <RiskMultiSelectFilter label="系列" allLabel="全部系列" value={filters.productSeries} options={filterOptions.productSeries} onChange={(value) => setFilters((current) => ({ ...current, productSeries: value }))} />
             <RiskMultiSelectFilter label="型号" allLabel="全部型号" value={filters.models} options={filterOptions.models} onChange={(value) => setFilters((current) => ({ ...current, models: value }))} />

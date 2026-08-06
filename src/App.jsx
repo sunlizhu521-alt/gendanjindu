@@ -118,6 +118,7 @@ const DIMENSION_SLOTS = [
     ['subject', '主体/使用组织/库存组织'],
     ['warehouseCode', '仓库编码'],
     ['warehouseName', '仓库名称'],
+    ['warehouseLocation', '仓位位置'],
     ['marketplace', '站点'],
     ['level1WarehouseCategory', '一级仓库分类'],
     ['level2WarehouseCategory', '二级仓库分类']
@@ -3337,6 +3338,7 @@ const FIELD_MAPPING_ALIASES = {
   jdStockQty: ['全国现货库存', '现货库存'],
   warehouseCode: ['仓库编码', '仓库代码', '仓库编号', '金蝶仓库编码', '仓库ID'],
   warehouseName: ['仓库名称', '仓库名', '金蝶仓库名称'],
+  warehouseLocation: ['仓位位置', '仓库位置', '仓位'],
   pretaxPrice: ['不含税结算价'],
   salesRegion: ['销售区域'],
   marketplace: ['站点', '站点名称', '国家站点', '销售站点', '国家/地区'],

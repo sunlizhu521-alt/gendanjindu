@@ -99,10 +99,12 @@ test('inventory summary model uses inventory library facts, layered totals and s
       { materialCode: 'M4', sku: 'SKU-4', materialName: 'Material Four', productLine: 'Line A', productSeries: 'Series C', pretaxPrice: '15' }
     ]],
     ['spare1', [
-      { subject: '主体一', warehouseName: 'FBM仓', marketplace: '美国' },
-      { subject: '主体一', warehouseName: 'WFS仓' },
-      { subject: '主体一', warehouseName: '102-US-海外二部-海上在途' },
-      { subject: '国内主体', warehouseName: '国内仓', marketplace: '中国' }
+      { subject: '主体一', warehouseName: 'FBA金蝶仓', marketplace: '美国', warehouseLocation: '海外在库' },
+      { subject: '主体一', warehouseName: 'FBA在途金蝶仓', marketplace: '美国', warehouseLocation: '海外在途' },
+      { subject: '主体一', warehouseName: 'FBM仓', marketplace: '美国', warehouseLocation: '海外在库' },
+      { subject: '主体一', warehouseName: 'WFS仓', marketplace: '美国', warehouseLocation: '海外在库' },
+      { subject: '主体一', warehouseName: '102-US-海外二部-海上在途', marketplace: '美国', warehouseLocation: '海外在途' },
+      { subject: '国内主体', warehouseName: '国内仓', marketplace: '中国', warehouseLocation: '国内在库' }
     ]],
     ['warehouseMaterialMap', [
       { subject: '主体一', warehouseName: 'FBA金蝶仓', materialCode: 'M1', businessUnit: '跨境事业部' },
@@ -251,6 +253,11 @@ test('inventory summary model uses inventory library facts, layered totals and s
       { sourceTable: 'FBM在途报表', sourceWarehouseName: '102-US-海外二部-海上在途', receivingWarehouseName: '', mappedWarehouseName: '102-US-海外二部-海上在途', storeName: '' },
       { sourceTable: 'WFS库存报表', sourceWarehouseName: 'WFS源仓', receivingWarehouseName: '', mappedWarehouseName: 'WFS仓', storeName: '' }
     ]
+  );
+  assert.equal(crossBorderM1?.inventorySourceDetails.every((item) => item.site === '美国'), true);
+  assert.deepEqual(
+    [...new Set(crossBorderM1?.inventorySourceDetails.map((item) => item.warehouseLocation))].sort(),
+    ['海外在库', '海外在途']
   );
 });
 

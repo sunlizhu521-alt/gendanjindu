@@ -798,6 +798,10 @@ function warehouseSite(row) {
   return text(aliasValue(row, ['marketplace', 'site', '站点', '站点名称', '国家站点', '销售站点', '国家/地区']));
 }
 
+function warehouseLocation(row) {
+  return text(aliasValue(row, ['warehouseLocation', 'warehousePosition', '仓位位置', '仓库位置', '仓位']));
+}
+
 function terminalWarehouseName(value) {
   const segments = text(value).split(/[\\/]/).map((segment) => text(segment)).filter(Boolean);
   return segments.at(-1) || '';
@@ -1373,6 +1377,14 @@ export function buildInventorySummaryModel({
     (row) => matchKey(warehouseName(row)),
     (row) => ({ site: warehouseSite(row) })
   );
+  const warehouseMetadataLookup = exactLookup(
+    getRows('spare1'),
+    (row) => matchKey(warehouseName(row)),
+    (row) => ({
+      site: warehouseSite(row),
+      warehouseLocation: warehouseLocation(row)
+    })
+  );
   const warehouseMaterialLookup = exactLookup(
     getRows('warehouseMaterialMap'),
     (row) => combinedKey(warehouseSubject(row), warehouseName(row), aliasValue(row, ['materialCode', '物料编码', '品号'])),
@@ -1496,6 +1508,21 @@ export function buildInventorySummaryModel({
       subject: text(subject),
       kingdeeWarehouseName: text(warehouse)
     };
+  };
+
+  const resolveWarehouseMetadata = (...warehouseNames) => {
+    for (const name of warehouseNames.map(text).filter(Boolean)) {
+      const candidates = warehouseMetadataLookup.candidates(name);
+      if (!candidates.length) continue;
+      const sites = [...new Set(candidates.map((item) => text(item.site)).filter(Boolean))];
+      const warehouseLocations = [...new Set(candidates.map((item) => text(item.warehouseLocation)).filter(Boolean))];
+      const metadata = {
+        site: sites.length === 1 ? sites[0] : '',
+        warehouseLocation: warehouseLocations.length === 1 ? warehouseLocations[0] : ''
+      };
+      if (metadata.site || metadata.warehouseLocation) return metadata;
+    }
+    return { site: '', warehouseLocation: '' };
   };
 
   const resolveGeneralWarehouse = (sourceWarehouse, materialCode) => {
@@ -1670,6 +1697,12 @@ export function buildInventorySummaryModel({
       const segmentAmounts = row.inventorySegmentBreakdown[segmentKey] || { subject, productType: segmentType };
       const sourceTable = INVENTORY_SOURCE_TABLE_LABELS[sourceType];
       if (sourceTable) {
+        const warehouseMetadata = resolveWarehouseMetadata(
+          sourceContext.kingdeeWarehouseName,
+          inventoryWarehouseName,
+          sourceContext.receivingWarehouseName,
+          sourceContext.sourceWarehouseName
+        );
         const sourceDetail = {
           sourceType,
           sourceTable,
@@ -1678,7 +1711,9 @@ export function buildInventorySummaryModel({
           mappedWarehouseName: text(sourceContext.kingdeeWarehouseName),
           storeName: text(sourceContext.storeName),
           subject,
-          productType: segmentType
+          productType: segmentType,
+          warehouseLocation: text(warehouseMetadata.warehouseLocation),
+          site: text(warehouseMetadata.site)
         };
         const detailKey = combinedKey(
           sourceDetail.sourceTable,
@@ -1687,7 +1722,9 @@ export function buildInventorySummaryModel({
           sourceDetail.mappedWarehouseName,
           sourceDetail.storeName,
           sourceDetail.subject,
-          sourceDetail.productType
+          sourceDetail.productType,
+          sourceDetail.warehouseLocation,
+          sourceDetail.site
         );
         row.inventorySourceDetails[detailKey] = sourceDetail;
       }

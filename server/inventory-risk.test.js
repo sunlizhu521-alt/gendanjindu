@@ -25,7 +25,10 @@ function summaryRow(overrides = {}) {
     transitQty: 0,
     unfulfilledQty: 0,
     unfulfilledSupplierShortName: '供应商甲&供应商乙&供应商甲',
-    inventorySourceDetails: [{ sourceTable: 'FBA库存报表', sourceWarehouseName: '美国仓', mappedWarehouseName: '101-US' }],
+    inventorySourceDetails: [{
+      sourceTable: 'FBA库存报表', sourceWarehouseName: '美国仓', mappedWarehouseName: '101-US',
+      warehouseLocation: '海外仓', site: '美国'
+    }],
     salesByMonth: {
       '2026-02': 10,
       '2026-03': 20,
@@ -89,6 +92,8 @@ test('槽位15无年份销量列按文件日期跨年，并汇总重复渠道和
   assert.equal(payload.stopped[0].forecastAvailability, '有预测销售');
   assert.equal(payload.stopped[0].totalInventoryQty, 600);
   assert.equal(payload.stopped[0].model, '测试型号');
+  assert.deepEqual(payload.stopped[0].warehouseLocations, ['海外仓']);
+  assert.deepEqual(payload.stopped[0].sites, ['美国']);
   assert.deepEqual(payload.periods.forecastMonths, ['2026-08', '2026-09', '2026-10', '2026-11', '2026-12', '2027-01']);
   assert.deepEqual(
     payload.diagnostics.forecastParsing.monthColumns.map(({ header, month }) => [header, month]),
@@ -409,6 +414,9 @@ test('供应计划分析页面、权限与API均注册在gendanjindu', () => {
   assert.match(riskPage, /在库量可销天数/);
   assert.match(riskPage, /全链路天数/);
   assert.match(riskPage, /合同签订/);
+  assert.match(riskPage, /label="仓位位置"/);
+  assert.match(riskPage, /label="站点"/);
+  assert.match(riskPage, /warehouseLocations/);
   assert.match(riskPage, /全链路天数 = 现货天数 \+ 平均交期 \+ 合同签订/);
   assert.match(riskPage, /海外-美国/);
   assert.match(riskPage, /海外-欧洲/);

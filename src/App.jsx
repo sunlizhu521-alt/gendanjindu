@@ -3596,7 +3596,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     });
   }, [rows, usesOperationBoardLayout]);
   const activeRows = useMemo(() => dashboardRows.filter((row) => row.active && numberValue(row.remainingInboundQty) > 0), [dashboardRows]);
-  const [filters, setFilters] = useSessionFilters(filterKey, { month: [], businessUnit: [], operatorName: [], supplierCount: [], supplierShortName: [], productLine: [], series: [], sku: [], purchaseOwner: [], keyword: '' });
+  const [filters, setFilters] = useSessionFilters(filterKey, { month: [], businessUnit: [], operatorName: [], supplierCount: [], supplierShortName: [], productLine: [], series: [], sku: [], purchaseOwner: [], dataSource: [], keyword: '' });
   const [currentPage, setCurrentPage] = useState(1);
   const [showOperationAuxiliaryColumns, setShowOperationAuxiliaryColumns] = useState(false);
   const pageSize = 20;
@@ -3606,6 +3606,11 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     const selected = selectedValues(value);
     return selected.length === 0 || selected.includes(candidate);
   };
+  const dashboardDataSource = (row) => (
+    row.dataStatus === '采购订单数据'
+      ? '金蝶系统'
+      : (row.dataStatus && row.dataStatus.startsWith('手工') ? '手工录入' : (row.dataStatus || '金蝶系统'))
+  );
   const matchesDashboardFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
     const displaySupplier = orderSupplierName(row);
@@ -3641,7 +3646,8 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       && (omit === 'productLine' || matchesSelected(filters.productLine, row.productLine))
       && (omit === 'series' || matchesSelected(filters.series, row.productSeries))
       && (omit === 'sku' || matchesSelected(filters.sku, row.sku))
-      && (omit === 'purchaseOwner' || matchesSelected(filters.purchaseOwner, row.purchaseOwner));
+      && (omit === 'purchaseOwner' || matchesSelected(filters.purchaseOwner, row.purchaseOwner))
+      && (omit === 'dataSource' || matchesSelected(filters.dataSource, dashboardDataSource(row)));
   };
   const options = useMemo(() => {
     const rowsFor = (field) => activeRows.filter((row) => matchesDashboardFilters(row, field));
@@ -3656,7 +3662,8 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
       series: unique(rowsFor('series').map((row) => row.productSeries)),
       skus: unique(rowsFor('sku').map((row) => row.sku)),
-      purchaseOwners: unique(rowsFor('purchaseOwner').map((row) => row.purchaseOwner))
+      purchaseOwners: unique(rowsFor('purchaseOwner').map((row) => row.purchaseOwner)),
+      dataSources: ['金蝶系统', '手工录入'].filter((value) => rowsFor('dataSource').some((row) => dashboardDataSource(row) === value))
     };
   }, [activeRows, filters]);
   useEffect(() => {
@@ -3669,7 +3676,8 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       productLine: options.productLines,
       series: options.series,
       sku: options.skus,
-      purchaseOwner: options.purchaseOwners
+      purchaseOwner: options.purchaseOwners,
+      dataSource: options.dataSources
     });
     if (next) setFilters(next);
   }, [options, filters, setFilters]);
@@ -3679,7 +3687,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     () => filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize),
     [filteredRows, currentPage]
   );
-  const clearFilters = () => setFilters({ month: [], businessUnit: [], operatorName: [], supplierCount: [], supplierShortName: [], productLine: [], series: [], sku: [], purchaseOwner: [], keyword: '' });
+  const clearFilters = () => setFilters({ month: [], businessUnit: [], operatorName: [], supplierCount: [], supplierShortName: [], productLine: [], series: [], sku: [], purchaseOwner: [], dataSource: [], keyword: '' });
   const remainingLabel = usesOperationBoardLayout ? '备货剩余数量' : '未交付数量';
   const remainingShortLabel = usesOperationBoardLayout ? '备货剩余' : '未交付';
   const summary = filteredRows.reduce((acc, row) => {
@@ -3817,6 +3825,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
         <MultiSelectFilter label="供应商简称" allLabel="全部供应商简称" value={filters.supplierShortName} options={options.supplierShortNames} onChange={(value) => setFilters({ ...filters, supplierShortName: value })} />
         <MultiSelectFilter label="产品线" allLabel="全部产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
         <MultiSelectFilter label="系列" allLabel="全部系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
+        <MultiSelectFilter label="数据来源" allLabel="全部来源" value={filters.dataSource} options={options.dataSources} onChange={(value) => setFilters({ ...filters, dataSource: value })} />
         <MultiSelectFilter label="SKU" allLabel="全部SKU" value={filters.sku} options={options.skus} onChange={(value) => setFilters({ ...filters, sku: value })} />
         <MultiSelectFilter label="采购下单人" allLabel="全部采购下单人" value={filters.purchaseOwner} options={options.purchaseOwners} onChange={(value) => setFilters({ ...filters, purchaseOwner: value })} />
         <input

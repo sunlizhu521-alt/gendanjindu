@@ -41,3 +41,17 @@ test('运营看板默认隐藏八个辅助列并可切换显示，导出保留�
   assert.match(dashboard, /row\.effectiveOrderCondition === '有效订单'/);
   assert.match(dashboard, /demandKey: `\$\{row\.demandKey\}\|\$\{orderRow\.orderNo\}`/);
 });
+
+test('operation board supports linked Kingdee and manual data-source filters', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
+  const dashboard = client.slice(client.indexOf('function Dashboard('), client.indexOf('function AppliedTimeNote('));
+
+  assert.match(dashboard, /dataSource: \[\]/);
+  assert.match(dashboard, /row\.dataStatus === '采购订单数据'/);
+  assert.match(dashboard, /row\.dataStatus\.startsWith\('手工'\)/);
+  assert.match(dashboard, /dataSources: \['金蝶系统', '手工录入'\]\.filter/);
+  assert.match(dashboard, /omit === 'dataSource'/);
+  assert.match(dashboard, /dataSource: options\.dataSources/);
+  assert.match(dashboard, /label="数据来源" allLabel="全部来源"/);
+});

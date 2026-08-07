@@ -48,7 +48,7 @@ test('生产跟进四阶段、履约字段和导出状态完整呈现', () => {
   assert.match(progressSource, /writeStyledExcelFile/);
   assert.match(progressSource, /'供应商', '供应商简称'/);
   assert.match(progressSource, /row\.supplier \|\| '未填写',[\s\S]*?progressSupplierName\(row\)/);
-  assert.match(progressSource, /来自手工登记表已发货数量，不能手动修改/);
+  assert.match(progressSource, /来自金蝶采购订单累计入库数量，不能手动修改/);
   assert.doesNotMatch(progressSource, /shippedQty: numberValue\(nextValues\.shippedQty\)/);
   assert.doesNotMatch(progressSource, /quantityInput\('shippedQty'/);
   assert.match(serverSource, /const purchaseOrderInboundQty = numberValue\(demand\.tracking_inbound_qty\)/);
@@ -56,7 +56,12 @@ test('生产跟进四阶段、履约字段和导出状态完整呈现', () => {
   assert.doesNotMatch(serverSource, /numberValue\(req\.body\.shippedQty\)/);
   assert.match(serverSource, /function contractDateOnly\(value\)/);
   assert.match(serverSource, /contractDateOnly\(row\.deliveryDate \|\| row\.delivery_date\)/);
-  assert.match(serverSource, /const remainingInboundQty = rows\.reduce\(\(sum, row\) => sum \+ row\.manualRemainingQty, 0\)/);
+  assert.match(serverSource, /const remainingInboundQty = numberValue\(system\?\.remainingInboundQty\) \|\| 0/);
+  assert.match(serverSource, /const shippedQty = numberValue\(system\?\.shippedQty\) \|\| 0/);
+  assert.match(serverSource, /const unpreparedQty = numberValue\(system\?\.unpreparedQty\) \|\| 0/);
+  assert.match(serverSource, /const preparedNotStartedQty = numberValue\(system\?\.preparedNotStartedQty\) \|\| 0/);
+  assert.match(serverSource, /const inProductionQty = numberValue\(system\?\.inProductionQty\) \|\| 0/);
+  assert.match(serverSource, /const finishedQty = numberValue\(system\?\.finishedQty\) \|\| 0/);
   assert.match(serverSource, /const normalFulfillmentAmount = rows\.reduce\(\(sum, row\) => sum \+ row\.sourceNormalAmount, 0\)/);
   assert.match(serverSource, /purchaseOwnersForSupplierShortNames/);
   assert.match(progressSource, /numberValue\(row\.normalFulfillmentAmount\)/);

@@ -3643,12 +3643,12 @@ function manualProgressDisplayRows(systemRows, user = null) {
     const candidate = first.matchCandidate || first.candidates?.find((item) => (
       item.demandKey === first.demandKey && (!first.orderNo || item.orderNo === first.orderNo)
     )) || null;
-    const remainingInboundQty = rows.reduce((sum, row) => sum + row.manualRemainingQty, 0);
-    const shippedQty = rows.reduce((sum, row) => sum + row.sourceShippedQty, 0);
-    const unpreparedQty = rows.reduce((sum, row) => sum + row.unpreparedQty, 0);
-    const preparedNotStartedQty = rows.reduce((sum, row) => sum + row.preparedNotStartedQty, 0);
-    const inProductionQty = rows.reduce((sum, row) => sum + row.inProductionQty, 0);
-    const finishedQty = rows.reduce((sum, row) => sum + row.finishedQty, 0);
+    const remainingInboundQty = numberValue(system?.remainingInboundQty) || 0;
+    const shippedQty = numberValue(system?.shippedQty) || 0;
+    const unpreparedQty = numberValue(system?.unpreparedQty) || 0;
+    const preparedNotStartedQty = numberValue(system?.preparedNotStartedQty) || 0;
+    const inProductionQty = numberValue(system?.inProductionQty) || 0;
+    const finishedQty = numberValue(system?.finishedQty) || 0;
     const progressTotal = unpreparedQty + preparedNotStartedQty + inProductionQty + finishedQty;
     const conflictFields = [...new Set(rows.flatMap((row) => row.conflictFields || []))];
     const field = (key, fallback = '') => {

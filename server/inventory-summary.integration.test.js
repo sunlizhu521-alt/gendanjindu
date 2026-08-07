@@ -2286,7 +2286,7 @@ test('inventory summary and domestic board use complete source models and enforc
     [
       'manual-current-fields-row', 'manual-current-fields-batch', 2, 'manual-current-fields-source',
       'order|cgdd013047|1007010984', 'purchase_order', '手工已匹配', 'manual-current-fields', 'CGDD013047',
-      '2026-08', '海外事业一部', '锐世迈', '', '1007010984', 10, 10, 'valid', '{}',
+      '2026-08', '海外事业一部', '锐世迈', '', '1007010984', 15, 15, 'valid', '{}',
       JSON.stringify([{ demandKey: 'manual-current-fields', orderNo: 'CGDD013047', supplierShortName: '', purchaseOwner: '', orderCreator: '' }]),
       1, 0, 'Test Admin', now
     ]
@@ -2298,7 +2298,7 @@ test('inventory summary and domestic board use complete source models and enforc
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       'manual-current-fields-allocation', 'manual-current-fields-batch', 'manual-current-fields-row', 2,
-      'CGDD013047', '1007010984', 'manual-current-fields', 'matched', 10, 10, 1, now, now
+      'CGDD013047', '1007010984', 'manual-current-fields', 'matched', 10, 15, 1, now, now
     ]
   );
   database.run(
@@ -2671,6 +2671,13 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(currentFieldsRow?.documentStatus, '已审核');
     assert.equal(currentFieldsRow?.sourceFile, '采购订单来源-当前字段.xlsx');
     assert.equal(currentFieldsRow?.effectiveOrderCondition, '有效订单');
+    assert.equal(currentFieldsRow?.remainingInboundQty, 10);
+    assert.equal(currentFieldsRow?.shippedQty, 0);
+    assert.equal(currentFieldsRow?.unpreparedQty, 15);
+    assert.equal(currentFieldsRow?.preparedNotStartedQty, 0);
+    assert.equal(currentFieldsRow?.inProductionQty, 0);
+    assert.equal(currentFieldsRow?.finishedQty, 0);
+    assert.equal(currentFieldsRow?.operationStockQty, 10);
     const shortNameFallbackRow = demandRows.find((row) => row.orderNo === 'CGDD012997' && row.materialCode === '1002010305');
     assert.equal(shortNameFallbackRow?.supplier, '采购订单供应商全称');
     assert.equal(shortNameFallbackRow?.supplierShortName, '申裕');

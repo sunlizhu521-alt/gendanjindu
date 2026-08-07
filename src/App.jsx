@@ -5783,7 +5783,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
     ['productLine', <TightCell value={row.productLine} />], ['productSeries', <TightCell value={row.productSeries} />],
     ['materialCode', row.materialCode], ['sku', row.sku], ['materialName', row.materialName || row.materialCode],
     ['operationStockQty', numberValue(row.operationStockQty)], ['remainingInboundQty', row.remainingInboundQty],
-    ['shippedQty', <span className="progress-readonly-qty" title="来自手工登记表已发货数量，不能手动修改">{numberValue(row.shippedQty).toLocaleString('zh-CN')}</span>],
+    ['shippedQty', <span className="progress-readonly-qty" title="来自金蝶采购订单累计入库数量，不能手动修改">{numberValue(row.shippedQty).toLocaleString('zh-CN')}</span>],
     ['unpreparedQty', quantityInput('unpreparedQty', { readOnly: true, value: displayQty(unpreparedQty) })],
     ['preparedNotStartedQty', quantityInput('preparedNotStartedQty')], ['inProductionQty', quantityInput('inProductionQty')],
     ['finishedQty', quantityInput('finishedQty')],

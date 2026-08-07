@@ -56,7 +56,10 @@ test('生产跟进四阶段、履约字段和导出状态完整呈现', () => {
   assert.doesNotMatch(serverSource, /numberValue\(req\.body\.shippedQty\)/);
   assert.match(serverSource, /function contractDateOnly\(value\)/);
   assert.match(serverSource, /contractDateOnly\(row\.deliveryDate \|\| row\.delivery_date\)/);
-  assert.match(serverSource, /const remainingInboundQty = numberValue\(system\?\.remainingInboundQty\) \|\| 0/);
+  assert.match(serverSource, /const usedDemandKeys = new Set\(\);[\s\S]*?const manualRows = \[\.\.\.groups\.values\(\)\]\.map/);
+  assert.match(serverSource, /const rawInbound = numberValue\(system\?\.remainingInboundQty\) \|\| 0/);
+  assert.match(serverSource, /usedDemandKeys\.has\(system\.demandKey\) \? 0 : rawInbound/);
+  assert.match(serverSource, /if \(system\?\.demandKey\) usedDemandKeys\.add\(system\.demandKey\)/);
   assert.match(serverSource, /const shippedQty = numberValue\(system\?\.shippedQty\) \|\| 0/);
   assert.match(serverSource, /const unpreparedQty = numberValue\(system\?\.unpreparedQty\) \|\| 0/);
   assert.match(serverSource, /const preparedNotStartedQty = numberValue\(system\?\.preparedNotStartedQty\) \|\| 0/);

@@ -3640,6 +3640,7 @@ function manualProgressDisplayRows(systemRows, user = null) {
     .filter((row) => !currentMatchedDemandKeys.has(row.demandKey))
     .map((row) => ({ ...row, dataStatus: '采购订单数据', manualSourceRows: [] }));
   const lookups = dimensionLookups();
+  const usedDemandKeys = new Set();
   const manualRows = [...groups.values()].map((rows) => {
     const first = rows[0];
     const initialSystem = first.demandKey ? systemMap.get(first.demandKey) : null;
@@ -3649,7 +3650,9 @@ function manualProgressDisplayRows(systemRows, user = null) {
     const candidate = first.matchCandidate || first.candidates?.find((item) => (
       item.demandKey === first.demandKey && (!first.orderNo || item.orderNo === first.orderNo)
     )) || null;
-    const remainingInboundQty = numberValue(system?.remainingInboundQty) || 0;
+    const rawInbound = numberValue(system?.remainingInboundQty) || 0;
+    const remainingInboundQty = system?.demandKey && usedDemandKeys.has(system.demandKey) ? 0 : rawInbound;
+    if (system?.demandKey) usedDemandKeys.add(system.demandKey);
     const shippedQty = numberValue(system?.shippedQty) || 0;
     const unpreparedQty = numberValue(system?.unpreparedQty) || 0;
     const preparedNotStartedQty = numberValue(system?.preparedNotStartedQty) || 0;

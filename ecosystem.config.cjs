@@ -9,7 +9,7 @@ module.exports = {
         PORT: process.env.PORT || 4003,
         DATA_DIR: process.env.DATA_DIR || './data'
       },
-      max_memory_restart: '512M'
+      max_memory_restart: '1G'
     }
   ]
 };

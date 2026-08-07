@@ -48,8 +48,8 @@ test('operation board supports linked Kingdee and manual data-source filters', (
   const dashboard = client.slice(client.indexOf('function Dashboard('), client.indexOf('function AppliedTimeNote('));
 
   assert.match(dashboard, /dataSource: \[\]/);
-  assert.match(dashboard, /row\.dataStatus === '采购订单数据'/);
-  assert.match(dashboard, /row\.dataStatus\.startsWith\('手工'\)/);
+  assert.match(dashboard, /row\.orderNo && row\.orderNo !== '无采购订单'/);
+  assert.doesNotMatch(dashboard, /row\.dataStatus === '采购订单数据'/);
   assert.match(dashboard, /dataSources: \['金蝶系统', '手工录入'\]\.filter/);
   assert.match(dashboard, /omit === 'dataSource'/);
   assert.match(dashboard, /dataSource: options\.dataSources/);

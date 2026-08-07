@@ -3606,11 +3606,6 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     const selected = selectedValues(value);
     return selected.length === 0 || selected.includes(candidate);
   };
-  const dashboardDataSource = (row) => (
-    row.dataStatus === '采购订单数据'
-      ? '金蝶系统'
-      : (row.dataStatus && row.dataStatus.startsWith('手工') ? '手工录入' : (row.dataStatus || '金蝶系统'))
-  );
   const matchesDashboardFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
     const displaySupplier = orderSupplierName(row);
@@ -3647,7 +3642,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       && (omit === 'series' || matchesSelected(filters.series, row.productSeries))
       && (omit === 'sku' || matchesSelected(filters.sku, row.sku))
       && (omit === 'purchaseOwner' || matchesSelected(filters.purchaseOwner, row.purchaseOwner))
-      && (omit === 'dataSource' || matchesSelected(filters.dataSource, dashboardDataSource(row)));
+      && (omit === 'dataSource' || matchesSelected(filters.dataSource, (row.orderNo && row.orderNo !== '无采购订单') ? '金蝶系统' : '手工录入'));
   };
   const options = useMemo(() => {
     const rowsFor = (field) => activeRows.filter((row) => matchesDashboardFilters(row, field));
@@ -3663,7 +3658,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       series: unique(rowsFor('series').map((row) => row.productSeries)),
       skus: unique(rowsFor('sku').map((row) => row.sku)),
       purchaseOwners: unique(rowsFor('purchaseOwner').map((row) => row.purchaseOwner)),
-      dataSources: ['金蝶系统', '手工录入'].filter((value) => rowsFor('dataSource').some((row) => dashboardDataSource(row) === value))
+      dataSources: ['金蝶系统', '手工录入'].filter((value) => rowsFor('dataSource').some((row) => ((row.orderNo && row.orderNo !== '无采购订单') ? '金蝶系统' : '手工录入') === value))
     };
   }, [activeRows, filters]);
   useEffect(() => {

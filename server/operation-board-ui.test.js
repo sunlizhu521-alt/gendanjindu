@@ -15,3 +15,14 @@ test('运营看板在供应商后展示并导出金蝶创建人', () => {
   assert.match(dashboard, /row\.supplier,\s+row\.orderCreator,\s+row\.productLine/);
   assert.match(dashboard, /placeholder="搜索运营、供应商、创建人/);
 });
+
+test('运营看板在采购订单号后展示并导出关闭状态和单据状态', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
+  const dashboard = client.slice(client.indexOf('function Dashboard('), client.indexOf('function AppliedTimeNote('));
+  const expectedColumns = "'采购订单号', '关闭状态', '单据状态', '事业部'";
+
+  assert.equal((dashboard.match(new RegExp(expectedColumns, 'g')) || []).length, 2);
+  assert.equal((dashboard.match(/row\.orderNo,\s+row\.closeStatus,\s+row\.documentStatus,\s+row\.businessUnit/g) || []).length, 3);
+  assert.match(dashboard, /row\.orderNo,\s+row\.closeStatus,\s+row\.documentStatus,\s+row\.businessUnit/);
+});

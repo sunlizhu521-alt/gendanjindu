@@ -2831,6 +2831,7 @@ function manualProgressCandidateMaps() {
       candidate.isClosed = !candidate.hasOpenRow;
       candidate.weight = candidate.isClosed ? 0 : candidate.remainingQty;
       candidate.orderCreator = candidate.creators.join('、');
+      candidate.closeStatus = candidate.closeStatuses.join('、');
       candidate.documentStatus = candidate.documentStatuses.join('、');
       add(exact, manualProgressMatchKey([candidate.orderNo, candidate.materialCode]), candidate);
       shortNames.forEach((shortName) => {
@@ -3501,7 +3502,8 @@ function systemOrderDetails(demandKeyValue, orderNo, materialCode) {
     supplier: uniqueDelimitedValues(rows.map((row) => row.supplier)),
     orderCreator: uniqueDelimitedValues(rows.map((row) => row.creator)),
     purchaseOrg: uniqueDelimitedValues(rows.map((row) => row.purchase_org)),
-    documentStatus: uniqueDelimitedValues(rows.map((row) => row.document_status))
+    documentStatus: uniqueDelimitedValues(rows.map((row) => row.document_status)),
+    closeStatus: uniqueDelimitedValues(rows.map((row) => row.close_status))
   };
 }
 
@@ -3690,6 +3692,7 @@ function manualProgressDisplayRows(systemRows, user = null) {
         || UNASSIGNED_PURCHASE_OWNER,
       purchaseOrg: orderDetails?.purchaseOrg || candidate?.purchaseOrg || system?.purchaseOrg || '',
       orderNo: first.orderNo,
+      closeStatus: orderDetails?.closeStatus || candidate?.closeStatus || system?.closeStatus || '',
       documentStatus: orderDetails?.documentStatus || candidate?.documentStatus || system?.documentStatus || '',
       contractDeliveryDates: joinedManualField(rows, 'sourceContractDeliveryDate'),
       oaFlowNo: first.oaFlowNo || system?.oaFlowNo || '',
@@ -3753,6 +3756,7 @@ function demandRows(includeInactive = false, user = null) {
     const orderCreator = uniqueCreators(orderRows);
     const operatorName = uniqueOperatorNames(orderRows);
     const orderNo = uniqueOrderNos(orderRows);
+    const closeStatus = uniqueCloseStatuses(orderRows);
     const documentStatus = uniqueDocumentStatuses(orderRows);
     const orderDates = uniqueOrderDates(orderRows);
     const contractDeliveryDates = uniqueDeliveryDates(orderRows);
@@ -3803,6 +3807,7 @@ function demandRows(includeInactive = false, user = null) {
       purchaseOwner,
       purchaseOrg: demand.purchase_org || '',
       orderNo,
+      closeStatus,
       documentStatus,
       orderDates,
       contractDeliveryDates,
@@ -3847,6 +3852,10 @@ function uniqueOrderNos(rows) {
 
 function uniqueDocumentStatuses(rows) {
   return uniqueDelimitedValues([...rows].sort(compareOaRows).map((row) => row.documentStatus || row.document_status));
+}
+
+function uniqueCloseStatuses(rows) {
+  return uniqueDelimitedValues([...rows].sort(compareOaRows).map((row) => row.closeStatus || row.close_status));
 }
 
 function rawOrderDate(row) {

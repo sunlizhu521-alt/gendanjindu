@@ -2639,6 +2639,7 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(currentFieldsRow?.purchaseOwner, '李奇');
     assert.equal(currentFieldsRow?.orderCreator, '陈晨');
     assert.equal(currentFieldsRow?.purchaseOrg, '浙江采购组织');
+    assert.equal(currentFieldsRow?.closeStatus, '未关闭');
     assert.equal(currentFieldsRow?.documentStatus, '已审核');
     const shortNameFallbackRow = demandRows.find((row) => row.orderNo === 'CGDD012997' && row.materialCode === '1002010305');
     assert.equal(shortNameFallbackRow?.supplier, '采购订单供应商全称');
@@ -2647,6 +2648,7 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(shortNameFallbackRow?.purchaseOwner, '李奇');
     assert.equal(shortNameFallbackRow?.orderCreator, '陈晨');
     assert.equal(shortNameFallbackRow?.purchaseOrg, '浙江采购组织');
+    assert.equal(shortNameFallbackRow?.closeStatus, '未关闭');
     assert.equal(shortNameFallbackRow?.documentStatus, '已审核');
     assert.equal(
       demandRows.filter((row) => row.orderNo === 'CGDD012997' && row.materialCode === '1002010305').length,

@@ -3598,6 +3598,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
   const activeRows = useMemo(() => dashboardRows.filter((row) => row.active && numberValue(row.remainingInboundQty) > 0), [dashboardRows]);
   const [filters, setFilters] = useSessionFilters(filterKey, { month: [], businessUnit: [], operatorName: [], supplierCount: [], supplierShortName: [], productLine: [], series: [], sku: [], purchaseOwner: [], keyword: '' });
   const [currentPage, setCurrentPage] = useState(1);
+  const [showOperationAuxiliaryColumns, setShowOperationAuxiliaryColumns] = useState(false);
   const pageSize = 20;
   const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const selectedValues = (value) => Array.isArray(value) ? value : (normalize(value) ? [normalize(value)] : []);
@@ -3767,6 +3768,36 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     await writeStyledExcelFile(XLSX, workbook, `采购总览_${todayText()}.xlsx`);
   }
 
+  const operationTableColumns = [
+    '下单月份',
+    '采购订单号',
+    ...(showOperationAuxiliaryColumns ? ['来源文件', '有效订单条件', '关闭状态', '单据状态'] : []),
+    '事业部',
+    ...(showOperationAuxiliaryColumns ? ['运营', '供应商', '创建人'] : []),
+    '供应商简称', '采购下单人', '产品线', '系列', '物料编码', 'SKU', '物料名称',
+    remainingLabel, '已发货', '在产品', '完工产品',
+    ...(showOperationAuxiliaryColumns ? ['OA备货流程号'] : [])
+  ];
+  const operationTableValues = (row) => [
+    row.month,
+    row.orderNo,
+    ...(showOperationAuxiliaryColumns ? [row.sourceFile, row.effectiveOrderCondition, row.closeStatus, row.documentStatus] : []),
+    row.businessUnit,
+    ...(showOperationAuxiliaryColumns ? [row.operatorName, row.supplier, row.orderCreator] : []),
+    orderSupplierName(row),
+    row.purchaseOwner,
+    <TightCell value={row.productLine} />,
+    <TightCell value={row.productSeries} />,
+    row.materialCode,
+    row.sku,
+    row.materialName,
+    row.remainingInboundQty,
+    row.shippedQty,
+    row.inProductionQty,
+    row.finishedQty,
+    ...(showOperationAuxiliaryColumns ? [row.oaFlowNo] : [])
+  ];
+
   return (
     <>
       <div className="section-heading-row dashboard-heading">
@@ -3819,38 +3850,28 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
         </section>
       )}
       <section className="panel">
+        {usesOperationBoardLayout && (
+          <div className="section-heading-row operation-table-toolbar">
+            <strong>未交付订单明细</strong>
+            <button
+              type="button"
+              className="ghost compact-button"
+              aria-pressed={showOperationAuxiliaryColumns}
+              onClick={() => setShowOperationAuxiliaryColumns((visible) => !visible)}
+            >
+              {showOperationAuxiliaryColumns ? '隐藏订单辅助信息' : '显示订单辅助信息'}
+            </button>
+          </div>
+        )}
         <DataTable
           className="compact-table"
           rows={pageRows}
           columns={usesOperationBoardLayout
-            ? ['下单月份', '采购订单号', '来源文件', '有效订单条件', '关闭状态', '单据状态', '事业部', '运营', '供应商', '创建人', '供应商简称', '采购下单人', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']
+            ? operationTableColumns
             : ['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']}
           render={(row) => (
             usesOperationBoardLayout
-              ? [
-                  row.month,
-                  row.orderNo,
-                  row.sourceFile,
-                  row.effectiveOrderCondition,
-                  row.closeStatus,
-                  row.documentStatus,
-                  row.businessUnit,
-                  row.operatorName,
-                  row.supplier,
-                  row.orderCreator,
-                  orderSupplierName(row),
-                  row.purchaseOwner,
-                  <TightCell value={row.productLine} />,
-                  <TightCell value={row.productSeries} />,
-                  row.materialCode,
-                  row.sku,
-                  row.materialName,
-                  row.remainingInboundQty,
-                  row.shippedQty,
-                  row.inProductionQty,
-                  row.finishedQty,
-                  row.oaFlowNo
-                ]
+              ? operationTableValues(row)
               : [
                   row.businessUnit,
                   supplierName(row),

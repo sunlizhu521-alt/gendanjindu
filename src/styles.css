@@ -854,6 +854,14 @@ h3 {
   margin: 0;
 }
 
+.operation-table-toolbar {
+  margin-bottom: 8px;
+}
+
+.operation-table-toolbar .compact-button {
+  margin-left: auto;
+}
+
 .sub-heading-row {
   margin-top: 16px;
 }

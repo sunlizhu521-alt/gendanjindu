@@ -126,6 +126,88 @@ function rowTypeFor(row) {
   return 'purchase_order';
 }
 
+const SPLIT_META_KEY = '__manualProgressSplit';
+const SPLIT_INTEGER_FIELDS = [
+  'unpreparedQty', 'preparedNotStartedQty', 'inProductionQty', 'finishedQty',
+  'sourceShippedQty', 'sourceNormalQty', 'sourceAbnormalQty', 'autoFilledQty'
+];
+const SPLIT_NUMBER_FIELDS = ['sourceNormalAmount', 'sourceAbnormalAmount'];
+
+function splitTotals(row) {
+  return Object.fromEntries([...SPLIT_INTEGER_FIELDS, ...SPLIT_NUMBER_FIELDS].map((key) => [key, numberValue(row[key])]));
+}
+
+function splitMetadata(row) {
+  return row?.raw?.[SPLIT_META_KEY] || null;
+}
+
+function applySplitAllocations(rows, totals, weights) {
+  const items = rows.map((row, index) => ({ orderNo: row.orderNo, weight: weights[index] }));
+  SPLIT_INTEGER_FIELDS.forEach((key) => {
+    const values = allocateIntegerByWeights(totals[key], items);
+    rows.forEach((row, index) => { row[key] = values[index]; });
+  });
+  SPLIT_NUMBER_FIELDS.forEach((key) => {
+    const values = allocateNumberByWeights(totals[key], items);
+    rows.forEach((row, index) => { row[key] = values[index]; });
+  });
+  rows.forEach((row) => {
+    row.manualRemainingQty = row.unpreparedQty + row.preparedNotStartedQty + row.inProductionQty + row.finishedQty;
+    row.raw = {
+      ...row.raw,
+      未交付数量: row.manualRemainingQty,
+      已下单未备料未生产: row.unpreparedQty,
+      已备料未生产: row.preparedNotStartedQty,
+      生产中产品: row.inProductionQty,
+      完工未发产品: row.finishedQty,
+      已发货数量: row.sourceShippedQty,
+      正常履约数量: row.sourceNormalQty,
+      正常履约金额: row.sourceNormalAmount,
+      非正常履约数量: row.sourceAbnormalQty,
+      非正常履约金额: row.sourceAbnormalAmount
+    };
+  });
+}
+
+function splitCombinedOrderRows(parsedRows) {
+  return parsedRows.flatMap((row) => {
+    const orderNos = manualOrderNumbers(row.orderNo);
+    if (orderNos.length <= 1 || row.validationStatus === 'error') return [row];
+    const totals = splitTotals(row);
+    const groupKey = row.sourceKey;
+    const splitRows = orderNos.map((orderNo) => ({
+      ...row,
+      orderNo,
+      sourceKey: `${row.sourceKey}|split:${stablePart(orderNo)}`,
+      _splitFrom: row.orderNo,
+      raw: {
+        ...row.raw,
+        [SPLIT_META_KEY]: { from: row.orderNo, groupKey, totals }
+      }
+    }));
+    applySplitAllocations(splitRows, totals, splitRows.map(() => 1));
+    return splitRows;
+  });
+}
+
+export function rebalanceManualProgressSplitRows(rows, weightForOrder) {
+  const groups = new Map();
+  rows.forEach((row) => {
+    const metadata = splitMetadata(row);
+    if (!metadata?.groupKey || !metadata?.totals) return;
+    const list = groups.get(metadata.groupKey) || [];
+    list.push(row);
+    groups.set(metadata.groupKey, list);
+  });
+  groups.forEach((splitRows) => {
+    const totals = splitMetadata(splitRows[0]).totals;
+    let weights = splitRows.map((row) => Math.max(0, numberValue(weightForOrder?.(row))));
+    if (weights.every((weight) => weight <= 0)) weights = splitRows.map(() => 1);
+    applySplitAllocations(splitRows, totals, weights);
+  });
+  return rows;
+}
+
 export function parseManualProgressRows(rows, { headerRow = 1 } = {}) {
   const occurrences = new Map();
   const parsedRows = rows.map((source, index) => {
@@ -213,6 +295,11 @@ export function parseManualProgressRows(rows, { headerRow = 1 } = {}) {
   parsedRows.forEach((row) => {
     if (!row.conflictFields) row.conflictFields = [];
   });
+
+  // Split combined order numbers while preserving every source quantity total.
+  const splitRows = splitCombinedOrderRows(parsedRows);
+  parsedRows.length = 0;
+  parsedRows.push(...splitRows);
 
   const totals = parsedRows.reduce((result, row) => {
     result.manualRemainingQty += row.manualRemainingQty;

@@ -5,7 +5,8 @@ import {
   allocateNumberByWeights,
   groupManualProgressRows,
   manualOrderNumbers,
-  parseManualProgressRows
+  parseManualProgressRows,
+  rebalanceManualProgressSplitRows
 } from './manual-progress.js';
 
 function baseRow(overrides = {}) {
@@ -89,6 +90,20 @@ test('相同采购订单物料保留全部明细并识别冲突', () => {
 test('多个采购订单拆分并去重', () => {
   assert.deepEqual(manualOrderNumbers('CG1 + CG2、CG1'), ['CG1', 'CG2']);
   assert.deepEqual(manualOrderNumbers('/'), []);
+  const result = parseManualProgressRows([baseRow({ 采购订单号: 'CG1 + CG2、CG1' })]);
+  assert.deepEqual(result.rows.map((row) => row.orderNo), ['CG1', 'CG2']);
+  assert.deepEqual(result.rows.map((row) => row._splitFrom), ['CG1 + CG2、CG1', 'CG1 + CG2、CG1']);
+  assert.equal(result.summary.sourceRows, 2);
+  assert.equal(result.summary.totals.manualRemainingQty, 10);
+  assert.equal(result.summary.totals.sourceShippedQty, 5);
+  assert.equal(result.rows.reduce((sum, row) => sum + row.sourceNormalAmount, 0), 1234.5);
+
+  rebalanceManualProgressSplitRows(result.rows, (row) => row.orderNo === 'CG1' ? 1 : 3);
+  assert.deepEqual(result.rows.map((row) => row.manualRemainingQty), [2, 8]);
+  assert.deepEqual(result.rows.map((row) => row.sourceShippedQty), [1, 4]);
+  assert.equal(result.rows.reduce((sum, row) => sum + row.manualRemainingQty, 0), 10);
+  assert.equal(result.rows.reduce((sum, row) => sum + row.sourceShippedQty, 0), 5);
+  assert.equal(result.rows.reduce((sum, row) => sum + row.sourceNormalAmount, 0), 1234.5);
 });
 
 test('最大余数法按权重分配整数并保持总数一致', () => {

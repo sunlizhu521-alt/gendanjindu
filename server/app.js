@@ -35,7 +35,8 @@ import {
   groupManualProgressRows,
   manualOrderNumbers,
   manualProgressSourceValues,
-  parseManualProgressRows
+  parseManualProgressRows,
+  rebalanceManualProgressSplitRows
 } from './manual-progress.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -2938,6 +2939,11 @@ function manualProgressAllocationRows(row, candidates) {
 
 function matchManualProgressRows(rows) {
   const maps = manualProgressCandidateMaps();
+  rebalanceManualProgressSplitRows(rows, (row) => {
+    const candidates = maps.exact.get(manualProgressMatchKey([row.orderNo, row.materialCode])) || [];
+    if (candidates.length !== 1 || candidates[0].isClosed) return 0;
+    return candidates[0].remainingQty;
+  });
   rows.forEach((row) => {
     const retainedMessages = String(row.validationMessage || '')
       .split('；')

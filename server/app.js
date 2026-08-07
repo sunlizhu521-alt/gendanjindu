@@ -164,6 +164,7 @@ const DIFF_ALLOCATION_REASONS = [DIFF_NORMAL_ORDER, '业务调整', '型号迭�
 const UNASSIGNED_PURCHASE_OWNER = '未分配采购下单人';
 const UNASSIGNED_BUSINESS_UNIT = '之前未分配事业部';
 const TRACKING_CLOSE_STATUS = '未关闭';
+const VALID_BUSINESS_CLOSE_STATUS = '正常';
 
 const app = express();
 const UPLOAD_LIMIT_BYTES = 100 * 1024 * 1024;
@@ -2720,23 +2721,31 @@ function demandLoadContext(demands) {
   const batchIds = [...new Set(demands.map((row) => normalize(row.source_batch_id)).filter(Boolean))];
   const demandKeys = new Set(demands.map((row) => normalize(row.demand_key)));
   const orderRowsByDemand = new Map();
+  const allOrderRowsByDemand = new Map();
   if (batchIds.length) {
     const placeholders = batchIds.map(() => '?').join(',');
     all(
-      `SELECT batch_id, demand_key, creator, operator_name, oa_flow_no, order_no, delivery_date, material_name, document_status, close_status, raw_json
-       FROM kingdee_orders
-       WHERE batch_id IN (${placeholders})`,
+      `SELECT k.batch_id, k.demand_key, k.creator, k.operator_name, k.oa_flow_no, k.order_no,
+              k.quantity, k.inbound_qty, k.remaining_inbound_qty, k.delivery_date, k.material_name,
+              k.document_status, k.close_status, k.business_close, k.raw_json,
+              COALESCE(b.file_name, '') AS source_file
+       FROM kingdee_orders k
+       LEFT JOIN kingdee_import_batches b ON b.id = k.batch_id
+       WHERE k.batch_id IN (${placeholders})`,
       batchIds
     ).forEach((row, index) => {
       if (!demandKeys.has(normalize(row.demand_key))) return;
-      if (normalize(row.close_status) && normalize(row.close_status) !== TRACKING_CLOSE_STATUS) return;
       const key = demandBatchKey(row.batch_id, row.demand_key);
+      const allRows = allOrderRowsByDemand.get(key) || [];
+      allRows.push(orderRowDateSort(row, index));
+      allOrderRowsByDemand.set(key, allRows);
+      if (normalize(row.close_status) && normalize(row.close_status) !== TRACKING_CLOSE_STATUS) return;
       const list = orderRowsByDemand.get(key) || [];
       list.push(orderRowDateSort(row, index));
       orderRowsByDemand.set(key, list);
     });
   }
-  return { lookups, progressMap, inventoryMap, orderRowsByDemand };
+  return { lookups, progressMap, inventoryMap, orderRowsByDemand, allOrderRowsByDemand };
 }
 
 function canEditDemand(user, demand) {
@@ -3464,7 +3473,8 @@ function systemOrderDetails(demandKeyValue, orderNo, materialCode) {
   const demand = get('SELECT source_batch_id FROM order_demands WHERE demand_key = ?', [demandKeyValue]);
   if (!orderNo || !materialCode) return null;
   const selectFields = `k.demand_key, k.quantity, k.inbound_qty, k.remaining_inbound_qty, k.close_status,
-    k.supplier, k.creator, k.purchase_org, k.document_status`;
+    k.supplier, k.creator, k.purchase_org, k.document_status, k.business_close,
+    COALESCE(b.file_name, '') AS source_file`;
   const matchesOrderMaterial = (row) => (
     normalizeMatchPart(row.order_no) === normalizeMatchPart(orderNo)
     && normalizeMatchPart(row.material_code) === normalizeMatchPart(materialCode)
@@ -3473,6 +3483,7 @@ function systemOrderDetails(demandKeyValue, orderNo, materialCode) {
     ? all(
       `SELECT ${selectFields}, k.order_no, k.material_code
        FROM kingdee_orders k
+       LEFT JOIN kingdee_import_batches b ON b.id = k.batch_id
        WHERE k.batch_id = ? AND k.demand_key = ?`,
       [demand.source_batch_id, demandKeyValue]
     ).filter(matchesOrderMaterial)
@@ -3483,6 +3494,7 @@ function systemOrderDetails(demandKeyValue, orderNo, materialCode) {
        FROM kingdee_orders k
        JOIN order_demands d
          ON d.demand_key = k.demand_key AND d.source_batch_id = k.batch_id AND d.active = 1
+       LEFT JOIN kingdee_import_batches b ON b.id = k.batch_id
        WHERE k.order_no = ? OR k.material_code = ?`,
       [orderNo, materialCode]
     ).filter(matchesOrderMaterial);
@@ -3503,7 +3515,10 @@ function systemOrderDetails(demandKeyValue, orderNo, materialCode) {
     orderCreator: uniqueDelimitedValues(rows.map((row) => row.creator)),
     purchaseOrg: uniqueDelimitedValues(rows.map((row) => row.purchase_org)),
     documentStatus: uniqueDelimitedValues(rows.map((row) => row.document_status)),
-    closeStatus: uniqueDelimitedValues(rows.map((row) => row.close_status))
+    closeStatus: uniqueDelimitedValues(rows.map((row) => row.close_status)),
+    businessClose: uniqueDelimitedValues(rows.map((row) => row.business_close)),
+    sourceFile: uniqueDelimitedValues(rows.map((row) => row.source_file)),
+    effectiveOrderCondition: rows.length > 0 && rows.every(isEffectivePurchaseOrder) ? '有效订单' : '非有效订单'
   };
 }
 
@@ -3692,6 +3707,9 @@ function manualProgressDisplayRows(systemRows, user = null) {
         || UNASSIGNED_PURCHASE_OWNER,
       purchaseOrg: orderDetails?.purchaseOrg || candidate?.purchaseOrg || system?.purchaseOrg || '',
       orderNo: first.orderNo,
+      sourceFile: orderDetails?.sourceFile || '',
+      effectiveOrderCondition: orderDetails?.effectiveOrderCondition || '非有效订单',
+      businessClose: orderDetails?.businessClose || '',
       closeStatus: orderDetails?.closeStatus || candidate?.closeStatus || system?.closeStatus || '',
       documentStatus: orderDetails?.documentStatus || candidate?.documentStatus || system?.documentStatus || '',
       contractDeliveryDates: joinedManualField(rows, 'sourceContractDeliveryDate'),
@@ -3738,6 +3756,8 @@ function manualProgressDisplayRows(systemRows, user = null) {
       validationMessage: [...validationMessages, ...(conflictFields.length ? [`明细冲突：${conflictFields.join('、')}`] : [])].join('；'),
       conflictFields,
       manualSourceRows: rows.map(manualProgressSourcePayload),
+      operationOrderLevel: true,
+      operationOrderRows: [],
       adminOnly: first.stale || !first.orderNo || !system,
       canEdit: !first.stale && !first.deletedAt && (user?.role === ROLE_ADMIN || Boolean(system?.canEdit))
     };
@@ -3745,14 +3765,69 @@ function manualProgressDisplayRows(systemRows, user = null) {
   return [...visibleSystemRows, ...manualRows];
 }
 
-function demandRows(includeInactive = false, user = null) {
+function isEffectivePurchaseOrder(row) {
+  return normalize(row?.businessClose || row?.business_close) === VALID_BUSINESS_CLOSE_STATUS
+    && normalize(row?.closeStatus || row?.close_status) === TRACKING_CLOSE_STATUS;
+}
+
+function operationOrderBreakdown(baseRow, sourceRows) {
+  const groups = new Map();
+  sourceRows.forEach((row) => {
+    const orderNo = normalize(row.orderNo || row.order_no);
+    if (!orderNo) return;
+    const list = groups.get(orderNo) || [];
+    list.push(row);
+    groups.set(orderNo, list);
+  });
+  const details = [...groups.entries()].map(([orderNo, rows]) => {
+    const effectiveOrder = rows.length > 0 && rows.every(isEffectivePurchaseOrder);
+    return {
+      orderNo,
+      sourceFile: uniqueDelimitedValues(rows.map((row) => row.sourceFile || row.source_file)),
+      effectiveOrderCondition: effectiveOrder ? '有效订单' : '非有效订单',
+      businessClose: uniqueDelimitedValues(rows.map((row) => row.businessClose || row.business_close)),
+      closeStatus: uniqueCloseStatuses(rows),
+      documentStatus: uniqueDocumentStatuses(rows),
+      operatorName: uniqueOperatorNames(rows),
+      orderCreator: uniqueCreators(rows),
+      oaFlowNo: orderedOaFlowNos(rows, rawOaFlowNo),
+      orderDates: uniqueOrderDates(rows),
+      contractDeliveryDates: uniqueDeliveryDates(rows),
+      currentOrderQty: rows.reduce((sum, row) => sum + numberValue(row.quantity), 0),
+      totalPurchaseQty: rows.reduce((sum, row) => sum + numberValue(row.quantity), 0),
+      totalInboundQty: rows.reduce((sum, row) => sum + numberValue(row.inboundQty ?? row.inbound_qty), 0),
+      trackingOrderQty: rows.reduce((sum, row) => sum + numberValue(row.quantity), 0),
+      trackingInboundQty: rows.reduce((sum, row) => sum + numberValue(row.inboundQty ?? row.inbound_qty), 0),
+      remainingInboundQty: rows.reduce((sum, row) => sum + numberValue(row.remainingInboundQty ?? row.remaining_inbound_qty), 0)
+    };
+  }).filter((detail) => detail.effectiveOrderCondition === '有效订单' && detail.remainingInboundQty > 0)
+    .sort((left, right) => left.orderNo.localeCompare(right.orderNo, 'zh-Hans-CN'));
+  const weighted = details.map((detail) => ({ ...detail, weight: detail.remainingInboundQty }));
+  const unprepared = allocateIntegerByWeights(baseRow.unpreparedQty, weighted);
+  const preparedNotStarted = allocateIntegerByWeights(baseRow.preparedNotStartedQty, weighted);
+  const inProduction = allocateIntegerByWeights(baseRow.inProductionQty, weighted);
+  const finished = allocateIntegerByWeights(baseRow.finishedQty, weighted);
+  return weighted.map((detail, index) => ({
+    ...detail,
+    unpreparedQty: unprepared[index],
+    preparedNotStartedQty: preparedNotStarted[index],
+    inProductionQty: inProduction[index],
+    finishedQty: finished[index],
+    shippedQty: detail.trackingInboundQty,
+    operationStockQty: detail.remainingInboundQty + detail.trackingInboundQty
+  }));
+}
+
+function demandRows(includeInactive = false, user = null, options = {}) {
   const where = includeInactive ? '' : 'WHERE active = 1';
   const demands = all(`SELECT * FROM order_demands ${where} ORDER BY month DESC, business_unit, supplier, material_code`);
   const context = demandLoadContext(demands);
   const rows = demands.map((demand) => {
     const progress = context.progressMap.get(demand.demand_key) || defaultProgress(demand.demand_key);
     const stock = context.inventoryMap.get(stockKey(demand.business_unit, demand.supplier, demand.material_code)) || { stock_qty: 0 };
-    const orderRows = context.orderRowsByDemand.get(demandBatchKey(demand.source_batch_id, demand.demand_key)) || [];
+    const batchDemandKey = demandBatchKey(demand.source_batch_id, demand.demand_key);
+    const orderRows = context.orderRowsByDemand.get(batchDemandKey) || [];
+    const allOrderRows = context.allOrderRowsByDemand.get(batchDemandKey) || orderRows;
     const orderCreator = uniqueCreators(orderRows);
     const operatorName = uniqueOperatorNames(orderRows);
     const orderNo = uniqueOrderNos(orderRows);
@@ -3779,7 +3854,7 @@ function demandRows(includeInactive = false, user = null) {
     const abnormalFulfillmentQty = fulfillmentStatus === '否' ? remainingInboundQty : 0;
     const stockQty = numberValue(stock.stock_qty);
     const demandAfterStock = Math.max(remainingInboundQty - stockQty, 0);
-    return {
+    const row = {
       demandKey: demand.demand_key,
       displayKey: displayDemandKey(demand),
       month: demand.month,
@@ -3840,6 +3915,8 @@ function demandRows(includeInactive = false, user = null) {
       progressUpdatedAt: progress.updated_at || '',
       canEdit: user ? canEditDemand(user, { ...demand, purchase_owner: purchaseOwner, order_creator: orderCreator }) : false
     };
+    if (options.includeOperationOrders) row.operationOrderRows = operationOrderBreakdown(row, allOrderRows);
+    return row;
   });
   const displayRows = includeInactive ? rows : manualProgressDisplayRows(rows, user);
   if (!user || user.role === ROLE_ADMIN) return displayRows;
@@ -5356,7 +5433,12 @@ app.post('/api/imports/kingdee/new-snapshot', requireAuth, requirePage('kingdeeI
 });
 
 app.get('/api/demands', requireAuth, (req, res) => {
-  res.json({ rows: demandRows(req.query.includeInactive === '1', req.user), currentAppliedAt: currentAppliedAt() });
+  res.json({
+    rows: demandRows(req.query.includeInactive === '1', req.user, {
+      includeOperationOrders: req.query.orderLevel === '1'
+    }),
+    currentAppliedAt: currentAppliedAt()
+  });
 });
 
 function manualProgressPreviewRows(batchId, limit = 80) {

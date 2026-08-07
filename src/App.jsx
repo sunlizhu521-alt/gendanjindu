@@ -67,7 +67,7 @@ const NAV_GROUPS = [
   { title: '系统操作', pages: ['permissions', 'operationLogs'] }
 ];
 
-const DEMAND_DATA_PAGES = new Set(['inventoryPurchase', 'operationBoard', 'purchaseBoard', 'progressRefresh']);
+const DEMAND_DATA_PAGES = new Set(['inventoryPurchase', 'purchaseBoard', 'progressRefresh']);
 
 function visiblePagesForUser(user) {
   return PAGE_ORDER.filter((page) => user?.role === '管理员' || user?.pageAccess?.includes(page));
@@ -3548,9 +3548,54 @@ function SecurityWatermark({ userName }) {
   );
 }
 
+function OperationBoardPage({ token, active }) {
+  const [rows, setRows] = useState([]);
+  const [currentAppliedAt, setCurrentAppliedAt] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!active || !token) return undefined;
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    request('/api/demands?orderLevel=1', { token })
+      .then((payload) => {
+        if (cancelled) return;
+        setRows(payload.rows || []);
+        setCurrentAppliedAt(payload.currentAppliedAt || '');
+      })
+      .catch((requestError) => {
+        if (!cancelled) setError(requestError.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [active, token]);
+
+  if (loading && !rows.length) return <p className="section-count">正在加载订单级未交付数据...</p>;
+  if (error) return <p className="message error-message">运营看板加载失败：{error}</p>;
+  return <Dashboard rows={rows} title="运营看板-未交付" filterKey="operationBoard" currentAppliedAt={currentAppliedAt} />;
+}
+
 function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', currentAppliedAt = '' }) {
   const usesOperationBoardLayout = filterKey === 'operationBoard';
-  const activeRows = useMemo(() => rows.filter((row) => row.active && numberValue(row.remainingInboundQty) > 0), [rows]);
+  const dashboardRows = useMemo(() => {
+    if (!usesOperationBoardLayout) return rows;
+    return rows.flatMap((row) => {
+      if (row.operationOrderLevel) {
+        return row.effectiveOrderCondition === '有效订单' ? [row] : [];
+      }
+      return (row.operationOrderRows || []).map((orderRow) => ({
+        ...row,
+        ...orderRow,
+        demandKey: `${row.demandKey}|${orderRow.orderNo}`,
+        operationOrderRows: []
+      }));
+    });
+  }, [rows, usesOperationBoardLayout]);
+  const activeRows = useMemo(() => dashboardRows.filter((row) => row.active && numberValue(row.remainingInboundQty) > 0), [dashboardRows]);
   const [filters, setFilters] = useSessionFilters(filterKey, { month: [], businessUnit: [], operatorName: [], supplierCount: [], supplierShortName: [], productLine: [], series: [], sku: [], purchaseOwner: [], keyword: '' });
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
@@ -3568,6 +3613,9 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       row.demandKey,
       row.month,
       row.orderNo,
+      row.sourceFile,
+      row.effectiveOrderCondition,
+      row.businessClose,
       row.closeStatus,
       row.documentStatus,
       row.businessUnit,
@@ -3666,7 +3714,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     const XLSX = await import('xlsx');
     const isOperationBoard = usesOperationBoardLayout;
     const headers = isOperationBoard
-      ? ['下单月份', '采购订单号', '关闭状态', '单据状态', '事业部', '运营', '供应商', '创建人', '供应商简称', '采购下单人', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']
+      ? ['下单月份', '采购订单号', '来源文件', '有效订单条件', '关闭状态', '单据状态', '事业部', '运营', '供应商', '创建人', '供应商简称', '采购下单人', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']
       : ['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号'];
     const aoa = [
       headers,
@@ -3675,6 +3723,8 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
           ? [
               row.month,
               row.orderNo,
+              row.sourceFile,
+              row.effectiveOrderCondition,
               row.closeStatus,
               row.documentStatus,
               row.businessUnit,
@@ -3773,13 +3823,15 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
           className="compact-table"
           rows={pageRows}
           columns={usesOperationBoardLayout
-            ? ['下单月份', '采购订单号', '关闭状态', '单据状态', '事业部', '运营', '供应商', '创建人', '供应商简称', '采购下单人', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']
+            ? ['下单月份', '采购订单号', '来源文件', '有效订单条件', '关闭状态', '单据状态', '事业部', '运营', '供应商', '创建人', '供应商简称', '采购下单人', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']
             : ['事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', remainingLabel, '已发货', '在产品', '完工产品', 'OA备货流程号']}
           render={(row) => (
             usesOperationBoardLayout
               ? [
                   row.month,
                   row.orderNo,
+                  row.sourceFile,
+                  row.effectiveOrderCondition,
                   row.closeStatus,
                   row.documentStatus,
                   row.businessUnit,
@@ -8045,7 +8097,7 @@ function App() {
         {shouldMount('inventoryPurchase') && <PagePane page="inventoryPurchase" activeTab={activeTab}><InventoryPurchaseFilePage token={token} active={activeTab === 'inventoryPurchase'} /></PagePane>}
         {shouldMount('inventorySummaryLibrary') && <PagePane page="inventorySummaryLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="底表文件" slots={INVENTORY_SUMMARY_LIBRARY_SLOTS} gridColumns={4} onDataApplied={refreshCrossBorderData} /></PagePane>}
         {shouldMount('inventoryManualLibrary') && <PagePane page="inventoryManualLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="手工表库" slots={INVENTORY_MANUAL_LIBRARY_SLOTS} gridColumns={4} /></PagePane>}
-        {shouldMount('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><Dashboard rows={demands} title="运营看板-未交付" filterKey="operationBoard" currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
+        {shouldMount('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><OperationBoardPage token={token} active={activeTab === 'operationBoard'} /></PagePane>}
         {shouldMount('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
         {shouldMount('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
         {shouldMount('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}

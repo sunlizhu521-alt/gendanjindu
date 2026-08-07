@@ -2057,39 +2057,53 @@ test('inventory summary and domestic board use complete source models and enforc
   ].forEach((params) => database.run(demandSql, params));
   database.run("UPDATE order_demands SET purchase_owner = '陈晨' WHERE demand_key IN (?, ?)", ['active-june', 'active-july']);
   database.run("UPDATE order_demands SET supplier_short_name = '供应商庚' WHERE material_code = 'M6'");
+  const batchSql = `INSERT INTO kingdee_import_batches
+    (id, file_name, import_mode, imported_by, imported_at, applied_at, row_count)
+    VALUES (?, ?, 'snapshot', 'Test Admin', ?, ?, ?)`;
+  database.run(batchSql, ['batch-june', '采购订单来源-六月.xlsx', now, now, 3]);
+  database.run(batchSql, ['batch-current-fields', '采购订单来源-当前字段.xlsx', now, now, 1]);
+  database.run(batchSql, ['batch-short-name-fallback', '采购订单来源-简称兜底.xlsx', now, now, 1]);
 
   const kingdeeOrderSql = `INSERT INTO kingdee_orders
     (id, batch_id, demand_key, month, business_unit, supplier, material_code, quantity,
-     delivery_date, operator_name, close_status, raw_json)
-   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+     inbound_qty, remaining_inbound_qty, delivery_date, operator_name, order_no, document_status,
+     close_status, business_close, raw_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
   database.run(
     kingdeeOrderSql,
-    ['order-june', 'batch-june', 'active-june', '2026-06', '国内事业部', 'Supplier A', 'M1', 1200, '2026-09-30 15:30:00', '薛文乐7月柜1', '未关闭', '{}']
+    ['order-june', 'batch-june', 'active-june', '2026-06', '国内事业部', 'Supplier A', 'M1', 700,
+      100, 600, '2026-09-30 15:30:00', '薛文乐7月柜1', 'CGDD011590', '已审核', '未关闭', '正常', '{}']
   );
   database.run(
     kingdeeOrderSql,
-    ['order-june-date-2', 'batch-june', 'active-june', '2026-06', '国内事业部', 'Supplier A', 'M1', 0, '2026/09/15 08:00:00', '薛文乐7月柜1', '未关闭', '{}']
+    ['order-june-date-2', 'batch-june', 'active-june', '2026-06', '国内事业部', 'Supplier A', 'M1', 500,
+      100, 400, '2026/09/15 08:00:00', '薛文乐7月柜1', 'CGDD011560', '已审核', '未关闭', '正常', '{}']
+  );
+  database.run(
+    kingdeeOrderSql,
+    ['order-june-invalid', 'batch-june', 'active-june', '2026-06', '国内事业部', 'Supplier A', 'M1', 100,
+      0, 100, '2026/09/15 08:00:00', '薛文乐7月柜1', 'CGDD011482', '已审核', '未关闭', '异常', '{}']
   );
   database.run(
     `INSERT INTO kingdee_orders
       (id, batch_id, demand_key, month, business_unit, supplier, material_code, purchase_org, creator,
-       order_no, quantity, inbound_qty, remaining_inbound_qty, document_status, close_status, raw_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       order_no, quantity, inbound_qty, remaining_inbound_qty, document_status, close_status, business_close, raw_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       'order-current-fields', 'batch-current-fields', 'manual-current-fields', '2026-08', '海外事业一部',
       '锐世迈医疗科技有限公司', '1007010984', '浙江采购组织', '陈晨', 'CGDD013047', 10, 0, 10,
-      '已审核', '未关闭', '{}'
+      '已审核', '未关闭', '正常', '{}'
     ]
   );
   database.run(
     `INSERT INTO kingdee_orders
       (id, batch_id, demand_key, month, business_unit, supplier, material_code, purchase_org, creator,
-       order_no, quantity, inbound_qty, remaining_inbound_qty, document_status, close_status, raw_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       order_no, quantity, inbound_qty, remaining_inbound_qty, document_status, close_status, business_close, raw_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       'order-short-name-fallback', 'batch-short-name-fallback', 'manual-short-name-fallback', '2026-08',
       '海外事业一部', '采购订单供应商全称', '1002010305', '浙江采购组织', '陈晨', 'CGDD012997',
-      12, 2, 10, '已审核', '未关闭', '{}'
+      12, 2, 10, '已审核', '未关闭', '正常', '{}'
     ]
   );
 
@@ -2423,7 +2437,7 @@ test('inventory summary and domestic board use complete source models and enforc
       fetch(`http://127.0.0.1:${port}/api/inventory-purchase-summary`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/domestic-board`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/dimension-missing/cross-border`, { headers: { Authorization: 'Bearer admin-token' } }),
-      fetch(`http://127.0.0.1:${port}/api/demands`, { headers: { Authorization: 'Bearer admin-token' } }),
+      fetch(`http://127.0.0.1:${port}/api/demands?orderLevel=1`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/first-mile-board`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(endpoint),
       fetch(endpoint, { headers: { Authorization: 'Bearer limited-token' } }),
@@ -2619,6 +2633,20 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(m1Demand?.pretaxPriceMaintained, false);
     assert.equal(m1Demand?.normalFulfillmentAmount, 0);
     assert.equal(m1Demand?.abnormalFulfillmentAmount, 0);
+    assert.equal(m1Demand?.operationOrderRows?.length, 2);
+    assert.deepEqual(
+      m1Demand.operationOrderRows.map((row) => ({
+        orderNo: row.orderNo,
+        remainingInboundQty: row.remainingInboundQty,
+        shippedQty: row.shippedQty,
+        sourceFile: row.sourceFile,
+        effectiveOrderCondition: row.effectiveOrderCondition
+      })),
+      [
+        { orderNo: 'CGDD011560', remainingInboundQty: 400, shippedQty: 100, sourceFile: '采购订单来源-六月.xlsx', effectiveOrderCondition: '有效订单' },
+        { orderNo: 'CGDD011590', remainingInboundQty: 600, shippedQty: 100, sourceFile: '采购订单来源-六月.xlsx', effectiveOrderCondition: '有效订单' }
+      ]
+    );
     assert.equal(demandRows.find((row) => row.materialCode === 'M2')?.purchaseOwner, '未分配采购下单人');
     assert.equal(demandRows.find((row) => row.materialCode === 'M2')?.supplierShortName, '供应商丙&供应商丁');
     assert.equal(demandRows.find((row) => row.materialCode === 'M2')?.orderSupplierShortName, '供应商丙&供应商丁');
@@ -2641,6 +2669,8 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(currentFieldsRow?.purchaseOrg, '浙江采购组织');
     assert.equal(currentFieldsRow?.closeStatus, '未关闭');
     assert.equal(currentFieldsRow?.documentStatus, '已审核');
+    assert.equal(currentFieldsRow?.sourceFile, '采购订单来源-当前字段.xlsx');
+    assert.equal(currentFieldsRow?.effectiveOrderCondition, '有效订单');
     const shortNameFallbackRow = demandRows.find((row) => row.orderNo === 'CGDD012997' && row.materialCode === '1002010305');
     assert.equal(shortNameFallbackRow?.supplier, '采购订单供应商全称');
     assert.equal(shortNameFallbackRow?.supplierShortName, '申裕');

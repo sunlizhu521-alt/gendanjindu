@@ -21,6 +21,7 @@ test('运营看板辅助列包含供应商、创建人并且仍参与搜索和�
 test('运营看板默认隐藏八个辅助列并可切换显示，导出保留完整字段', () => {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
+  const styles = fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8');
   const dashboard = client.slice(client.indexOf('function Dashboard('), client.indexOf('function AppliedTimeNote('));
   const expectedColumns = "'采购订单号', '来源文件', '有效订单条件', '关闭状态', '单据状态', '事业部'";
 
@@ -33,6 +34,9 @@ test('运营看板默认隐藏八个辅助列并可切换显示，导出保留�
   assert.match(dashboard, /显示订单辅助信息/);
   assert.match(dashboard, /隐藏订单辅助信息/);
   assert.match(dashboard, /aria-pressed=\{showOperationAuxiliaryColumns\}/);
+  assert.match(styles, /\.operation-table-toolbar\s*\{[^}]*gap:\s*8px/);
+  assert.match(styles, /\.operation-table-toolbar \.compact-button\s*\{[^}]*margin-left:\s*0/);
+  assert.doesNotMatch(styles, /\.operation-table-toolbar \.compact-button\s*\{[^}]*margin-left:\s*auto/);
   assert.match(dashboard, /rows\.flatMap/);
   assert.match(dashboard, /row\.effectiveOrderCondition === '有效订单'/);
   assert.match(dashboard, /demandKey: `\$\{row\.demandKey\}\|\$\{orderRow\.orderNo\}`/);

@@ -7107,6 +7107,7 @@ th {
 
 .progress-command-bar {
   display: flex;
+  flex-wrap: wrap;
   min-height: 40px;
   align-items: center;
   gap: 0;
@@ -7341,11 +7342,38 @@ th {
 }
 
 .kingdee-progress-page .multi-filter-menu,
-.kingdee-progress-page .filter-menu,
-.kingdee-progress-page .progress-column-menu {
+.kingdee-progress-page .filter-menu {
   border-color: #cbd7e5;
   border-radius: 2px;
   box-shadow: 0 8px 20px rgba(40, 63, 94, .16);
+}
+
+.kingdee-progress-page .progress-column-selector {
+  display: contents;
+}
+
+.kingdee-progress-page .progress-column-menu {
+  position: static;
+  order: 100;
+  flex: 1 0 100%;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  width: 100%;
+  max-height: min(460px, 52vh);
+  margin: 4px 0 8px;
+  border-color: #cbd7e5;
+  border-radius: 2px;
+  box-shadow: 0 8px 20px rgba(40, 63, 94, .16);
+}
+
+.kingdee-progress-page .progress-column-menu label {
+  align-items: flex-start;
+  min-height: 30px;
+}
+
+.kingdee-progress-page .progress-column-menu label span {
+  min-width: 0;
+  line-height: 18px;
+  overflow-wrap: anywhere;
 }
 
 .kingdee-progress-page input[type="checkbox"] {
@@ -7524,6 +7552,15 @@ th {
   .progress-command-bar,
   .progress-scheme-bar {
     overflow-x: auto;
+  }
+
+  .progress-command-bar:has(.progress-column-menu) {
+    overflow-x: visible;
+  }
+
+  .kingdee-progress-page .progress-column-menu {
+    grid-template-columns: minmax(0, 1fr);
+    max-height: 55vh;
   }
 
   .kingdee-progress-page .manual-progress-import-head {

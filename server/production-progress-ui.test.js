@@ -302,6 +302,11 @@ test('生产跟进使用金蝶风格命令栏、方案栏且内部视图切换�
   assert.match(styleSource, /\.app-shell\.kingdee-shell\s*\{[\s\S]*?grid-template-rows: 42px minmax\(0, 1fr\)/);
   assert.match(styleSource, /\.kingdee-shell \.sidebar\s*\{[\s\S]*?background: #2f78f6/);
   assert.match(styleSource, /\.progress-command-bar\s*\{[\s\S]*?min-height: 40px/);
+  assert.match(styleSource, /\.progress-command-bar\s*\{[\s\S]*?flex-wrap: wrap/);
+  assert.match(styleSource, /\.kingdee-progress-page \.progress-column-selector\s*\{[\s\S]*?display: contents/);
+  assert.match(styleSource, /\.kingdee-progress-page \.progress-column-menu\s*\{[\s\S]*?position: static;[\s\S]*?flex: 1 0 100%;[\s\S]*?width: 100%/);
+  assert.match(styleSource, /\.progress-command-bar:has\(\.progress-column-menu\)\s*\{[\s\S]*?overflow-x: visible/);
+  assert.match(styleSource, /@media \(max-width: 900px\)[\s\S]*?\.kingdee-progress-page \.progress-column-menu\s*\{[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
   assert.match(styleSource, /\.progress-scheme-bar\s*\{[\s\S]*?min-height: 42px/);
   assert.match(styleSource, /\.kingdee-progress-page \.progress-order-detail-header th\s*\{[\s\S]*?background: #edf3fb/);
   assert.match(styleSource, /\.progress-record-link,[\s\S]*?color: #216ef4/);

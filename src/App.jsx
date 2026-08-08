@@ -6893,6 +6893,11 @@ function InventoryPage({ token, reloadDemands, setMessage }) {
   );
 }
 
+function firstMileExpectedSailingMonth(value) {
+  const match = normalize(value).match(/^(\d{4})[-/](\d{1,2})/);
+  return match ? `${match[1]}-${match[2].padStart(2, '0')}` : '未填写';
+}
+
 function FirstMileBoard({ token, setMessage, refreshVersion = 0 }) {
   const [data, setData] = useState({ rows: [], sourceApplications: [], qualitySummary: {} });
   const [loading, setLoading] = useState(true);
@@ -6906,6 +6911,7 @@ function FirstMileBoard({ token, setMessage, refreshVersion = 0 }) {
     productLine: '',
     productSeries: '',
     transportMode: '',
+    expectedSailingMonth: '',
     keyword: ''
   });
 
@@ -6930,6 +6936,7 @@ function FirstMileBoard({ token, setMessage, refreshVersion = 0 }) {
       && (omit === 'productLine' || !filters.productLine || row.productLine === filters.productLine)
       && (omit === 'productSeries' || !filters.productSeries || row.productSeries === filters.productSeries)
       && (omit === 'transportMode' || !filters.transportMode || row.transportMode === filters.transportMode)
+      && (omit === 'expectedSailingMonth' || !filters.expectedSailingMonth || firstMileExpectedSailingMonth(row.expectedSailingAt) === filters.expectedSailingMonth)
       && (!keyword || [
         row.oaApprovalNo, row.materialCode, row.sku, row.materialName, row.shipmentNo,
         row.sourceOwner, row.sourceFileText, row.sourceSheetText
@@ -6944,7 +6951,8 @@ function FirstMileBoard({ token, setMessage, refreshVersion = 0 }) {
       operators: unique(rowsFor('operatorName').map((row) => row.operatorName)),
       productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
       productSeries: unique(rowsFor('productSeries').map((row) => row.productSeries)),
-      transportModes: unique(rowsFor('transportMode').map((row) => row.transportMode))
+      transportModes: unique(rowsFor('transportMode').map((row) => row.transportMode)),
+      expectedSailingMonths: unique(rowsFor('expectedSailingMonth').map((row) => firstMileExpectedSailingMonth(row.expectedSailingAt)))
     };
   }, [rows, filters]);
   const filteredRows = useMemo(() => rows.filter((row) => matchesFilters(row)), [rows, filters]);
@@ -6964,7 +6972,7 @@ function FirstMileBoard({ token, setMessage, refreshVersion = 0 }) {
 
   const clearFilters = () => setFilters({
     cargoStatus: '', businessUnit: '', storeName: '', operatorName: '', productLine: '',
-    productSeries: '', transportMode: '', keyword: ''
+    productSeries: '', transportMode: '', expectedSailingMonth: '', keyword: ''
   });
 
   async function handleExport() {
@@ -7023,6 +7031,7 @@ function FirstMileBoard({ token, setMessage, refreshVersion = 0 }) {
         <SelectField label="销售产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
         <SelectField label="销售系列" value={filters.productSeries} options={options.productSeries} onChange={(value) => setFilters({ ...filters, productSeries: value })} />
         <SelectField label="运输方式" value={filters.transportMode} options={options.transportModes} onChange={(value) => setFilters({ ...filters, transportMode: value })} />
+        <SelectField label="预计开船月份" value={filters.expectedSailingMonth} options={options.expectedSailingMonths} onChange={(value) => setFilters({ ...filters, expectedSailingMonth: value })} />
         <input className="search-input" placeholder="搜索OA、物料、SKU、货件号、来源" value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} />
         <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
       </div>

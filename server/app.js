@@ -1726,6 +1726,11 @@ function firstMileBoardModel() {
   };
 }
 
+function firstMileExpectedSailingMonth(value) {
+  const match = normalize(value).match(/^(\d{4})[-/](\d{1,2})/);
+  return match ? `${match[1]}-${match[2].padStart(2, '0')}` : '未填写';
+}
+
 function filterFirstMileRows(rows, filters = {}) {
   const keyword = normalize(filters.keyword).toLowerCase();
   return rows.filter((row) => (
@@ -1736,6 +1741,7 @@ function filterFirstMileRows(rows, filters = {}) {
     && (!filters.productLine || row.productLine === filters.productLine)
     && (!filters.productSeries || row.productSeries === filters.productSeries)
     && (!filters.transportMode || row.transportMode === filters.transportMode)
+    && (!filters.expectedSailingMonth || firstMileExpectedSailingMonth(row.expectedSailingAt) === filters.expectedSailingMonth)
     && (!keyword || [
       row.oaApprovalNo, row.materialCode, row.sku, row.materialName, row.shipmentNo,
       row.sourceOwner, row.sourceFileText, row.sourceSheetText

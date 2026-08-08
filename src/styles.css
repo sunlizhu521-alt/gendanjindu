@@ -6823,21 +6823,6 @@ th {
   color: #fff;
 }
 
-.supplier-lookonly-btn {
-  padding: 1px 6px;
-  border: 1px solid #bfdbfe;
-  border-radius: 4px;
-  background: #eff6ff;
-  color: #2563eb;
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.supplier-lookonly-btn:hover {
-  background: #dbeafe;
-}
-
 .supplier-filter-link {
   padding: 0;
   border: none;
@@ -7453,13 +7438,6 @@ th {
 .kingdee-progress-page .supplier-filter-link {
   color: #216ef4;
   font-weight: 500;
-}
-
-.kingdee-progress-page .supplier-lookonly-btn {
-  border-color: #bcd3fa;
-  border-radius: 2px;
-  background: #eff5ff;
-  color: #216ef4;
 }
 
 .kingdee-progress-page .progress-data-status {

@@ -6382,21 +6382,6 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
                       >
                         {supplierLabel}
                       </button>
-                      {' '}
-                      <button
-                        type="button"
-                        className="supplier-lookonly-btn"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setFilters({
-                            ...filters,
-                            supplier: uniqueSupplierShortNames(group.rows.map((row) => progressSupplierName(row)))
-                          });
-                        }}
-                        onKeyDown={(event) => event.stopPropagation()}
-                      >
-                        只看
-                      </button>
                     </strong>
                     {!groupBySupplier && <span>月份：{months}</span>}
                     {!groupBySupplier && <span>事业部：{businessUnits}</span>}

@@ -7021,10 +7021,10 @@ function FirstMileBoard({ token, setMessage, refreshVersion = 0 }) {
         <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
       </div>
       <section className="metric-grid">
+        <MetricCard label="数量合计" value={totalQuantity.toLocaleString()} tone="first-mile-total" />
         <MetricCard label="明细数量" value={filteredRows.length.toLocaleString()} />
         <MetricCard label="在途数量" value={transitQuantity.toLocaleString()} />
         <MetricCard label="已上架数量" value={listedQuantity.toLocaleString()} />
-        <MetricCard label="货物数量合计" value={totalQuantity.toLocaleString()} />
       </section>
       {!loading && rows.length > 0 && (
         <section className="first-mile-dimension-chart-grid">

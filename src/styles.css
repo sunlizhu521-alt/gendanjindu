@@ -1144,6 +1144,21 @@ h3 {
   color: #dc2626;
 }
 
+.metric-card.first-mile-total {
+  border-color: #93c5fd;
+  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+  box-shadow: 0 4px 12px rgb(37 99 235 / 10%);
+}
+
+.metric-card.first-mile-total span {
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.metric-card.first-mile-total strong {
+  color: #1e40af;
+}
+
 .inventory-summary-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

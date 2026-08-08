@@ -1185,7 +1185,7 @@ function pickMapped(row, mapping, key, aliases = []) {
 }
 
 function uniqueDelimitedValues(values) {
-  return [...new Set(values.flatMap((value) => normalize(value).split(/[+、]/)).map(normalize).filter(Boolean))].join('+');
+  return [...new Set(values.flatMap((value) => normalize(value).split(/[+、]/)).map(normalize).filter(Boolean))].join('、');
 }
 
 function appendUniqueDelimited(existing, next) {
@@ -3626,6 +3626,8 @@ function manualProgressDisplayRows(systemRows, user = null) {
     }));
   });
   const systemMap = new Map(systemRows.map((row) => [row.demandKey, row]));
+  // 所有金蝶有的采购订单号，手工行一律不展示（以金蝶为准）
+  const kingdeeOrderNos = new Set(all('SELECT DISTINCT order_no FROM kingdee_orders WHERE remaining_inbound_qty > 0 AND order_no != \'\'').map(r => r.order_no));
   const groups = new Map();
   displaySourceRows.forEach((row) => {
     const key = `${row.batchId}|${row.groupKey}`;
@@ -3646,18 +3648,19 @@ function manualProgressDisplayRows(systemRows, user = null) {
     const initialSystem = first.demandKey ? systemMap.get(first.demandKey) : null;
     const orderDetails = systemOrderDetails(first.demandKey, first.orderNo, first.materialCode);
     const system = initialSystem || (orderDetails?.demandKey ? systemMap.get(orderDetails.demandKey) : null);
+    // 以金蝶数据为准：金蝶有的订单号，手工行一律跳过
+    if (system || (first.orderNo && kingdeeOrderNos.has(first.orderNo))) return null;
     const orderQty = orderDetails?.hasQuantityRows ? orderDetails : null;
     const candidate = first.matchCandidate || first.candidates?.find((item) => (
       item.demandKey === first.demandKey && (!first.orderNo || item.orderNo === first.orderNo)
     )) || null;
-    const rawInbound = numberValue(system?.remainingInboundQty) || 0;
-    const remainingInboundQty = system?.demandKey && usedDemandKeys.has(system.demandKey) ? 0 : rawInbound;
-    if (system?.demandKey) usedDemandKeys.add(system.demandKey);
-    const shippedQty = numberValue(system?.shippedQty) || 0;
-    const unpreparedQty = numberValue(system?.unpreparedQty) || 0;
-    const preparedNotStartedQty = numberValue(system?.preparedNotStartedQty) || 0;
-    const inProductionQty = numberValue(system?.inProductionQty) || 0;
-    const finishedQty = numberValue(system?.finishedQty) || 0;
+    // 金蝶无对应数据时，以手工表自有数据为准
+    const remainingInboundQty = rows.reduce((sum, r) => sum + numberValue(r.manualRemainingQty), 0);
+    const shippedQty = rows.reduce((sum, r) => sum + numberValue(r.sourceShippedQty), 0);
+    const unpreparedQty = rows.reduce((sum, r) => sum + numberValue(r.unpreparedQty), 0);
+    const preparedNotStartedQty = rows.reduce((sum, r) => sum + numberValue(r.preparedNotStartedQty), 0);
+    const inProductionQty = rows.reduce((sum, r) => sum + numberValue(r.inProductionQty), 0);
+    const finishedQty = rows.reduce((sum, r) => sum + numberValue(r.finishedQty), 0);
     const progressTotal = unpreparedQty + preparedNotStartedQty + inProductionQty + finishedQty;
     const conflictFields = [...new Set(rows.flatMap((row) => row.conflictFields || []))];
     const field = (key, fallback = '') => {
@@ -3770,7 +3773,7 @@ function manualProgressDisplayRows(systemRows, user = null) {
       adminOnly: first.stale || !first.orderNo || !system,
       canEdit: !first.stale && !first.deletedAt && (user?.role === ROLE_ADMIN || Boolean(system?.canEdit))
     };
-  });
+  }).filter(Boolean);
   return [...visibleSystemRows, ...manualRows];
 }
 
@@ -3925,8 +3928,42 @@ function demandRows(includeInactive = false, user = null, options = {}) {
       canEdit: user ? canEditDemand(user, { ...demand, purchase_owner: purchaseOwner, order_creator: orderCreator }) : false
     };
     if (options.includeOperationOrders) row.operationOrderRows = operationOrderBreakdown(row, allOrderRows);
+    // 一个demand对应多个采购订单时，拆成每个订单独立一行
+    if (orderRows.length > 1 && orderNo.includes('、')) {
+      const distinctOrders = [...new Set(orderRows.map(r => r.order_no).filter(Boolean))];
+      const totalRemaining = orderRows.reduce((s, r) => s + numberValue(r.remaining_inbound_qty), 0) || 1;
+      return distinctOrders.map(order => {
+        const orderQty = orderRows
+          .filter(r => r.order_no === order)
+          .reduce((s, r) => s + numberValue(r.remaining_inbound_qty), 0);
+        const ratio = orderQty / totalRemaining;
+        return {
+          ...row,
+          orderNo: order,
+          remainingInboundQty: Math.round(row.remainingInboundQty * ratio),
+          operationStockQty: Math.round(row.operationStockQty * ratio),
+          totalInboundQty: Math.round(row.totalInboundQty * ratio),
+          trackingOrderQty: Math.round(row.trackingOrderQty * ratio),
+          trackingInboundQty: Math.round(row.trackingInboundQty * ratio),
+          currentOrderQty: Math.round(row.currentOrderQty * ratio),
+          totalPurchaseQty: Math.round(row.totalPurchaseQty * ratio),
+          unpreparedQty: Math.round(row.unpreparedQty * ratio),
+          preparedNotStartedQty: Math.round(row.preparedNotStartedQty * ratio),
+          inProductionQty: Math.round(row.inProductionQty * ratio),
+          finishedQty: Math.round(row.finishedQty * ratio),
+          shippedQty: Math.round(row.shippedQty * ratio),
+          progressTotal: Math.round(row.progressTotal * ratio),
+          gap: Math.round(row.gap * ratio),
+          stockQty: Math.round(row.stockQty * ratio),
+          demandAfterStock: Math.round(row.demandAfterStock * ratio),
+          shortageAfterStock: Math.round(row.shortageAfterStock * ratio),
+          normalFulfillmentQty: Math.round(row.normalFulfillmentQty * ratio),
+          abnormalFulfillmentQty: Math.round(row.abnormalFulfillmentQty * ratio),
+        };
+      });
+    }
     return row;
-  });
+  }).flat();
   const displayRows = includeInactive ? rows : manualProgressDisplayRows(rows, user);
   if (!user || user.role === ROLE_ADMIN) return displayRows;
   return displayRows.filter((row) => !row.adminOnly && canEditDemand(user, { purchase_owner: row.purchaseOwner }));

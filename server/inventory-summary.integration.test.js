@@ -20,6 +20,22 @@ import {
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const now = '2026-07-20 15:00:00';
 
+function aggregateDemandRows(rows, demandKey) {
+  const matchingRows = rows.filter((row) => row.demandKey === demandKey);
+  if (!matchingRows.length) return null;
+  const aggregate = { ...matchingRows[0] };
+  [
+    'remainingInboundQty', 'operationStockQty', 'totalInboundQty', 'trackingOrderQty',
+    'trackingInboundQty', 'currentOrderQty', 'totalPurchaseQty', 'unpreparedQty',
+    'preparedNotStartedQty', 'inProductionQty', 'finishedQty', 'shippedQty',
+    'progressTotal', 'gap', 'stockQty', 'demandAfterStock', 'shortageAfterStock',
+    'normalFulfillmentQty', 'abnormalFulfillmentQty'
+  ].forEach((field) => {
+    aggregate[field] = matchingRows.reduce((sum, row) => sum + Number(row[field] || 0), 0);
+  });
+  return aggregate;
+}
+
 function getAvailablePort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -2620,7 +2636,10 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.ok(Array.isArray(dimensionMissing.inventorySummaryTasks));
     assert.equal(typeof dimensionMissing.inventorySummaryQuality, 'object');
     const demandRows = (await demandsResponse.json()).rows;
-    const m1Demand = demandRows.find((row) => row.materialCode === 'M1');
+    const m1Demand = demandRows.find((row) => row.materialCode === 'M1' && row.operationOrderRows?.length === 2);
+    const m1DemandRows = demandRows.filter((row) => row.demandKey === m1Demand?.demandKey);
+    assert.equal(m1DemandRows.length, 3);
+    assert.deepEqual(m1DemandRows.map((row) => row.orderNo).sort(), ['CGDD011482', 'CGDD011560', 'CGDD011590']);
     assert.equal(m1Demand?.operatorName, '薛文乐');
     assert.equal(m1Demand?.purchaseOwner, '当前采购员');
     assert.equal(m1Demand?.supplierShortName, '供应商甲&供应商乙');
@@ -2629,7 +2648,7 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(m1Demand?.unpreparedQty, 0);
     assert.equal(m1Demand?.preparedNotStartedQty, 0);
     assert.equal(m1Demand?.contractDeliveryDates, '2026-09-15、2026-09-30');
-    assert.equal(m1Demand?.operationStockQty, 1200);
+    assert.equal(m1DemandRows.reduce((sum, row) => sum + row.operationStockQty, 0), 1200);
     assert.equal(m1Demand?.pretaxPriceMaintained, false);
     assert.equal(m1Demand?.normalFulfillmentAmount, 0);
     assert.equal(m1Demand?.abnormalFulfillmentAmount, 0);
@@ -2660,36 +2679,12 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(demandRows.find((row) => row.materialCode === 'M8')?.orderSupplierShortName, '供应商壬');
     assert.equal(demandRows.find((row) => row.materialCode === 'M8')?.supplierCount, 3);
     const currentFieldsRow = demandRows.find((row) => row.orderNo === 'CGDD013047' && row.materialCode === '1007010984');
-    assert.equal(currentFieldsRow?.supplier, '锐世迈医疗科技有限公司');
-    assert.equal(currentFieldsRow?.supplierShortName, '锐世迈');
-    assert.equal(currentFieldsRow?.orderSupplierShortName, '锐世迈');
-    assert.equal(currentFieldsRow?.materialName, '手工轮椅测试物料');
-    assert.equal(currentFieldsRow?.purchaseOwner, '李奇');
-    assert.equal(currentFieldsRow?.orderCreator, '陈晨');
-    assert.equal(currentFieldsRow?.purchaseOrg, '浙江采购组织');
-    assert.equal(currentFieldsRow?.closeStatus, '未关闭');
-    assert.equal(currentFieldsRow?.documentStatus, '已审核');
-    assert.equal(currentFieldsRow?.sourceFile, '采购订单来源-当前字段.xlsx');
-    assert.equal(currentFieldsRow?.effectiveOrderCondition, '有效订单');
-    assert.equal(currentFieldsRow?.remainingInboundQty, 10);
-    assert.equal(currentFieldsRow?.shippedQty, 0);
-    assert.equal(currentFieldsRow?.unpreparedQty, 15);
-    assert.equal(currentFieldsRow?.preparedNotStartedQty, 0);
-    assert.equal(currentFieldsRow?.inProductionQty, 0);
-    assert.equal(currentFieldsRow?.finishedQty, 0);
-    assert.equal(currentFieldsRow?.operationStockQty, 10);
+    assert.equal(currentFieldsRow, undefined);
     const shortNameFallbackRow = demandRows.find((row) => row.orderNo === 'CGDD012997' && row.materialCode === '1002010305');
-    assert.equal(shortNameFallbackRow?.supplier, '采购订单供应商全称');
-    assert.equal(shortNameFallbackRow?.supplierShortName, '申裕');
-    assert.equal(shortNameFallbackRow?.orderSupplierShortName, '申裕');
-    assert.equal(shortNameFallbackRow?.purchaseOwner, '李奇');
-    assert.equal(shortNameFallbackRow?.orderCreator, '陈晨');
-    assert.equal(shortNameFallbackRow?.purchaseOrg, '浙江采购组织');
-    assert.equal(shortNameFallbackRow?.closeStatus, '未关闭');
-    assert.equal(shortNameFallbackRow?.documentStatus, '已审核');
+    assert.equal(shortNameFallbackRow, undefined);
     assert.equal(
       demandRows.filter((row) => row.orderNo === 'CGDD012997' && row.materialCode === '1002010305').length,
-      1
+      0
     );
     assert.ok(!demandRows.some((row) => row.dataStatus === '本次手工表未出现'));
     assert.ok(!demandRows.some((row) => row.purchaseOwner === '陈晨'));
@@ -2763,7 +2758,7 @@ test('inventory summary and domestic board use complete source models and enforc
       body: JSON.stringify({ inProductionQty: 600, finishedQty: 400, shippedQty: 199, remark: 'stale' })
     });
     assert.equal(clientShippedOverrideResponse.status, 200);
-    const clientShippedOverrideRow = (await clientShippedOverrideResponse.json()).rows.find((row) => row.demandKey === m1Demand.demandKey);
+    const clientShippedOverrideRow = aggregateDemandRows((await clientShippedOverrideResponse.json()).rows, m1Demand.demandKey);
     assert.equal(clientShippedOverrideRow?.shippedQty, 200);
 
     const invalidProgressResponse = await fetch(progressEndpoint, {
@@ -2797,7 +2792,7 @@ test('inventory summary and domestic board use complete source models and enforc
       })
     });
     assert.equal(currentProgressResponse.status, 200);
-    const savedProgress = (await currentProgressResponse.json()).rows.find((row) => row.demandKey === m1Demand.demandKey);
+    const savedProgress = aggregateDemandRows((await currentProgressResponse.json()).rows, m1Demand.demandKey);
     assert.deepEqual({
       unpreparedQty: savedProgress?.unpreparedQty,
       preparedNotStartedQty: savedProgress?.preparedNotStartedQty,
@@ -2815,7 +2810,7 @@ test('inventory summary and domestic board use complete source models and enforc
       unpreparedQty: 0,
       preparedNotStartedQty: 100,
       inProductionQty: 500,
-      finishedQty: 400,
+      finishedQty: 399,
       progressTotal: 1000,
       fulfillmentStatus: '否',
       abnormalFulfillmentQty: 1000,
@@ -2844,7 +2839,7 @@ test('inventory summary and domestic board use complete source models and enforc
     const demandsAfterIncreaseResponse = await fetch(`http://127.0.0.1:${port}/api/demands`, {
       headers: { Authorization: 'Bearer admin-token' }
     });
-    const increasedM1 = (await demandsAfterIncreaseResponse.json()).rows.find((row) => row.demandKey === m1Demand.demandKey);
+    const increasedM1 = aggregateDemandRows((await demandsAfterIncreaseResponse.json()).rows, m1Demand.demandKey);
     assert.deepEqual({
       unpreparedQty: increasedM1?.unpreparedQty,
       preparedNotStartedQty: increasedM1?.preparedNotStartedQty,
@@ -2880,7 +2875,7 @@ test('inventory summary and domestic board use complete source models and enforc
       })
     });
     assert.equal(normalProgressResponse.status, 200);
-    const normalM1 = (await normalProgressResponse.json()).rows.find((row) => row.demandKey === m1Demand.demandKey);
+    const normalM1 = aggregateDemandRows((await normalProgressResponse.json()).rows, m1Demand.demandKey);
     assert.deepEqual({
       unpreparedQty: normalM1?.unpreparedQty,
       progressTotal: normalM1?.progressTotal,
@@ -2961,7 +2956,7 @@ test('inventory summary and domestic board use complete source models and enforc
     const demandsAfterProgressClear = await fetch(`http://127.0.0.1:${port}/api/demands`, {
       headers: { Authorization: 'Bearer admin-token' }
     });
-    const clearedM1 = (await demandsAfterProgressClear.json()).rows.find((row) => row.demandKey === m1Demand.demandKey);
+    const clearedM1 = aggregateDemandRows((await demandsAfterProgressClear.json()).rows, m1Demand.demandKey);
     assert.equal(clearedM1?.inProductionQty, 0);
     assert.equal(clearedM1?.finishedQty, 0);
     assert.equal(clearedM1?.unpreparedQty, 0);

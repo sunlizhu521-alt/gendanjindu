@@ -244,7 +244,8 @@ test('生产跟进使用固定默认显示列并按用户持久保存', () => {
     [
       'month', 'orderNo', 'dataStatus', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
       'operationStockQty', 'remainingInboundQty', 'shippedQty', 'unpreparedQty', 'preparedNotStartedQty',
-      'inProductionQty', 'finishedQty', 'fulfillmentStatus', 'oaFlowNo', 'action'
+      'inProductionQty', 'finishedQty', 'contractDeliveryDates', 'productionDeliveryDate',
+      'unproducedEstimatedDeliveryDate', 'fulfillmentStatus', 'oaFlowNo', 'action'
     ]
   );
   assert.match(columnSource, /function defaultProgressColumnKeys\(\)\s*\{\s*return \[\.\.\.PROGRESS_DEFAULT_COLUMNS\];/);

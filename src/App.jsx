@@ -5249,7 +5249,8 @@ const PROGRESS_COLUMNS = [
 const PROGRESS_DEFAULT_COLUMNS = [
   'month', 'orderNo', 'dataStatus', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
   'operationStockQty', 'remainingInboundQty', 'shippedQty', 'unpreparedQty', 'preparedNotStartedQty',
-  'inProductionQty', 'finishedQty', 'fulfillmentStatus', 'oaFlowNo', 'action'
+  'inProductionQty', 'finishedQty', 'contractDeliveryDates', 'productionDeliveryDate',
+  'unproducedEstimatedDeliveryDate', 'fulfillmentStatus', 'oaFlowNo', 'action'
 ];
 
 function defaultProgressColumnKeys() {

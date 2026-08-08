@@ -6919,3 +6919,624 @@ th {
     margin-left: 0;
   }
 }
+
+/* Kingdee-style production progress workspace */
+.app-shell.kingdee-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 42px minmax(0, 1fr);
+  background: #fff;
+  color: #28384d;
+  font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+}
+
+.kingdee-shell .sidebar {
+  position: relative;
+  z-index: 60;
+  display: flex;
+  min-height: 42px;
+  height: 42px;
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  padding: 0 14px;
+  overflow: hidden;
+  border: 0;
+  background: #2f78f6;
+  color: #fff;
+}
+
+.kingdee-shell .sidebar h1 {
+  flex: 0 0 auto;
+  margin: 0;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.kingdee-shell .app-version-time {
+  flex: 0 0 auto;
+  margin: 0;
+  color: rgba(255, 255, 255, .72);
+  font-size: 11px;
+}
+
+.kingdee-shell .sidebar-nav {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.kingdee-shell .sidebar-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.kingdee-shell .sidebar-nav-group {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.kingdee-shell .sidebar-nav-title {
+  display: none;
+}
+
+.kingdee-shell .sidebar-nav button {
+  width: auto;
+  min-height: 28px;
+  padding: 0 9px;
+  border-radius: 2px;
+  background: transparent;
+  color: rgba(255, 255, 255, .84);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.kingdee-shell .sidebar-nav button:hover,
+.kingdee-shell .sidebar-nav button.active {
+  background: rgba(255, 255, 255, .18);
+  color: #fff;
+  box-shadow: none;
+}
+
+.kingdee-shell .user-box {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0 0 0 12px;
+  border-top: 0;
+  border-left: 1px solid rgba(255, 255, 255, .25);
+  color: #fff;
+  font-size: 12px;
+}
+
+.kingdee-shell .user-box span {
+  color: rgba(255, 255, 255, .72);
+}
+
+.kingdee-shell .user-box .ghost {
+  min-height: 26px;
+  padding: 0 7px;
+  border-color: rgba(255, 255, 255, .38);
+  background: transparent;
+  color: #fff;
+  box-shadow: none;
+}
+
+.kingdee-shell .content {
+  min-height: 0;
+  padding: 0 14px 28px;
+  overflow: auto;
+  background: #fff;
+}
+
+.kingdee-progress-page {
+  min-width: 0;
+  margin: 0;
+  background: #fff;
+  color: #28384d;
+  font-size: 12px;
+}
+
+.kingdee-progress-page .progress-sticky-top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  margin: 0 0 8px;
+  padding: 0;
+  border-bottom: 1px solid #dfe6ef;
+  background: #fff;
+}
+
+.progress-page-titlebar {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid #edf1f6;
+}
+
+.progress-page-titlebar > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.progress-page-titlebar h2 {
+  margin: 0;
+  color: #27415f;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.progress-page-mark {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 50%;
+  background: #2f78f6;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.progress-page-titlebar .dashboard-applied-note {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #7a8798;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.progress-page-titlebar > .section-count {
+  margin-left: auto;
+  color: #7a8798;
+}
+
+.progress-command-bar {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 0;
+  overflow: visible;
+  border-bottom: 1px solid #e8edf4;
+}
+
+.progress-command,
+.progress-command-bar .progress-columns-button {
+  width: auto;
+  min-width: 0;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-right: 1px solid #e3e8ef;
+  border-radius: 0;
+  background: transparent;
+  color: #44556b;
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.progress-command.primary,
+.progress-command:hover,
+.progress-command-bar .progress-columns-button:hover,
+.progress-command-bar .progress-columns-button[aria-expanded="true"] {
+  background: #edf4ff;
+  color: #246bdb;
+}
+
+.progress-command.danger-text {
+  color: #d14343;
+}
+
+.progress-command:disabled {
+  color: #aeb8c5;
+  cursor: not-allowed;
+}
+
+.progress-toolbar-entry {
+  width: auto;
+  min-width: 0;
+}
+
+.progress-scheme-bar {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid #e8edf4;
+}
+
+.progress-scheme-bar strong {
+  min-width: 58px;
+  color: #53657b;
+  font-size: 12px;
+}
+
+.progress-scheme-bar button {
+  height: 27px;
+  padding: 0 11px;
+  border: 1px solid #ced8e6;
+  border-radius: 2px;
+  background: #fff;
+  color: #526178;
+  box-shadow: none;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.progress-scheme-bar button:hover,
+.progress-scheme-bar button.active {
+  border-color: #7ba9fb;
+  background: #eff5ff;
+  color: #246bdb;
+}
+
+.progress-scheme-bar > span {
+  margin-left: auto;
+  color: #8390a1;
+}
+
+.kingdee-progress-page .manual-progress-import {
+  margin: 6px 0;
+  border: 1px solid #dce4ef;
+  background: #f8faff;
+}
+
+.kingdee-progress-page .manual-progress-import-head {
+  min-height: 34px;
+  padding: 3px 8px;
+}
+
+.kingdee-progress-page .manual-progress-import-head strong {
+  color: #40536b;
+  font-size: 12px;
+}
+
+.kingdee-progress-page .manual-progress-import-head span {
+  color: #7a8798;
+  font-size: 11px;
+}
+
+.kingdee-progress-page .manual-progress-import-actions .compact-button,
+.kingdee-progress-page .manual-progress-file-row .compact-button {
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid #cbd7e5;
+  border-radius: 2px;
+  background: #fff;
+  color: #45617e;
+  box-shadow: none;
+  font-size: 11px;
+}
+
+.kingdee-progress-page .progress-logic-note {
+  display: block;
+  margin: 6px 0;
+  padding: 0;
+  border: 1px solid #e0e7f0;
+  border-radius: 2px;
+  background: #fbfcfe;
+  color: #66758a;
+}
+
+.kingdee-progress-page .progress-logic-note summary {
+  padding: 6px 9px;
+  color: #4d6078;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.kingdee-progress-page .progress-logic-definitions,
+.kingdee-progress-page .progress-logic-rules {
+  margin: 0 9px 7px;
+}
+
+.kingdee-progress-page .progress-logic-tag {
+  min-height: 19px;
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-size: 11px;
+}
+
+.kingdee-progress-page .supplier-tags-bar {
+  flex-wrap: nowrap;
+  gap: 5px;
+  margin: 0;
+  padding: 6px 0;
+  overflow-x: auto;
+  border-bottom: 1px solid #e8edf4;
+}
+
+.kingdee-progress-page .supplier-tag {
+  padding: 2px 9px;
+  border-color: #d5dee9;
+  border-radius: 2px;
+  background: #fff;
+  color: #526178;
+}
+
+.kingdee-progress-page .supplier-tag:hover,
+.kingdee-progress-page .supplier-tag.active {
+  border-color: #2f78f6;
+  background: #2f78f6;
+  color: #fff;
+}
+
+.kingdee-progress-page .progress-sticky-top > .filters-row {
+  display: flex;
+  min-height: 58px;
+  align-items: flex-end;
+  gap: 6px;
+  margin: 0;
+  padding: 6px 0 8px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.kingdee-progress-page .multi-filter,
+.kingdee-progress-page .filter-control {
+  flex: 0 0 150px;
+  width: 150px;
+  min-width: 150px;
+  gap: 3px;
+}
+
+.kingdee-progress-page .month-calendar-filter {
+  flex-basis: 160px;
+  width: 160px;
+  min-width: 160px;
+}
+
+.kingdee-progress-page .multi-filter-label,
+.kingdee-progress-page .filter-control > span {
+  color: #69788c;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.kingdee-progress-page .multi-filter-button,
+.kingdee-progress-page .filter-button,
+.kingdee-progress-page .filters-row .search-input {
+  height: 28px;
+  border: 1px solid #cbd7e5;
+  border-radius: 2px;
+  background: #fff;
+  color: #34465d;
+  box-shadow: none;
+  font-size: 12px;
+}
+
+.kingdee-progress-page .filters-row .search-input {
+  flex: 0 0 270px;
+  width: 270px;
+  padding: 0 8px;
+}
+
+.kingdee-progress-page .filters-row > .ghost.compact-button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #2f78f6;
+  border-radius: 2px;
+  background: #2f78f6;
+  color: #fff;
+  box-shadow: none;
+  font-size: 12px;
+}
+
+.kingdee-progress-page .multi-filter-menu,
+.kingdee-progress-page .filter-menu,
+.kingdee-progress-page .progress-column-menu {
+  border-color: #cbd7e5;
+  border-radius: 2px;
+  box-shadow: 0 8px 20px rgba(40, 63, 94, .16);
+}
+
+.kingdee-progress-page input[type="checkbox"] {
+  accent-color: #2f78f6;
+}
+
+.kingdee-progress-page .progress-table.table-wrap {
+  max-height: calc(100vh - 294px);
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+}
+
+.kingdee-progress-page .progress-table table {
+  border-top: 1px solid #dce4ee;
+  border-left: 1px solid #dce4ee;
+}
+
+.kingdee-progress-page .progress-table th,
+.kingdee-progress-page .progress-table td,
+.kingdee-progress-page .progress-table th:last-child,
+.kingdee-progress-page .progress-table td:last-child {
+  height: 31px;
+  padding: 5px 8px;
+  border-right: 1px solid #dce4ee;
+  border-bottom: 1px solid #dce4ee;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.kingdee-progress-page .progress-order-detail-header th {
+  height: 32px;
+  border-color: #d6e0ec;
+  background: #edf3fb;
+  color: #45566d;
+  font-weight: 600;
+}
+
+.kingdee-progress-page .progress-table tbody tr:nth-child(even):not(.progress-row-adjustment) > td,
+.kingdee-progress-page .progress-table tbody tr:nth-child(even):not(.progress-row-adjustment) input:not([type="checkbox"]),
+.kingdee-progress-page .progress-table tbody tr:nth-child(even):not(.progress-row-adjustment) select,
+.kingdee-progress-page .progress-table tbody tr:nth-child(even):not(.progress-row-adjustment) textarea {
+  background: #fbfdff;
+}
+
+.kingdee-progress-page .progress-table tbody tr:not(.progress-row-adjustment):hover > td {
+  background: #f1f7ff;
+}
+
+.kingdee-progress-page .progress-order-parent-row > td {
+  border-top: 1px solid #cbd9eb !important;
+  background: #f7faff !important;
+}
+
+.kingdee-progress-page .progress-order-toggle {
+  min-height: 31px;
+  gap: 12px;
+  padding: 4px 8px;
+  color: #40536b;
+}
+
+.kingdee-progress-page .progress-order-toggle b {
+  width: 18px;
+  height: 18px;
+  border-color: #8fb2e8;
+  color: #2f78f6;
+  font-size: 12px;
+}
+
+.kingdee-progress-page .progress-order-toggle strong,
+.kingdee-progress-page .progress-order-toggle span {
+  font-size: 12px;
+}
+
+.progress-record-link,
+.kingdee-progress-page .supplier-filter-link {
+  color: #216ef4;
+  font-weight: 500;
+}
+
+.kingdee-progress-page .supplier-lookonly-btn {
+  border-color: #bcd3fa;
+  border-radius: 2px;
+  background: #eff5ff;
+  color: #216ef4;
+}
+
+.kingdee-progress-page .progress-data-status {
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-size: 11px;
+}
+
+.kingdee-progress-page .progress-table input,
+.kingdee-progress-page .progress-table select,
+.kingdee-progress-page .progress-table textarea {
+  height: 25px;
+  padding: 2px 5px;
+  border: 1px solid #cbd7e5;
+  border-radius: 2px;
+  background: #fff;
+}
+
+.kingdee-progress-page .progress-table .compact-button {
+  height: 25px;
+  padding: 0 9px;
+  border-radius: 2px;
+  background: #2f78f6;
+  box-shadow: none;
+  font-size: 11px;
+}
+
+.kingdee-progress-page > .table-pagination {
+  min-height: 38px;
+  padding: 5px 0 0;
+  border-top: 1px solid #e5ebf2;
+}
+
+.kingdee-progress-page .pagination-page,
+.kingdee-progress-page > .table-pagination .compact-button {
+  height: 26px;
+  min-width: 26px;
+  padding: 0 7px;
+  border-radius: 2px;
+  box-shadow: none;
+}
+
+.kingdee-progress-page .pagination-page:hover,
+.kingdee-progress-page .pagination-page.active {
+  border-color: #2f78f6;
+  background: #2f78f6;
+  color: #fff;
+}
+
+@media (max-width: 900px) {
+  .app-shell.kingdee-shell {
+    grid-template-rows: 52px minmax(0, 1fr);
+  }
+
+  .kingdee-shell .sidebar {
+    height: 52px;
+    min-height: 52px;
+    padding: 0 10px;
+  }
+
+  .kingdee-shell .sidebar h1 {
+    font-size: 15px;
+  }
+
+  .kingdee-shell .app-version-time,
+  .kingdee-shell .user-box span,
+  .kingdee-shell .user-box .ghost {
+    display: none;
+  }
+
+  .kingdee-shell .sidebar-nav button {
+    min-height: 32px;
+  }
+
+  .kingdee-shell .content {
+    padding: 0 8px 22px;
+  }
+
+  .progress-page-titlebar {
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    padding: 5px 0;
+  }
+
+  .progress-page-titlebar > .section-count {
+    width: 100%;
+    margin-left: 28px;
+  }
+
+  .progress-command-bar,
+  .progress-scheme-bar {
+    overflow-x: auto;
+  }
+
+  .kingdee-progress-page .manual-progress-import-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .kingdee-progress-page .manual-progress-import-actions {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .kingdee-progress-page .progress-table.table-wrap {
+    max-height: calc(100vh - 350px);
+  }
+}

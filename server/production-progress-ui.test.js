@@ -154,9 +154,9 @@ test('生产跟进支持按供应商简称汇总并切换分页', () => {
   assert.match(progressSource, /Math\.ceil\(activeGroups\.length \/ pageSize\)/);
   assert.match(progressSource, /activeGroups\.slice\(\(currentPage - 1\) \* pageSize, currentPage \* pageSize\)/);
   assert.match(progressSource, />按供应商<\/button>/);
-  assert.match(progressSource, /setGroupBySupplier\(\(value\) => !value\)[\s\S]*?setExpandedOrders\(new Set\(\)\)[\s\S]*?setCurrentPage\(1\)/);
+  assert.match(progressSource, /className=\{groupBySupplier \? 'active' : ''\}[\s\S]*?setGroupBySupplier\(true\)[\s\S]*?setExpandedOrders\(new Set\(\)\)[\s\S]*?setCurrentPage\(1\)/);
   assert.match(progressSource, /groupBySupplier && <span>订单数：\{group\.orderNos\.size\}<\/span>/);
-  assert.match(styleSource, /\.progress-supplier-group-button\.active\s*\{[\s\S]*?background: #2563eb/);
+  assert.match(styleSource, /\.progress-scheme-bar button\.active\s*\{[\s\S]*?color: #246bdb/);
 });
 
 test('生产跟进采购订单按供应商聚合排序且简称可点击筛选', () => {
@@ -213,7 +213,7 @@ test('差异分配合并到生产跟进内部并复用生产跟进权限', () =>
   const appRenderSource = appSource.slice(appSource.indexOf('function App()'));
 
   assert.match(progressSource, /const \[showDifferenceAllocation, setShowDifferenceAllocation\] = useState\(false\)/);
-  assert.match(progressSource, /清除跟单数据[\s\S]*?setDifferenceAllocationView\(true\)[\s\S]*?>差异分配</);
+  assert.match(progressSource, /setDifferenceAllocationView\(true\)[\s\S]*?>差异分配<[\s\S]*?清除跟单数据/);
   assert.match(progressSource, /<DifferenceAllocationPage token=\{token\}[\s\S]*?currentAppliedAt=\{currentAppliedAt\}/);
   assert.match(progressSource, /setDifferenceAllocationView\(false\)[\s\S]*?返回生产跟进/);
   assert.doesNotMatch(navigationSource, /pages: \[[^\]]*'differenceAllocation'/);
@@ -285,19 +285,26 @@ test('生产跟进支持手工登记表预览、数据状态筛选和采购订�
   assert.match(serverSource, /SET active = 0, stale = 1, data_status = '本次手工表未出现'/);
 });
 
-test('修改显示列和差异分配入口醒目且切换后完整显示', () => {
+test('生产跟进使用金蝶风格命令栏、方案栏且内部视图切换完整', () => {
   const progressSource = appSource.slice(
     appSource.indexOf('function ProgressColumnSelector('),
     appSource.indexOf('function DifferenceAllocationPage(')
   );
   assert.match(progressSource, /className="compact-button progress-toolbar-entry progress-columns-button"[\s\S]*?修改显示列/);
-  assert.match(progressSource, /className="compact-button progress-toolbar-entry progress-difference-button"[\s\S]*?>差异分配<\/button>/);
+  assert.match(progressSource, /className="progress-command"[\s\S]*?>差异分配<\/button>/);
+  assert.match(progressSource, /className="progress-command primary"[\s\S]*?>刷新<\/button>/);
+  assert.match(progressSource, /className="progress-scheme-bar"[\s\S]*?>默认方案<\/button>[\s\S]*?>按供应商<\/button>[\s\S]*?>待人工调整<\/button>/);
+  assert.match(progressSource, /<details className="progress-logic-note"/);
   assert.match(progressSource, /function setDifferenceAllocationView\(open\)[\s\S]*?content\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\)[\s\S]*?window\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\)/);
   assert.match(progressSource, /setDifferenceAllocationView\(true\)/);
   assert.match(progressSource, /setDifferenceAllocationView\(false\)/);
-  assert.match(styleSource, /\.progress-toolbar-entry\s*\{[\s\S]*?width: 132px;[\s\S]*?min-width: 132px;/);
-  assert.match(styleSource, /\.progress-columns-button\s*\{[\s\S]*?background: #008f83;[\s\S]*?color: #fff;/);
-  assert.match(styleSource, /\.progress-difference-button\s*\{[\s\S]*?background: #f05a24;[\s\S]*?color: #fff;/);
+  assert.match(appSource, /className=\{`app-shell\$\{activeTab === 'progressRefresh' \? ' kingdee-shell' : ''\}`\}/);
+  assert.match(styleSource, /\.app-shell\.kingdee-shell\s*\{[\s\S]*?grid-template-rows: 42px minmax\(0, 1fr\)/);
+  assert.match(styleSource, /\.kingdee-shell \.sidebar\s*\{[\s\S]*?background: #2f78f6/);
+  assert.match(styleSource, /\.progress-command-bar\s*\{[\s\S]*?min-height: 40px/);
+  assert.match(styleSource, /\.progress-scheme-bar\s*\{[\s\S]*?min-height: 42px/);
+  assert.match(styleSource, /\.kingdee-progress-page \.progress-order-detail-header th\s*\{[\s\S]*?background: #edf3fb/);
+  assert.match(styleSource, /\.progress-record-link,[\s\S]*?color: #216ef4/);
   assert.match(styleSource, /\.progress-internal-view-heading\s*\{[\s\S]*?min-height: 36px;/);
 });
 

@@ -28,6 +28,7 @@ import {
   normalizeInventoryRiskParams
 } from './inventory-risk.js';
 import { buildInventoryRiskWorkbook } from './inventory-risk-export.js';
+import { groupCurrentKingdeeOrderRows, kingdeeOrderIdentity } from './kingdee-order-visibility.js';
 import { buildStyledExcelBuffer } from '../shared/excel-export.js';
 import {
   allocateIntegerByWeights,
@@ -2755,6 +2756,15 @@ function demandLoadContext(demands) {
   return { lookups, progressMap, inventoryMap, orderRowsByDemand, allOrderRowsByDemand };
 }
 
+function currentKingdeeNonZeroOrderGroups() {
+  return groupCurrentKingdeeOrderRows(all(
+    `SELECT k.demand_key, k.order_no, k.remaining_inbound_qty
+     FROM kingdee_orders k
+     JOIN order_demands d
+       ON d.source_batch_id = k.batch_id AND d.demand_key = k.demand_key AND d.active = 1`
+  ));
+}
+
 function canEditDemand(user, demand) {
   if (user.role === ROLE_ADMIN) return true;
   const owner = normalize(demand.purchase_owner);
@@ -3631,9 +3641,20 @@ function manualProgressDisplayRows(systemRows, user = null) {
       allocations: [allocation]
     }));
   });
-  const systemMap = new Map(systemRows.map((row) => [row.demandKey, row]));
-  // 所有金蝶有的采购订单号，手工行一律不展示（以金蝶为准）
-  const kingdeeOrderNos = new Set(all('SELECT DISTINCT order_no FROM kingdee_orders WHERE remaining_inbound_qty > 0 AND order_no != \'\'').map(r => r.order_no));
+  const systemMap = new Map(systemRows.map((row) => [
+    kingdeeOrderIdentity(row.underlyingDemandKey || row.demandKey, row.orderNo),
+    row
+  ]));
+  const systemByDemand = new Map(systemRows.map((row) => [row.underlyingDemandKey || row.demandKey, row]));
+  // 当前采购订单表中存在的订单一律以金蝶为准；剩余为0的金蝶订单也不能回退成手工行。
+  const currentKingdeeOrders = all(
+    `SELECT k.demand_key, k.order_no
+     FROM kingdee_orders k
+     JOIN order_demands d
+       ON d.source_batch_id = k.batch_id AND d.demand_key = k.demand_key AND d.active = 1`
+  );
+  const currentKingdeeOrderKeys = new Set(currentKingdeeOrders.map((row) => kingdeeOrderIdentity(row.demand_key, row.order_no)));
+  const currentKingdeeOrderNos = new Set(currentKingdeeOrders.map((row) => normalize(row.order_no)).filter(Boolean));
   const groups = new Map();
   displaySourceRows.forEach((row) => {
     const key = `${row.batchId}|${row.groupKey}`;
@@ -3641,21 +3662,29 @@ function manualProgressDisplayRows(systemRows, user = null) {
     list.push(row);
     groups.set(key, list);
   });
-  const currentMatchedDemandKeys = new Set(displaySourceRows
-    .filter((row) => !row.stale && row.demandKey && row.validationStatus === 'valid')
-    .map((row) => row.demandKey));
-  const visibleSystemRows = systemRows
-    .filter((row) => !currentMatchedDemandKeys.has(row.demandKey))
-    .map((row) => ({ ...row, dataStatus: '采购订单数据', manualSourceRows: [] }));
+  const visibleSystemRows = systemRows.map((row) => ({
+    ...row,
+    dataSource: row.dataSource || '金蝶系统',
+    dataStatus: '采购订单数据',
+    manualSourceRows: []
+  }));
   const lookups = dimensionLookups();
-  const usedDemandKeys = new Set();
   const manualRows = [...groups.values()].map((rows) => {
     const first = rows[0];
-    const initialSystem = first.demandKey ? systemMap.get(first.demandKey) : null;
+    const initialSystem = first.demandKey
+      ? (first.orderNo
+        ? systemMap.get(kingdeeOrderIdentity(first.demandKey, first.orderNo))
+        : systemByDemand.get(first.demandKey))
+      : null;
     const orderDetails = systemOrderDetails(first.demandKey, first.orderNo, first.materialCode);
-    const system = initialSystem || (orderDetails?.demandKey ? systemMap.get(orderDetails.demandKey) : null);
+    const system = initialSystem || (orderDetails?.demandKey
+      ? systemMap.get(kingdeeOrderIdentity(orderDetails.demandKey, first.orderNo))
+      : null);
     // 以金蝶数据为准：金蝶有的订单号，手工行一律跳过
-    if (system || (first.orderNo && kingdeeOrderNos.has(first.orderNo))) return null;
+    if (system || (first.orderNo && (
+      currentKingdeeOrderKeys.has(kingdeeOrderIdentity(first.demandKey, first.orderNo))
+      || currentKingdeeOrderNos.has(first.orderNo)
+    ))) return null;
     const orderQty = orderDetails?.hasQuantityRows ? orderDetails : null;
     const candidate = first.matchCandidate || first.candidates?.find((item) => (
       item.demandKey === first.demandKey && (!first.orderNo || item.orderNo === first.orderNo)
@@ -3763,6 +3792,7 @@ function manualProgressDisplayRows(systemRows, user = null) {
       remark: field('remark'),
       progressUpdatedBy: first.raw?.updatedBy || '',
       progressUpdatedAt: '',
+      dataSource: '手工录入',
       dataStatus: first.stale ? '本次手工表未出现' : first.dataStatus,
       validationStatus: rows.some((row) => row.validationStatus === 'error')
         ? 'error'
@@ -3789,15 +3819,7 @@ function isEffectivePurchaseOrder(row) {
 }
 
 function operationOrderBreakdown(baseRow, sourceRows) {
-  const groups = new Map();
-  sourceRows.forEach((row) => {
-    const orderNo = normalize(row.orderNo || row.order_no);
-    if (!orderNo) return;
-    const list = groups.get(orderNo) || [];
-    list.push(row);
-    groups.set(orderNo, list);
-  });
-  const details = [...groups.entries()].map(([orderNo, rows]) => {
+  const details = groupCurrentKingdeeOrderRows(sourceRows).map(({ orderNo, rows, remainingInboundQty }) => {
     const effectiveOrder = rows.length > 0 && rows.every(isEffectivePurchaseOrder);
     return {
       orderNo,
@@ -3816,23 +3838,44 @@ function operationOrderBreakdown(baseRow, sourceRows) {
       totalInboundQty: rows.reduce((sum, row) => sum + numberValue(row.inboundQty ?? row.inbound_qty), 0),
       trackingOrderQty: rows.reduce((sum, row) => sum + numberValue(row.quantity), 0),
       trackingInboundQty: rows.reduce((sum, row) => sum + numberValue(row.inboundQty ?? row.inbound_qty), 0),
-      remainingInboundQty: rows.reduce((sum, row) => sum + numberValue(row.remainingInboundQty ?? row.remaining_inbound_qty), 0)
+      remainingInboundQty
     };
-  }).filter((detail) => detail.effectiveOrderCondition === '有效订单' && detail.remainingInboundQty > 0)
-    .sort((left, right) => left.orderNo.localeCompare(right.orderNo, 'zh-Hans-CN'));
-  const weighted = details.map((detail) => ({ ...detail, weight: detail.remainingInboundQty }));
+  }).sort((left, right) => left.orderNo.localeCompare(right.orderNo, 'zh-Hans-CN'));
+  const weighted = details.map((detail) => ({ ...detail, weight: Math.abs(detail.remainingInboundQty) }));
   const unprepared = allocateIntegerByWeights(baseRow.unpreparedQty, weighted);
   const preparedNotStarted = allocateIntegerByWeights(baseRow.preparedNotStartedQty, weighted);
   const inProduction = allocateIntegerByWeights(baseRow.inProductionQty, weighted);
   const finished = allocateIntegerByWeights(baseRow.finishedQty, weighted);
+  const stock = allocateIntegerByWeights(baseRow.stockQty, weighted);
+  const normalFulfillment = allocateIntegerByWeights(baseRow.normalFulfillmentQty, weighted);
+  const abnormalFulfillment = allocateIntegerByWeights(baseRow.abnormalFulfillmentQty, weighted);
+  const normalAmount = allocateNumberByWeights(baseRow.normalFulfillmentAmount, weighted);
+  const abnormalAmount = allocateNumberByWeights(baseRow.abnormalFulfillmentAmount, weighted);
   return weighted.map((detail, index) => ({
     ...detail,
+    rowKey: kingdeeOrderIdentity(baseRow.demandKey, detail.orderNo),
+    underlyingDemandKey: baseRow.demandKey,
+    displayKey: detail.orderNo || baseRow.displayKey,
+    operationOrderLevel: true,
+    operationOrderRows: [],
+    dataSource: '金蝶系统',
     unpreparedQty: unprepared[index],
     preparedNotStartedQty: preparedNotStarted[index],
     inProductionQty: inProduction[index],
     finishedQty: finished[index],
     shippedQty: detail.trackingInboundQty,
-    operationStockQty: detail.remainingInboundQty + detail.trackingInboundQty
+    operationStockQty: detail.remainingInboundQty + detail.trackingInboundQty,
+    progressTotal: unprepared[index] + preparedNotStarted[index] + inProduction[index] + finished[index],
+    gap: detail.remainingInboundQty - unprepared[index] - preparedNotStarted[index] - inProduction[index] - finished[index],
+    progressAdjustmentRequired: Math.abs(detail.remainingInboundQty - unprepared[index] - preparedNotStarted[index] - inProduction[index] - finished[index]) > 0.000001,
+    stockQty: stock[index],
+    demandAfterStock: Math.max(detail.remainingInboundQty - stock[index], 0),
+    shortageAfterStock: Math.max(detail.remainingInboundQty - stock[index], 0)
+      - unprepared[index] - preparedNotStarted[index] - inProduction[index] - finished[index],
+    normalFulfillmentQty: normalFulfillment[index],
+    abnormalFulfillmentQty: abnormalFulfillment[index],
+    normalFulfillmentAmount: normalAmount[index],
+    abnormalFulfillmentAmount: abnormalAmount[index]
   }));
 }
 
@@ -3846,20 +3889,20 @@ function demandRows(includeInactive = false, user = null, options = {}) {
     const batchDemandKey = demandBatchKey(demand.source_batch_id, demand.demand_key);
     const orderRows = context.orderRowsByDemand.get(batchDemandKey) || [];
     const allOrderRows = context.allOrderRowsByDemand.get(batchDemandKey) || orderRows;
-    const orderCreator = uniqueCreators(orderRows);
-    const operatorName = uniqueOperatorNames(orderRows);
-    const orderNo = uniqueOrderNos(orderRows);
-    const closeStatus = uniqueCloseStatuses(orderRows);
-    const documentStatus = uniqueDocumentStatuses(orderRows);
-    const orderDates = uniqueOrderDates(orderRows);
-    const contractDeliveryDates = uniqueDeliveryDates(orderRows);
-    const oaFlowNo = demand.oa_flow_no || orderedOaFlowNos(orderRows, rawOaFlowNo);
+    const orderCreator = uniqueCreators(allOrderRows);
+    const operatorName = uniqueOperatorNames(allOrderRows);
+    const orderNo = uniqueOrderNos(allOrderRows);
+    const closeStatus = uniqueCloseStatuses(allOrderRows);
+    const documentStatus = uniqueDocumentStatuses(allOrderRows);
+    const orderDates = uniqueOrderDates(allOrderRows);
+    const contractDeliveryDates = uniqueDeliveryDates(allOrderRows);
+    const oaFlowNo = demand.oa_flow_no || orderedOaFlowNos(allOrderRows, rawOaFlowNo);
     const enriched = enrichDemandFields(demand.supplier, demand.material_code, orderCreator, context.lookups);
     const matchedSupplierShortName = orderSupplierShortName(context.lookups, demand.supplier, demand.material_code);
     const purchaseOwner = realPurchaseOwner(enriched.purchaseOwner) || UNASSIGNED_PURCHASE_OWNER;
     const purchaseGroup = enriched.purchaseGroup || '';
-    const shippedQty = numberValue(demand.tracking_inbound_qty);
-    const remainingInboundQty = Math.max(numberValue(demand.tracking_remaining_qty), 0);
+    const shippedQty = allOrderRows.reduce((sum, orderRow) => sum + numberValue(orderRow.inbound_qty), 0);
+    const remainingInboundQty = allOrderRows.reduce((sum, orderRow) => sum + numberValue(orderRow.remaining_inbound_qty), 0);
     const unpreparedQty = numberValue(progress.unprepared_qty);
     const preparedNotStartedQty = numberValue(progress.prepared_not_started_qty);
     const inProductionQty = numberValue(progress.in_production_qty);
@@ -3933,42 +3976,15 @@ function demandRows(includeInactive = false, user = null, options = {}) {
       progressUpdatedAt: progress.updated_at || '',
       canEdit: user ? canEditDemand(user, { ...demand, purchase_owner: purchaseOwner, order_creator: orderCreator }) : false
     };
-    if (options.includeOperationOrders) row.operationOrderRows = operationOrderBreakdown(row, allOrderRows);
-    // 一个demand对应多个采购订单时，拆成每个订单独立一行
-    if (orderRows.length > 1 && orderNo.includes('、')) {
-      const distinctOrders = [...new Set(orderRows.map(r => r.order_no).filter(Boolean))];
-      const totalRemaining = orderRows.reduce((s, r) => s + numberValue(r.remaining_inbound_qty), 0) || 1;
-      return distinctOrders.map(order => {
-        const orderQty = orderRows
-          .filter(r => r.order_no === order)
-          .reduce((s, r) => s + numberValue(r.remaining_inbound_qty), 0);
-        const ratio = orderQty / totalRemaining;
-        return {
-          ...row,
-          orderNo: order,
-          remainingInboundQty: Math.round(row.remainingInboundQty * ratio),
-          operationStockQty: Math.round(row.operationStockQty * ratio),
-          totalInboundQty: Math.round(row.totalInboundQty * ratio),
-          trackingOrderQty: Math.round(row.trackingOrderQty * ratio),
-          trackingInboundQty: Math.round(row.trackingInboundQty * ratio),
-          currentOrderQty: Math.round(row.currentOrderQty * ratio),
-          totalPurchaseQty: Math.round(row.totalPurchaseQty * ratio),
-          unpreparedQty: Math.round(row.unpreparedQty * ratio),
-          preparedNotStartedQty: Math.round(row.preparedNotStartedQty * ratio),
-          inProductionQty: Math.round(row.inProductionQty * ratio),
-          finishedQty: Math.round(row.finishedQty * ratio),
-          shippedQty: Math.round(row.shippedQty * ratio),
-          progressTotal: Math.round(row.progressTotal * ratio),
-          gap: Math.round(row.gap * ratio),
-          stockQty: Math.round(row.stockQty * ratio),
-          demandAfterStock: Math.round(row.demandAfterStock * ratio),
-          shortageAfterStock: Math.round(row.shortageAfterStock * ratio),
-          normalFulfillmentQty: Math.round(row.normalFulfillmentQty * ratio),
-          abnormalFulfillmentQty: Math.round(row.abnormalFulfillmentQty * ratio),
-        };
-      });
-    }
-    return row;
+    if (includeInactive) return row;
+    if (!allOrderRows.length) return {
+      ...row,
+      rowKey: row.demandKey,
+      operationOrderLevel: false,
+      operationOrderRows: [],
+      dataSource: '手工录入'
+    };
+    return operationOrderBreakdown(row, allOrderRows).map((orderRow) => ({ ...row, ...orderRow }));
   }).flat();
   const displayRows = includeInactive ? rows : manualProgressDisplayRows(rows, user);
   if (!user || user.role === ROLE_ADMIN) return displayRows;
@@ -7138,6 +7154,31 @@ app.get('/api/maintenance/data-completeness', requireAuth, (req, res) => {
   checks.push({ check: '金蝶剩余>0但需求无匹配', passed: orphanKingdee[0]?.cnt === 0, value: orphanKingdee[0]?.cnt || 0 });
   const orphanDemand = all("SELECT COUNT(*) as cnt FROM order_demands d WHERE d.active = 1 AND d.current_order_qty > 0 AND NOT EXISTS (SELECT 1 FROM kingdee_orders k WHERE k.demand_key = d.demand_key)");
   checks.push({ check: '需求有数量但金蝶无匹配', passed: orphanDemand[0]?.cnt === 0, value: orphanDemand[0]?.cnt || 0 });
+  const currentKingdeeGroups = currentKingdeeNonZeroOrderGroups();
+  const sourceOrderKeys = new Set(currentKingdeeGroups.map((group) => group.key));
+  const displayedOrderKeys = demandRows(false, null)
+    .filter((row) => row.dataSource === '金蝶系统')
+    .map((row) => kingdeeOrderIdentity(row.underlyingDemandKey || row.demandKey, row.orderNo));
+  const displayedOrderKeySet = new Set(displayedOrderKeys);
+  const displayedOrderCounts = new Map();
+  displayedOrderKeys.forEach((key) => displayedOrderCounts.set(key, (displayedOrderCounts.get(key) || 0) + 1));
+  const missingOrderKeys = [...sourceOrderKeys].filter((key) => !displayedOrderKeySet.has(key));
+  const extraOrderKeys = [...displayedOrderKeySet].filter((key) => !sourceOrderKeys.has(key));
+  const duplicateOrderKeys = [...displayedOrderCounts].filter(([, count]) => count > 1).map(([key]) => key);
+  checks.push({
+    check: '当前金蝶非零订单完整展示',
+    passed: missingOrderKeys.length === 0 && extraOrderKeys.length === 0 && duplicateOrderKeys.length === 0,
+    value: {
+      sourceCount: sourceOrderKeys.size,
+      displayedCount: displayedOrderKeys.length,
+      missingCount: missingOrderKeys.length,
+      extraCount: extraOrderKeys.length,
+      duplicateCount: duplicateOrderKeys.length,
+      missingOrderKeys: missingOrderKeys.slice(0, 20),
+      extraOrderKeys: extraOrderKeys.slice(0, 20),
+      duplicateOrderKeys: duplicateOrderKeys.slice(0, 20)
+    }
+  });
   const tableCounts = {};
   ['kingdee_orders','order_demands','supplier_progress','manual_progress_rows','inventory','dimension_files'].forEach(t => {
     try { const r = all('SELECT COUNT(*) as cnt FROM '+t); tableCounts[t] = r[0]?.cnt || 0; } catch { tableCounts[t] = -1; }

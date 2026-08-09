@@ -5493,6 +5493,53 @@ app.get('/api/demands', requireAuth, (req, res) => {
   });
 });
 
+app.get('/api/table-relationships', requireAuth, (req, res) => {
+  const tables = [
+    { name: 'kingdee_import_batches', label: '金蝶导入批次', group: '金蝶数据', groupColor: '#3b82f6' },
+    { name: 'kingdee_orders', label: '金蝶采购订单', group: '金蝶数据', groupColor: '#3b82f6' },
+    { name: 'kingdee_order_events', label: '金蝶变更事件', group: '金蝶数据', groupColor: '#3b82f6' },
+    { name: 'order_demands', label: '运营需求汇总', group: '核心数据', groupColor: '#ef4444' },
+    { name: 'supplier_progress', label: '生产进度', group: '进度数据', groupColor: '#10b981' },
+    { name: 'supplier_progress_snapshots', label: '进度快照', group: '进度数据', groupColor: '#10b981' },
+    { name: 'manual_progress_import_batches', label: '手工导入批次', group: '手工数据', groupColor: '#f59e0b' },
+    { name: 'manual_progress_rows', label: '手工登记行', group: '手工数据', groupColor: '#f59e0b' },
+    { name: 'manual_progress_allocations', label: '手工进度分配', group: '手工数据', groupColor: '#f59e0b' },
+    { name: 'inventory', label: '库存', group: '库存数据', groupColor: '#8b5cf6' },
+    { name: 'inventory_logs', label: '库存日志', group: '库存数据', groupColor: '#8b5cf6' },
+    { name: 'inventory_manual_reconciliation_notes', label: '手工对账备注', group: '库存数据', groupColor: '#8b5cf6' },
+    { name: 'difference_compare_sessions', label: '差异对比会话', group: '差异数据', groupColor: '#ec4899' },
+    { name: 'difference_compare_rows', label: '差异对比行', group: '差异数据', groupColor: '#ec4899' },
+    { name: 'difference_allocations', label: '差异分配', group: '差异数据', groupColor: '#ec4899' },
+    { name: 'demand_snapshot_diffs', label: '快照差异', group: '差异数据', groupColor: '#ec4899' },
+    { name: 'dimension_files', label: '维度表文件', group: '维度数据', groupColor: '#06b6d4' },
+    { name: 'import_mappings', label: '导入映射配置', group: '维度数据', groupColor: '#06b6d4' },
+    { name: 'demand_change_notes', label: '需求变更备注', group: '其他', groupColor: '#6b7280' },
+    { name: 'domestic_board_inputs', label: '国内事业部', group: '其他', groupColor: '#6b7280' }
+  ];
+  const counts = {};
+  for (const t of tables) {
+    try { const r = all('SELECT COUNT(*) as cnt FROM ' + t.name); counts[t.name] = r[0]?.cnt || 0; }
+    catch { counts[t.name] = 0; }
+  }
+  const relationships = [
+    { from: 'kingdee_import_batches', fromCol: 'id', to: 'kingdee_orders', toCol: 'batch_id', label: '1:N' },
+    { from: 'kingdee_orders', fromCol: 'demand_key', to: 'order_demands', toCol: 'demand_key', label: 'N:1' },
+    { from: 'kingdee_orders', fromCol: 'demand_key', to: 'kingdee_order_events', toCol: 'demand_key', label: '1:N' },
+    { from: 'order_demands', fromCol: 'demand_key', to: 'supplier_progress', toCol: 'demand_key', label: '1:1' },
+    { from: 'order_demands', fromCol: 'demand_key', to: 'manual_progress_rows', toCol: 'demand_key', label: '1:N' },
+    { from: 'order_demands', fromCol: 'demand_key', to: 'demand_change_notes', toCol: 'demand_key', label: '1:N' },
+    { from: 'order_demands', fromCol: 'demand_key', to: 'demand_snapshot_diffs', toCol: 'demand_key', label: '1:N' },
+    { from: 'order_demands', fromCol: 'source_batch_id', to: 'kingdee_import_batches', toCol: 'id', label: 'N:1' },
+    { from: 'supplier_progress', fromCol: 'demand_key', to: 'supplier_progress_snapshots', toCol: 'demand_key', label: '1:N' },
+    { from: 'manual_progress_import_batches', fromCol: 'id', to: 'manual_progress_rows', toCol: 'batch_id', label: '1:N' },
+    { from: 'manual_progress_rows', fromCol: 'demand_key', to: 'manual_progress_allocations', toCol: 'demand_key', label: '1:N' },
+    { from: 'difference_compare_sessions', fromCol: 'id', to: 'difference_compare_rows', toCol: 'session_id', label: '1:N' },
+    { from: 'difference_compare_sessions', fromCol: 'id', to: 'difference_allocations', toCol: 'session_id', label: '1:N' },
+    { from: 'difference_compare_rows', fromCol: 'id', to: 'difference_allocations', toCol: 'row_id', label: '1:N' }
+  ];
+  res.json({ tables: tables.map(t => ({ ...t, rowCount: counts[t.name] })), relationships });
+});
+
 function manualProgressPreviewRows(batchId, limit = 80) {
   const rows = all(
     `SELECT id, source_row_no, data_status, order_no, oa_flow_no, business_unit, supplier_short_name,

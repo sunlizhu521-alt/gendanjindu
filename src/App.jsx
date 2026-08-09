@@ -6524,9 +6524,6 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
                     <span>产品线：{productLineLabel}</span>
                     <span>系列：{productSeriesLabel}</span>
                     <span>原订单采购数量：{originalPurchaseQtyLabel}</span>
-                    <span>物料：{group.materialCode || '未填写'}</span>
-                    {group.sku && <span>SKU：{group.sku}</span>}
-                    <span title={group.materialName}>产品：{group.materialName}</span>
                     <span>订单数：{group.orderNos.size}</span>
                     <span>{pendingOnly ? '下单数量：不计入汇总' : `下单数量：${group.reportingPurchaseQty.toLocaleString('zh-CN')}`}</span>
                   </div>

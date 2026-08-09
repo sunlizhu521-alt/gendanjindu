@@ -247,6 +247,10 @@ test('生产跟进汇总父行展示供应商订单状态月份原订单产品�
     appSource.indexOf('function ProgressPage('),
     appSource.indexOf('function DifferenceAllocationPage(')
   );
+  const parentSummarySource = progressSource.slice(
+    progressSource.indexOf('className="progress-order-toggle"'),
+    progressSource.indexOf('{expanded && (', progressSource.indexOf('className="progress-order-toggle"'))
+  );
   assert.match(progressSource, /className="supplier-filter-link"[\s\S]*?\{supplierLabel\}/);
   assert.doesNotMatch(progressSource, /供应商简称：/);
   assert.match(progressSource, /订单状态：\{orderTypeLabel\}/);
@@ -256,9 +260,7 @@ test('生产跟进汇总父行展示供应商订单状态月份原订单产品�
   assert.match(progressSource, /产品线：\{productLineLabel\}/);
   assert.match(progressSource, /系列：\{productSeriesLabel\}/);
   assert.match(progressSource, /原订单采购数量：\{originalPurchaseQtyLabel\}/);
-  assert.match(progressSource, /物料：\{group\.materialCode \|\| '未填写'\}/);
-  assert.match(progressSource, /SKU：\{group\.sku\}/);
-  assert.match(progressSource, /产品：\{group\.materialName\}/);
+  assert.doesNotMatch(parentSummarySource, /物料：|SKU：|产品：/);
   assert.match(progressSource, /订单数：\{group\.orderNos\.size\}/);
   assert.match(progressSource, /下单数量：不计入汇总/);
   assert.match(progressSource, /group\.reportingPurchaseQty\.toLocaleString\('zh-CN'\)/);

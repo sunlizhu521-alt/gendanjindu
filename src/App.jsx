@@ -2976,7 +2976,7 @@ function DataTable({ columns, rows, render, renderRow, className = '', showHeade
             <tr><td className="empty" colSpan={columns.length}>暂无数据</td></tr>
           ) : rows.map((row, index) => (
             renderRow ? renderRow(row, index) : (
-              <tr key={row.demandKey || row.id || `${index}-${row.materialCode || row.stock_key}`}>
+              <tr key={row.rowKey || row.demandKey || row.id || `${index}-${row.materialCode || row.stock_key}`}>
                 {render(row, index).map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}
               </tr>
             )
@@ -3586,9 +3586,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
   const dashboardRows = useMemo(() => {
     if (!usesOperationBoardLayout) return rows;
     return rows.flatMap((row) => {
-      if (row.operationOrderLevel) {
-        return row.effectiveOrderCondition === '有效订单' ? [row] : [];
-      }
+      if (row.operationOrderLevel) return [row];
       return (row.operationOrderRows || []).map((orderRow) => ({
         ...row,
         ...orderRow,
@@ -3597,7 +3595,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       }));
     });
   }, [rows, usesOperationBoardLayout]);
-  const activeRows = useMemo(() => dashboardRows.filter((row) => row.active && numberValue(row.remainingInboundQty) > 0), [dashboardRows]);
+  const activeRows = useMemo(() => dashboardRows.filter((row) => row.active && numberValue(row.remainingInboundQty) !== 0), [dashboardRows]);
   const [filters, setFilters] = useSessionFilters(filterKey, { month: [], businessUnit: [], operatorName: [], supplierCount: [], supplierShortName: [], productLine: [], series: [], sku: [], purchaseOwner: [], dataSource: [], keyword: '' });
   const [currentPage, setCurrentPage] = useState(1);
   const [showOperationAuxiliaryColumns, setShowOperationAuxiliaryColumns] = useState(false);
@@ -3644,7 +3642,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       && (omit === 'series' || matchesSelected(filters.series, row.productSeries))
       && (omit === 'sku' || matchesSelected(filters.sku, row.sku))
       && (omit === 'purchaseOwner' || matchesSelected(filters.purchaseOwner, row.purchaseOwner))
-      && (omit === 'dataSource' || matchesSelected(filters.dataSource, (row.orderNo && row.orderNo !== '无采购订单') ? '金蝶系统' : '手工录入'));
+      && (omit === 'dataSource' || matchesSelected(filters.dataSource, row.dataSource || ((row.orderNo && row.orderNo !== '无采购订单') ? '金蝶系统' : '手工录入')));
   };
   const options = useMemo(() => {
     const rowsFor = (field) => activeRows.filter((row) => matchesDashboardFilters(row, field));
@@ -3660,7 +3658,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       series: unique(rowsFor('series').map((row) => row.productSeries)),
       skus: unique(rowsFor('sku').map((row) => row.sku)),
       purchaseOwners: unique(rowsFor('purchaseOwner').map((row) => row.purchaseOwner)),
-      dataSources: ['金蝶系统', '手工录入'].filter((value) => rowsFor('dataSource').some((row) => ((row.orderNo && row.orderNo !== '无采购订单') ? '金蝶系统' : '手工录入') === value))
+      dataSources: ['金蝶系统', '手工录入'].filter((value) => rowsFor('dataSource').some((row) => (row.dataSource || ((row.orderNo && row.orderNo !== '无采购订单') ? '金蝶系统' : '手工录入')) === value))
     };
   }, [activeRows, filters]);
   useEffect(() => {
@@ -5703,9 +5701,9 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
     };
     setValues(nextValues);
     setQuantityEdited(false);
-    onDraftChange?.(row.demandKey, toPayload(nextValues, row.progressAdjustmentRequired));
+    onDraftChange?.(row.rowKey || row.demandKey, toPayload(nextValues, row.progressAdjustmentRequired));
   }, [
-    row.demandKey, row.unpreparedQty, row.preparedNotStartedQty, row.inProductionQty, row.finishedQty,
+    row.rowKey, row.demandKey, row.unpreparedQty, row.preparedNotStartedQty, row.inProductionQty, row.finishedQty,
     row.productionDeliveryDate, row.unproducedEstimatedDeliveryDate, row.fulfillmentStatus,
     row.unfulfilledReason, row.reasonDetail, row.remark
   ]);
@@ -5714,13 +5712,13 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
     const nextValues = { ...values, [key]: rawValue };
     setValues(nextValues);
     setQuantityEdited(true);
-    onDraftChange?.(row.demandKey, toPayload(nextValues));
+    onDraftChange?.(row.rowKey || row.demandKey, toPayload(nextValues));
   }
 
   function handleTextChange(key, value) {
     const nextValues = { ...values, [key]: value };
     setValues(nextValues);
-    onDraftChange?.(row.demandKey, toPayload(nextValues));
+    onDraftChange?.(row.rowKey || row.demandKey, toPayload(nextValues));
   }
 
   async function save() {
@@ -5859,7 +5857,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
 function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, onLogout, title = '生产跟进', onlyIssues = false, currentAppliedAt = '' }) {
   const trackableRows = useMemo(
     () => rows.filter((row) => row.active && (
-      numberValue(row.remainingInboundQty) > 0
+      numberValue(row.remainingInboundQty) !== 0
       || (row.dataStatus && row.dataStatus !== '采购订单数据')
     )),
     [rows]
@@ -5960,7 +5958,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
       index > 0 && page - visiblePages[index - 1] > 1 ? [`ellipsis-${page}`, page] : [page]
     ));
   }, [currentPage, totalPages]);
-  const editableKeys = pageRows.filter((row) => row.canEdit).map((row) => row.demandKey);
+  const editableKeys = pageRows.filter((row) => row.canEdit).map((row) => row.rowKey || row.demandKey);
   const allVisibleEditableSelected = editableKeys.length > 0 && editableKeys.every((key) => selectedKeys.includes(key));
   const clearFilterRows = (omit = '') => trackableRows.filter((row) => (
     (omit === 'purchaseOwners' || clearFilters.purchaseOwners.length === 0 || clearFilters.purchaseOwners.includes(row.purchaseOwner))
@@ -6120,7 +6118,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
       const aoa = [
         headers,
         ...displayRows.map((row) => {
-          const draft = drafts[row.demandKey] || {};
+          const draft = drafts[row.rowKey || row.demandKey] || {};
           const fulfillmentStatus = draft.fulfillmentStatus ?? row.fulfillmentStatus ?? '';
           const normalQty = numberValue(row.normalFulfillmentQty);
           const abnormalQty = numberValue(row.abnormalFulfillmentQty);
@@ -6397,13 +6395,13 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
               )}
               {expanded && group.rows.map((row) => (
                 <ProgressEditor
-                  key={row.demandKey}
+                  key={row.rowKey || row.demandKey}
                   row={row}
                   token={token}
                   reloadDemands={reloadDemands}
                   setMessage={setMessage}
                   visibleColumnKeys={visibleColumnKeys}
-                  selected={selectedKeys.includes(row.demandKey)}
+                  selected={selectedKeys.includes(row.rowKey || row.demandKey)}
                   onSelect={toggleProgressRow}
                   onDraftChange={(demandKey, payload) => setDrafts((current) => ({ ...current, [demandKey]: payload }))}
                 />

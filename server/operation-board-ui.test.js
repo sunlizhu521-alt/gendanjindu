@@ -38,7 +38,9 @@ test('运营看板默认隐藏八个辅助列并可切换显示，导出保留�
   assert.match(styles, /\.operation-table-toolbar \.compact-button\s*\{[^}]*margin-left:\s*0/);
   assert.doesNotMatch(styles, /\.operation-table-toolbar \.compact-button\s*\{[^}]*margin-left:\s*auto/);
   assert.match(dashboard, /rows\.flatMap/);
-  assert.match(dashboard, /row\.effectiveOrderCondition === '有效订单'/);
+  assert.match(dashboard, /if \(row\.operationOrderLevel\) return \[row\]/);
+  assert.doesNotMatch(dashboard, /row\.effectiveOrderCondition === '有效订单'/);
+  assert.match(dashboard, /numberValue\(row\.remainingInboundQty\) !== 0/);
   assert.match(dashboard, /demandKey: `\$\{row\.demandKey\}\|\$\{orderRow\.orderNo\}`/);
 });
 

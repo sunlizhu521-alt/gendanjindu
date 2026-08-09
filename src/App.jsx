@@ -6403,7 +6403,6 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
                   >
                     <b>{expanded ? '−' : '+'}</b>
                     <strong>
-                      供应商简称：
                       <button
                         type="button"
                         className="supplier-filter-link"

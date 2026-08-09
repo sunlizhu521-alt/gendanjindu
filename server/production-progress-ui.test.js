@@ -185,7 +185,8 @@ test('生产跟进采购订单父行展示指定业务摘要', () => {
     appSource.indexOf('function ProgressPage('),
     appSource.indexOf('function DifferenceAllocationPage(')
   );
-  assert.match(progressSource, /供应商简称：[\s\S]*?className="supplier-filter-link"[\s\S]*?\{supplierLabel\}/);
+  assert.match(progressSource, /className="supplier-filter-link"[\s\S]*?\{supplierLabel\}/);
+  assert.doesNotMatch(progressSource, /供应商简称：/);
   assert.match(progressSource, /!groupBySupplier && <span>月份：\{months\}<\/span>/);
   assert.match(progressSource, /!groupBySupplier && <span>事业部：\{businessUnits\}<\/span>/);
   assert.match(progressSource, /!groupBySupplier && <span>系列：\{productSeries\}<\/span>/);

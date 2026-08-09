@@ -65,7 +65,8 @@ test('运营看板支持成品和配件联动筛选', () => {
 
   assert.match(dashboard, /dataSource: \[\], productType: \[\]/);
   assert.match(dashboard, /omit === 'productType'[\s\S]*?row\.productLine === '其他\/配件' \? '配件' : '成品'/);
-  assert.match(dashboard, /productTypes: \['成品', '配件'\]\.filter[\s\S]*?rowsFor\('productType'\)/);
+  assert.match(dashboard, /productTypes: \['成品', '配件'\]/);
+  assert.doesNotMatch(dashboard, /productTypes: \['成品', '配件'\]\.filter/);
   assert.match(dashboard, /productType: options\.productTypes/);
   assert.match(dashboard, /label="成品\/配件" allLabel="全部类型"[\s\S]*?value=\{filters\.productType\}[\s\S]*?options=\{options\.productTypes\}/);
   assert.match(dashboard, /const clearFilters = \(\) => setFilters\([\s\S]*?productType: \[\]/);

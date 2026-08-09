@@ -3450,7 +3450,7 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
       productLines: uniqueProgressValues(rowsFor('productLine').map((row) => row.productLine)),
       series: uniqueProgressValues(rowsFor('series').map((row) => row.productSeries)),
       purchaseOwners: uniqueProgressValues(rowsFor('purchaseOwner').map((row) => row.purchaseOwner)),
-      productTypes: ['成品', '配件'].filter((value) => rowsFor('productType').some((row) => (row.productLine === '其他/配件' ? '配件' : '成品') === value))
+      productTypes: ['成品', '配件']
     };
   }, [rows, filters]);
   useEffect(() => {
@@ -3477,6 +3477,7 @@ function FilterBar({ filters, setFilters, options, onSubmit }) {
   const clear = () => setFilters({ keyword: '', month: [], supplier: [], supplierCount: [], allocationStatus: [], dataStatus: [], purchaseOrg: [], businessUnit: [], productLine: [], series: [], purchaseOwner: [], productType: [] });
   return (
     <div className="toolbar filters-row">
+      <MultiSelectFilter label="成品/配件" allLabel="全部类型" value={filters.productType} options={options.productTypes} onChange={(value) => setFilters({ ...filters, productType: value })} />
       <MultiSelectFilter label="采购组织" allLabel="全部采购组织" value={filters.purchaseOrg} options={options.purchaseOrgs} onChange={(value) => setFilters({ ...filters, purchaseOrg: value })} />
       <MonthCalendarFilter label="创建月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
       <MultiSelectFilter label="供应商简称" allLabel="全部供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
@@ -3487,7 +3488,6 @@ function FilterBar({ filters, setFilters, options, onSubmit }) {
       <MultiSelectFilter label="产品线" allLabel="全部产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
       <MultiSelectFilter label="系列" allLabel="全部系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
       <MultiSelectFilter label="采购下单人" allLabel="全部采购下单人" value={filters.purchaseOwner} options={options.purchaseOwners} onChange={(value) => setFilters({ ...filters, purchaseOwner: value })} />
-      <MultiSelectFilter label="成品/配件" allLabel="全部类型" value={filters.productType} options={options.productTypes} onChange={(value) => setFilters({ ...filters, productType: value })} />
       <input
         className="search-input"
         placeholder="搜索供应商、物料、OA备货流程号、物流编码、SKU、采购人"
@@ -3664,7 +3664,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       skus: unique(rowsFor('sku').map((row) => row.sku)),
       purchaseOwners: unique(rowsFor('purchaseOwner').map((row) => row.purchaseOwner)),
       dataSources: ['金蝶系统', '手工录入'].filter((value) => rowsFor('dataSource').some((row) => (row.dataSource || ((row.orderNo && row.orderNo !== '无采购订单') ? '金蝶系统' : '手工录入')) === value)),
-      productTypes: ['成品', '配件'].filter((value) => rowsFor('productType').some((row) => (row.productLine === '其他/配件' ? '配件' : '成品') === value))
+      productTypes: ['成品', '配件']
     };
   }, [activeRows, filters]);
   useEffect(() => {

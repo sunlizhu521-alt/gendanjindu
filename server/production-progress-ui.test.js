@@ -151,12 +151,21 @@ test('生产跟进支持成品和配件联动筛选', () => {
     appSource.indexOf('function useFilteredDemands('),
     appSource.indexOf('function Login(')
   );
+  const filterBarSource = appSource.slice(
+    appSource.indexOf('function FilterBar('),
+    appSource.indexOf('function Login(')
+  );
   assert.match(filterSource, /purchaseOwner: \[\], productType: \[\]/);
   assert.match(filterSource, /omit === 'productType'[\s\S]*?row\.productLine === '其他\/配件' \? '配件' : '成品'/);
-  assert.match(filterSource, /productTypes: \['成品', '配件'\]\.filter[\s\S]*?rowsFor\('productType'\)/);
+  assert.match(filterSource, /productTypes: \['成品', '配件'\]/);
+  assert.doesNotMatch(filterSource, /productTypes: \['成品', '配件'\]\.filter/);
   assert.match(filterSource, /productType: options\.productTypes/);
   assert.match(filterSource, /label="成品\/配件" allLabel="全部类型"[\s\S]*?value=\{filters\.productType\}[\s\S]*?options=\{options\.productTypes\}/);
   assert.match(filterSource, /const clear = \(\) => setFilters\([\s\S]*?productType: \[\]/);
+  assert.ok(
+    filterBarSource.indexOf('label="成品/配件"') < filterBarSource.indexOf('label="采购组织"'),
+    '成品/配件筛选器应位于生产跟进筛选栏最前面'
+  );
 });
 
 test('生产跟进采购订单父行展示指定业务摘要', () => {

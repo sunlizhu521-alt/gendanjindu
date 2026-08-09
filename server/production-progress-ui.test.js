@@ -180,6 +180,18 @@ test('多选筛选弹层使用 portal 避免被生产跟进横向筛选栏裁剪
   assert.match(multiFilterSource, /window\.addEventListener\('scroll', updateMenuPosition, true\)/);
 });
 
+test('创建月份弹层使用 portal 避免被生产跟进横向筛选栏裁剪', () => {
+  const monthFilterSource = appSource.slice(
+    appSource.indexOf('function MonthCalendarFilter('),
+    appSource.indexOf('function FieldMapping(')
+  );
+  assert.match(monthFilterSource, /createPortal\(/);
+  assert.match(monthFilterSource, /className="filter-menu month-calendar-menu"/);
+  assert.match(monthFilterSource, /style=\{\{ position: 'fixed', zIndex: 10000, \.\.\.menuPosition \}\}/);
+  assert.match(monthFilterSource, /!menuRef\.current\?\.contains\(event\.target\)/);
+  assert.match(monthFilterSource, /window\.addEventListener\('scroll', updateMenuPosition, true\)/);
+});
+
 test('生产跟进采购订单父行展示指定业务摘要', () => {
   const progressSource = appSource.slice(
     appSource.indexOf('function ProgressPage('),
@@ -227,19 +239,15 @@ test('生产跟进采购订单按供应商聚合排序且简称可点击筛选',
   assert.doesNotMatch(progressSource, /<button[^>]*className="progress-order-toggle"[\s\S]*?<button[^>]*className="supplier-filter-link"/);
 });
 
-test('生产跟进保留供应商标签栏并移除只看按钮', () => {
+test('生产跟进去掉供应商标签栏和只看按钮', () => {
   const progressSource = appSource.slice(
     appSource.indexOf('function ProgressPage('),
     appSource.indexOf('function DifferenceAllocationPage(')
   );
-  assert.match(progressSource, /className="supplier-tags-bar"[\s\S]*?uniqueSupplierShortNames\(displayRows\.map\(\(row\) => progressSupplierName\(row\)\)\)/);
-  assert.match(progressSource, /const activeSupplier = filters\.supplier\.length === 1 \? filters\.supplier\[0\] : ''/);
-  assert.match(progressSource, /className=\{`supplier-tag\$\{name === activeSupplier \? ' active' : ''\}`\}/);
-  assert.match(progressSource, /supplier: name === activeSupplier \? \[\] : \[name\]/);
+  assert.doesNotMatch(progressSource, /supplier-tags-bar|supplier-tag|activeSupplier/);
   assert.doesNotMatch(progressSource, /supplier-lookonly-btn/);
   assert.doesNotMatch(progressSource, />\s*只看\s*<\/button>/);
-  assert.match(styleSource, /\.supplier-tags-bar\s*\{[\s\S]*?display: flex[\s\S]*?flex-wrap: wrap/);
-  assert.match(styleSource, /\.supplier-tag\.active\s*\{[\s\S]*?background: #2563eb/);
+  assert.doesNotMatch(styleSource, /\.supplier-tags-bar|\.supplier-tag(?:\W|$)/);
   assert.doesNotMatch(styleSource, /\.supplier-lookonly-btn/);
 });
 

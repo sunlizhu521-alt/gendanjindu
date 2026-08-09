@@ -3267,7 +3267,10 @@ function MultiSelectFilter({ label, allLabel, value = [], options = [], onChange
 
 function MonthCalendarFilter({ label, value = [], options = [], onChange, multiple = true }) {
   const [open, setOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState(null);
   const rootRef = useRef(null);
+  const buttonRef = useRef(null);
+  const menuRef = useRef(null);
   const availableOptions = useMemo(() => [...new Set(options.filter(Boolean))], [options]);
   const selected = multiple ? (Array.isArray(value) ? value : []) : (value ? [value] : []);
   const yearSource = selected[0] || availableOptions[0] || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
@@ -3278,10 +3281,35 @@ function MonthCalendarFilter({ label, value = [], options = [], onChange, multip
   useEffect(() => {
     if (!open) return undefined;
     const closeOnOutsideClick = (event) => {
-      if (rootRef.current && !rootRef.current.contains(event.target)) setOpen(false);
+      if (
+        rootRef.current
+        && !rootRef.current.contains(event.target)
+        && !menuRef.current?.contains(event.target)
+      ) setOpen(false);
     };
     document.addEventListener('mousedown', closeOnOutsideClick);
     return () => document.removeEventListener('mousedown', closeOnOutsideClick);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !buttonRef.current) {
+      setMenuPosition(null);
+      return undefined;
+    }
+    const updateMenuPosition = () => {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const width = 300;
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+      setMenuPosition({ left, top: rect.bottom + 4, width });
+    };
+    updateMenuPosition();
+    window.addEventListener('resize', updateMenuPosition);
+    window.addEventListener('scroll', updateMenuPosition, true);
+    return () => {
+      window.removeEventListener('resize', updateMenuPosition);
+      window.removeEventListener('scroll', updateMenuPosition, true);
+    };
   }, [open]);
 
   useEffect(() => {
@@ -3315,9 +3343,13 @@ function MonthCalendarFilter({ label, value = [], options = [], onChange, multip
   return (
     <div className="filter-control month-calendar-filter" ref={rootRef}>
       <span>{label}</span>
-      <button type="button" className="filter-button" onClick={() => setOpen(!open)} title={buttonText}>{buttonText}</button>
-      {open && (
-        <div className="filter-menu month-calendar-menu">
+      <button ref={buttonRef} type="button" className="filter-button" onClick={() => setOpen(!open)} title={buttonText}>{buttonText}</button>
+      {open && menuPosition && createPortal(
+        <div
+          ref={menuRef}
+          className="filter-menu month-calendar-menu"
+          style={{ position: 'fixed', zIndex: 10000, ...menuPosition }}
+        >
           <div className="month-calendar-head">
             <button type="button" onClick={() => setCalendarYear(calendarYear - 1)}>‹</button>
             <strong>{calendarYear}年</strong>
@@ -3343,7 +3375,8 @@ function MonthCalendarFilter({ label, value = [], options = [], onChange, multip
             <button type="button" onClick={() => updateSelected([])}>全部月份</button>
             <button type="button" onClick={() => setOpen(false)}>确定</button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -6352,22 +6385,6 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
             )}
           </section>
         )}
-        <div className="supplier-tags-bar">
-          {(() => {
-            const allSuppliers = uniqueSupplierShortNames(displayRows.map((row) => progressSupplierName(row)));
-            const activeSupplier = filters.supplier.length === 1 ? filters.supplier[0] : '';
-            return allSuppliers.map((name) => (
-              <button
-                key={name}
-                type="button"
-                className={`supplier-tag${name === activeSupplier ? ' active' : ''}`}
-                onClick={() => setFilters({ ...filters, supplier: name === activeSupplier ? [] : [name] })}
-              >
-                {name}
-              </button>
-            ));
-          })()}
-        </div>
         <FilterBar filters={filters} setFilters={setFilters} options={options} />
       </div>
       <DataTable

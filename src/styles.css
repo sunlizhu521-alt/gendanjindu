@@ -686,6 +686,20 @@ textarea {
   grid-template-columns: 220px minmax(0, 1fr);
 }
 
+.progress-standalone-shell {
+  min-height: 100vh;
+  background: #fff;
+  color: #28384d;
+  font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+}
+
+.progress-standalone-content {
+  min-height: 100vh;
+  padding: 0 14px 28px;
+  overflow: auto;
+  background: #fff;
+}
+
 .security-watermark {
   position: fixed;
   inset: -50px -100px;

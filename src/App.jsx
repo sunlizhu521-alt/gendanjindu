@@ -5854,7 +5854,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
   );
 }
 
-function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '生产跟进', onlyIssues = false, currentAppliedAt = '' }) {
+function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, onLogout, title = '生产跟进', onlyIssues = false, currentAppliedAt = '' }) {
   const trackableRows = useMemo(
     () => rows.filter((row) => row.active && (
       numberValue(row.remainingInboundQty) > 0
@@ -6236,6 +6236,8 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, title = '�
           />
           {!onlyIssues && <button type="button" className="progress-command" disabled={exporting || !displayRows.length} onClick={handleExport}>{exporting ? `导出中 ${exportProgress}%` : '导出 Excel'}</button>}
           {!onlyIssues && <button type="button" className="progress-command" onClick={() => setDifferenceAllocationView(true)}>差异分配</button>}
+          {!onlyIssues && onExit && <button type="button" className="progress-command" onClick={onExit}>返回系统</button>}
+          {!onlyIssues && onLogout && <button type="button" className="progress-command" onClick={onLogout}>退出登录</button>}
           {!onlyIssues && user?.role === '管理员' && (
             <button type="button" className="progress-command danger-text" onClick={() => setClearPanelOpen((open) => !open)}>
               清除跟单数据
@@ -8093,6 +8095,8 @@ function App() {
   if (!token || !user) return <>{loadingProgress}<Login onLogin={handleLogin} /></>;
 
   const visiblePages = visiblePagesForUser(user);
+  const progressStandalone = activeTab === 'progressRefresh';
+  const progressReturnPage = visiblePages.find((page) => page !== 'progressRefresh') || '';
   const canView = (page) => visiblePages.includes(page);
   const shouldMount = (page) => canView(page) && visitedPages.has(page);
   const refreshCrossBorderData = () => setCrossBorderVersion((version) => version + 1);
@@ -8107,35 +8111,37 @@ function App() {
   };
 
   return (
-    <main className={`app-shell${activeTab === 'progressRefresh' ? ' kingdee-shell' : ''}`} onClick={() => setMessage('')}>
+    <main className={progressStandalone ? 'progress-standalone-shell' : 'app-shell'} onClick={() => setMessage('')}>
       {loadingProgress}
       <SecurityWatermark userName={user.name} />
-      <aside className="sidebar" onClick={(event) => event.stopPropagation()}>
-        <h1>采购跟单&头程数据</h1>
-        <span className="app-version-time">服务器共享数据</span>
-        <nav className="sidebar-nav">
-          {NAV_GROUPS.map((group) => {
-            const groupPages = group.pages.filter((page) => visiblePages.includes(page));
-            if (!groupPages.length) return null;
-            return (
-              <div className="sidebar-nav-group" key={group.title}>
-                <div className="sidebar-nav-title">{group.title}</div>
-                {groupPages.map((page) => (
-                  <button key={page} type="button" className={activeTab === page ? 'active' : ''} onClick={() => setActiveTab(page)}>
-                    {pages[page] || PAGE_LABELS[page]}
-                  </button>
-                ))}
-              </div>
-            );
-          })}
-        </nav>
-        <div className="user-box">
-          <strong>{user.name}</strong>
-          <span>{user.role}</span>
-          <button type="button" className="ghost" onClick={logout}>退出登录</button>
-        </div>
-      </aside>
-      <section className="content" onClick={(event) => event.stopPropagation()}>
+      {!progressStandalone && (
+        <aside className="sidebar" onClick={(event) => event.stopPropagation()}>
+          <h1>采购跟单&头程数据</h1>
+          <span className="app-version-time">服务器共享数据</span>
+          <nav className="sidebar-nav">
+            {NAV_GROUPS.map((group) => {
+              const groupPages = group.pages.filter((page) => visiblePages.includes(page));
+              if (!groupPages.length) return null;
+              return (
+                <div className="sidebar-nav-group" key={group.title}>
+                  <div className="sidebar-nav-title">{group.title}</div>
+                  {groupPages.map((page) => (
+                    <button key={page} type="button" className={activeTab === page ? 'active' : ''} onClick={() => setActiveTab(page)}>
+                      {pages[page] || PAGE_LABELS[page]}
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
+          </nav>
+          <div className="user-box">
+            <strong>{user.name}</strong>
+            <span>{user.role}</span>
+            <button type="button" className="ghost" onClick={logout}>退出登录</button>
+          </div>
+        </aside>
+      )}
+      <section className={progressStandalone ? 'progress-standalone-content' : 'content'} onClick={(event) => event.stopPropagation()}>
         {message && <p className="message">{message}</p>}
         {demandsLoading && DEMAND_DATA_PAGES.has(activeTab) && <p className="section-count">正在加载采购订单数据...</p>}
         {shouldMount('domesticBoard') && <PagePane page="domesticBoard" activeTab={activeTab}><DomesticBoard token={token} setMessage={setMessage} /></PagePane>}
@@ -8147,7 +8153,7 @@ function App() {
         {shouldMount('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><OperationBoardPage token={token} active={activeTab === 'operationBoard'} /></PagePane>}
         {shouldMount('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
         {shouldMount('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
-        {shouldMount('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
+        {shouldMount('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} onExit={progressReturnPage ? () => setActiveTab(progressReturnPage) : null} onLogout={logout} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('wangdianData') && <PagePane page="wangdianData" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="国内数据" slots={WANGDIAN_SLOTS} gridColumns={3} /></PagePane>}
         {shouldMount('lingxingInventory') && <PagePane page="lingxingInventory" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="领星库存" slots={LINGXING_INVENTORY_SLOTS} onDataApplied={refreshCrossBorderData} highlightSlotId={highlightSlotId} /></PagePane>}
         {shouldMount('firstMileDatabase') && <PagePane page="firstMileDatabase" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="头程数据库" slots={FIRST_MILE_DATABASE_SLOTS} gridColumns={3} onDataApplied={refreshFirstMileData} /></PagePane>}

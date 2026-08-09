@@ -190,6 +190,26 @@ test('生产跟进保留供应商标签栏并移除只看按钮', () => {
   assert.doesNotMatch(styleSource, /\.supplier-lookonly-btn/);
 });
 
+test('生产跟进隐藏公共导航和通用布局并提供独立返回入口', () => {
+  const appRenderSource = appSource.slice(appSource.indexOf('function App()'));
+  const progressSource = appSource.slice(
+    appSource.indexOf('function ProgressPage('),
+    appSource.indexOf('function DifferenceAllocationPage(')
+  );
+
+  assert.match(appRenderSource, /const progressStandalone = activeTab === 'progressRefresh'/);
+  assert.match(appRenderSource, /className=\{progressStandalone \? 'progress-standalone-shell' : 'app-shell'\}/);
+  assert.match(appRenderSource, /\{!progressStandalone && \(\s*<aside className="sidebar"/);
+  assert.match(appRenderSource, /className=\{progressStandalone \? 'progress-standalone-content' : 'content'\}/);
+  assert.match(appRenderSource, /onExit=\{progressReturnPage \? \(\) => setActiveTab\(progressReturnPage\) : null\}/);
+  assert.match(appRenderSource, /onLogout=\{logout\}/);
+  assert.doesNotMatch(appRenderSource, /kingdee-shell/);
+  assert.match(progressSource, />返回系统<\/button>/);
+  assert.match(progressSource, />退出登录<\/button>/);
+  assert.match(styleSource, /\.progress-standalone-shell\s*\{[\s\S]*?min-height: 100vh/);
+  assert.match(styleSource, /\.progress-standalone-content\s*\{[\s\S]*?min-height: 100vh[\s\S]*?overflow: auto/);
+});
+
 test('生产跟进不再展示任何柱形图', () => {
   const progressSource = appSource.slice(
     appSource.indexOf('function ProgressPage('),
@@ -286,7 +306,7 @@ test('生产跟进支持手工登记表预览、数据状态筛选和采购订�
   assert.match(serverSource, /SET active = 0, stale = 1, data_status = '本次手工表未出现'/);
 });
 
-test('生产跟进使用金蝶风格命令栏、方案栏且内部视图切换完整', () => {
+test('生产跟进保留金蝶内部工具栏并使用独立全屏容器', () => {
   const progressSource = appSource.slice(
     appSource.indexOf('function ProgressColumnSelector('),
     appSource.indexOf('function DifferenceAllocationPage(')
@@ -299,9 +319,9 @@ test('生产跟进使用金蝶风格命令栏、方案栏且内部视图切换�
   assert.match(progressSource, /function setDifferenceAllocationView\(open\)[\s\S]*?content\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\)[\s\S]*?window\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\)/);
   assert.match(progressSource, /setDifferenceAllocationView\(true\)/);
   assert.match(progressSource, /setDifferenceAllocationView\(false\)/);
-  assert.match(appSource, /className=\{`app-shell\$\{activeTab === 'progressRefresh' \? ' kingdee-shell' : ''\}`\}/);
-  assert.match(styleSource, /\.app-shell\.kingdee-shell\s*\{[\s\S]*?grid-template-rows: 42px minmax\(0, 1fr\)/);
-  assert.match(styleSource, /\.kingdee-shell \.sidebar\s*\{[\s\S]*?background: #2f78f6/);
+  assert.match(appSource, /className=\{progressStandalone \? 'progress-standalone-shell' : 'app-shell'\}/);
+  assert.match(styleSource, /\.progress-standalone-shell\s*\{[\s\S]*?min-height: 100vh/);
+  assert.doesNotMatch(appSource, /className=\{`app-shell\$\{activeTab === 'progressRefresh'/);
   assert.match(styleSource, /\.progress-command-bar\s*\{[\s\S]*?min-height: 40px/);
   assert.match(styleSource, /\.progress-command-bar\s*\{[\s\S]*?flex-wrap: wrap/);
   assert.match(styleSource, /\.kingdee-progress-page \.progress-column-selector\s*\{[\s\S]*?display: contents/);

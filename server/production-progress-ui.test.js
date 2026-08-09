@@ -399,12 +399,15 @@ test('生产跟进使用固定默认显示列并按用户持久保存', () => {
     [...defaultColumnsMatch[1].matchAll(/'([^']+)'/g)].map((match) => match[1]),
     [
       'orderType', 'reportingMonth', 'orderNo', 'currentPurchaseQty', 'originalOrderNo', 'originalOrderDate',
-      'originalPurchaseQty', 'changeValidationStatus', 'dataStatus', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
+      'originalPurchaseQty', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
       'operationStockQty', 'remainingInboundQty', 'shippedQty', 'unpreparedQty', 'preparedNotStartedQty',
       'inProductionQty', 'finishedQty', 'contractDeliveryDates', 'productionDeliveryDate',
       'unproducedEstimatedDeliveryDate', 'fulfillmentStatus', 'oaFlowNo', 'action'
     ]
   );
+  assert.match(columnSource, /\['changeValidationStatus', '变更校验'\]/);
+  assert.match(columnSource, /\['dataStatus', '数据状态'\]/);
+  assert.doesNotMatch(defaultColumnsMatch[1], /changeValidationStatus|dataStatus/);
   assert.match(columnSource, /function defaultProgressColumnKeys\(\)\s*\{\s*return \[\.\.\.PROGRESS_DEFAULT_COLUMNS\];/);
   assert.doesNotMatch(columnSource, /PROGRESS_DEFAULT_(?:WIDE|COMPACT|NARROW)_COLUMNS/);
   assert.match(columnSource, /function readProgressColumnPreference\(storageKey\)/);
@@ -420,6 +423,17 @@ test('生产跟进使用固定默认显示列并按用户持久保存', () => {
   assert.match(exportSource, /const headers = \[[\s\S]*?'状态校验'/);
   assert.match(exportSource, /\.\.\.displayRows\.map/);
   assert.doesNotMatch(exportSource, /visibleColumnKeys/);
+});
+
+test('生产跟进展开明细列按内容自适应且不换行', () => {
+  const editorSource = appSource.slice(
+    appSource.indexOf('function ProgressEditor('),
+    appSource.indexOf('function ProgressPage(')
+  );
+  assert.match(editorSource, /className=\{`progress-order-detail-row/);
+  assert.match(styleSource, /\.kingdee-progress-page \.progress-table table\s*\{[\s\S]*?width: max-content;[\s\S]*?table-layout: auto;/);
+  assert.match(styleSource, /\.kingdee-progress-page \.progress-order-detail-header > th,[\s\S]*?\.progress-order-detail-row > td\s*\{[\s\S]*?width: auto !important;[\s\S]*?max-width: none !important;[\s\S]*?white-space: nowrap !important;/);
+  assert.match(styleSource, /\.kingdee-progress-page \.progress-order-detail-row > td \*\s*\{[\s\S]*?white-space: nowrap !important;/);
 });
 
 test('生产跟进支持手工登记表预览、数据状态筛选和采购订单折叠', () => {

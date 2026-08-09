@@ -5331,7 +5331,7 @@ const PROGRESS_COLUMNS = [
 
 const PROGRESS_DEFAULT_COLUMNS = [
   'orderType', 'reportingMonth', 'orderNo', 'currentPurchaseQty', 'originalOrderNo', 'originalOrderDate',
-  'originalPurchaseQty', 'changeValidationStatus', 'dataStatus', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
+  'originalPurchaseQty', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
   'operationStockQty', 'remainingInboundQty', 'shippedQty', 'unpreparedQty', 'preparedNotStartedQty',
   'inProductionQty', 'finishedQty', 'contractDeliveryDates', 'productionDeliveryDate',
   'unproducedEstimatedDeliveryDate', 'fulfillmentStatus', 'oaFlowNo', 'action'
@@ -5919,7 +5919,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
 
   return (
     <>
-      <tr className={row.progressAdjustmentRequired || invalidQty || row.validationStatus === 'error' ? 'progress-row-adjustment' : ''}>
+      <tr className={`progress-order-detail-row${row.progressAdjustmentRequired || invalidQty || row.validationStatus === 'error' ? ' progress-row-adjustment' : ''}`}>
         <td><input type="checkbox" checked={selected} disabled={!row.canEdit} onChange={(event) => onSelect?.(row.demandKey, event.target.checked)} /></td>
         {cells.filter(([key]) => visible.has(key)).map(([key, cell]) => <td key={key}>{cell}</td>)}
       </tr>

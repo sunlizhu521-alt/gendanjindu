@@ -56,8 +56,11 @@ test('生产跟进四阶段、履约字段和导出状态完整呈现', () => {
   assert.doesNotMatch(serverSource, /numberValue\(req\.body\.shippedQty\)/);
   assert.match(serverSource, /function contractDateOnly\(value\)/);
   assert.match(serverSource, /contractDateOnly\(row\.deliveryDate \|\| row\.delivery_date\)/);
-  assert.match(serverSource, /const kingdeeOrderNos = new Set\(all\('SELECT DISTINCT order_no FROM kingdee_orders WHERE remaining_inbound_qty > 0 AND order_no != \\'\\''\)/);
-  assert.match(serverSource, /if \(system \|\| \(first\.orderNo && kingdeeOrderNos\.has\(first\.orderNo\)\)\) return null/);
+  assert.match(serverSource, /const currentKingdeeOrderKeys = new Set/);
+  assert.match(serverSource, /const currentKingdeeOrderNos = new Set/);
+  assert.match(serverSource, /currentKingdeeOrderKeys\.has\(kingdeeOrderIdentity\(first\.demandKey, first\.orderNo\)\)/);
+  assert.match(serverSource, /currentKingdeeOrderNos\.has\(first\.orderNo\)/);
+  assert.match(serverSource, /const visibleSystemRows = systemRows\.map/);
   assert.match(serverSource, /const remainingInboundQty = rows\.reduce\(\(sum, r\) => sum \+ numberValue\(r\.manualRemainingQty\), 0\)/);
   assert.match(serverSource, /const shippedQty = rows\.reduce\(\(sum, r\) => sum \+ numberValue\(r\.sourceShippedQty\), 0\)/);
   assert.match(serverSource, /const unpreparedQty = rows\.reduce\(\(sum, r\) => sum \+ numberValue\(r\.unpreparedQty\), 0\)/);
@@ -65,9 +68,10 @@ test('生产跟进四阶段、履约字段和导出状态完整呈现', () => {
   assert.match(serverSource, /const inProductionQty = rows\.reduce\(\(sum, r\) => sum \+ numberValue\(r\.inProductionQty\), 0\)/);
   assert.match(serverSource, /const finishedQty = rows\.reduce\(\(sum, r\) => sum \+ numberValue\(r\.finishedQty\), 0\)/);
   assert.match(serverSource, /const manualRows = \[\.\.\.groups\.values\(\)\]\.map\([\s\S]*?\}\)\.filter\(Boolean\)/);
-  assert.match(serverSource, /if \(orderRows\.length > 1 && orderNo\.includes\('、'\)\)/);
-  assert.match(serverSource, /return distinctOrders\.map\(order => \{[\s\S]*?orderNo: order/);
-  assert.match(serverSource, /return row;\s*\}\)\.flat\(\)/);
+  assert.match(serverSource, /groupCurrentKingdeeOrderRows\(sourceRows\)/);
+  assert.match(serverSource, /operationOrderLevel: true/);
+  assert.match(serverSource, /if \(!allOrderRows\.length\) return \{/);
+  assert.match(serverSource, /return operationOrderBreakdown\(row, allOrderRows\)\.map/);
   assert.match(serverSource, /const normalFulfillmentAmount = rows\.reduce\(\(sum, row\) => sum \+ row\.sourceNormalAmount, 0\)/);
   assert.match(serverSource, /purchaseOwnersForSupplierShortNames/);
   assert.match(progressSource, /numberValue\(row\.normalFulfillmentAmount\)/);
@@ -78,6 +82,20 @@ test('生产跟进四阶段、履约字段和导出状态完整呈现', () => {
   assert.match(appSource, /配件无采购价/);
   assert.doesNotMatch(progressSource.slice(progressSource.indexOf('<DataTable'), progressSource.indexOf('function DifferenceAllocationPage(')), /'采购组'/);
   assert.match(serverSource, /return displayRows\.filter\(\(row\) => !row\.adminOnly && canEditDemand\(user, \{ purchase_owner: row\.purchaseOwner \}\)\)/);
+});
+
+test('生产跟进展示当前金蝶所有剩余未交付非零订单', () => {
+  const progressSource = appSource.slice(
+    appSource.indexOf('function ProgressPage('),
+    appSource.indexOf('function DifferenceAllocationPage(')
+  );
+  assert.match(progressSource, /numberValue\(row\.remainingInboundQty\) !== 0/);
+  assert.match(progressSource, /row\.rowKey \|\| row\.demandKey/);
+  assert.match(serverSource, /dataSource: '金蝶系统'/);
+  assert.doesNotMatch(serverSource.slice(
+    serverSource.indexOf('function operationOrderBreakdown('),
+    serverSource.indexOf('function demandRows(')
+  ), /effectiveOrderCondition === '有效订单'/);
 });
 
 test('采购未交付减少时保留四阶段原值并交由人工调整', () => {

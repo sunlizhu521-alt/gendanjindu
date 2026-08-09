@@ -1,4 +1,5 @@
 import React, { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { purchaseTrackingBusinessUnit } from './business-unit.js';
 import InventoryCalculationGuide from './InventoryCalculationGuide.jsx';
 import InventoryRiskPage from './InventoryRiskPage.jsx';
@@ -3176,7 +3177,10 @@ function usePaginatedRows(rows, resetKey, pageSize = 20) {
 
 function MultiSelectFilter({ label, allLabel, value = [], options = [], onChange }) {
   const [open, setOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState(null);
   const rootRef = useRef(null);
+  const buttonRef = useRef(null);
+  const menuRef = useRef(null);
   const availableOptions = useMemo(
     () => [...new Set(options.map(normalize).filter(Boolean))],
     [options]
@@ -3187,10 +3191,35 @@ function MultiSelectFilter({ label, allLabel, value = [], options = [], onChange
   useEffect(() => {
     if (!open) return undefined;
     const closeOnOutsideClick = (event) => {
-      if (rootRef.current && !rootRef.current.contains(event.target)) setOpen(false);
+      if (
+        rootRef.current
+        && !rootRef.current.contains(event.target)
+        && !menuRef.current?.contains(event.target)
+      ) setOpen(false);
     };
     document.addEventListener('mousedown', closeOnOutsideClick);
     return () => document.removeEventListener('mousedown', closeOnOutsideClick);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !buttonRef.current) {
+      setMenuPosition(null);
+      return undefined;
+    }
+    const updateMenuPosition = () => {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const width = Math.max(250, rect.width);
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+      setMenuPosition({ left, top: rect.bottom + 4, width });
+    };
+    updateMenuPosition();
+    window.addEventListener('resize', updateMenuPosition);
+    window.addEventListener('scroll', updateMenuPosition, true);
+    return () => {
+      window.removeEventListener('resize', updateMenuPosition);
+      window.removeEventListener('scroll', updateMenuPosition, true);
+    };
   }, [open]);
 
   if (availableOptions.length === 0) return null;
@@ -3209,12 +3238,16 @@ function MultiSelectFilter({ label, allLabel, value = [], options = [], onChange
   return (
     <div className="multi-filter" ref={rootRef}>
       <span className="multi-filter-label">{label}</span>
-      <button type="button" className="multi-filter-button" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+      <button ref={buttonRef} type="button" className="multi-filter-button" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
         <span>{buttonLabel}</span>
         <b aria-hidden="true">⌄</b>
       </button>
-      {open && (
-        <div className="multi-filter-menu">
+      {open && menuPosition && createPortal(
+        <div
+          ref={menuRef}
+          className="multi-filter-menu"
+          style={{ position: 'fixed', zIndex: 10000, ...menuPosition }}
+        >
           <label className="multi-filter-option">
             <input type="checkbox" checked={selected.length === 0} onChange={() => onChange([])} />
             <span>{allLabel}</span>
@@ -3225,7 +3258,8 @@ function MultiSelectFilter({ label, allLabel, value = [], options = [], onChange
               <span>{option}</span>
             </label>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

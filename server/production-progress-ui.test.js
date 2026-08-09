@@ -168,6 +168,18 @@ test('生产跟进支持成品和配件联动筛选', () => {
   );
 });
 
+test('多选筛选弹层使用 portal 避免被生产跟进横向筛选栏裁剪', () => {
+  const multiFilterSource = appSource.slice(
+    appSource.indexOf('function MultiSelectFilter('),
+    appSource.indexOf('function MonthCalendarFilter(')
+  );
+  assert.match(appSource, /import \{ createPortal \} from 'react-dom'/);
+  assert.match(multiFilterSource, /createPortal\(/);
+  assert.match(multiFilterSource, /style=\{\{ position: 'fixed', zIndex: 10000, \.\.\.menuPosition \}\}/);
+  assert.match(multiFilterSource, /!menuRef\.current\?\.contains\(event\.target\)/);
+  assert.match(multiFilterSource, /window\.addEventListener\('scroll', updateMenuPosition, true\)/);
+});
+
 test('生产跟进采购订单父行展示指定业务摘要', () => {
   const progressSource = appSource.slice(
     appSource.indexOf('function ProgressPage('),

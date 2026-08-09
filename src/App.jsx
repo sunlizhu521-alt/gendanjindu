@@ -5331,7 +5331,7 @@ const PROGRESS_COLUMNS = [
 
 const PROGRESS_DEFAULT_COLUMNS = [
   'orderType', 'reportingMonth', 'orderNo', 'currentPurchaseQty', 'originalOrderNo', 'originalOrderDate',
-  'originalPurchaseQty', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
+  'originalPurchaseQty', 'documentStatus', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
   'operationStockQty', 'remainingInboundQty', 'shippedQty', 'unpreparedQty', 'preparedNotStartedQty',
   'inProductionQty', 'finishedQty', 'contractDeliveryDates', 'productionDeliveryDate',
   'unproducedEstimatedDeliveryDate', 'fulfillmentStatus', 'oaFlowNo', 'action'

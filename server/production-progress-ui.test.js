@@ -401,7 +401,7 @@ test('生产跟进使用固定默认显示列并按用户持久保存', () => {
     [...defaultColumnsMatch[1].matchAll(/'([^']+)'/g)].map((match) => match[1]),
     [
       'orderType', 'reportingMonth', 'orderNo', 'currentPurchaseQty', 'originalOrderNo', 'originalOrderDate',
-      'originalPurchaseQty', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
+      'originalPurchaseQty', 'documentStatus', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
       'operationStockQty', 'remainingInboundQty', 'shippedQty', 'unpreparedQty', 'preparedNotStartedQty',
       'inProductionQty', 'finishedQty', 'contractDeliveryDates', 'productionDeliveryDate',
       'unproducedEstimatedDeliveryDate', 'fulfillmentStatus', 'oaFlowNo', 'action'

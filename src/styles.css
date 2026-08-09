@@ -4284,6 +4284,42 @@ th {
   color: #0f172a;
 }
 
+.progress-order-change-rules {
+  display: grid;
+  gap: 4px;
+}
+
+.progress-order-change-rules > span {
+  display: block;
+  padding-left: 10px;
+}
+
+.progress-order-type {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 1px 6px;
+  border: 1px solid #bfdbfe;
+  border-radius: 3px;
+  background: #eff6ff;
+  color: #1d4ed8 !important;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.progress-order-type.type-normal {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #475569 !important;
+}
+
+.progress-order-type.type-pending {
+  border-color: #fdba74;
+  background: #fff7ed;
+  color: #c2410c !important;
+}
+
 .diff-sticky-top {
   position: sticky;
   top: 0;

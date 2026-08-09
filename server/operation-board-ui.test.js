@@ -57,3 +57,16 @@ test('operation board supports linked Kingdee and manual data-source filters', (
   assert.match(dashboard, /dataSource: options\.dataSources/);
   assert.match(dashboard, /label="数据来源" allLabel="全部来源"/);
 });
+
+test('运营看板支持成品和配件联动筛选', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
+  const dashboard = client.slice(client.indexOf('function Dashboard('), client.indexOf('function AppliedTimeNote('));
+
+  assert.match(dashboard, /dataSource: \[\], productType: \[\]/);
+  assert.match(dashboard, /omit === 'productType'[\s\S]*?row\.productLine === '其他\/配件' \? '配件' : '成品'/);
+  assert.match(dashboard, /productTypes: \['成品', '配件'\]\.filter[\s\S]*?rowsFor\('productType'\)/);
+  assert.match(dashboard, /productType: options\.productTypes/);
+  assert.match(dashboard, /label="成品\/配件" allLabel="全部类型"[\s\S]*?value=\{filters\.productType\}[\s\S]*?options=\{options\.productTypes\}/);
+  assert.match(dashboard, /const clearFilters = \(\) => setFilters\([\s\S]*?productType: \[\]/);
+});

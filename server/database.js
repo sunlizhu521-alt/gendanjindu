@@ -159,6 +159,8 @@ function migrate() {
       close_status TEXT NOT NULL DEFAULT '',
       is_gift TEXT NOT NULL DEFAULT '',
       business_close TEXT NOT NULL DEFAULT '',
+      order_remark TEXT NOT NULL DEFAULT '',
+      manual_close TEXT NOT NULL DEFAULT '',
       raw_json TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS order_demands (
@@ -545,7 +547,9 @@ function migrate() {
     ['document_status', "TEXT NOT NULL DEFAULT ''"],
     ['close_status', "TEXT NOT NULL DEFAULT ''"],
     ['is_gift', "TEXT NOT NULL DEFAULT ''"],
-    ['business_close', "TEXT NOT NULL DEFAULT ''"]
+    ['business_close', "TEXT NOT NULL DEFAULT ''"],
+    ['order_remark', "TEXT NOT NULL DEFAULT ''"],
+    ['manual_close', "TEXT NOT NULL DEFAULT ''"]
   ].forEach(([column, definition]) => {
     if (!kingdeeColumns.includes(column)) run(`ALTER TABLE kingdee_orders ADD COLUMN ${column} ${definition}`);
   });

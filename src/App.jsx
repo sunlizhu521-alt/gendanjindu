@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { purchaseTrackingBusinessUnit } from './business-unit.js';
 import InventoryCalculationGuide from './InventoryCalculationGuide.jsx';
 import InventoryRiskPage from './InventoryRiskPage.jsx';
@@ -31,7 +31,8 @@ const PAGE_ORDER = [
   'dimensionLibrary',
   'kingdeeImport',
   'permissions',
-  'operationLogs'
+  'operationLogs',
+  'tableRelationships'
 ];
 
 const PAGE_LABELS = {
@@ -54,7 +55,8 @@ const PAGE_LABELS = {
   dimensionLibrary: '维度表库',
   trace: '变更追溯',
   operationLogs: '操作日常',
-  permissions: '权限管理'
+  permissions: '权限管理',
+  tableRelationships: '数据关系图'
 };
 
 const NAV_GROUPS = [
@@ -64,7 +66,7 @@ const NAV_GROUPS = [
   { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'trace', 'purchaseBoard'] },
   { title: '头程数据', pages: ['firstMileBoard', 'firstMileDatabase'] },
   { title: '维护数据', pages: ['dimensionMissing', 'dimensionLibrary', 'kingdeeImport'] },
-  { title: '系统操作', pages: ['permissions', 'operationLogs'] }
+  { title: '系统操作', pages: ['permissions', 'operationLogs', 'tableRelationships'] }
 ];
 
 const DEMAND_DATA_PAGES = new Set(['inventoryPurchase', 'purchaseBoard', 'progressRefresh']);
@@ -7998,6 +8000,133 @@ function PermissionsPage({ token, currentUser, pages, setMessage }) {
   );
 }
 
+function DataRelationshipsPage({ token }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [selectedGroup, setSelectedGroup] = useState('');
+  const refreshRef = useRef(null);
+
+  async function load() {
+    try {
+      const res = await fetch('/api/table-relationships', { headers: { Authorization: 'Bearer ' + token } });
+      if (!res.ok) throw new Error('请求失败');
+      const json = await res.json();
+      setData(json);
+      setError('');
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, [token]);
+  useEffect(() => {
+    refreshRef.current = setInterval(load, 30000);
+    return () => clearInterval(refreshRef.current);
+  }, [token]);
+
+  if (loading) return <p className="section-count">加载中...</p>;
+  if (error) return <p className="message">加载失败：{error}</p>;
+  if (!data) return null;
+
+  const { tables, relationships } = data;
+  const groups = [...new Set(tables.map(t => t.group))];
+  const filteredTables = selectedGroup ? tables.filter(t => t.group === selectedGroup) : tables;
+  const tableMap = {};
+  tables.forEach(t => { tableMap[t.name] = t; });
+
+  const TABLE_W = 180, TABLE_H = 60, GAP_X = 220, GAP_Y = 100;
+  const cols = 5;
+  const positions = {};
+  filteredTables.forEach((t, i) => {
+    positions[t.name] = {
+      x: 60 + (i % cols) * GAP_X,
+      y: 60 + Math.floor(i / cols) * GAP_Y
+    };
+  });
+
+  const visibleRels = relationships.filter(r => positions[r.from] && positions[r.to]);
+
+  return React.createElement('div', { className: 'panel' },
+    React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' } },
+      React.createElement('h3', { style: { margin: 0 } }, '数据表关系图'),
+      React.createElement('span', { style: { fontSize: 13, color: '#6b7280' } }, '每30秒自动刷新行数'),
+      React.createElement('div', { style: { flex: 1 } }),
+      groups.map(g => React.createElement('button', {
+        key: g,
+        type: 'button',
+        className: selectedGroup === g ? 'primary' : 'ghost',
+        style: { fontSize: 12, padding: '4px 10px' },
+        onClick: () => setSelectedGroup(selectedGroup === g ? '' : g)
+      }, g)),
+      selectedGroup && React.createElement('button', {
+        type: 'button',
+        className: 'ghost',
+        style: { fontSize: 12, padding: '4px 10px' },
+        onClick: () => setSelectedGroup('')
+      }, '全部')
+    ),
+    React.createElement('div', { style: { overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 8, background: '#fafbfc' } },
+      React.createElement('svg', {
+        width: Math.max(1200, cols * GAP_X + 120),
+        height: Math.max(400, Math.ceil(filteredTables.length / cols) * GAP_Y + 80),
+        style: { display: 'block' }
+      },
+        React.createElement('defs', null,
+          React.createElement('marker', { id: 'arrowhead', markerWidth: 8, markerHeight: 6, refX: 8, refY: 3, orient: 'auto' },
+            React.createElement('polygon', { points: '0 0, 8 3, 0 6', fill: '#9ca3af' })
+          )
+        ),
+        visibleRels.map((rel, i) => {
+          const fp = positions[rel.from], tp = positions[rel.to];
+          const fx = fp.x + TABLE_W, fy = fp.y + TABLE_H / 2;
+          const tx = tp.x, ty = tp.y + TABLE_H / 2;
+          return React.createElement('g', { key: 'rel' + i },
+            React.createElement('line', { x1: fx, y1: fy, x2: tx, y2: ty, stroke: '#d1d5db', strokeWidth: 1.5, markerEnd: 'url(#arrowhead)' }),
+            React.createElement('text', { x: (fx + tx) / 2, y: (fy + ty) / 2 - 4, textAnchor: 'middle', fontSize: 10, fill: '#9ca3af' }, rel.label)
+          );
+        }),
+        filteredTables.map((t) => {
+          const p = positions[t.name];
+          return React.createElement('g', { key: t.name },
+            React.createElement('rect', { x: p.x, y: p.y, width: TABLE_W, height: TABLE_H, rx: 6, fill: '#fff', stroke: t.groupColor, strokeWidth: 2 }),
+            React.createElement('rect', { x: p.x, y: p.y, width: TABLE_W, height: 22, rx: 6, fill: t.groupColor }),
+            React.createElement('rect', { x: p.x, y: p.y + 16, width: TABLE_W, height: 6, fill: t.groupColor }),
+            React.createElement('text', { x: p.x + TABLE_W / 2, y: p.y + 15, textAnchor: 'middle', fontSize: 11, fontWeight: 600, fill: '#fff' }, t.label),
+            React.createElement('text', { x: p.x + TABLE_W / 2, y: p.y + 40, textAnchor: 'middle', fontSize: 10, fill: '#6b7280' }, t.name),
+            React.createElement('text', { x: p.x + TABLE_W / 2, y: p.y + 53, textAnchor: 'middle', fontSize: 11, fontWeight: 700, fill: t.groupColor }, t.rowCount.toLocaleString() + ' 行')
+          );
+        })
+      )
+    ),
+    React.createElement('details', { style: { marginTop: 16 } },
+      React.createElement('summary', { style: { cursor: 'pointer', fontSize: 14, fontWeight: 600, color: '#374151' } }, '全部关联关系明细'),
+      React.createElement('table', { style: { width: '100%', marginTop: 8, borderCollapse: 'collapse', fontSize: 13 } },
+        React.createElement('thead', null,
+          React.createElement('tr', null,
+            React.createElement('th', { style: { textAlign: 'left', padding: '6px 8px', borderBottom: '2px solid #e5e7eb' } }, '源表'),
+            React.createElement('th', { style: { textAlign: 'left', padding: '6px 8px', borderBottom: '2px solid #e5e7eb' } }, '源字段'),
+            React.createElement('th', { style: { textAlign: 'center', padding: '6px 8px', borderBottom: '2px solid #e5e7eb' } }, '关系'),
+            React.createElement('th', { style: { textAlign: 'left', padding: '6px 8px', borderBottom: '2px solid #e5e7eb' } }, '目标表'),
+            React.createElement('th', { style: { textAlign: 'left', padding: '6px 8px', borderBottom: '2px solid #e5e7eb' } }, '目标字段')
+          )
+        ),
+        React.createElement('tbody', null,
+          relationships.map((rel, i) => React.createElement('tr', { key: i },
+            React.createElement('td', { style: { padding: '4px 8px', borderBottom: '1px solid #f3f4f6' } }, tableMap[rel.from]?.label || rel.from),
+            React.createElement('td', { style: { padding: '4px 8px', borderBottom: '1px solid #f3f4f6', fontFamily: 'monospace', fontSize: 12 } }, rel.fromCol),
+            React.createElement('td', { style: { padding: '4px 8px', borderBottom: '1px solid #f3f4f6', textAlign: 'center', color: '#6b7280' } }, rel.label),
+            React.createElement('td', { style: { padding: '4px 8px', borderBottom: '1px solid #f3f4f6' } }, tableMap[rel.to]?.label || rel.to),
+            React.createElement('td', { style: { padding: '4px 8px', borderBottom: '1px solid #f3f4f6', fontFamily: 'monospace', fontSize: 12 } }, rel.toCol)
+          ))
+        )
+      )
+    )
+  );
+}
+
 function App() {
   const [globalLoading, setGlobalLoading] = useState(getLoadingProgress);
   const [token, setToken] = useState(() => window.localStorage.getItem(TOKEN_KEY) || '');
@@ -8164,6 +8293,7 @@ function App() {
         {shouldMount('trace') && <PagePane page="trace" activeTab={activeTab}><TracePage token={token} setMessage={setMessage} /></PagePane>}
         {shouldMount('operationLogs') && <PagePane page="operationLogs" activeTab={activeTab}><OperationLogsPage token={token} setMessage={setMessage} /></PagePane>}
         {shouldMount('permissions') && <PagePane page="permissions" activeTab={activeTab}><PermissionsPage token={token} currentUser={user} pages={pages} setMessage={setMessage} /></PagePane>}
+        {shouldMount('tableRelationships') && <PagePane page="tableRelationships" activeTab={activeTab}><DataRelationshipsPage token={token} /></PagePane>}
         <PersistentHorizontalScrollbar activeTab={activeTab} />
       </section>
     </main>

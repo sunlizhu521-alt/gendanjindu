@@ -7084,6 +7084,69 @@ app.post('/api/users/bulk-delete', requireAuth, requirePage('permissions'), requ
   });
 });
 
+// ===== 数据完整性：修复 supplier_short_name =====
+app.post('/api/maintenance/repair-supplier-short-names', requireAuth, (req, res) => {
+  const dimMap = new Map();
+  const dimRows = getDimensionRows('purchaseAssignment');
+  dimRows.forEach(r => {
+    if (r.supplier && r.supplierShortName && !dimMap.has(r.supplier)) {
+      dimMap.set(r.supplier, r.supplierShortName);
+    }
+  });
+  const emptySuppliers = all("SELECT DISTINCT supplier FROM order_demands WHERE active=1 AND (supplier_short_name='' OR supplier_short_name IS NULL)");
+  const report = { totalEmpty: 0, fixedByDim: 0, fixedByHeuristic: 0, unfixed: 0, details: [] };
+  transaction(() => {
+    emptySuppliers.forEach(({ supplier }) => {
+      let shortName = dimMap.get(supplier) || '';
+      let source = '';
+      if (shortName) {
+        source = '维度表';
+      } else {
+        shortName = supplier
+          .replace(/^(河北|浙江|广东|江苏|山东|福建|安徽|河南|湖北|湖南|四川|辽宁|吉林|黑龙江|江西|山西|陕西|甘肃|云南|贵州|海南|北京|上海|天津|重庆|西藏|宁夏|新疆|广西|内蒙古|香港|澳门)省?/, '')
+          .replace(/(市?科技)?(医疗)?(器械)?(集团)?(股份)?(有限)?(责任)?(实业)?公司$/g, '')
+          .replace(/^市/, '')
+          .replace(/[（(].+[）)]$/, '')
+          .slice(0, 10);
+        source = '智能提取';
+      }
+      const affected = all("SELECT COUNT(*) as cnt FROM order_demands WHERE active=1 AND (supplier_short_name='' OR supplier_short_name IS NULL) AND supplier=?", [supplier]);
+      const cnt = affected[0]?.cnt || 0;
+      report.totalEmpty += cnt;
+      if (shortName) {
+        run("UPDATE order_demands SET supplier_short_name=? WHERE active=1 AND (supplier_short_name='' OR supplier_short_name IS NULL) AND supplier=?", [shortName, supplier]);
+        if (source === '维度表') report.fixedByDim += cnt;
+        else report.fixedByHeuristic += cnt;
+        report.details.push({ supplier, shortName, source, count: cnt });
+      } else {
+        report.unfixed += cnt;
+        report.details.push({ supplier, shortName: '(无法提取)', source: '失败', count: cnt });
+      }
+    });
+  });
+  const remaining = all("SELECT COUNT(*) as cnt FROM order_demands WHERE active=1 AND (supplier_short_name='' OR supplier_short_name IS NULL)");
+  report.remainingAfterFix = remaining[0]?.cnt || 0;
+  report.success = report.remainingAfterFix === 0;
+  res.json(report);
+});
+
+app.get('/api/maintenance/data-completeness', requireAuth, (req, res) => {
+  const checks = [];
+  const emptyShort = all("SELECT COUNT(*) as cnt FROM order_demands WHERE active=1 AND (supplier_short_name='' OR supplier_short_name IS NULL)");
+  checks.push({ check: 'supplier_short_name空值', passed: emptyShort[0]?.cnt === 0, value: emptyShort[0]?.cnt || 0 });
+  const orphanKingdee = all("SELECT COUNT(DISTINCT k.demand_key) as cnt FROM kingdee_orders k WHERE k.remaining_inbound_qty > 0 AND NOT EXISTS (SELECT 1 FROM order_demands d WHERE d.demand_key = k.demand_key AND d.active = 1)");
+  checks.push({ check: '金蝶剩余>0但需求无匹配', passed: orphanKingdee[0]?.cnt === 0, value: orphanKingdee[0]?.cnt || 0 });
+  const orphanDemand = all("SELECT COUNT(*) as cnt FROM order_demands d WHERE d.active = 1 AND d.current_order_qty > 0 AND NOT EXISTS (SELECT 1 FROM kingdee_orders k WHERE k.demand_key = d.demand_key)");
+  checks.push({ check: '需求有数量但金蝶无匹配', passed: orphanDemand[0]?.cnt === 0, value: orphanDemand[0]?.cnt || 0 });
+  const tableCounts = {};
+  ['kingdee_orders','order_demands','supplier_progress','manual_progress_rows','inventory','dimension_files'].forEach(t => {
+    try { const r = all('SELECT COUNT(*) as cnt FROM '+t); tableCounts[t] = r[0]?.cnt || 0; } catch { tableCounts[t] = -1; }
+  });
+  checks.push({ check: '核心表行数', passed: true, value: tableCounts });
+  const allPassed = checks.filter(c => c.check !== '核心表行数').every(c => c.passed);
+  res.json({ passed: allPassed, checks, checkedAt: new Date().toISOString() });
+});
+
 app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
   if (!req.path.startsWith('/api/')) return next(err);

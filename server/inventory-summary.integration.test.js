@@ -2636,8 +2636,8 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.ok(Array.isArray(dimensionMissing.inventorySummaryTasks));
     assert.equal(typeof dimensionMissing.inventorySummaryQuality, 'object');
     const demandRows = (await demandsResponse.json()).rows;
-    const m1Demand = demandRows.find((row) => row.materialCode === 'M1' && row.operationOrderRows?.length === 2);
-    const m1DemandRows = demandRows.filter((row) => row.demandKey === m1Demand?.demandKey);
+    const m1Demand = demandRows.find((row) => row.materialCode === 'M1' && row.orderNo === 'CGDD011482');
+    const m1DemandRows = demandRows.filter((row) => row.demandKey === m1Demand?.demandKey && row.materialCode === 'M1');
     assert.equal(m1DemandRows.length, 3);
     assert.deepEqual(m1DemandRows.map((row) => row.orderNo).sort(), ['CGDD011482', 'CGDD011560', 'CGDD011590']);
     assert.equal(m1Demand?.operatorName, '薛文乐');
@@ -2647,21 +2647,22 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(m1Demand?.supplierCount, 1);
     assert.equal(m1Demand?.unpreparedQty, 0);
     assert.equal(m1Demand?.preparedNotStartedQty, 0);
-    assert.equal(m1Demand?.contractDeliveryDates, '2026-09-15、2026-09-30');
-    assert.equal(m1DemandRows.reduce((sum, row) => sum + row.operationStockQty, 0), 1200);
+    assert.deepEqual(m1DemandRows.map((row) => row.contractDeliveryDates).sort(), ['2026-09-15', '2026-09-15', '2026-09-30']);
+    assert.equal(m1DemandRows.reduce((sum, row) => sum + row.operationStockQty, 0), 1300);
     assert.equal(m1Demand?.pretaxPriceMaintained, false);
     assert.equal(m1Demand?.normalFulfillmentAmount, 0);
     assert.equal(m1Demand?.abnormalFulfillmentAmount, 0);
-    assert.equal(m1Demand?.operationOrderRows?.length, 2);
+    assert.ok(m1DemandRows.every((row) => row.operationOrderLevel && row.operationOrderRows.length === 0));
     assert.deepEqual(
-      m1Demand.operationOrderRows.map((row) => ({
+      m1DemandRows.map((row) => ({
         orderNo: row.orderNo,
         remainingInboundQty: row.remainingInboundQty,
         shippedQty: row.shippedQty,
         sourceFile: row.sourceFile,
         effectiveOrderCondition: row.effectiveOrderCondition
-      })),
+      })).sort((left, right) => left.orderNo.localeCompare(right.orderNo)),
       [
+        { orderNo: 'CGDD011482', remainingInboundQty: 100, shippedQty: 0, sourceFile: '采购订单来源-六月.xlsx', effectiveOrderCondition: '非有效订单' },
         { orderNo: 'CGDD011560', remainingInboundQty: 400, shippedQty: 100, sourceFile: '采购订单来源-六月.xlsx', effectiveOrderCondition: '有效订单' },
         { orderNo: 'CGDD011590', remainingInboundQty: 600, shippedQty: 100, sourceFile: '采购订单来源-六月.xlsx', effectiveOrderCondition: '有效订单' }
       ]
@@ -2679,15 +2680,37 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(demandRows.find((row) => row.materialCode === 'M8')?.orderSupplierShortName, '供应商壬');
     assert.equal(demandRows.find((row) => row.materialCode === 'M8')?.supplierCount, 3);
     const currentFieldsRow = demandRows.find((row) => row.orderNo === 'CGDD013047' && row.materialCode === '1007010984');
-    assert.equal(currentFieldsRow, undefined);
+    assert.equal(currentFieldsRow?.dataSource, '金蝶系统');
+    assert.deepEqual(currentFieldsRow?.manualSourceRows, []);
     const shortNameFallbackRow = demandRows.find((row) => row.orderNo === 'CGDD012997' && row.materialCode === '1002010305');
-    assert.equal(shortNameFallbackRow, undefined);
+    assert.equal(shortNameFallbackRow?.dataSource, '金蝶系统');
+    assert.deepEqual(shortNameFallbackRow?.manualSourceRows, []);
     assert.equal(
       demandRows.filter((row) => row.orderNo === 'CGDD012997' && row.materialCode === '1002010305').length,
-      0
+      1
     );
     assert.ok(!demandRows.some((row) => row.dataStatus === '本次手工表未出现'));
     assert.ok(!demandRows.some((row) => row.purchaseOwner === '陈晨'));
+    const completenessResponse = await fetch(`http://127.0.0.1:${port}/api/maintenance/data-completeness`, {
+      headers: { Authorization: 'Bearer admin-token' }
+    });
+    assert.equal(completenessResponse.status, 200);
+    const completeness = await completenessResponse.json();
+    const orderVisibilityCheck = completeness.checks.find((check) => check.check === '当前金蝶非零订单完整展示');
+    assert.deepEqual(orderVisibilityCheck, {
+      check: '当前金蝶非零订单完整展示',
+      passed: true,
+      value: {
+        sourceCount: 5,
+        displayedCount: 5,
+        missingCount: 0,
+        extraCount: 0,
+        duplicateCount: 0,
+        missingOrderKeys: [],
+        extraOrderKeys: [],
+        duplicateOrderKeys: []
+      }
+    });
     const firstMileRows = (await firstMileResponse.json()).rows;
     assert.equal(firstMileRows.find((row) => row.materialCode === 'M1')?.model, 'Model One');
 
@@ -2810,10 +2833,10 @@ test('inventory summary and domestic board use complete source models and enforc
       unpreparedQty: 0,
       preparedNotStartedQty: 100,
       inProductionQty: 500,
-      finishedQty: 399,
+      finishedQty: 400,
       progressTotal: 1000,
       fulfillmentStatus: '否',
-      abnormalFulfillmentQty: 1000,
+      abnormalFulfillmentQty: 1100,
       abnormalFulfillmentAmount: 0,
       productionDeliveryDate: '2026-09-10',
       unproducedEstimatedDeliveryDate: '2026-08-20',

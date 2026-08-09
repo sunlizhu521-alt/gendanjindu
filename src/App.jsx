@@ -5991,25 +5991,49 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
       const supplier = row.supplier || supplierShortName;
       const reportingMonth = row.reportingMonth || '待核验';
       const productIdentity = [row.materialCode, row.sku, row.materialName].map(normalize).join('|');
-      const key = `${groupBySupplier ? 'supplier' : 'month'}:${normalize(supplier)}|${reportingMonth}|${productIdentity}`;
+      const key = row.orderNo
+        ? `order:${row.orderNo}`
+        : `manual:${row.demandKey || `${normalize(supplier)}|${reportingMonth}|${productIdentity}`}`;
       const group = map.get(key) || {
         key,
         supplier,
         supplierShortName,
         reportingMonth,
-        materialCode: row.materialCode || '',
-        sku: row.sku || '',
-        materialName: row.materialName || row.materialCode || '未填写',
+        supplierShortNames: new Set(),
+        reportingMonths: new Set(),
+        materialCodes: new Set(),
+        skus: new Set(),
+        materialNames: new Set(),
         rows: [],
         orderNos: new Set(),
         orderTypes: new Set(),
+        originalOrderNos: new Set(),
+        productLines: new Set(),
+        productSeriesValues: new Set(),
+        originalQuantityKeys: new Set(),
+        originalPurchaseQty: 0,
         quantityKeys: new Set(),
         reportingPurchaseQty: 0,
         pendingRows: 0
       };
       group.rows.push(row);
+      group.supplierShortNames.add(supplierShortName);
+      group.reportingMonths.add(reportingMonth);
+      if (row.materialCode) group.materialCodes.add(row.materialCode);
+      if (row.sku) group.skus.add(row.sku);
+      if (row.materialName || row.materialCode) group.materialNames.add(row.materialName || row.materialCode);
       if (row.orderNo) group.orderNos.add(row.orderNo);
       group.orderTypes.add(row.orderType || '正常订单');
+      if (row.originalOrderNo) group.originalOrderNos.add(row.originalOrderNo);
+      if (row.productLine) group.productLines.add(row.productLine);
+      if (row.productSeries) group.productSeriesValues.add(row.productSeries);
+      if (row.originalOrderNo && row.changeValidationStatus === 'valid') {
+        const originalQuantityKey = `${row.originalOrderNo}|${normalize(row.supplier)}|${normalize(row.materialCode)}`;
+        if (!group.originalQuantityKeys.has(originalQuantityKey)) {
+          group.originalQuantityKeys.add(originalQuantityKey);
+          group.originalPurchaseQty += numberValue(row.originalPurchaseQty);
+        }
+      }
       if (row.changeValidationStatus === 'pending') group.pendingRows += 1;
       else {
         const quantityOrderNo = row.orderType === '订单变更' ? row.originalOrderNo : row.orderNo;
@@ -6021,12 +6045,20 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
       }
       map.set(key, group);
     });
+    const groups = [...map.values()];
+    groups.forEach((group) => {
+      group.supplierShortName = [...group.supplierShortNames].join('、') || '未匹配';
+      group.reportingMonth = [...group.reportingMonths].join('、') || '待核验';
+      group.materialCode = [...group.materialCodes].join('、');
+      group.sku = [...group.skus].join('、');
+      group.materialName = [...group.materialNames].join('、') || '未填写';
+    });
     const monthCompare = (left, right) => {
       if (left === '待核验') return right === '待核验' ? 0 : 1;
       if (right === '待核验') return -1;
       return right.localeCompare(left, 'zh-Hans-CN');
     };
-    return [...map.values()].sort((left, right) => {
+    return groups.sort((left, right) => {
       const primary = groupBySupplier
         ? left.supplierShortName.localeCompare(right.supplierShortName, 'zh-Hans-CN')
         : monthCompare(left.reportingMonth, right.reportingMonth);
@@ -6441,7 +6473,14 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
         renderRow={(group) => {
           const expanded = expandedOrders.has(group.key);
           const supplierLabel = group.supplierShortName;
+          const currentOrderNoLabel = [...group.orderNos].join('、') || '无采购订单';
           const orderTypeLabel = [...group.orderTypes].join('、');
+          const originalOrderNoLabel = [...group.originalOrderNos].join('、') || '-';
+          const productLineLabel = [...group.productLines].join('、') || '未填写';
+          const productSeriesLabel = [...group.productSeriesValues].join('、') || '未填写';
+          const originalPurchaseQtyLabel = group.originalQuantityKeys.size
+            ? group.originalPurchaseQty.toLocaleString('zh-CN')
+            : (group.originalOrderNos.size ? '待核验' : '-');
           const pendingOnly = group.pendingRows === group.rows.length;
           return (
             <Fragment key={group.key}>
@@ -6459,7 +6498,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
                       }
                     }}
                     aria-expanded={expanded}
-                    aria-label={groupBySupplier ? `展开供应商汇总 ${supplierLabel}` : `展开月份汇总 ${group.reportingMonth}`}
+                    aria-label={`展开采购订单汇总 ${currentOrderNoLabel}`}
                   >
                     <b>{expanded ? '−' : '+'}</b>
                     <strong>
@@ -6478,8 +6517,13 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
                         {supplierLabel}
                       </button>
                     </strong>
-                    <span className={`progress-order-type type-${pendingOnly ? 'pending' : 'valid'}`}>{orderTypeLabel}</span>
+                    <span className={`progress-order-type type-${pendingOnly ? 'pending' : 'valid'}`}>订单状态：{orderTypeLabel}</span>
                     <span>月份：{group.reportingMonth}</span>
+                    <span>采购订单号：{currentOrderNoLabel}</span>
+                    <span>原采购订单号：{originalOrderNoLabel}</span>
+                    <span>产品线：{productLineLabel}</span>
+                    <span>系列：{productSeriesLabel}</span>
+                    <span>原订单采购数量：{originalPurchaseQtyLabel}</span>
                     <span>物料：{group.materialCode || '未填写'}</span>
                     {group.sku && <span>SKU：{group.sku}</span>}
                     <span title={group.materialName}>产品：{group.materialName}</span>

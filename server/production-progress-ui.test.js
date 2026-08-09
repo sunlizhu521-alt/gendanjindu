@@ -314,7 +314,8 @@ test('生产跟进保留金蝶内部工具栏并使用独立全屏容器', () =>
   assert.match(progressSource, /className="compact-button progress-toolbar-entry progress-columns-button"[\s\S]*?修改显示列/);
   assert.match(progressSource, /className="progress-command"[\s\S]*?>差异分配<\/button>/);
   assert.match(progressSource, /className="progress-command primary"[\s\S]*?>刷新<\/button>/);
-  assert.match(progressSource, /className="progress-scheme-bar"[\s\S]*?>默认方案<\/button>[\s\S]*?>按供应商<\/button>[\s\S]*?>待人工调整<\/button>/);
+  assert.match(progressSource, /className="progress-scheme-bar"[\s\S]*?>按月份<\/button>[\s\S]*?>按供应商<\/button>/);
+  assert.doesNotMatch(progressSource, />待人工调整<\/button>/);
   assert.match(progressSource, /<details className="progress-logic-note"/);
   assert.match(progressSource, /function setDifferenceAllocationView\(open\)[\s\S]*?content\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\)[\s\S]*?window\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\)/);
   assert.match(progressSource, /setDifferenceAllocationView\(true\)/);

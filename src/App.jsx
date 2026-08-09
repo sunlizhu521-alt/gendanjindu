@@ -6258,7 +6258,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
               setExpandedOrders(new Set());
               setCurrentPage(1);
             }}
-          >默认方案</button>
+          >按月份</button>
           {!onlyIssues && <button
             type="button"
             className={groupBySupplier ? 'active' : ''}
@@ -6268,14 +6268,6 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
               setCurrentPage(1);
             }}
           >按供应商</button>}
-          <button
-            type="button"
-            className={filters.allocationStatus.includes('待分配') ? 'active' : ''}
-            onClick={() => {
-              setFilters({ ...filters, allocationStatus: ['待分配'] });
-              setCurrentPage(1);
-            }}
-          >待人工调整</button>
           <span>第 {currentPage} / {totalPages} 页</span>
         </div>
         {!onlyIssues && user?.role === '管理员' && <ManualProgressImportPanel token={token} reloadDemands={reloadDemands} setMessage={setMessage} />}

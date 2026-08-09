@@ -7427,6 +7427,7 @@ th {
 
 .kingdee-progress-page .progress-order-toggle {
   min-height: 31px;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 4px 8px;
   color: #40536b;

@@ -242,20 +242,31 @@ test('创建月份弹层使用 portal 避免被生产跟进横向筛选栏裁剪
   assert.match(monthFilterSource, /window\.addEventListener\('scroll', updateMenuPosition, true\)/);
 });
 
-test('生产跟进汇总父行展示月份供应商产品和下单数量', () => {
+test('生产跟进汇总父行展示供应商订单状态月份原订单产品线系列和采购数量', () => {
   const progressSource = appSource.slice(
     appSource.indexOf('function ProgressPage('),
     appSource.indexOf('function DifferenceAllocationPage(')
   );
   assert.match(progressSource, /className="supplier-filter-link"[\s\S]*?\{supplierLabel\}/);
   assert.doesNotMatch(progressSource, /供应商简称：/);
+  assert.match(progressSource, /订单状态：\{orderTypeLabel\}/);
   assert.match(progressSource, /月份：\{group\.reportingMonth\}/);
+  assert.match(progressSource, /采购订单号：\{currentOrderNoLabel\}/);
+  assert.match(progressSource, /原采购订单号：\{originalOrderNoLabel\}/);
+  assert.match(progressSource, /产品线：\{productLineLabel\}/);
+  assert.match(progressSource, /系列：\{productSeriesLabel\}/);
+  assert.match(progressSource, /原订单采购数量：\{originalPurchaseQtyLabel\}/);
   assert.match(progressSource, /物料：\{group\.materialCode \|\| '未填写'\}/);
   assert.match(progressSource, /SKU：\{group\.sku\}/);
   assert.match(progressSource, /产品：\{group\.materialName\}/);
   assert.match(progressSource, /订单数：\{group\.orderNos\.size\}/);
   assert.match(progressSource, /下单数量：不计入汇总/);
   assert.match(progressSource, /group\.reportingPurchaseQty\.toLocaleString\('zh-CN'\)/);
+  assert.match(progressSource, /originalOrderNos: new Set\(\)/);
+  assert.match(progressSource, /originalQuantityKeys: new Set\(\)/);
+  assert.match(progressSource, /group\.originalQuantityKeys\.has\(originalQuantityKey\)/);
+  assert.match(progressSource, /group\.originalPurchaseQty \+= numberValue\(row\.originalPurchaseQty\)/);
+  assert.match(styleSource, /\.kingdee-progress-page \.progress-order-toggle\s*\{[\s\S]*?flex-wrap: wrap/);
 });
 
 test('生产跟进支持月份与供应商两种产品下单汇总并切换分页', () => {
@@ -264,7 +275,9 @@ test('生产跟进支持月份与供应商两种产品下单汇总并切换分�
     appSource.indexOf('function DifferenceAllocationPage(')
   );
   assert.match(progressSource, /const \[groupBySupplier, setGroupBySupplier\] = useState\(false\)/);
-  assert.match(progressSource, /const summaryGroups = useMemo\(\(\) => \{[\s\S]*?supplierShortName[\s\S]*?reportingMonth[\s\S]*?productIdentity/);
+  assert.match(progressSource, /const summaryGroups = useMemo\(\(\) => \{[\s\S]*?const key = row\.orderNo[\s\S]*?`order:\$\{row\.orderNo\}`[\s\S]*?`manual:/);
+  assert.match(progressSource, /supplierShortNames: new Set\(\)[\s\S]*?reportingMonths: new Set\(\)[\s\S]*?materialCodes: new Set\(\)/);
+  assert.match(progressSource, /group\.materialCode = \[\.\.\.group\.materialCodes\]\.join\('、'\)/);
   assert.match(progressSource, /orderNos: new Set\(\)[\s\S]*?group\.orderNos\.add\(row\.orderNo\)/);
   assert.match(progressSource, /quantityKeys: new Set\(\)[\s\S]*?quantityOrderNo[\s\S]*?group\.quantityKeys\.has\(quantityKey\)/);
   assert.match(progressSource, /const activeGroups = summaryGroups/);
@@ -274,6 +287,17 @@ test('生产跟进支持月份与供应商两种产品下单汇总并切换分�
   assert.match(progressSource, /className=\{groupBySupplier \? 'active' : ''\}[\s\S]*?setGroupBySupplier\(true\)[\s\S]*?setExpandedOrders\(new Set\(\)\)[\s\S]*?setCurrentPage\(1\)/);
   assert.match(progressSource, /每页 20 个下单汇总组/);
   assert.match(styleSource, /\.progress-scheme-bar button\.active\s*\{[\s\S]*?color: #246bdb/);
+});
+
+test('生产跟进同一采购订单号只生成一个汇总父行', () => {
+  const progressSource = appSource.slice(
+    appSource.indexOf('function ProgressPage('),
+    appSource.indexOf('function DifferenceAllocationPage(')
+  );
+  assert.match(progressSource, /const key = row\.orderNo\s*\? `order:\$\{row\.orderNo\}`/);
+  assert.match(progressSource, /group\.rows\.push\(row\)/);
+  assert.match(progressSource, /采购订单号：\{currentOrderNoLabel\}/);
+  assert.match(progressSource, /group\.rows\.map\(\(row\) => \(/);
 });
 
 test('生产跟进汇总按月份或供应商排序且简称可点击筛选', () => {

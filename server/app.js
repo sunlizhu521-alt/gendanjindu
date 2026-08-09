@@ -29,6 +29,7 @@ import {
 } from './inventory-risk.js';
 import { buildInventoryRiskWorkbook } from './inventory-risk-export.js';
 import { groupCurrentKingdeeOrderRows, kingdeeOrderIdentity } from './kingdee-order-visibility.js';
+import { buildOrderChangeIndex, classifyOrderChange, NORMAL_ORDER_TYPE } from './order-change.js';
 import { buildStyledExcelBuffer } from '../shared/excel-export.js';
 import {
   allocateIntegerByWeights,
@@ -545,7 +546,7 @@ app.use((req, res, next) => {
 const HEADER_HINTS = [
   '物料编码', '物流编码', 'SKU', '物料名称', '产品名称', '供应商', '供应商简称',
   '产品明细供应商', '产品线明细供应商', '采购下单人', '创建人', '采购组', '采购组织', '产品线', '系列',
-  '事业部', '采购日期', '创建日期', '采购数量', '下单数量', '入库数量', '采购订单号', 'OA备货流程号',
+  '事业部', '采购日期', '创建日期', '采购数量', '下单数量', '入库数量', '采购订单号', 'OA备货流程号', '备注', '手工关闭',
   '仓库编码', '仓库代码', '仓库名称', '仓位位置', '仓库位置', '站点', '站点名称', '一级仓库分类', '二级仓库分类', '一级分类', '二级分类'
 ];
 
@@ -1237,6 +1238,8 @@ function mappedKingdeeRows(rows, mapping, options = {}) {
     const deliveryDate = pickMapped(row, mapping, 'deliveryDate', ['交货日期', '预计交货日期']);
     const isGift = pickMapped(row, mapping, 'isGift', ['是否赠品', '赠品']);
     const businessClose = pickMapped(row, mapping, 'businessClose', ['业务关闭']);
+    const orderRemark = pickMapped(row, mapping, 'orderRemark', ['备注']);
+    const manualClose = pickMapped(row, mapping, 'manualClose', ['手工关闭']);
     const orderNo = pickMapped(row, mapping, 'orderNo', ['单据编号', '采购订单号', '采购单号', '订单号', '采购订单编号']);
     const rowValues = Object.values(row).map(normalize).filter(Boolean);
     const isSummaryRow = (!month && !supplier && !materialCode)
@@ -1271,6 +1274,8 @@ function mappedKingdeeRows(rows, mapping, options = {}) {
       closeStatus,
       isGift,
       businessClose,
+      orderRemark,
+      manualClose,
       isTracking: closeStatus === TRACKING_CLOSE_STATUS,
       dateSort: dateSortValue(createDate),
       sourceIndex: index,
@@ -2730,18 +2735,21 @@ function demandLoadContext(demands) {
   const demandKeys = new Set(demands.map((row) => normalize(row.demand_key)));
   const orderRowsByDemand = new Map();
   const allOrderRowsByDemand = new Map();
+  const currentOrderRows = [];
   if (batchIds.length) {
     const placeholders = batchIds.map(() => '?').join(',');
     all(
-      `SELECT k.batch_id, k.demand_key, k.creator, k.operator_name, k.oa_flow_no, k.order_no,
-              k.quantity, k.inbound_qty, k.remaining_inbound_qty, k.delivery_date, k.material_name,
-              k.document_status, k.close_status, k.business_close, k.raw_json,
+      `SELECT k.batch_id, k.demand_key, k.month, k.business_unit, k.supplier, k.material_code,
+              k.creator, k.operator_name, k.oa_flow_no, k.order_no,
+              k.quantity, k.inbound_qty, k.remaining_inbound_qty, k.purchase_date, k.delivery_date, k.material_name,
+              k.document_status, k.close_status, k.business_close, k.order_remark, k.manual_close, k.raw_json,
               COALESCE(b.file_name, '') AS source_file
        FROM kingdee_orders k
        LEFT JOIN kingdee_import_batches b ON b.id = k.batch_id
        WHERE k.batch_id IN (${placeholders})`,
       batchIds
     ).forEach((row, index) => {
+      currentOrderRows.push(row);
       if (!demandKeys.has(normalize(row.demand_key))) return;
       const key = demandBatchKey(row.batch_id, row.demand_key);
       const allRows = allOrderRowsByDemand.get(key) || [];
@@ -2753,7 +2761,14 @@ function demandLoadContext(demands) {
       orderRowsByDemand.set(key, list);
     });
   }
-  return { lookups, progressMap, inventoryMap, orderRowsByDemand, allOrderRowsByDemand };
+  return {
+    lookups,
+    progressMap,
+    inventoryMap,
+    orderRowsByDemand,
+    allOrderRowsByDemand,
+    orderChangeIndex: buildOrderChangeIndex(currentOrderRows)
+  };
 }
 
 function currentKingdeeNonZeroOrderGroups() {
@@ -3762,6 +3777,19 @@ function manualProgressDisplayRows(systemRows, user = null) {
       contractDeliveryDates: joinedManualField(rows, 'sourceContractDeliveryDate'),
       oaFlowNo: first.oaFlowNo || system?.oaFlowNo || '',
       orderCreator: orderDetails?.orderCreator || candidate?.orderCreator || system?.orderCreator || '',
+      orderType: NORMAL_ORDER_TYPE,
+      orderRemark: '',
+      reportingMonth: system?.reportingMonth || system?.month || first.month,
+      reportingPurchaseQty: orderQty?.orderQty ?? numberValue(system?.currentOrderQty),
+      currentOrderDate: system?.currentOrderDate || system?.orderDates || '',
+      currentPurchaseQty: orderQty?.orderQty ?? numberValue(system?.currentOrderQty),
+      originalOrderNo: '',
+      originalOrderDate: '',
+      originalOrderMonth: '',
+      originalPurchaseQty: 0,
+      originalManualClose: '',
+      changeValidationStatus: 'normal',
+      changeValidationMessage: '手工录入记录按正常订单统计',
       currentOrderQty: orderQty?.orderQty ?? numberValue(system?.currentOrderQty),
       totalPurchaseQty: orderQty?.orderQty ?? numberValue(system?.totalPurchaseQty),
       totalInboundQty: shippedQty,
@@ -3818,11 +3846,20 @@ function isEffectivePurchaseOrder(row) {
     && normalize(row?.closeStatus || row?.close_status) === TRACKING_CLOSE_STATUS;
 }
 
-function operationOrderBreakdown(baseRow, sourceRows) {
+function operationOrderBreakdown(baseRow, sourceRows, orderChangeIndex) {
   const details = groupCurrentKingdeeOrderRows(sourceRows).map(({ orderNo, rows, remainingInboundQty }) => {
     const effectiveOrder = rows.length > 0 && rows.every(isEffectivePurchaseOrder);
+    const orderChange = classifyOrderChange({
+      currentRows: rows,
+      batchId: rows[0]?.batch_id,
+      supplier: baseRow.supplier,
+      materialCode: baseRow.materialCode,
+      fallbackMonth: baseRow.month,
+      index: orderChangeIndex
+    });
     return {
       orderNo,
+      ...orderChange,
       sourceFile: uniqueDelimitedValues(rows.map((row) => row.sourceFile || row.source_file)),
       effectiveOrderCondition: effectiveOrder ? '有效订单' : '非有效订单',
       businessClose: uniqueDelimitedValues(rows.map((row) => row.businessClose || row.business_close)),
@@ -3949,6 +3986,19 @@ function demandRows(includeInactive = false, user = null, options = {}) {
       contractDeliveryDates,
       oaFlowNo,
       orderCreator,
+      orderType: NORMAL_ORDER_TYPE,
+      orderRemark: '',
+      reportingMonth: demand.month,
+      reportingPurchaseQty: numberValue(demand.current_order_qty),
+      currentOrderDate: orderDates,
+      currentPurchaseQty: numberValue(demand.current_order_qty),
+      originalOrderNo: '',
+      originalOrderDate: '',
+      originalOrderMonth: '',
+      originalPurchaseQty: 0,
+      originalManualClose: '',
+      changeValidationStatus: 'normal',
+      changeValidationMessage: '备注未引用原采购订单，按正常订单统计',
       stockQty,
       demandAfterStock,
       unpreparedQty,
@@ -3984,7 +4034,7 @@ function demandRows(includeInactive = false, user = null, options = {}) {
       operationOrderRows: [],
       dataSource: '手工录入'
     };
-    return operationOrderBreakdown(row, allOrderRows).map((orderRow) => ({ ...row, ...orderRow }));
+    return operationOrderBreakdown(row, allOrderRows, context.orderChangeIndex).map((orderRow) => ({ ...row, ...orderRow }));
   }).flat();
   const displayRows = includeInactive ? rows : manualProgressDisplayRows(rows, user);
   if (!user || user.role === ROLE_ADMIN) return displayRows;
@@ -4794,7 +4844,9 @@ function compactKingdeeRaw(row) {
     purchaseDate: row.purchaseDate || '',
     deliveryDate: row.deliveryDate || '',
     orderDate: row.purchaseDate || row.createDate || '',
-    oaFlowNo: row.oaFlowNo || ''
+    oaFlowNo: row.oaFlowNo || '',
+    orderRemark: row.orderRemark || '',
+    manualClose: row.manualClose || ''
   };
 }
 
@@ -4831,14 +4883,15 @@ function applyKingdeeSnapshot({
        id, batch_id, demand_key, month, business_unit, supplier, material_code, purchase_org,
        creator, oa_flow_no, order_no, quantity, inbound_qty, remaining_inbound_qty,
        purchase_date, delivery_date, material_name, operator_name, document_status, close_status,
-       is_gift, business_close, raw_json
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       is_gift, business_close, order_remark, manual_close, raw_json
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     sourceRows.map((row) => [
       randomUUID(), batchId, row.demandKey, row.month, row.businessUnit, row.supplier, row.materialCode,
       row.purchaseOrg || '', row.creator || '', row.oaFlowNo || '', row.orderNo || '', row.quantity,
       numberValue(row.inboundQty), numberValue(row.remainingInboundQty), row.purchaseDate || row.createDate || '',
       row.deliveryDate || '', row.materialName || '', row.operatorName || '', row.documentStatus || '',
-      row.closeStatus || '', row.isGift || '', row.businessClose || '', JSON.stringify(compactKingdeeRaw(row))
+      row.closeStatus || '', row.isGift || '', row.businessClose || '', row.orderRemark || '', row.manualClose || '',
+      JSON.stringify(compactKingdeeRaw(row))
     ])
   );
   const progressMap = new Map(all('SELECT * FROM supplier_progress').map((row) => [row.demand_key, row]));
@@ -6665,7 +6718,10 @@ app.post('/api/inventory', requireAuth, requirePage('inventory'), (req, res) => 
 app.get('/api/progress/export', requireAuth, async (req, res) => {
   const rows = demandRows(false, req.user).filter((row) => numberValue(row.remainingInboundQty) > 0);
   const headers = [
-    'demandKey', '数据状态', '源行号', '校验说明', '采购组', '采购下单人', '月份', '采购订单号', '创建人', 'OA备货流程号', '采购组织',
+    'demandKey', '数据状态', '源行号', '校验说明', '采购组', '采购下单人',
+    '订单类型', '下单月份', '当前订单月份', '当前采购订单号', '当前订单创建日期', '当前订单采购数量',
+    '原采购订单号', '原订单创建日期', '原订单采购数量', '采购订单源备注', '变更校验',
+    '创建人', 'OA备货流程号', '采购组织',
     '事业部', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称',
     '运营备货数量', '未交付数量', '已发货数量',
     '未备料未生产', '已备料未生产', '生产中产品', '完工未发产品',
@@ -6677,7 +6733,11 @@ app.get('/api/progress/export', requireAuth, async (req, res) => {
   rows.forEach((row) => {
     aoa.push([
       row.demandKey, row.dataStatus || '采购订单数据', (row.manualSourceRows || []).map((source) => source.sourceRowNo).join('、'), row.validationMessage || '',
-      row.purchaseGroup, row.purchaseOwner, row.month, row.orderNo, row.orderCreator, row.oaFlowNo, row.purchaseOrg,
+      row.purchaseGroup, row.purchaseOwner,
+      row.orderType || NORMAL_ORDER_TYPE, row.reportingMonth || '待核验', row.month, row.orderNo,
+      row.currentOrderDate, row.currentPurchaseQty, row.originalOrderNo, row.originalOrderDate,
+      row.originalPurchaseQty, row.orderRemark, row.changeValidationMessage,
+      row.orderCreator, row.oaFlowNo, row.purchaseOrg,
       row.businessUnit, row.orderSupplierShortName || UNMATCHED_SUPPLIER_SHORT_NAME,
       row.productLine, row.productSeries, row.materialCode, row.sku, row.materialName || row.materialCode,
       row.operationStockQty, row.remainingInboundQty, row.shippedQty,

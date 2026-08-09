@@ -28,6 +28,10 @@ test('数据完整性接口校验简称空值和金蝶双向覆盖', () => {
   assert.match(maintenanceSource, /supplier_short_name空值/);
   assert.match(maintenanceSource, /金蝶剩余>0但需求无匹配/);
   assert.match(maintenanceSource, /需求有数量但金蝶无匹配/);
+  assert.match(maintenanceSource, /当前金蝶非零订单完整展示/);
+  assert.match(maintenanceSource, /sourceCount: sourceOrderKeys\.size/);
+  assert.match(maintenanceSource, /missingOrderKeys/);
+  assert.match(maintenanceSource, /duplicateOrderKeys/);
   assert.match(maintenanceSource, /NOT EXISTS \(SELECT 1 FROM order_demands d WHERE d\.demand_key = k\.demand_key AND d\.active = 1\)/);
   assert.match(maintenanceSource, /NOT EXISTS \(SELECT 1 FROM kingdee_orders k WHERE k\.demand_key = d\.demand_key\)/);
   assert.match(maintenanceSource, /checks\.filter\(c => c\.check !== '核心表行数'\)\.every\(c => c\.passed\)/);

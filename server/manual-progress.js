@@ -245,7 +245,7 @@ export function parseManualProgressRows(rows, { headerRow = 1 } = {}) {
     const hasFractionalQuantity = [
       row.manualRemainingQty, row.unpreparedQty, row.preparedNotStartedQty, row.inProductionQty, row.finishedQty
     ].some((quantity) => !Number.isInteger(quantity));
-    row.autoFilledQty = suppliedTotal < row.manualRemainingQty ? row.manualRemainingQty - suppliedTotal : 0;
+    row.autoFilledQty = suppliedTotal > 0 && suppliedTotal < row.manualRemainingQty ? row.manualRemainingQty - suppliedTotal : 0;
     row.unpreparedQty += row.autoFilledQty;
     const stageOverAllocatedQty = Math.max(suppliedTotal - row.manualRemainingQty, 0);
     const finishedOverAllocatedQty = Math.max(row.finishedQty - row.manualRemainingQty, 0);

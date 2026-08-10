@@ -56,6 +56,19 @@ test('手工跟单解析保留每个源行并自动补足未备料数量', () =>
   assert.equal(result.rows[0].validationStatus, 'valid');
 });
 
+test('三个生产阶段同时为0时保持为0且不自动补入未备料', () => {
+  const result = parseManualProgressRows([baseRow({
+    已下单未备料未生产: 0,
+    已备料未生产: 0,
+    生产中产品: 0
+  })]);
+  assert.equal(result.rows[0].unpreparedQty, 0);
+  assert.equal(result.rows[0].preparedNotStartedQty, 0);
+  assert.equal(result.rows[0].inProductionQty, 0);
+  assert.equal(result.rows[0].autoFilledQty, 0);
+  assert.equal(result.rows[0].validationStatus, 'valid');
+});
+
 test('手工表Excel日期序列转换为仅日期格式', () => {
   const result = parseManualProgressRows([baseRow({ 合同约定交期: 46265 })]);
   assert.equal(result.rows[0].sourceContractDeliveryDate, '2026-08-31');

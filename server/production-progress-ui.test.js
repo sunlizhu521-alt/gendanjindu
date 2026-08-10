@@ -99,15 +99,18 @@ test('生产跟进展示当前金蝶所有剩余未交付非零订单', () => {
   ), /effectiveOrderCondition === '有效订单'/);
 });
 
-test('采购未交付变化时按三项生产阶段补差且完工未发独立校验', () => {
+test('采购未交付变化时允许三个生产阶段全0，否则补差且完工未发独立校验', () => {
   const modelSource = serverSource.slice(
     serverSource.indexOf('function progressAfterInbound('),
     serverSource.indexOf('function hasManualProgressHistory(')
   );
   assert.match(modelSource, /const progressTotal = unprepared \+ preparedNotStarted \+ inProduction/);
-  assert.match(modelSource, /if \(progressTotal < remainingInboundQty\) unprepared \+= remainingInboundQty - progressTotal/);
+  assert.match(modelSource, /if \(progressTotal > 0\.000001 && progressTotal < remainingInboundQty\) unprepared \+= remainingInboundQty - progressTotal/);
   assert.doesNotMatch(modelSource, /progressTotal > remainingInboundQty/);
-  assert.match(serverSource, /progressAdjustmentRequired: Math\.abs\(progressGap\) > 0\.000001 \|\| finishedExceedsRemaining/);
+  assert.match(serverSource, /function productionStageGap[\s\S]*?progressTotal <= 0\.000001 \? 0/);
+  assert.match(serverSource, /const allProductionStagesZero = requestedUnprepared \+ preparedNotStarted \+ inProduction <= 0\.000001/);
+  assert.match(appSource, /const allProductionStagesZero = requestedUnpreparedQty \+ manuallyAssignedQty <= 0\.000001/);
+  assert.match(appSource, /未备料未生产、已备料未生产、生产中产品允许同时为0/);
   assert.match(serverSource, /if \(finished - remainingInboundQty > 0\.000001\)[\s\S]*?完工未发产品不能大于未交付数量/);
 });
 
@@ -511,7 +514,8 @@ test('生产跟进阶段公式排除完工未发并单独限制其上限', () =>
   assert.doesNotMatch(editorSource, /const manuallyAssignedQty =[\s\S]*?numberValue\(values\.finishedQty\);/);
   assert.match(editorSource, /const finishedQtyInvalid = numberValue\(values\.finishedQty\) - remainingQty > 0\.000001/);
   assert.match(editorSource, /完工未发产品不能大于未交付数量/);
-  assert.match(progressSource, /生产中产品＋已备料未生产＋未备料未生产必须等于未交付数量/);
+  assert.match(progressSource, /未备料未生产、已备料未生产、生产中产品允许同时为0/);
+  assert.match(progressSource, /任一列大于0时，三列合计必须等于未交付数量/);
   assert.match(progressSource, /完工未发产品不参与该合计，但不能大于未交付数量/);
 });
 

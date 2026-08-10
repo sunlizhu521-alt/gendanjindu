@@ -401,6 +401,11 @@ function requireAdmin(req, res, next) {
   return res.status(403).json({ error: '仅管理员可操作' });
 }
 
+function requireSystemOwner(req, res, next) {
+  if (normalize(req.user?.name) === normalize(ADMIN_NAME)) return next();
+  return res.status(403).json({ error: `仅${ADMIN_NAME}可以清除跟单数据` });
+}
+
 function safeFilename(file) {
   return Buffer.from(file.originalname, 'latin1').toString('utf8');
 }
@@ -5986,7 +5991,7 @@ app.get('/api/progress/manual-import/:batchId/export', requireAuth, requirePage(
   res.send(buffer);
 });
 
-app.post('/api/progress/clear-preview', requireAuth, requirePage('progressRefresh'), requireAdmin, (req, res) => {
+app.post('/api/progress/clear-preview', requireAuth, requirePage('progressRefresh'), requireSystemOwner, (req, res) => {
   try {
     const filters = progressClearFilters(req.body);
     const preview = progressClearPreview(req.user, filters);
@@ -5998,7 +6003,7 @@ app.post('/api/progress/clear-preview', requireAuth, requirePage('progressRefres
   }
 });
 
-app.post('/api/progress/clear', requireAuth, requirePage('progressRefresh'), requireAdmin, (req, res) => {
+app.post('/api/progress/clear', requireAuth, requirePage('progressRefresh'), requireSystemOwner, (req, res) => {
   try {
     const filters = progressClearFilters(req.body);
     const preview = progressClearPreview(req.user, filters);

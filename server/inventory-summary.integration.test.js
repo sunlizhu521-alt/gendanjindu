@@ -2033,6 +2033,10 @@ test('inventory summary and domestic board use complete source models and enforc
   );
   database.run(
     'INSERT INTO users (id, name, password_hash, role, page_access, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ['system-owner-id', '孙立柱', adminPasswordHash, '管理员', '[]', now, now]
+  );
+  database.run(
+    'INSERT INTO users (id, name, password_hash, role, page_access, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     ['limited-id', 'Limited User', 'unused', '普通用户', JSON.stringify(['operationBoard']), now, now]
   );
   database.run(
@@ -2048,6 +2052,7 @@ test('inventory summary and domestic board use complete source models and enforc
     ['bulk-user-2', 'Bulk User Two', 'unused', '普通用户', '[]', now, now]
   );
   database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['admin-token', 'admin-id', now]);
+  database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['system-owner-token', 'system-owner-id', now]);
   database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['limited-token', 'limited-id', now]);
   database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['purchase-owner-token', 'purchase-owner-id', now]);
   database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['bulk-token-1', 'bulk-user-1', now]);
@@ -2931,14 +2936,22 @@ test('inventory summary and domestic board use complete source models and enforc
 
     const emptyProgressClearPreview = await fetch(`http://127.0.0.1:${port}/api/progress/clear-preview`, {
       method: 'POST',
-      headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
+      headers: { Authorization: 'Bearer system-owner-token', 'Content-Type': 'application/json' },
       body: JSON.stringify({})
     });
     assert.equal(emptyProgressClearPreview.status, 400);
 
-    const fullSupplierClearPreview = await fetch(`http://127.0.0.1:${port}/api/progress/clear-preview`, {
+    const otherAdminProgressClearPreview = await fetch(`http://127.0.0.1:${port}/api/progress/clear-preview`, {
       method: 'POST',
       headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ suppliers: [m1Demand.supplier] })
+    });
+    assert.equal(otherAdminProgressClearPreview.status, 403);
+    assert.deepEqual(await otherAdminProgressClearPreview.json(), { error: '仅孙立柱可以清除跟单数据' });
+
+    const fullSupplierClearPreview = await fetch(`http://127.0.0.1:${port}/api/progress/clear-preview`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer system-owner-token', 'Content-Type': 'application/json' },
       body: JSON.stringify({ suppliers: [m1Demand.supplier] })
     });
     assert.equal(fullSupplierClearPreview.status, 200);
@@ -2952,7 +2965,7 @@ test('inventory summary and domestic board use complete source models and enforc
     };
     const progressClearPreviewResponse = await fetch(`http://127.0.0.1:${port}/api/progress/clear-preview`, {
       method: 'POST',
-      headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
+      headers: { Authorization: 'Bearer system-owner-token', 'Content-Type': 'application/json' },
       body: JSON.stringify(progressClearFilters)
     });
     assert.equal(progressClearPreviewResponse.status, 200);
@@ -2963,7 +2976,7 @@ test('inventory summary and domestic board use complete source models and enforc
 
     const staleProgressClearResponse = await fetch(`http://127.0.0.1:${port}/api/progress/clear`, {
       method: 'POST',
-      headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
+      headers: { Authorization: 'Bearer system-owner-token', 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...progressClearFilters,
         expectedCount: progressClearPreview.matchedDemands + 1,
@@ -2976,7 +2989,7 @@ test('inventory summary and domestic board use complete source models and enforc
 
     const progressClearResponse = await fetch(`http://127.0.0.1:${port}/api/progress/clear`, {
       method: 'POST',
-      headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
+      headers: { Authorization: 'Bearer system-owner-token', 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...progressClearFilters,
         expectedCount: progressClearPreview.matchedDemands,

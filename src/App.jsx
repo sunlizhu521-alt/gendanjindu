@@ -5988,7 +5988,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
   );
 }
 
-function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, onLogout, title = '生产跟进', onlyIssues = false, currentAppliedAt = '' }) {
+function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, title = '生产跟进', onlyIssues = false, currentAppliedAt = '' }) {
   const trackableRows = useMemo(
     () => rows.filter((row) => row.active && (
       numberValue(row.remainingInboundQty) !== 0
@@ -6471,8 +6471,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
           {!onlyIssues && <button type="button" className="progress-command" disabled={exporting || !displayRows.length} onClick={handleExport}>{exporting ? `导出中 ${exportProgress}%` : '导出 Excel'}</button>}
           {!onlyIssues && <button type="button" className="progress-command" onClick={() => setDifferenceAllocationView(true)}>差异分配</button>}
           {!onlyIssues && onExit && <button type="button" className="progress-command" onClick={onExit}>返回系统</button>}
-          {!onlyIssues && onLogout && <button type="button" className="progress-command" onClick={onLogout}>退出登录</button>}
-          {!onlyIssues && user?.role === '管理员' && (
+          {!onlyIssues && normalize(user?.name) === '孙立柱' && (
             <button type="button" className="progress-command danger-text" onClick={() => setClearPanelOpen((open) => !open)}>
               清除跟单数据
             </button>
@@ -6537,7 +6536,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
             <span><b>汇总方式：</b>“按新下单月份”按当前采购订单创建月份查看；“按原下单月份”按变更单引用的原采购订单创建月份查看；“按供应商”查看某供应商各月份各产品的下单数量。</span>
           </div>
         </details>
-        {clearPanelOpen && user?.role === '管理员' && (
+        {clearPanelOpen && normalize(user?.name) === '孙立柱' && (
           <section className="progress-clear-panel" aria-label="清除跟单数据">
             <div className="progress-clear-heading">
               <div>
@@ -8524,7 +8523,7 @@ function App() {
         {shouldMount('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><OperationBoardPage token={token} active={activeTab === 'operationBoard'} /></PagePane>}
         {shouldMount('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
         {shouldMount('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
-        {shouldMount('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} onExit={progressReturnPage ? () => setActiveTab(progressReturnPage) : null} onLogout={logout} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
+        {shouldMount('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} onExit={progressReturnPage ? () => setActiveTab(progressReturnPage) : null} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('wangdianData') && <PagePane page="wangdianData" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="国内数据" slots={WANGDIAN_SLOTS} gridColumns={3} /></PagePane>}
         {shouldMount('lingxingInventory') && <PagePane page="lingxingInventory" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="领星库存" slots={LINGXING_INVENTORY_SLOTS} onDataApplied={refreshCrossBorderData} highlightSlotId={highlightSlotId} /></PagePane>}
         {shouldMount('firstMileDatabase') && <PagePane page="firstMileDatabase" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="头程数据库" slots={FIRST_MILE_DATABASE_SLOTS} gridColumns={3} onDataApplied={refreshFirstMileData} /></PagePane>}

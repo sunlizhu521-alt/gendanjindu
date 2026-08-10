@@ -365,12 +365,25 @@ test('生产跟进隐藏公共导航和通用布局并提供独立返回入口',
   assert.match(appRenderSource, /\{!progressStandalone && \(\s*<aside className="sidebar"/);
   assert.match(appRenderSource, /className=\{progressStandalone \? 'progress-standalone-content' : 'content'\}/);
   assert.match(appRenderSource, /onExit=\{progressReturnPage \? \(\) => setActiveTab\(progressReturnPage\) : null\}/);
-  assert.match(appRenderSource, /onLogout=\{logout\}/);
+  assert.doesNotMatch(appRenderSource, /<ProgressPage[^>]*onLogout=/);
   assert.doesNotMatch(appRenderSource, /kingdee-shell/);
   assert.match(progressSource, />返回系统<\/button>/);
-  assert.match(progressSource, />退出登录<\/button>/);
+  assert.doesNotMatch(progressSource, />退出登录<\/button>/);
   assert.match(styleSource, /\.progress-standalone-shell\s*\{[\s\S]*?min-height: 100vh/);
   assert.match(styleSource, /\.progress-standalone-content\s*\{[\s\S]*?min-height: 100vh[\s\S]*?overflow: auto/);
+});
+
+test('清除跟单数据仅孙立柱可见且后端接口同步限制账号', () => {
+  const progressSource = appSource.slice(
+    appSource.indexOf('function ProgressPage('),
+    appSource.indexOf('function DifferenceAllocationPage(')
+  );
+
+  assert.match(progressSource, /normalize\(user\?\.name\) === '孙立柱'[\s\S]*?清除跟单数据/);
+  assert.match(progressSource, /clearPanelOpen && normalize\(user\?\.name\) === '孙立柱'/);
+  assert.match(serverSource, /function requireSystemOwner\(req, res, next\)[\s\S]*?normalize\(req\.user\?\.name\) === normalize\(ADMIN_NAME\)/);
+  assert.match(serverSource, /app\.post\('\/api\/progress\/clear-preview', requireAuth, requirePage\('progressRefresh'\), requireSystemOwner/);
+  assert.match(serverSource, /app\.post\('\/api\/progress\/clear', requireAuth, requirePage\('progressRefresh'\), requireSystemOwner/);
 });
 
 test('生产跟进不再展示任何柱形图', () => {

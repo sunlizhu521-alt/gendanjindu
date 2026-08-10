@@ -190,7 +190,8 @@ test('生产跟进支持订单类型并拆分新旧下单月份筛选口径', ()
   assert.match(filterSource, /orderTypes: \['正常订单', '订单变更', '变更待核验'\]/);
   assert.match(filterSource, /label="订单类型" allLabel="全部订单类型"/);
   assert.match(filterSource, /label="新下单月份"/);
-  assert.match(filterSource, /label="原下单月份"/);
+  assert.match(filterSource, /label="原下单月份"[\s\S]*?showWhenEmpty/);
+  assert.match(appSource, /function MonthCalendarFilter\([\s\S]*?showWhenEmpty = false[\s\S]*?availableOptions\.length === 0 && !showWhenEmpty/);
   assert.match(filterSource, /row\.originalOrderNo/);
   ['订单类型', '下单月份', '当前订单采购数量', '原采购订单号', '原订单创建日期', '原订单采购数量', '变更校验'].forEach((label) => {
     assert.match(progressSource, new RegExp(label));

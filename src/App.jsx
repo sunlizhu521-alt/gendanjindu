@@ -3274,7 +3274,7 @@ function MultiSelectFilter({ label, allLabel, value = [], options = [], onChange
   );
 }
 
-function MonthCalendarFilter({ label, value = [], options = [], onChange, multiple = true }) {
+function MonthCalendarFilter({ label, value = [], options = [], onChange, multiple = true, showWhenEmpty = false }) {
   const [open, setOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState(null);
   const rootRef = useRef(null);
@@ -3347,12 +3347,19 @@ function MonthCalendarFilter({ label, value = [], options = [], onChange, multip
     .map((month, index) => ({ month, label: monthNames[index] }))
     .filter(({ month }) => optionSet.has(month));
 
-  if (availableOptions.length === 0) return null;
+  if (availableOptions.length === 0 && !showWhenEmpty) return null;
 
   return (
     <div className="filter-control month-calendar-filter" ref={rootRef}>
       <span>{label}</span>
-      <button ref={buttonRef} type="button" className="filter-button" onClick={() => setOpen(!open)} title={buttonText}>{buttonText}</button>
+      <button
+        ref={buttonRef}
+        type="button"
+        className="filter-button"
+        disabled={availableOptions.length === 0}
+        onClick={() => setOpen(!open)}
+        title={availableOptions.length === 0 ? '暂无原下单月份数据' : buttonText}
+      >{buttonText}</button>
       {open && menuPosition && createPortal(
         <div
           ref={menuRef}
@@ -3566,7 +3573,7 @@ function FilterBar({ filters, setFilters, options, onSubmit }) {
       <MultiSelectFilter label="订单类型" allLabel="全部订单类型" value={filters.orderType} options={options.orderTypes} onChange={(value) => setFilters({ ...filters, orderType: value })} />
       <MultiSelectFilter label="采购组织" allLabel="全部采购组织" value={filters.purchaseOrg} options={options.purchaseOrgs} onChange={(value) => setFilters({ ...filters, purchaseOrg: value })} />
       <MonthCalendarFilter label="新下单月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
-      <MonthCalendarFilter label="原下单月份" value={filters.originalMonth} options={options.originalMonths} onChange={(value) => setFilters({ ...filters, originalMonth: value })} />
+      <MonthCalendarFilter label="原下单月份" value={filters.originalMonth} options={options.originalMonths} showWhenEmpty onChange={(value) => setFilters({ ...filters, originalMonth: value })} />
       <MultiSelectFilter label="供应商简称" allLabel="全部供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
       <MultiSelectFilter label="是否多家供应" allLabel="全部供应家数" value={filters.supplierCount} options={options.supplierCounts} onChange={(value) => setFilters({ ...filters, supplierCount: value })} />
       <MultiSelectFilter label="分配状态" allLabel="全部分配状态" value={filters.allocationStatus} options={options.allocationStatuses} onChange={(value) => setFilters({ ...filters, allocationStatus: value })} />

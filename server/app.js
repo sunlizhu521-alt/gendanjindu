@@ -2766,10 +2766,10 @@ function demandLoadContext(demands) {
       currentOrderRows.push(row);
       if (!demandKeys.has(normalize(row.demand_key))) return;
       const key = demandBatchKey(row.batch_id, row.demand_key);
+      if (normalize(row.close_status) && normalize(row.close_status) !== TRACKING_CLOSE_STATUS) return;
       const allRows = allOrderRowsByDemand.get(key) || [];
       allRows.push(orderRowDateSort(row, index));
       allOrderRowsByDemand.set(key, allRows);
-      if (normalize(row.close_status) && normalize(row.close_status) !== TRACKING_CLOSE_STATUS) return;
       const list = orderRowsByDemand.get(key) || [];
       list.push(orderRowDateSort(row, index));
       orderRowsByDemand.set(key, list);

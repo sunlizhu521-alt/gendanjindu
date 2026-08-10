@@ -10,7 +10,7 @@ const serverSource = fs.readFileSync(path.join(root, 'server', 'app.js'), 'utf8'
 const databaseSource = fs.readFileSync(path.join(root, 'server', 'database.js'), 'utf8');
 const styleSource = fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8');
 
-test('生产跟进显示采购订单匹配的供应商简称并支持供应家数筛选', () => {
+test('生产跟进显示采购订单匹配的供应商简称且不再提供供应家数筛选', () => {
   assert.match(appSource, /function progressSupplierName\(row\)\s*\{\s*return normalize\(row\.orderSupplierShortName\) \|\| '未匹配';/);
   assert.match(appSource, /function uniqueSupplierShortNames\(values\)[\s\S]*?left === '未匹配'[\s\S]*?right === '未匹配'/);
   const progressSource = appSource.slice(
@@ -23,9 +23,9 @@ test('生产跟进显示采购订单匹配的供应商简称并支持供应家�
   assert.doesNotMatch(progressSource, /\bunique\(clearFilterRows/);
   assert.match(progressSource, /uniqueProgressValues\(clearFilterRows/);
   assert.match(progressSource, /suppliers: uniqueSupplierShortNames\(clearFilterRows\('suppliers'\)/);
-  assert.match(appSource, /<MultiSelectFilter label="是否多家供应" allLabel="全部供应家数"/);
-  assert.match(appSource, /matchesSelected\(filters\.supplierCount, supplyCount\)/);
-  assert.match(appSource, /supplierCounts:[\s\S]*?sort\(\(left, right\) => left - right\)[\s\S]*?map\(supplierCountLabel\)/);
+  const filterBarSource = appSource.slice(appSource.indexOf('function FilterBar('), appSource.indexOf('function Login('));
+  assert.doesNotMatch(filterBarSource, /label="是否多家供应"/);
+  assert.doesNotMatch(filterBarSource, /filters\.supplierCount|options\.supplierCounts/);
 });
 
 test('生产跟进四阶段、履约字段和导出状态完整呈现', () => {
@@ -122,17 +122,16 @@ test('生产跟进表格使用清晰竖线和交替行色', () => {
   assert.match(styleSource, /\.progress-row-adjustment > td[\s\S]*?background: #fff1f2 !important/);
 });
 
-test('生产跟进按待人工调整状态筛选待分配和无需分配', () => {
+test('生产跟进删除供应家数、分配状态和数据状态筛选器', () => {
   const filterSource = appSource.slice(
-    appSource.indexOf('function progressAllocationStatus('),
+    appSource.indexOf('function useFilteredDemands('),
     appSource.indexOf('function Login(')
   );
-  assert.match(filterSource, /return row\.progressAdjustmentRequired \? '待分配' : '无需分配'/);
-  assert.match(filterSource, /allocationStatus: \[\]/);
-  assert.match(filterSource, /matchesSelected\(filters\.allocationStatus, progressAllocationStatus\(row\)\)/);
-  assert.match(filterSource, /allocationStatuses: \['待分配', '无需分配'\][\s\S]*?rowsFor\('allocationStatus'\)/);
-  assert.match(filterSource, /label="分配状态"[\s\S]*?options=\{options\.allocationStatuses\}/);
-  assert.match(filterSource, /allocationStatus: options\.allocationStatuses/);
+  ['是否多家供应', '分配状态', '数据状态'].forEach((label) => {
+    assert.doesNotMatch(filterSource, new RegExp(`label="${label}"`));
+  });
+  assert.doesNotMatch(filterSource, /filters\.(?:supplierCount|allocationStatus|dataStatus)/);
+  assert.doesNotMatch(filterSource, /(?:supplierCounts|allocationStatuses|dataStatuses):/);
 });
 
 test('production progress filters support linked multi-select options', () => {
@@ -140,7 +139,7 @@ test('production progress filters support linked multi-select options', () => {
     appSource.indexOf('function useFilteredDemands('),
     appSource.indexOf('function Login(')
   );
-  assert.match(filterSource, /month: \[\], originalMonth: \[\], supplier: \[\], supplierCount: \[\]/);
+  assert.match(filterSource, /month: \[\], originalMonth: \[\], supplier: \[\], purchaseOrg: \[\]/);
   assert.match(filterSource, /const rowsFor = \(field\) => rows\.filter\(\(row\) => matchesFilters\(row, field\)\)/);
   assert.match(filterSource, /suppliers: uniqueSupplierShortNames\(rowsFor\('supplier'\)/);
   assert.match(filterSource, /purchaseOwners: uniqueProgressValues\(rowsFor\('purchaseOwner'\)/);
@@ -427,6 +426,29 @@ test('差异分配合并到生产跟进内部并复用生产跟进权限', () =>
   assert.match(serverSource, /app\.get\('\/api\/difference-allocations\/latest', requireAuth, requirePage\('progressRefresh'\)/);
 });
 
+test('操作记录作为生产跟进独立页面入口且只展示生产跟进操作', () => {
+  const progressSource = appSource.slice(
+    appSource.indexOf('function ProgressPage('),
+    appSource.indexOf('function DifferenceAllocationPage(')
+  );
+  const operationLogSource = appSource.slice(
+    appSource.indexOf('function OperationLogsPage('),
+    appSource.indexOf('function PermissionsPage(')
+  );
+
+  assert.match(progressSource, /const \[showOperationLogs, setShowOperationLogs\] = useState\(false\)/);
+  assert.match(progressSource, />差异分配<\/button>[\s\S]*?>操作记录<\/button>/);
+  assert.match(progressSource, /if \(showOperationLogs && !onlyIssues\)[\s\S]*?<OperationLogsPage[\s\S]*?title="生产跟进 \/ 操作记录"[\s\S]*?fixedPageKey="progressRefresh"/);
+  assert.match(progressSource, /onBack=\{\(\) => setOperationLogsView\(false\)\}/);
+  assert.match(operationLogSource, /<SelectField label="登录人"/);
+  assert.match(operationLogSource, /if \(fixedPageKey\) query\.set\('pageKey', fixedPageKey\)/);
+  assert.match(operationLogSource, /!fixedPageKey && \(options\.pages \|\| \[\]\)\.length > 0/);
+  assert.match(serverSource, /app\.get\('\/api\/operation-logs', requireAuth, requireAnyPage\(\['operationLogs', 'progressRefresh'\]\)/);
+  assert.match(serverSource, /app\.post\('\/api\/operation-logs\/export', requireAuth, requireAnyPage\(\['operationLogs', 'progressRefresh'\]\)/);
+  assert.match(serverSource, /function operationLogFiltersForAccess\(user, filters = \{\}\)[\s\S]*?canAccessAllOperationLogs\(user\)[\s\S]*?pageKey: 'progressRefresh'/);
+  assert.match(serverSource, /const optionScope = canAccessAllOperationLogs\(req\.user\)[\s\S]*?pageKey: normalize\(requestedFilters\.pageKey\)[\s\S]*?pageKey: 'progressRefresh'/);
+});
+
 test('生产跟进使用固定默认显示列并按用户持久保存', () => {
   const columnSource = appSource.slice(
     appSource.indexOf('const PROGRESS_COLUMNS'),
@@ -519,12 +541,12 @@ test('生产跟进阶段公式排除完工未发并单独限制其上限', () =>
   assert.match(progressSource, /完工未发产品不参与该合计，但不能大于未交付数量/);
 });
 
-test('生产跟进支持手工登记表预览、数据状态筛选和采购订单折叠', () => {
+test('生产跟进支持手工登记表预览和采购订单折叠', () => {
   const progressSource = appSource.slice(
     appSource.indexOf('function useFilteredDemands('),
     appSource.indexOf('function DifferenceAllocationPage(')
   );
-  assert.match(progressSource, /label="数据状态"/);
+  assert.doesNotMatch(progressSource, /label="数据状态"/);
   assert.doesNotMatch(progressSource, /label="采购组"/);
   assert.match(progressSource, /function ManualProgressImportPanel/);
   assert.match(progressSource, /导入手工登记表/);
@@ -550,11 +572,13 @@ test('生产跟进保留金蝶内部工具栏并使用独立全屏容器', () =>
   );
   assert.match(progressSource, /className="compact-button progress-toolbar-entry progress-columns-button"[\s\S]*?修改显示列/);
   assert.match(progressSource, /className="progress-command"[\s\S]*?>差异分配<\/button>/);
+  assert.match(progressSource, /className="progress-command"[\s\S]*?>操作记录<\/button>/);
   assert.match(progressSource, /className="progress-command primary"[\s\S]*?>刷新<\/button>/);
   assert.match(progressSource, /className="progress-scheme-bar"[\s\S]*?>按新下单月份<\/button>[\s\S]*?>按原下单月份<\/button>[\s\S]*?>按供应商<\/button>/);
   assert.doesNotMatch(progressSource, />待人工调整<\/button>/);
   assert.match(progressSource, /<details className="progress-logic-note"/);
   assert.match(progressSource, /function setDifferenceAllocationView\(open\)[\s\S]*?content\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\)[\s\S]*?window\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\)/);
+  assert.match(progressSource, /function setOperationLogsView\(open\)[\s\S]*?content\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\)[\s\S]*?window\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\)/);
   assert.match(progressSource, /setDifferenceAllocationView\(true\)/);
   assert.match(progressSource, /setDifferenceAllocationView\(false\)/);
   assert.match(appSource, /className=\{progressStandalone \? 'progress-standalone-shell' : 'app-shell'\}/);

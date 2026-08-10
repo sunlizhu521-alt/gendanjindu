@@ -8,7 +8,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const appSource = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
 
 test('数据关系图注册到系统操作导航并按权限挂载', () => {
-  assert.match(appSource, /import React, \{ Fragment, useEffect, useMemo, useRef, useState \} from 'react'/);
+  assert.match(appSource, /import React, \{ Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState \} from 'react'/);
   assert.match(appSource, /'operationLogs',\s*'tableRelationships'/);
   assert.match(appSource, /tableRelationships: '数据关系图'/);
   assert.match(appSource, /title: '系统操作', pages: \['permissions', 'operationLogs', 'tableRelationships'\]/);

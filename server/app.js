@@ -7052,6 +7052,23 @@ function operationLogWhere(filters = {}) {
   return { sql: clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '', params };
 }
 
+function canAccessAllOperationLogs(user) {
+  return user?.role === ROLE_ADMIN || pageAccessFor(user).includes('operationLogs');
+}
+
+function operationLogFiltersForAccess(user, filters = {}) {
+  if (canAccessAllOperationLogs(user)) return filters;
+  return { ...filters, pageKey: 'progressRefresh' };
+}
+
+function operationLogScopedWhere(filters, condition) {
+  const where = operationLogWhere(filters);
+  return {
+    sql: `${where.sql}${where.sql ? ' AND' : ' WHERE'} ${condition}`,
+    params: where.params
+  };
+}
+
 function operationLogPayload(row) {
   return {
     id: row.id,
@@ -7082,8 +7099,8 @@ function filteredOperationLogs(filters = {}, limit = 50000, offset = 0) {
   ).map(operationLogPayload);
 }
 
-app.get('/api/operation-logs', requireAuth, requirePage('operationLogs'), (req, res) => {
-  const filters = {
+app.get('/api/operation-logs', requireAuth, requireAnyPage(['operationLogs', 'progressRefresh']), (req, res) => {
+  const requestedFilters = {
     userName: req.query.userName,
     pageKey: req.query.pageKey,
     action: req.query.action,
@@ -7092,14 +7109,23 @@ app.get('/api/operation-logs', requireAuth, requirePage('operationLogs'), (req, 
     endDate: req.query.endDate,
     keyword: req.query.keyword
   };
+  const filters = operationLogFiltersForAccess(req.user, requestedFilters);
   const pageSize = Math.min(100, Math.max(1, Math.floor(numberValue(req.query.pageSize) || 20)));
   const where = operationLogWhere(filters);
   const total = numberValue(get(`SELECT COUNT(*) AS total FROM operation_logs${where.sql}`, where.params)?.total);
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(totalPages, Math.max(1, Math.floor(numberValue(req.query.page) || 1)));
-  const distinctValues = (column) => all(
-    `SELECT DISTINCT ${column} AS value FROM operation_logs WHERE ${column} <> '' ORDER BY ${column}`
-  ).map((row) => row.value).filter(Boolean);
+  const optionScope = canAccessAllOperationLogs(req.user)
+    ? { pageKey: normalize(requestedFilters.pageKey) }
+    : { pageKey: 'progressRefresh' };
+  const distinctValues = (column) => {
+    const scoped = operationLogScopedWhere(optionScope, `${column} <> ''`);
+    return all(
+      `SELECT DISTINCT ${column} AS value FROM operation_logs${scoped.sql} ORDER BY ${column}`,
+      scoped.params
+    ).map((row) => row.value).filter(Boolean);
+  };
+  const pageScope = operationLogScopedWhere(optionScope, "page_key <> ''");
   res.json({
     rows: filteredOperationLogs(filters, pageSize, (page - 1) * pageSize),
     total,
@@ -7108,15 +7134,18 @@ app.get('/api/operation-logs', requireAuth, requirePage('operationLogs'), (req, 
     totalPages,
     options: {
       users: distinctValues('user_name'),
-      pages: all("SELECT page_key, MAX(page_label) AS page_label FROM operation_logs WHERE page_key <> '' GROUP BY page_key ORDER BY page_label").map((row) => ({ value: row.page_key, label: row.page_label })),
+      pages: all(
+        `SELECT page_key, MAX(page_label) AS page_label FROM operation_logs${pageScope.sql} GROUP BY page_key ORDER BY page_label`,
+        pageScope.params
+      ).map((row) => ({ value: row.page_key, label: row.page_label })),
       actions: distinctValues('action'),
       results: distinctValues('result')
     }
   });
 });
 
-app.post('/api/operation-logs/export', requireAuth, requirePage('operationLogs'), async (req, res) => {
-  const rows = filteredOperationLogs(req.body?.filters || {});
+app.post('/api/operation-logs/export', requireAuth, requireAnyPage(['operationLogs', 'progressRefresh']), async (req, res) => {
+  const rows = filteredOperationLogs(operationLogFiltersForAccess(req.user, req.body?.filters || {}));
   const headers = ['操作时间', '登录人', '角色', '事件类型', '页面', '操作类型', '操作内容/对象', '补充信息', '结果', '状态码', '登录位置(IP)', '设备/浏览器', '请求方式', '请求路径'];
   const data = rows.map((row) => [
     row.createdAt, row.userName, row.userRole, row.eventType, row.pageLabel, row.action,

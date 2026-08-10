@@ -398,10 +398,6 @@ function supplierCountLabel(value) {
   return `${count}家供应`;
 }
 
-function progressAllocationStatus(row) {
-  return row.progressAdjustmentRequired ? '待分配' : '无需分配';
-}
-
 function uniqueProgressValues(values) {
   return [...new Set(values.map(normalize).filter(Boolean))]
     .sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
@@ -3512,7 +3508,7 @@ function clearInvalidFilterValues(filters, optionMap) {
 }
 
 function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
-  const [filters, setFilters] = useSessionFilters(cacheKey, { keyword: '', month: [], originalMonth: [], supplier: [], supplierCount: [], allocationStatus: [], dataStatus: [], purchaseOrg: [], businessUnit: [], productLine: [], series: [], purchaseOwner: [], productType: [], orderType: [] });
+  const [filters, setFilters] = useSessionFilters(cacheKey, { keyword: '', month: [], originalMonth: [], supplier: [], purchaseOrg: [], businessUnit: [], productLine: [], series: [], purchaseOwner: [], productType: [], orderType: [] });
   const selectedValues = (value) => Array.isArray(value) ? value : (normalize(value) ? [normalize(value)] : []);
   const matchesSelected = (value, candidate) => {
     const selected = selectedValues(value);
@@ -3521,7 +3517,6 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
   const matchesFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
     const displaySupplier = progressSupplierName(row);
-    const supplyCount = supplierCountLabel(row.supplierCount);
     const currentOrderMonth = normalize(row.month) || normalize(row.currentOrderDate).slice(0, 7);
     const originalOrderMonth = normalize(row.originalOrderMonth || (row.originalOrderNo ? row.reportingMonth : ''));
     const text = [row.demandKey, row.oaFlowNo, row.orderNo, row.originalOrderNo, row.materialCode, row.supplier, displaySupplier, row.materialName, row.logisticsCode, row.sku, row.purchaseOwner, row.dataStatus, row.orderType].join(' ').toLowerCase();
@@ -3529,9 +3524,6 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
       && (omit === 'month' || matchesSelected(filters.month, currentOrderMonth))
       && (omit === 'originalMonth' || matchesSelected(filters.originalMonth, originalOrderMonth))
       && (omit === 'supplier' || matchesSelected(filters.supplier, displaySupplier))
-      && (omit === 'supplierCount' || matchesSelected(filters.supplierCount, supplyCount))
-      && (omit === 'allocationStatus' || matchesSelected(filters.allocationStatus, progressAllocationStatus(row)))
-      && (omit === 'dataStatus' || matchesSelected(filters.dataStatus, row.dataStatus))
       && (omit === 'purchaseOrg' || matchesSelected(filters.purchaseOrg, row.purchaseOrg))
       && (omit === 'businessUnit' || matchesSelected(filters.businessUnit, purchaseTrackingBusinessUnit(row.businessUnit)))
       && (omit === 'productLine' || matchesSelected(filters.productLine, row.productLine))
@@ -3546,13 +3538,6 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
       months: uniqueProgressValues(rowsFor('month').map((row) => normalize(row.month) || normalize(row.currentOrderDate).slice(0, 7))),
       originalMonths: uniqueProgressValues(rowsFor('originalMonth').map((row) => normalize(row.originalOrderMonth || (row.originalOrderNo ? row.reportingMonth : '')))),
       suppliers: uniqueSupplierShortNames(rowsFor('supplier').map((row) => progressSupplierName(row))),
-      supplierCounts: [...new Set(rowsFor('supplierCount').map((row) => Math.max(0, Math.trunc(numberValue(row.supplierCount)))))]
-        .sort((left, right) => left - right)
-        .map(supplierCountLabel),
-      allocationStatuses: ['待分配', '无需分配']
-        .filter((value) => rowsFor('allocationStatus').some((row) => progressAllocationStatus(row) === value)),
-      dataStatuses: ['采购订单数据', '手工已匹配', '手工待匹配', '采购订单已关闭', '采购订单剩余为0', '待人工调整', '字段冲突待维护', '公司大合同', '本次手工表未出现', '校验失败']
-        .filter((value) => rowsFor('dataStatus').some((row) => row.dataStatus === value)),
       purchaseOrgs: uniqueProgressValues(rowsFor('purchaseOrg').map((row) => row.purchaseOrg)),
       businessUnits: uniqueProgressValues(rowsFor('businessUnit').map((row) => purchaseTrackingBusinessUnit(row.businessUnit))),
       productLines: uniqueProgressValues(rowsFor('productLine').map((row) => row.productLine)),
@@ -3568,9 +3553,6 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
       month: options.months,
       originalMonth: options.originalMonths,
       supplier: options.suppliers,
-      supplierCount: options.supplierCounts,
-      allocationStatus: options.allocationStatuses,
-      dataStatus: options.dataStatuses,
       purchaseOrg: options.purchaseOrgs,
       businessUnit: options.businessUnits,
       productLine: options.productLines,
@@ -3586,7 +3568,7 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
 }
 
 function FilterBar({ filters, setFilters, options, onSubmit }) {
-  const clear = () => setFilters({ keyword: '', month: [], originalMonth: [], supplier: [], supplierCount: [], allocationStatus: [], dataStatus: [], purchaseOrg: [], businessUnit: [], productLine: [], series: [], purchaseOwner: [], productType: [], orderType: [] });
+  const clear = () => setFilters({ keyword: '', month: [], originalMonth: [], supplier: [], purchaseOrg: [], businessUnit: [], productLine: [], series: [], purchaseOwner: [], productType: [], orderType: [] });
   return (
     <div className="toolbar filters-row">
       <MultiSelectFilter label="成品/配件" allLabel="全部类型" value={filters.productType} options={options.productTypes} onChange={(value) => setFilters({ ...filters, productType: value })} />
@@ -3595,9 +3577,6 @@ function FilterBar({ filters, setFilters, options, onSubmit }) {
       <MonthCalendarFilter label="新下单月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
       <MonthCalendarFilter label="原下单月份" value={filters.originalMonth} options={options.originalMonths} showWhenEmpty onChange={(value) => setFilters({ ...filters, originalMonth: value })} />
       <MultiSelectFilter label="供应商简称" allLabel="全部供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
-      <MultiSelectFilter label="是否多家供应" allLabel="全部供应家数" value={filters.supplierCount} options={options.supplierCounts} onChange={(value) => setFilters({ ...filters, supplierCount: value })} />
-      <MultiSelectFilter label="分配状态" allLabel="全部分配状态" value={filters.allocationStatus} options={options.allocationStatuses} onChange={(value) => setFilters({ ...filters, allocationStatus: value })} />
-      <MultiSelectFilter label="数据状态" allLabel="全部数据状态" value={filters.dataStatus} options={options.dataStatuses} onChange={(value) => setFilters({ ...filters, dataStatus: value })} />
       <MultiSelectFilter label="事业部" allLabel="全部事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
       <MultiSelectFilter label="产品线" allLabel="全部产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
       <MultiSelectFilter label="系列" allLabel="全部系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
@@ -6029,6 +6008,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, ti
   const [clearPreview, setClearPreview] = useState(null);
   const [clearBusy, setClearBusy] = useState(false);
   const [showDifferenceAllocation, setShowDifferenceAllocation] = useState(false);
+  const [showOperationLogs, setShowOperationLogs] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [expandedOrders, setExpandedOrders] = useState(() => new Set());
@@ -6248,6 +6228,17 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, ti
 
   function setDifferenceAllocationView(open) {
     setShowDifferenceAllocation(open);
+    if (open) setShowOperationLogs(false);
+    window.requestAnimationFrame(() => {
+      const content = document.querySelector('.content');
+      if (content) content.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    });
+  }
+
+  function setOperationLogsView(open) {
+    setShowOperationLogs(open);
+    if (open) setShowDifferenceAllocation(false);
     window.requestAnimationFrame(() => {
       const content = document.querySelector('.content');
       if (content) content.scrollTo({ top: 0, left: 0, behavior: 'auto' });
@@ -6462,6 +6453,19 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, ti
     );
   }
 
+  if (showOperationLogs && !onlyIssues) {
+    return (
+      <OperationLogsPage
+        token={token}
+        user={user}
+        setMessage={setMessage}
+        title="生产跟进 / 操作记录"
+        fixedPageKey="progressRefresh"
+        onBack={() => setOperationLogsView(false)}
+      />
+    );
+  }
+
   const progressTableColumns = [{ key: '__select', label: (
     <label className="select-all-header" title="勾选当前显示的可编辑行">
       <input
@@ -6495,6 +6499,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, ti
           />
           {!onlyIssues && <button type="button" className="progress-command" disabled={exporting || !displayRows.length} onClick={handleExport}>{exporting ? `导出中 ${exportProgress}%` : '导出 Excel'}</button>}
           {!onlyIssues && <button type="button" className="progress-command" onClick={() => setDifferenceAllocationView(true)}>差异分配</button>}
+          {!onlyIssues && <button type="button" className="progress-command" onClick={() => setOperationLogsView(true)}>操作记录</button>}
           {!onlyIssues && onExit && <button type="button" className="progress-command" onClick={onExit}>返回系统</button>}
           {!onlyIssues && normalize(user?.name) === '孙立柱' && (
             <button type="button" className="progress-command danger-text" onClick={() => setClearPanelOpen((open) => !open)}>
@@ -6510,10 +6515,9 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, ti
           </div>
           <button
             type="button"
-            className={groupMode === 'currentMonth' && filters.allocationStatus.length === 0 ? 'active' : ''}
+            className={groupMode === 'currentMonth' ? 'active' : ''}
             onClick={() => {
               setGroupMode('currentMonth');
-              setFilters({ ...filters, allocationStatus: [] });
               setExpandedOrders(new Set());
               setCurrentPage(1);
             }}
@@ -6523,7 +6527,6 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, ti
             className={groupMode === 'originalMonth' ? 'active' : ''}
             onClick={() => {
               setGroupMode('originalMonth');
-              setFilters({ ...filters, allocationStatus: [] });
               setExpandedOrders(new Set());
               setCurrentPage(1);
             }}
@@ -8057,9 +8060,11 @@ function auditDeviceLabel(userAgent) {
   return `${system} / ${browser}`;
 }
 
-function OperationLogsPage({ token, setMessage }) {
-  const initialFilters = { userName: '', pageKey: '', action: '', result: '', startDate: '', endDate: '', keyword: '' };
-  const [filters, setFilters] = useSessionFilters('operationLogs', initialFilters);
+function OperationLogsPage({ token, user, setMessage, title = '操作日常', fixedPageKey = '', onBack = null }) {
+  const initialFilters = { userName: '', pageKey: fixedPageKey, action: '', result: '', startDate: '', endDate: '', keyword: '' };
+  const cacheSuffix = fixedPageKey || 'all';
+  const exportName = fixedPageKey === 'progressRefresh' ? '生产跟进操作记录' : '操作日常';
+  const [filters, setFilters] = useSessionFilters(`operationLogs:${cacheSuffix}:${user?.id || user?.name || 'user'}`, initialFilters);
   const [page, setPage] = useState(1);
   const [data, setData] = useState({ rows: [], total: 0, totalPages: 1, options: { users: [], pages: [], actions: [], results: [] } });
   const [loading, setLoading] = useState(false);
@@ -8072,6 +8077,7 @@ function OperationLogsPage({ token, setMessage }) {
       Object.entries(filters).forEach(([key, value]) => {
         if (normalize(value)) query.set(key, value);
       });
+      if (fixedPageKey) query.set('pageKey', fixedPageKey);
       const payload = await request(`/api/operation-logs?${query}`, { token });
       setData(payload);
       if (payload.page && payload.page !== page) setPage(payload.page);
@@ -8082,7 +8088,7 @@ function OperationLogsPage({ token, setMessage }) {
     }
   }
 
-  useEffect(() => { load(); }, [token, page, filters, refreshVersion]);
+  useEffect(() => { load(); }, [token, page, filters, fixedPageKey, refreshVersion]);
 
   function updateFilter(key, value) {
     setPage(1);
@@ -8091,7 +8097,7 @@ function OperationLogsPage({ token, setMessage }) {
 
   function clearFilters() {
     setPage(1);
-    setFilters(initialFilters);
+    setFilters({ ...initialFilters, pageKey: fixedPageKey });
   }
 
   async function exportLogs() {
@@ -8099,7 +8105,7 @@ function OperationLogsPage({ token, setMessage }) {
       const response = await fetch(`${API}/api/operation-logs/export`, {
         method: 'POST',
         headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filters })
+        body: JSON.stringify({ filters: { ...filters, pageKey: fixedPageKey || filters.pageKey } })
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
@@ -8109,7 +8115,7 @@ function OperationLogsPage({ token, setMessage }) {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `操作日常_${todayText().replaceAll('-', '')}.xlsx`;
+      anchor.download = `${exportName}_${todayText().replaceAll('-', '')}.xlsx`;
       anchor.click();
       URL.revokeObjectURL(url);
       setMessage(`已导出当前筛选的 ${data.total || 0} 条操作记录。`);
@@ -8123,12 +8129,13 @@ function OperationLogsPage({ token, setMessage }) {
   return (
     <>
       <div className="section-heading-row">
-        <h2>操作日常</h2>
+        <h2>{title}</h2>
         <span className="section-count">{loading ? '正在加载...' : `共 ${data.total || 0} 条，第 ${data.page || page} / ${data.totalPages || 1} 页`}</span>
+        {onBack && <button type="button" className="ghost compact-button" onClick={onBack}>返回生产跟进</button>}
       </div>
       <div className="toolbar operation-log-filters">
         <SelectField label="登录人" value={filters.userName} options={options.users || []} onChange={(value) => updateFilter('userName', value)} />
-        {(options.pages || []).length > 0 && (
+        {!fixedPageKey && (options.pages || []).length > 0 && (
           <label className="filter-control">
             <span>操作页面</span>
             <select value={filters.pageKey} onChange={(event) => updateFilter('pageKey', event.target.value)}>
@@ -8165,7 +8172,7 @@ function OperationLogsPage({ token, setMessage }) {
         ]}
       />
       <TablePagination
-        label="操作日常分页"
+        label={`${exportName}分页`}
         currentPage={data.page || page}
         totalPages={data.totalPages || 1}
         onPageChange={setPage}
@@ -8604,7 +8611,7 @@ function App() {
         {shouldMount('dimensionMissing') && <PagePane page="dimensionMissing" activeTab={activeTab}><DimensionMissingPage token={token} user={user} setMessage={setMessage} refreshVersion={crossBorderVersion} active={activeTab === 'dimensionMissing'} onMaintain={maintainDimensionSlot} /></PagePane>}
         {shouldMount('dimensionLibrary') && <PagePane page="dimensionLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} gridColumns={3} onDataApplied={refreshCrossBorderData} highlightSlotId={highlightSlotId} /></PagePane>}
         {shouldMount('trace') && <PagePane page="trace" activeTab={activeTab}><TracePage token={token} setMessage={setMessage} /></PagePane>}
-        {shouldMount('operationLogs') && <PagePane page="operationLogs" activeTab={activeTab}><OperationLogsPage token={token} setMessage={setMessage} /></PagePane>}
+        {shouldMount('operationLogs') && <PagePane page="operationLogs" activeTab={activeTab}><OperationLogsPage token={token} user={user} setMessage={setMessage} /></PagePane>}
         {shouldMount('permissions') && <PagePane page="permissions" activeTab={activeTab}><PermissionsPage token={token} currentUser={user} pages={pages} setMessage={setMessage} /></PagePane>}
         {shouldMount('tableRelationships') && <PagePane page="tableRelationships" activeTab={activeTab}><DataRelationshipsPage token={token} /></PagePane>}
         <PersistentHorizontalScrollbar activeTab={activeTab} />

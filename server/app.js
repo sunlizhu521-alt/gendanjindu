@@ -2690,9 +2690,9 @@ function progressAfterInbound(remainingQty, progress, inboundQty, options = {}) 
       gap: 0
     };
   }
-  const progressTotal = unprepared + preparedNotStarted + inProduction + finished;
+  const progressTotal = unprepared + preparedNotStarted + inProduction;
   if (progressTotal < remainingInboundQty) unprepared += remainingInboundQty - progressTotal;
-  const gap = remainingInboundQty - unprepared - preparedNotStarted - inProduction - finished;
+  const gap = remainingInboundQty - unprepared - preparedNotStarted - inProduction;
   return { unprepared, preparedNotStarted, inProduction, finished, shipped: nextShipped, gap };
 }
 
@@ -2991,10 +2991,13 @@ function matchManualProgressRows(rows) {
         '手工已分配数量超过系统未交付数量',
         '手工未交付合计',
         '手工四阶段合计超过金蝶当前未交付数量',
+        '手工生产阶段合计超过金蝶当前未交付数量',
         '金蝶未交付增加'
       ].some((prefix) => message.startsWith(prefix)));
     row.validationMessage = retainedMessages.join('；');
     row.validationStatus = retainedMessages.some((message) => [
+      '生产中产品、已备料未生产、未备料未生产合计超过未交付数量',
+      '完工未发产品不能大于未交付数量',
       '四阶段合计超过未交付数量',
       '必须是整数',
       '是否正常履约只能',
@@ -3083,7 +3086,7 @@ function matchManualProgressRows(rows) {
     const closedOrders = candidates.filter((candidate) => candidate.isClosed).map((candidate) => candidate.orderNo);
     if (closedOrders.length) row.validationMessage = [row.validationMessage, `采购订单已关闭：${closedOrders.join('、')}，分配数量为0`].filter(Boolean).join('；');
     if (row.dataStatus === '采购订单剩余为0') {
-      row.validationMessage = [row.validationMessage, '采购订单当前剩余入库量为0，四阶段分配数量为0'].filter(Boolean).join('；');
+      row.validationMessage = [row.validationMessage, '采购订单当前剩余入库量为0，生产阶段及完工未发分配数量为0'].filter(Boolean).join('；');
     }
   });
 
@@ -3642,7 +3645,7 @@ function manualProgressDisplayRows(systemRows, user = null) {
       demandKey: allocation.demandKey,
       orderNo: allocation.orderNo,
       manualRemainingQty: allocation.unpreparedQty + allocation.preparedNotStartedQty
-        + allocation.inProductionQty + allocation.finishedQty,
+        + allocation.inProductionQty,
       unpreparedQty: allocation.unpreparedQty,
       preparedNotStartedQty: allocation.preparedNotStartedQty,
       inProductionQty: allocation.inProductionQty,
@@ -3711,7 +3714,8 @@ function manualProgressDisplayRows(systemRows, user = null) {
     const preparedNotStartedQty = rows.reduce((sum, r) => sum + numberValue(r.preparedNotStartedQty), 0);
     const inProductionQty = rows.reduce((sum, r) => sum + numberValue(r.inProductionQty), 0);
     const finishedQty = rows.reduce((sum, r) => sum + numberValue(r.finishedQty), 0);
-    const progressTotal = unpreparedQty + preparedNotStartedQty + inProductionQty + finishedQty;
+    const progressTotal = unpreparedQty + preparedNotStartedQty + inProductionQty;
+    const finishedExceedsRemaining = finishedQty - remainingInboundQty > 0.000001;
     const conflictFields = [...new Set(rows.flatMap((row) => row.conflictFields || []))];
     const field = (key, fallback = '') => {
       const value = uniqueManualField(rows, key);
@@ -3805,7 +3809,7 @@ function manualProgressDisplayRows(systemRows, user = null) {
       shippedQty,
       progressTotal,
       gap: remainingInboundQty - progressTotal,
-      progressAdjustmentRequired: Math.abs(remainingInboundQty - progressTotal) > 0.000001,
+      progressAdjustmentRequired: Math.abs(remainingInboundQty - progressTotal) > 0.000001 || finishedExceedsRemaining,
       productionDeliveryDate: field('productionDeliveryDate'),
       unproducedEstimatedDeliveryDate: field('unproducedEstimatedDeliveryDate'),
       fulfillmentStatus,
@@ -3902,13 +3906,14 @@ function operationOrderBreakdown(baseRow, sourceRows, orderChangeIndex) {
     finishedQty: finished[index],
     shippedQty: detail.trackingInboundQty,
     operationStockQty: detail.remainingInboundQty + detail.trackingInboundQty,
-    progressTotal: unprepared[index] + preparedNotStarted[index] + inProduction[index] + finished[index],
-    gap: detail.remainingInboundQty - unprepared[index] - preparedNotStarted[index] - inProduction[index] - finished[index],
-    progressAdjustmentRequired: Math.abs(detail.remainingInboundQty - unprepared[index] - preparedNotStarted[index] - inProduction[index] - finished[index]) > 0.000001,
+    progressTotal: unprepared[index] + preparedNotStarted[index] + inProduction[index],
+    gap: detail.remainingInboundQty - unprepared[index] - preparedNotStarted[index] - inProduction[index],
+    progressAdjustmentRequired: Math.abs(detail.remainingInboundQty - unprepared[index] - preparedNotStarted[index] - inProduction[index]) > 0.000001
+      || finished[index] - detail.remainingInboundQty > 0.000001,
     stockQty: stock[index],
     demandAfterStock: Math.max(detail.remainingInboundQty - stock[index], 0),
     shortageAfterStock: Math.max(detail.remainingInboundQty - stock[index], 0)
-      - unprepared[index] - preparedNotStarted[index] - inProduction[index] - finished[index],
+      - unprepared[index] - preparedNotStarted[index] - inProduction[index],
     normalFulfillmentQty: normalFulfillment[index],
     abnormalFulfillmentQty: abnormalFulfillment[index],
     normalFulfillmentAmount: normalAmount[index],
@@ -3944,8 +3949,9 @@ function demandRows(includeInactive = false, user = null, options = {}) {
     const preparedNotStartedQty = numberValue(progress.prepared_not_started_qty);
     const inProductionQty = numberValue(progress.in_production_qty);
     const finishedQty = numberValue(progress.finished_qty);
-    const progressTotal = unpreparedQty + preparedNotStartedQty + inProductionQty + finishedQty;
+    const progressTotal = unpreparedQty + preparedNotStartedQty + inProductionQty;
     const progressGap = remainingInboundQty - progressTotal;
+    const finishedExceedsRemaining = finishedQty - remainingInboundQty > 0.000001;
     const fulfillmentStatus = ['是', '否'].includes(normalize(progress.fulfillment_status)) ? normalize(progress.fulfillment_status) : '';
     const pretaxPrice = numberValue(enriched.pretaxPrice);
     const normalFulfillmentQty = fulfillmentStatus === '是' ? remainingInboundQty : 0;
@@ -4008,7 +4014,7 @@ function demandRows(includeInactive = false, user = null, options = {}) {
       shippedQty,
       progressTotal,
       gap: progressGap,
-      progressAdjustmentRequired: Math.abs(progressGap) > 0.000001,
+      progressAdjustmentRequired: Math.abs(progressGap) > 0.000001 || finishedExceedsRemaining,
       shortageAfterStock: demandAfterStock - progressTotal,
       productionDeliveryDate: progress.production_delivery_date || '',
       unproducedEstimatedDeliveryDate: progress.unproduced_estimated_delivery_date || '',
@@ -4302,7 +4308,7 @@ function compareRowsFromSummary(summary, sourceRows, user, options = {}) {
       finishedQty: numberValue(projectedProgress.finished),
       shippedQty: numberValue(projectedProgress.shipped),
       progressTotal: numberValue(projectedProgress.unprepared) + numberValue(projectedProgress.preparedNotStarted)
-        + numberValue(projectedProgress.inProduction) + numberValue(projectedProgress.finished),
+        + numberValue(projectedProgress.inProduction),
       newSnapshot: next || null
     };
   }).filter(Boolean).sort((a, b) => (
@@ -4549,7 +4555,7 @@ function compareRowsForSession(sessionId, user) {
       inProductionQty: numberValue(progress.in_production_qty),
       finishedQty: numberValue(progress.finished_qty),
       progressTotal: numberValue(progress.unprepared_qty) + numberValue(progress.prepared_not_started_qty)
-        + numberValue(progress.in_production_qty) + numberValue(progress.finished_qty),
+        + numberValue(progress.in_production_qty),
       stockQty: numberValue(row.stock_qty)
     };
   }).filter(Boolean);
@@ -6064,12 +6070,15 @@ function updateManualProgressGroup(req, res, manualRowId) {
   const inProduction = progressQuantityValue(req.body.inProductionQty, 0, '生产中产品');
   const finished = progressQuantityValue(req.body.finishedQty, 0, '完工未发产品');
   if (![prepared, inProduction, finished].every(Number.isInteger)) {
-    return res.status(400).json({ error: '手工登记表四阶段数量必须是整数' });
+    return res.status(400).json({ error: '手工登记表阶段数量必须是整数' });
   }
-  if (prepared + inProduction + finished - remaining > 0.000001) {
-    return res.status(400).json({ error: '已备料未生产、生产中产品、完工未发产品合计不能超过未交付数量' });
+  if (prepared + inProduction - remaining > 0.000001) {
+    return res.status(400).json({ error: '生产中产品、已备料未生产合计不能超过未交付数量' });
   }
-  const unprepared = Math.max(remaining - prepared - inProduction - finished, 0);
+  if (finished - remaining > 0.000001) {
+    return res.status(400).json({ error: '完工未发产品不能大于未交付数量' });
+  }
+  const unprepared = Math.max(remaining - prepared - inProduction, 0);
   const fulfillmentStatus = normalize(req.body.fulfillmentStatus);
   if (fulfillmentStatus && !['是', '否'].includes(fulfillmentStatus)) {
     return res.status(400).json({ error: '是否正常履约只能选择“是”或“否”' });
@@ -6138,9 +6147,12 @@ app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'
   const preparedNotStarted = progressQuantityValue(req.body.preparedNotStartedQty, progress.prepared_not_started_qty, '已备料未生产');
   const inProduction = progressQuantityValue(req.body.inProductionQty, progress.in_production_qty, '生产中产品');
   const finished = progressQuantityValue(req.body.finishedQty, progress.finished_qty, '完工未发产品');
-  const assignedQty = preparedNotStarted + inProduction + finished;
+  const assignedQty = preparedNotStarted + inProduction;
   if (assignedQty - remainingInboundQty > 0.000001) {
-    return res.status(400).json({ error: '已备料未生产、生产中产品、完工未发产品合计不能超过未交付数量' });
+    return res.status(400).json({ error: '生产中产品、已备料未生产合计不能超过未交付数量' });
+  }
+  if (finished - remainingInboundQty > 0.000001) {
+    return res.status(400).json({ error: '完工未发产品不能大于未交付数量' });
   }
   const unprepared = Math.max(remainingInboundQty - assignedQty, 0);
   const fulfillmentStatus = normalize(req.body.fulfillmentStatus ?? progress.fulfillment_status);
@@ -6780,8 +6792,9 @@ app.post('/api/progress/import', requireAuth, upload.single('file'), (req, res) 
       const finished = qty('完工未发产品') || qty('完工产品') || qty('已完工');
       const shipped = numberValue(demand.tracking_inbound_qty);
       const expectedQty = Math.max(numberValue(demand.tracking_remaining_qty), 0);
-      const assignedQty = preparedNotStarted + inProduction + finished;
+      const assignedQty = preparedNotStarted + inProduction;
       if (assignedQty - expectedQty > 0.000001) return;
+      if (finished - expectedQty > 0.000001) return;
       const unprepared = Math.max(expectedQty - assignedQty, 0);
       const fulfillmentStatus = normalize(row['是否正常履约'] || row['是否需正常交货'] || row.fulfillmentStatus || '');
       if (fulfillmentStatus && !['是', '否'].includes(fulfillmentStatus)) return;

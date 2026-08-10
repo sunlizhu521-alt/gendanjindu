@@ -99,15 +99,16 @@ test('生产跟进展示当前金蝶所有剩余未交付非零订单', () => {
   ), /effectiveOrderCondition === '有效订单'/);
 });
 
-test('采购未交付减少时保留四阶段原值并交由人工调整', () => {
+test('采购未交付变化时按三项生产阶段补差且完工未发独立校验', () => {
   const modelSource = serverSource.slice(
     serverSource.indexOf('function progressAfterInbound('),
     serverSource.indexOf('function hasManualProgressHistory(')
   );
-  assert.match(modelSource, /const progressTotal = unprepared \+ preparedNotStarted \+ inProduction \+ finished/);
+  assert.match(modelSource, /const progressTotal = unprepared \+ preparedNotStarted \+ inProduction/);
   assert.match(modelSource, /if \(progressTotal < remainingInboundQty\) unprepared \+= remainingInboundQty - progressTotal/);
   assert.doesNotMatch(modelSource, /progressTotal > remainingInboundQty/);
-  assert.match(serverSource, /progressAdjustmentRequired: Math\.abs\(progressGap\) > 0\.000001/);
+  assert.match(serverSource, /progressAdjustmentRequired: Math\.abs\(progressGap\) > 0\.000001 \|\| finishedExceedsRemaining/);
+  assert.match(serverSource, /if \(finished - remainingInboundQty > 0\.000001\)[\s\S]*?完工未发产品不能大于未交付数量/);
 });
 
 test('生产跟进表格使用清晰竖线和交替行色', () => {
@@ -136,7 +137,7 @@ test('production progress filters support linked multi-select options', () => {
     appSource.indexOf('function useFilteredDemands('),
     appSource.indexOf('function Login(')
   );
-  assert.match(filterSource, /month: \[\], supplier: \[\], supplierCount: \[\]/);
+  assert.match(filterSource, /month: \[\], originalMonth: \[\], supplier: \[\], supplierCount: \[\]/);
   assert.match(filterSource, /const rowsFor = \(field\) => rows\.filter\(\(row\) => matchesFilters\(row, field\)\)/);
   assert.match(filterSource, /suppliers: uniqueSupplierShortNames\(rowsFor\('supplier'\)/);
   assert.match(filterSource, /purchaseOwners: uniqueProgressValues\(rowsFor\('purchaseOwner'\)/);
@@ -169,7 +170,7 @@ test('生产跟进支持成品和配件联动筛选', () => {
   );
 });
 
-test('生产跟进支持订单类型和原订单月份口径', () => {
+test('生产跟进支持订单类型并拆分新旧下单月份筛选口径', () => {
   const filterSource = appSource.slice(
     appSource.indexOf('function useFilteredDemands('),
     appSource.indexOf('function Login(')
@@ -179,11 +180,17 @@ test('生产跟进支持订单类型和原订单月份口径', () => {
     appSource.indexOf('function DifferenceAllocationPage(')
   );
   assert.match(filterSource, /orderType: \[\]/);
-  assert.match(filterSource, /matchesSelected\(filters\.month, row\.reportingMonth\)/);
+  assert.match(filterSource, /const currentOrderMonth = normalize\(row\.month\) \|\| normalize\(row\.currentOrderDate\)\.slice\(0, 7\)/);
+  assert.match(filterSource, /const originalOrderMonth = normalize\(row\.originalOrderMonth \|\| \(row\.originalOrderNo \? row\.reportingMonth : ''\)\)/);
+  assert.match(filterSource, /matchesSelected\(filters\.month, currentOrderMonth\)/);
+  assert.match(filterSource, /matchesSelected\(filters\.originalMonth, originalOrderMonth\)/);
+  assert.match(filterSource, /originalMonths: uniqueProgressValues/);
+  assert.match(filterSource, /originalMonth: options\.originalMonths/);
   assert.match(filterSource, /matchesSelected\(filters\.orderType, row\.orderType \|\| '正常订单'\)/);
   assert.match(filterSource, /orderTypes: \['正常订单', '订单变更', '变更待核验'\]/);
   assert.match(filterSource, /label="订单类型" allLabel="全部订单类型"/);
-  assert.match(filterSource, /label="下单月份"/);
+  assert.match(filterSource, /label="新下单月份"/);
+  assert.match(filterSource, /label="原下单月份"/);
   assert.match(filterSource, /row\.originalOrderNo/);
   ['订单类型', '下单月份', '当前订单采购数量', '原采购订单号', '原订单创建日期', '原订单采购数量', '变更校验'].forEach((label) => {
     assert.match(progressSource, new RegExp(label));
@@ -285,12 +292,12 @@ test('生产跟进父汇总月份显示为中文年月', () => {
   assert.match(helperSource, /`\$\{match\[1\]\}年\$\{match\[2\]\.padStart\(2, '0'\)\}月`/);
 });
 
-test('生产跟进支持月份与供应商两种产品下单汇总并切换分页', () => {
+test('生产跟进支持新月份、原月份与供应商三种产品下单汇总并切换分页', () => {
   const progressSource = appSource.slice(
     appSource.indexOf('function ProgressPage('),
     appSource.indexOf('function DifferenceAllocationPage(')
   );
-  assert.match(progressSource, /const \[groupBySupplier, setGroupBySupplier\] = useState\(false\)/);
+  assert.match(progressSource, /const \[groupMode, setGroupMode\] = useState\('currentMonth'\)/);
   assert.match(progressSource, /const summaryGroups = useMemo\(\(\) => \{[\s\S]*?const key = row\.orderNo[\s\S]*?`order:\$\{row\.orderNo\}`[\s\S]*?`manual:/);
   assert.match(progressSource, /supplierShortNames: new Set\(\)[\s\S]*?reportingMonths: new Set\(\)[\s\S]*?materialCodes: new Set\(\)/);
   assert.match(progressSource, /group\.materialCode = \[\.\.\.group\.materialCodes\]\.join\('、'\)/);
@@ -299,8 +306,10 @@ test('生产跟进支持月份与供应商两种产品下单汇总并切换分�
   assert.match(progressSource, /const activeGroups = summaryGroups/);
   assert.match(progressSource, /Math\.ceil\(activeGroups\.length \/ pageSize\)/);
   assert.match(progressSource, /activeGroups\.slice\(\(currentPage - 1\) \* pageSize, currentPage \* pageSize\)/);
+  assert.match(progressSource, />按新下单月份<\/button>/);
+  assert.match(progressSource, />按原下单月份<\/button>/);
   assert.match(progressSource, />按供应商<\/button>/);
-  assert.match(progressSource, /className=\{groupBySupplier \? 'active' : ''\}[\s\S]*?setGroupBySupplier\(true\)[\s\S]*?setExpandedOrders\(new Set\(\)\)[\s\S]*?setCurrentPage\(1\)/);
+  assert.match(progressSource, /className=\{groupMode === 'supplier' \? 'active' : ''\}[\s\S]*?setGroupMode\('supplier'\)[\s\S]*?setExpandedOrders\(new Set\(\)\)[\s\S]*?setCurrentPage\(1\)/);
   assert.match(progressSource, /每页 20 个下单汇总组/);
   assert.match(styleSource, /\.progress-scheme-bar button\.active\s*\{[\s\S]*?color: #246bdb/);
 });
@@ -316,14 +325,15 @@ test('生产跟进同一采购订单号只生成一个汇总父行', () => {
   assert.match(progressSource, /group\.rows\.map\(\(row\) => \(/);
 });
 
-test('生产跟进汇总按月份或供应商排序且简称可点击筛选', () => {
+test('生产跟进汇总按新月份、原月份或供应商排序且简称可点击筛选', () => {
   const progressSource = appSource.slice(
     appSource.indexOf('function ProgressPage('),
     appSource.indexOf('function DifferenceAllocationPage(')
   );
   assert.match(progressSource, /const monthCompare = \(left, right\)/);
-  assert.match(progressSource, /groupBySupplier[\s\S]*?left\.supplierShortName\.localeCompare\(right\.supplierShortName/);
-  assert.match(progressSource, /monthCompare\(left\.reportingMonth, right\.reportingMonth\)/);
+  assert.match(progressSource, /groupMode === 'originalMonth'[\s\S]*?group\.originalOrderMonth[\s\S]*?group\.currentOrderMonth/);
+  assert.match(progressSource, /groupMode === 'supplier'[\s\S]*?left\.supplierShortName\.localeCompare\(right\.supplierShortName/);
+  assert.match(progressSource, /monthCompare\(left\.currentOrderMonth, right\.currentOrderMonth\)/);
   assert.match(progressSource, /className="progress-order-toggle"[\s\S]*?role="button"[\s\S]*?tabIndex=\{0\}/);
   assert.match(progressSource, /className="supplier-filter-link"[\s\S]*?event\.stopPropagation\(\)[\s\S]*?supplier: uniqueSupplierShortNames\(group\.rows\.map\(\(row\) => progressSupplierName\(row\)\)\)/);
   assert.match(styleSource, /\.supplier-filter-link\s*\{[\s\S]*?color: #2563eb/);
@@ -414,8 +424,7 @@ test('生产跟进使用固定默认显示列并按用户持久保存', () => {
   assert.deepEqual(
     [...defaultColumnsMatch[1].matchAll(/'([^']+)'/g)].map((match) => match[1]),
     [
-      'orderType', 'reportingMonth', 'orderNo', 'currentPurchaseQty', 'originalOrderNo', 'originalOrderDate',
-      'originalPurchaseQty', 'documentStatus', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
+      'documentStatus', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
       'operationStockQty', 'remainingInboundQty', 'shippedQty', 'unpreparedQty', 'preparedNotStartedQty',
       'inProductionQty', 'finishedQty', 'contractDeliveryDates', 'productionDeliveryDate',
       'unproducedEstimatedDeliveryDate', 'fulfillmentStatus', 'oaFlowNo', 'action'
@@ -423,7 +432,7 @@ test('生产跟进使用固定默认显示列并按用户持久保存', () => {
   );
   assert.match(columnSource, /\['changeValidationStatus', '变更校验'\]/);
   assert.match(columnSource, /\['dataStatus', '数据状态'\]/);
-  assert.doesNotMatch(defaultColumnsMatch[1], /changeValidationStatus|dataStatus/);
+  assert.doesNotMatch(defaultColumnsMatch[1], /orderType|reportingMonth|orderNo|currentPurchaseQty|originalOrderNo|originalOrderDate|originalPurchaseQty|changeValidationStatus|dataStatus/);
   assert.match(columnSource, /function defaultProgressColumnKeys\(\)\s*\{\s*return \[\.\.\.PROGRESS_DEFAULT_COLUMNS\];/);
   assert.doesNotMatch(columnSource, /PROGRESS_DEFAULT_(?:WIDE|COMPACT|NARROW)_COLUMNS/);
   assert.match(columnSource, /function readProgressColumnPreference\(storageKey\)/);
@@ -450,6 +459,41 @@ test('生产跟进展开明细列按内容自适应且不换行', () => {
   assert.match(styleSource, /\.kingdee-progress-page \.progress-table table\s*\{[\s\S]*?width: max-content;[\s\S]*?table-layout: auto;/);
   assert.match(styleSource, /\.kingdee-progress-page \.progress-order-detail-header > th,[\s\S]*?\.progress-order-detail-row > td\s*\{[\s\S]*?width: auto !important;[\s\S]*?max-width: none !important;[\s\S]*?white-space: nowrap !important;/);
   assert.match(styleSource, /\.kingdee-progress-page \.progress-order-detail-row > td \*\s*\{[\s\S]*?white-space: nowrap !important;/);
+});
+
+test('生产跟进展开明细冻结关键识别与数量列', () => {
+  const columnSource = appSource.slice(
+    appSource.indexOf('const PROGRESS_COLUMNS'),
+    appSource.indexOf('function ProgressEditor(')
+  );
+  const progressSource = appSource.slice(
+    appSource.indexOf('function ProgressPage('),
+    appSource.indexOf('function DifferenceAllocationPage(')
+  );
+  ['documentStatus', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku', 'operationStockQty', 'remainingInboundQty', 'shippedQty'].forEach((key) => {
+    assert.match(columnSource, new RegExp(`PROGRESS_STICKY_COLUMN_KEYS[\\s\\S]*?'${key}'`));
+  });
+  assert.match(progressSource, /useLayoutEffect\(\(\) => \{[\s\S]*?getBoundingClientRect\(\)\.width/);
+  assert.match(progressSource, /tableWrapRef=\{progressTableWrapRef\}/);
+  assert.match(styleSource, /\.progress-order-detail-row > \.progress-sticky-column[\s\S]*?position: sticky;[\s\S]*?left: var\(--progress-sticky-left\)/);
+  assert.match(styleSource, /\.progress-sticky-column-last[\s\S]*?box-shadow:/);
+});
+
+test('生产跟进阶段公式排除完工未发并单独限制其上限', () => {
+  const editorSource = appSource.slice(
+    appSource.indexOf('function ProgressEditor('),
+    appSource.indexOf('function ProgressPage(')
+  );
+  const progressSource = appSource.slice(
+    appSource.indexOf('function ProgressPage('),
+    appSource.indexOf('function DifferenceAllocationPage(')
+  );
+  assert.match(editorSource, /const manuallyAssignedQty = numberValue\(values\.preparedNotStartedQty\)[\s\S]*?\+ numberValue\(values\.inProductionQty\);/);
+  assert.doesNotMatch(editorSource, /const manuallyAssignedQty =[\s\S]*?numberValue\(values\.finishedQty\);/);
+  assert.match(editorSource, /const finishedQtyInvalid = numberValue\(values\.finishedQty\) - remainingQty > 0\.000001/);
+  assert.match(editorSource, /完工未发产品不能大于未交付数量/);
+  assert.match(progressSource, /生产中产品＋已备料未生产＋未备料未生产必须等于未交付数量/);
+  assert.match(progressSource, /完工未发产品不参与该合计，但不能大于未交付数量/);
 });
 
 test('生产跟进支持手工登记表预览、数据状态筛选和采购订单折叠', () => {
@@ -484,7 +528,7 @@ test('生产跟进保留金蝶内部工具栏并使用独立全屏容器', () =>
   assert.match(progressSource, /className="compact-button progress-toolbar-entry progress-columns-button"[\s\S]*?修改显示列/);
   assert.match(progressSource, /className="progress-command"[\s\S]*?>差异分配<\/button>/);
   assert.match(progressSource, /className="progress-command primary"[\s\S]*?>刷新<\/button>/);
-  assert.match(progressSource, /className="progress-scheme-bar"[\s\S]*?>按月份<\/button>[\s\S]*?>按供应商<\/button>/);
+  assert.match(progressSource, /className="progress-scheme-bar"[\s\S]*?>按新下单月份<\/button>[\s\S]*?>按原下单月份<\/button>[\s\S]*?>按供应商<\/button>/);
   assert.doesNotMatch(progressSource, />待人工调整<\/button>/);
   assert.match(progressSource, /<details className="progress-logic-note"/);
   assert.match(progressSource, /function setDifferenceAllocationView\(open\)[\s\S]*?content\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\)[\s\S]*?window\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\)/);

@@ -7425,6 +7425,37 @@ th {
   white-space: nowrap !important;
 }
 
+.kingdee-progress-page .progress-order-detail-header > .progress-sticky-column,
+.kingdee-progress-page .progress-order-detail-row > .progress-sticky-column {
+  position: sticky;
+  left: var(--progress-sticky-left);
+  z-index: 4;
+  background: #fff;
+  background-clip: padding-box;
+}
+
+.kingdee-progress-page .progress-order-detail-header > .progress-sticky-column {
+  z-index: 6;
+  background: #edf3fb;
+}
+
+.kingdee-progress-page .progress-order-detail-row > .progress-sticky-column-last,
+.kingdee-progress-page .progress-order-detail-header > .progress-sticky-column-last {
+  box-shadow: 5px 0 7px -5px rgba(71, 85, 105, 0.55);
+}
+
+.kingdee-progress-page .progress-table tbody tr:nth-child(even):not(.progress-row-adjustment) > .progress-sticky-column {
+  background: #fbfdff;
+}
+
+.kingdee-progress-page .progress-table tbody tr.progress-row-adjustment > .progress-sticky-column {
+  background: #fff1f2 !important;
+}
+
+.kingdee-progress-page .progress-table tbody tr:not(.progress-row-adjustment):hover > .progress-sticky-column {
+  background: #f1f7ff;
+}
+
 .kingdee-progress-page .progress-order-detail-row .tight-cell,
 .kingdee-progress-page .progress-order-detail-row .progress-contract-date {
   max-width: none;

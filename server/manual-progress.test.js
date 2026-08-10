@@ -48,7 +48,7 @@ test('手工跟单解析保留每个源行并自动补足未备料数量', () =>
   assert.equal(result.summary.autoFilledRows, 1);
   assert.equal(result.rows[0].sourceRowNo, 2);
   assert.equal(result.rows[0].businessUnit, '国内事业部');
-  assert.equal(result.rows[0].unpreparedQty, 4);
+  assert.equal(result.rows[0].unpreparedQty, 5);
   assert.equal(result.rows[0].sourceShippedQty, 5);
   assert.equal(result.rows[0].sourceContractDeliveryDate, '2026-09-18');
   assert.equal(result.rows[0].sourceNormalQty, 10);

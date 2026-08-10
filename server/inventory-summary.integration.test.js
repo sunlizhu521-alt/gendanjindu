@@ -2844,7 +2844,7 @@ test('inventory summary and domestic board use complete source models and enforc
       unfulfilledReason: savedProgress?.unfulfilledReason,
       reasonDetail: savedProgress?.reasonDetail
     }, {
-      unpreparedQty: 0,
+      unpreparedQty: 400,
       preparedNotStartedQty: 100,
       inProductionQty: 500,
       finishedQty: 400,
@@ -2887,7 +2887,7 @@ test('inventory summary and domestic board use complete source models and enforc
       fulfillmentStatus: increasedM1?.fulfillmentStatus,
       unfulfilledReason: increasedM1?.unfulfilledReason
     }, {
-      unpreparedQty: 100,
+      unpreparedQty: 500,
       preparedNotStartedQty: 100,
       inProductionQty: 500,
       finishedQty: 400,
@@ -2921,7 +2921,7 @@ test('inventory summary and domestic board use complete source models and enforc
       normalFulfillmentQty: normalM1?.normalFulfillmentQty,
       abnormalFulfillmentQty: normalM1?.abnormalFulfillmentQty
     }, {
-      unpreparedQty: 100,
+      unpreparedQty: 500,
       progressTotal: 1100,
       progressAdjustmentRequired: false,
       fulfillmentStatus: '是',

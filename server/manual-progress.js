@@ -152,7 +152,7 @@ function applySplitAllocations(rows, totals, weights) {
     rows.forEach((row, index) => { row[key] = values[index]; });
   });
   rows.forEach((row) => {
-    row.manualRemainingQty = row.unpreparedQty + row.preparedNotStartedQty + row.inProductionQty + row.finishedQty;
+    row.manualRemainingQty = row.unpreparedQty + row.preparedNotStartedQty + row.inProductionQty;
     row.raw = {
       ...row.raw,
       未交付数量: row.manualRemainingQty,
@@ -240,17 +240,20 @@ export function parseManualProgressRows(rows, { headerRow = 1 } = {}) {
       raw: source
     };
     row.rowType = rowTypeFor(row);
-    const assignedWithoutUnprepared = row.preparedNotStartedQty + row.inProductionQty + row.finishedQty;
+    const assignedWithoutUnprepared = row.preparedNotStartedQty + row.inProductionQty;
     const suppliedTotal = row.unpreparedQty + assignedWithoutUnprepared;
     const hasFractionalQuantity = [
       row.manualRemainingQty, row.unpreparedQty, row.preparedNotStartedQty, row.inProductionQty, row.finishedQty
     ].some((quantity) => !Number.isInteger(quantity));
     row.autoFilledQty = suppliedTotal < row.manualRemainingQty ? row.manualRemainingQty - suppliedTotal : 0;
     row.unpreparedQty += row.autoFilledQty;
-    row.overAllocatedQty = Math.max(suppliedTotal - row.manualRemainingQty, 0);
+    const stageOverAllocatedQty = Math.max(suppliedTotal - row.manualRemainingQty, 0);
+    const finishedOverAllocatedQty = Math.max(row.finishedQty - row.manualRemainingQty, 0);
+    row.overAllocatedQty = Math.max(stageOverAllocatedQty, finishedOverAllocatedQty);
     const validationErrors = [];
-    if (hasFractionalQuantity) validationErrors.push('四阶段和未交付数量必须是整数');
-    if (row.overAllocatedQty > 0) validationErrors.push(`四阶段合计超过未交付数量 ${row.overAllocatedQty}`);
+    if (hasFractionalQuantity) validationErrors.push('阶段数量和未交付数量必须是整数');
+    if (stageOverAllocatedQty > 0) validationErrors.push(`生产中产品、已备料未生产、未备料未生产合计超过未交付数量 ${stageOverAllocatedQty}`);
+    if (finishedOverAllocatedQty > 0) validationErrors.push(`完工未发产品不能大于未交付数量，超出 ${finishedOverAllocatedQty}`);
     if (row.fulfillmentStatus && !['是', '否'].includes(row.fulfillmentStatus)) validationErrors.push('是否正常履约只能填写是或否');
     if (row.fulfillmentStatus === '否' && !row.unfulfilledReason) validationErrors.push('非正常履约必须填写未履约原因');
     row.validationStatus = validationErrors.length ? 'error' : 'valid';

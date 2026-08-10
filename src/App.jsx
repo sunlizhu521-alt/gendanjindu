@@ -1,4 +1,4 @@
-import React, { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { purchaseTrackingBusinessUnit } from './business-unit.js';
 import InventoryCalculationGuide from './InventoryCalculationGuide.jsx';
@@ -2974,9 +2974,9 @@ function FirstMileDimensionChart({ title, rows, groupBy }) {
   );
 }
 
-function DataTable({ columns, rows, render, renderRow, className = '', showHeader = true }) {
+function DataTable({ columns, rows, render, renderRow, className = '', showHeader = true, tableWrapRef = null }) {
   return (
-    <div className={`table-wrap ${className}`}>
+    <div className={`table-wrap ${className}`} ref={tableWrapRef}>
       <table>
         {showHeader && <thead>
           <tr>{columns.map((column, index) => <th key={typeof column === 'string' ? column : `column-${index}`}>{column}</th>)}</tr>
@@ -3485,7 +3485,7 @@ function clearInvalidFilterValues(filters, optionMap) {
 }
 
 function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
-  const [filters, setFilters] = useSessionFilters(cacheKey, { keyword: '', month: [], supplier: [], supplierCount: [], allocationStatus: [], dataStatus: [], purchaseOrg: [], businessUnit: [], productLine: [], series: [], purchaseOwner: [], productType: [], orderType: [] });
+  const [filters, setFilters] = useSessionFilters(cacheKey, { keyword: '', month: [], originalMonth: [], supplier: [], supplierCount: [], allocationStatus: [], dataStatus: [], purchaseOrg: [], businessUnit: [], productLine: [], series: [], purchaseOwner: [], productType: [], orderType: [] });
   const selectedValues = (value) => Array.isArray(value) ? value : (normalize(value) ? [normalize(value)] : []);
   const matchesSelected = (value, candidate) => {
     const selected = selectedValues(value);
@@ -3495,9 +3495,12 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
     const keyword = filters.keyword.toLowerCase();
     const displaySupplier = progressSupplierName(row);
     const supplyCount = supplierCountLabel(row.supplierCount);
+    const currentOrderMonth = normalize(row.month) || normalize(row.currentOrderDate).slice(0, 7);
+    const originalOrderMonth = normalize(row.originalOrderMonth || (row.originalOrderNo ? row.reportingMonth : ''));
     const text = [row.demandKey, row.oaFlowNo, row.orderNo, row.originalOrderNo, row.materialCode, row.supplier, displaySupplier, row.materialName, row.logisticsCode, row.sku, row.purchaseOwner, row.dataStatus, row.orderType].join(' ').toLowerCase();
     return (!keyword || text.includes(keyword))
-      && (omit === 'month' || matchesSelected(filters.month, row.reportingMonth))
+      && (omit === 'month' || matchesSelected(filters.month, currentOrderMonth))
+      && (omit === 'originalMonth' || matchesSelected(filters.originalMonth, originalOrderMonth))
       && (omit === 'supplier' || matchesSelected(filters.supplier, displaySupplier))
       && (omit === 'supplierCount' || matchesSelected(filters.supplierCount, supplyCount))
       && (omit === 'allocationStatus' || matchesSelected(filters.allocationStatus, progressAllocationStatus(row)))
@@ -3513,7 +3516,8 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
   const options = useMemo(() => {
     const rowsFor = (field) => rows.filter((row) => matchesFilters(row, field));
     return {
-      months: uniqueProgressValues(rowsFor('month').map((row) => row.reportingMonth)),
+      months: uniqueProgressValues(rowsFor('month').map((row) => normalize(row.month) || normalize(row.currentOrderDate).slice(0, 7))),
+      originalMonths: uniqueProgressValues(rowsFor('originalMonth').map((row) => normalize(row.originalOrderMonth || (row.originalOrderNo ? row.reportingMonth : '')))),
       suppliers: uniqueSupplierShortNames(rowsFor('supplier').map((row) => progressSupplierName(row))),
       supplierCounts: [...new Set(rowsFor('supplierCount').map((row) => Math.max(0, Math.trunc(numberValue(row.supplierCount)))))]
         .sort((left, right) => left - right)
@@ -3535,6 +3539,7 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
   useEffect(() => {
     const next = clearInvalidFilterValues(filters, {
       month: options.months,
+      originalMonth: options.originalMonths,
       supplier: options.suppliers,
       supplierCount: options.supplierCounts,
       allocationStatus: options.allocationStatuses,
@@ -3554,13 +3559,14 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
 }
 
 function FilterBar({ filters, setFilters, options, onSubmit }) {
-  const clear = () => setFilters({ keyword: '', month: [], supplier: [], supplierCount: [], allocationStatus: [], dataStatus: [], purchaseOrg: [], businessUnit: [], productLine: [], series: [], purchaseOwner: [], productType: [], orderType: [] });
+  const clear = () => setFilters({ keyword: '', month: [], originalMonth: [], supplier: [], supplierCount: [], allocationStatus: [], dataStatus: [], purchaseOrg: [], businessUnit: [], productLine: [], series: [], purchaseOwner: [], productType: [], orderType: [] });
   return (
     <div className="toolbar filters-row">
       <MultiSelectFilter label="成品/配件" allLabel="全部类型" value={filters.productType} options={options.productTypes} onChange={(value) => setFilters({ ...filters, productType: value })} />
       <MultiSelectFilter label="订单类型" allLabel="全部订单类型" value={filters.orderType} options={options.orderTypes} onChange={(value) => setFilters({ ...filters, orderType: value })} />
       <MultiSelectFilter label="采购组织" allLabel="全部采购组织" value={filters.purchaseOrg} options={options.purchaseOrgs} onChange={(value) => setFilters({ ...filters, purchaseOrg: value })} />
-      <MonthCalendarFilter label="下单月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
+      <MonthCalendarFilter label="新下单月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
+      <MonthCalendarFilter label="原下单月份" value={filters.originalMonth} options={options.originalMonths} onChange={(value) => setFilters({ ...filters, originalMonth: value })} />
       <MultiSelectFilter label="供应商简称" allLabel="全部供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
       <MultiSelectFilter label="是否多家供应" allLabel="全部供应家数" value={filters.supplierCount} options={options.supplierCounts} onChange={(value) => setFilters({ ...filters, supplierCount: value })} />
       <MultiSelectFilter label="分配状态" allLabel="全部分配状态" value={filters.allocationStatus} options={options.allocationStatuses} onChange={(value) => setFilters({ ...filters, allocationStatus: value })} />
@@ -5339,12 +5345,26 @@ const PROGRESS_COLUMNS = [
 ];
 
 const PROGRESS_DEFAULT_COLUMNS = [
-  'orderType', 'reportingMonth', 'orderNo', 'currentPurchaseQty', 'originalOrderNo', 'originalOrderDate',
-  'originalPurchaseQty', 'documentStatus', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
+  'documentStatus', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
   'operationStockQty', 'remainingInboundQty', 'shippedQty', 'unpreparedQty', 'preparedNotStartedQty',
   'inProductionQty', 'finishedQty', 'contractDeliveryDates', 'productionDeliveryDate',
   'unproducedEstimatedDeliveryDate', 'fulfillmentStatus', 'oaFlowNo', 'action'
 ];
+
+const PROGRESS_STICKY_COLUMN_KEYS = new Set([
+  '__select', 'documentStatus', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
+  'operationStockQty', 'remainingInboundQty', 'shippedQty'
+]);
+
+function progressStickyCellProps(key, stickyOffsets = {}) {
+  if (!PROGRESS_STICKY_COLUMN_KEYS.has(key)) return { 'data-progress-column-key': key };
+  const isLast = key === 'shippedQty';
+  return {
+    'data-progress-column-key': key,
+    className: `progress-sticky-column${isLast ? ' progress-sticky-column-last' : ''}`,
+    style: { '--progress-sticky-left': `${stickyOffsets[key] || 0}px` }
+  };
+}
 
 function defaultProgressColumnKeys() {
   return [...PROGRESS_DEFAULT_COLUMNS];
@@ -5726,7 +5746,7 @@ function ManualProgressImportPanel({ token, reloadDemands, setMessage }) {
   );
 }
 
-function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKeys, selected = false, onSelect, onDraftChange }) {
+function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKeys, stickyOffsets, selected = false, onSelect, onDraftChange }) {
   const displayQty = (value) => (numberValue(value) ? String(numberValue(value)) : '');
   const [values, setValues] = useState({
     unpreparedQty: displayQty(row.unpreparedQty),
@@ -5746,10 +5766,11 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
 
   const remainingQty = numberValue(row.remainingInboundQty);
   const manuallyAssignedQty = numberValue(values.preparedNotStartedQty)
-    + numberValue(values.inProductionQty)
-    + numberValue(values.finishedQty);
+    + numberValue(values.inProductionQty);
   const calculatedUnpreparedQty = remainingQty - manuallyAssignedQty;
-  const invalidQty = calculatedUnpreparedQty < -0.000001;
+  const stageQtyInvalid = calculatedUnpreparedQty < -0.000001;
+  const finishedQtyInvalid = numberValue(values.finishedQty) - remainingQty > 0.000001;
+  const invalidQty = stageQtyInvalid || finishedQtyInvalid;
   const preserveStoredAllocation = row.progressAdjustmentRequired && !quantityEdited;
   const unpreparedQty = invalidQty || preserveStoredAllocation
     ? numberValue(values.unpreparedQty)
@@ -5761,8 +5782,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
 
   const toPayload = (nextValues, preserveUnprepared = false) => {
     const nextAssignedQty = numberValue(nextValues.preparedNotStartedQty)
-      + numberValue(nextValues.inProductionQty)
-      + numberValue(nextValues.finishedQty);
+      + numberValue(nextValues.inProductionQty);
     return {
       unpreparedQty: preserveUnprepared
         ? numberValue(nextValues.unpreparedQty)
@@ -5815,8 +5835,12 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
   }
 
   async function save() {
-    if (invalidQty) {
-      setMessage('已备料未生产、生产中产品、完工未发产品合计不能超过未交付数量。');
+    if (stageQtyInvalid) {
+      setMessage('生产中产品、已备料未生产合计不能超过未交付数量。');
+      return;
+    }
+    if (finishedQtyInvalid) {
+      setMessage('完工未发产品不能大于未交付数量。');
       return;
     }
     if (values.fulfillmentStatus === '否' && !normalize(values.unfulfilledReason)) {
@@ -5929,8 +5953,8 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
   return (
     <>
       <tr className={`progress-order-detail-row${row.progressAdjustmentRequired || invalidQty || row.validationStatus === 'error' ? ' progress-row-adjustment' : ''}`}>
-        <td><input type="checkbox" checked={selected} disabled={!row.canEdit} onChange={(event) => onSelect?.(row.demandKey, event.target.checked)} /></td>
-        {cells.filter(([key]) => visible.has(key)).map(([key, cell]) => <td key={key}>{cell}</td>)}
+        <td {...progressStickyCellProps('__select', stickyOffsets)}><input type="checkbox" checked={selected} disabled={!row.canEdit} onChange={(event) => onSelect?.(row.demandKey, event.target.checked)} /></td>
+        {cells.filter(([key]) => visible.has(key)).map(([key, cell]) => <td key={key} {...progressStickyCellProps(key, stickyOffsets)}>{cell}</td>)}
       </tr>
       {showSources && row.manualSourceRows?.length > 0 && (
         <tr className="progress-source-detail-row">
@@ -5977,7 +6001,9 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [expandedOrders, setExpandedOrders] = useState(() => new Set());
-  const [groupBySupplier, setGroupBySupplier] = useState(false);
+  const [groupMode, setGroupMode] = useState('currentMonth');
+  const progressTableWrapRef = useRef(null);
+  const [stickyOffsets, setStickyOffsets] = useState({});
   const columnStorageKey = `gendanjindu:progress-columns:v2:${user?.id || user?.name || 'user'}`;
   const initialColumnPreference = useRef();
   if (!initialColumnPreference.current) initialColumnPreference.current = readProgressColumnPreference(columnStorageKey);
@@ -6064,6 +6090,8 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
     groups.forEach((group) => {
       group.supplierShortName = [...group.supplierShortNames].join('、') || '未匹配';
       group.reportingMonth = [...group.reportingMonths].join('、') || '待核验';
+      group.originalOrderMonth = [...group.originalOrderMonths].sort().reverse()[0] || '待核验';
+      group.currentOrderMonth = [...group.currentOrderMonths].sort().reverse()[0] || '待核验';
       group.materialCode = [...group.materialCodes].join('、');
       group.sku = [...group.skus].join('、');
       group.materialName = [...group.materialNames].join('、') || '未填写';
@@ -6074,18 +6102,21 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
       return right.localeCompare(left, 'zh-Hans-CN');
     };
     return groups.sort((left, right) => {
-      const primary = groupBySupplier
+      const selectedMonth = (group) => groupMode === 'originalMonth'
+        ? group.originalOrderMonth
+        : group.currentOrderMonth;
+      const primary = groupMode === 'supplier'
         ? left.supplierShortName.localeCompare(right.supplierShortName, 'zh-Hans-CN')
-        : monthCompare(left.reportingMonth, right.reportingMonth);
+        : monthCompare(selectedMonth(left), selectedMonth(right));
       if (primary !== 0) return primary;
-      const secondary = groupBySupplier
-        ? monthCompare(left.reportingMonth, right.reportingMonth)
+      const secondary = groupMode === 'supplier'
+        ? monthCompare(left.currentOrderMonth, right.currentOrderMonth)
         : left.supplierShortName.localeCompare(right.supplierShortName, 'zh-Hans-CN');
       if (secondary !== 0) return secondary;
       return left.materialCode.localeCompare(right.materialCode, 'zh-Hans-CN')
         || left.sku.localeCompare(right.sku, 'zh-Hans-CN');
     });
-  }, [displayRows, groupBySupplier]);
+  }, [displayRows, groupMode]);
   const activeGroups = summaryGroups;
   const totalPages = Math.max(1, Math.ceil(activeGroups.length / pageSize));
   const pageGroups = useMemo(
@@ -6096,6 +6127,41 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
     () => pageGroups.flatMap((group) => expandedOrders.has(group.key) ? group.rows : []),
     [pageGroups, expandedOrders]
   );
+  useLayoutEffect(() => {
+    const tableWrap = progressTableWrapRef.current;
+    if (!tableWrap) return undefined;
+    let frameId = 0;
+    const updateStickyOffsets = () => {
+      const header = tableWrap.querySelector('.progress-order-detail-header');
+      if (!header) {
+        setStickyOffsets({});
+        return;
+      }
+      let left = 0;
+      const nextOffsets = {};
+      header.querySelectorAll('[data-progress-column-key]').forEach((cell) => {
+        const key = cell.dataset.progressColumnKey;
+        if (!PROGRESS_STICKY_COLUMN_KEYS.has(key)) return;
+        nextOffsets[key] = left;
+        left += cell.getBoundingClientRect().width;
+      });
+      setStickyOffsets((current) => {
+        const keys = Object.keys(nextOffsets);
+        const unchanged = keys.length === Object.keys(current).length
+          && keys.every((key) => Math.abs(numberValue(current[key]) - numberValue(nextOffsets[key])) < 0.5);
+        return unchanged ? current : nextOffsets;
+      });
+    };
+    frameId = window.requestAnimationFrame(updateStickyOffsets);
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateStickyOffsets);
+    if (resizeObserver) resizeObserver.observe(tableWrap);
+    window.addEventListener('resize', updateStickyOffsets);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updateStickyOffsets);
+    };
+  }, [visibleColumnKeys, expandedOrders, pageGroups]);
   const pageNumbers = useMemo(() => {
     const visiblePages = totalPages <= 7
       ? Array.from({ length: totalPages }, (_, index) => index + 1)
@@ -6277,7 +6343,8 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
           const draftFinished = draft.finishedQty ?? row.finishedQty;
           const draftGap = numberValue(row.remainingInboundQty)
             - numberValue(draftUnprepared) - numberValue(draftPrepared)
-            - numberValue(draftInProduction) - numberValue(draftFinished);
+            - numberValue(draftInProduction);
+          const draftFinishedExceedsRemaining = numberValue(draftFinished) - numberValue(row.remainingInboundQty) > 0.000001;
           return [
             row.dataStatus || '采购订单数据',
             (row.manualSourceRows || []).map((source) => source.sourceRowNo).join('、'),
@@ -6326,7 +6393,9 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
             draft.reasonDetail ?? row.reasonDetail,
             draft.remark ?? row.remark ?? '',
             row.oaFlowNo,
-            Math.abs(draftGap) > 0.000001 ? `待人工调整（差额 ${draftGap}）` : '正常'
+            draftFinishedExceedsRemaining
+              ? '待人工调整（完工未发产品大于未交付数量）'
+              : Math.abs(draftGap) > 0.000001 ? `待人工调整（差额 ${draftGap}）` : '正常'
           ];
         })
       ];
@@ -6361,7 +6430,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
     );
   }
 
-  const progressTableColumns = [(
+  const progressTableColumns = [{ key: '__select', label: (
     <label className="select-all-header" title="勾选当前显示的可编辑行">
       <input
         type="checkbox"
@@ -6371,7 +6440,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
       />
       <span>全选</span>
     </label>
-  ), ...visibleProgressColumns.map(([, label]) => label)];
+  ) }, ...visibleProgressColumns.map(([key, label]) => ({ key, label }))];
 
   return (
     <section className="kingdee-progress-page">
@@ -6407,19 +6476,29 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
           <strong>我的方案</strong>
           <button
             type="button"
-            className={!groupBySupplier && filters.allocationStatus.length === 0 ? 'active' : ''}
+            className={groupMode === 'currentMonth' && filters.allocationStatus.length === 0 ? 'active' : ''}
             onClick={() => {
-              setGroupBySupplier(false);
+              setGroupMode('currentMonth');
               setFilters({ ...filters, allocationStatus: [] });
               setExpandedOrders(new Set());
               setCurrentPage(1);
             }}
-          >按月份</button>
+          >按新下单月份</button>
+          <button
+            type="button"
+            className={groupMode === 'originalMonth' ? 'active' : ''}
+            onClick={() => {
+              setGroupMode('originalMonth');
+              setFilters({ ...filters, allocationStatus: [] });
+              setExpandedOrders(new Set());
+              setCurrentPage(1);
+            }}
+          >按原下单月份</button>
           {!onlyIssues && <button
             type="button"
-            className={groupBySupplier ? 'active' : ''}
+            className={groupMode === 'supplier' ? 'active' : ''}
             onClick={() => {
-              setGroupBySupplier(true);
+              setGroupMode('supplier');
               setExpandedOrders(new Set());
               setCurrentPage(1);
             }}
@@ -6438,7 +6517,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
           </div>
           <div className="progress-logic-rules">
             <strong>数量逻辑：</strong>
-            未备料未生产自动补差，四阶段合计必须等于未交付数量；运营备货数量等于未交付数量加已发货数量。新增数量进入未备料未生产；未交付减少后原分配超出时标记待人工调整。
+            生产中产品＋已备料未生产＋未备料未生产必须等于未交付数量，未备料未生产自动补差；完工未发产品不参与该合计，但不能大于未交付数量。运营备货数量等于未交付数量加已发货数量。新增数量进入未备料未生产；未交付减少后原分配超出时标记待人工调整。
           </div>
           <div className="progress-logic-rules progress-order-change-rules">
             <strong>订单类型与下单数量口径：</strong>
@@ -6448,7 +6527,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
             <span><b>变更单下单数量：</b>取原采购订单相同供应商＋物料编码的采购数量；当前替换订单数量另列展示。</span>
             <span><b>变更待核验：</b>原订单找不到、手工关闭不是“是”或供应商、物料、日期校验失败时保留展示，但不计入下单数量汇总。</span>
             <span><b>原订单展示规则：</b>剩余未交付为 0 的原订单不单独进入生产跟进，但仍用于识别变更单及读取原订单日期和数量。</span>
-            <span><b>汇总方式：</b>“按月份”查看某月各供应商各产品的下单数量；“按供应商”查看某供应商各月份各产品的下单数量。</span>
+            <span><b>汇总方式：</b>“按新下单月份”按当前采购订单创建月份查看；“按原下单月份”按变更单引用的原采购订单创建月份查看；“按供应商”查看某供应商各月份各产品的下单数量。</span>
           </div>
         </details>
         {clearPanelOpen && user?.role === '管理员' && (
@@ -6485,6 +6564,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
         rows={pageGroups}
         columns={progressTableColumns}
         showHeader={false}
+        tableWrapRef={progressTableWrapRef}
         renderRow={(group) => {
           const expanded = expandedOrders.has(group.key);
           const supplierLabel = group.supplierShortName;
@@ -6552,8 +6632,8 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
               </tr>
               {expanded && (
                 <tr className="progress-order-detail-header">
-                  {progressTableColumns.map((column, index) => (
-                    <th key={typeof column === 'string' ? column : `column-${index}`}>{column}</th>
+                  {progressTableColumns.map(({ key, label }) => (
+                    <th key={key} {...progressStickyCellProps(key, stickyOffsets)}>{label}</th>
                   ))}
                 </tr>
               )}
@@ -6565,6 +6645,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
                   reloadDemands={reloadDemands}
                   setMessage={setMessage}
                   visibleColumnKeys={visibleColumnKeys}
+                  stickyOffsets={stickyOffsets}
                   selected={selectedKeys.includes(row.rowKey || row.demandKey)}
                   onSelect={toggleProgressRow}
                   onDraftChange={(demandKey, payload) => setDrafts((current) => ({ ...current, [demandKey]: payload }))}

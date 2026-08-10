@@ -6528,7 +6528,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, ti
           <div className="progress-logic-rules progress-order-change-rules">
             <strong>订单类型与下单数量口径：</strong>
             <span><b>正常订单：</b>采购订单备注不是以 CGDD 开头；下单月份取当前采购订单创建月份，下单数量取当前订单相同供应商＋物料编码的采购数量。</span>
-            <span><b>订单变更：</b>备注以 CGDD 开头，备注中的编号作为原采购订单号；原订单必须存在于当前采购订单表，供应商和物料编码一致，并且“手工关闭=是”。</span>
+            <span><b>订单变更：</b>备注以 CGDD 开头，备注中的编号作为原采购订单号；原订单必须存在于当前采购订单表，供应商一致，并且“手工关闭=是”。</span>
             <span><b>变更单月份：</b>取原采购订单创建月份，不按当前替换订单月份重复统计。</span>
             <span><b>变更单下单数量：</b>取原采购订单相同供应商＋物料编码的采购数量；当前替换订单数量另列展示。</span>
             <span><b>变更待核验：</b>原订单找不到、手工关闭不是“是”或供应商、物料、日期校验失败时保留展示，但不计入下单数量汇总。</span>

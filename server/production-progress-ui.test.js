@@ -206,6 +206,8 @@ test('生产跟进数量口径说明包含订单变更完整规则', () => {
   ['订单类型与下单数量口径', '正常订单：', '订单变更：', '变更单月份：', '变更单下单数量：', '变更待核验：', '原订单展示规则：', '汇总方式：'].forEach((label) => {
     assert.match(progressSource, new RegExp(label));
   });
+  assert.match(progressSource, /原订单必须存在于当前采购订单表，供应商一致，并且“手工关闭=是”/);
+  assert.doesNotMatch(progressSource, /供应商和物料编码一致/);
   assert.match(progressSource, /手工关闭=是/);
   assert.match(styleSource, /\.progress-order-change-rules/);
   assert.match(styleSource, /\.progress-order-type\.type-pending/);

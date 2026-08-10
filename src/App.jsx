@@ -405,6 +405,15 @@ function uniqueProgressValues(values) {
     .sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
 }
 
+function formatProgressMonthLabel(values, fallback = '-') {
+  const months = (Array.isArray(values) ? values : [values]).map(normalize).filter(Boolean);
+  if (!months.length) return fallback;
+  return months.map((month) => {
+    const match = month.match(/^(\d{4})-(\d{1,2})/);
+    return match ? `${match[1]}年${match[2].padStart(2, '0')}月` : month;
+  }).join('、');
+}
+
 function uniqueSupplierShortNames(values) {
   return uniqueProgressValues(values).sort((left, right) => {
     if (left === '未匹配') return -1;
@@ -6008,6 +6017,8 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
         orderNos: new Set(),
         orderTypes: new Set(),
         originalOrderNos: new Set(),
+        originalOrderMonths: new Set(),
+        currentOrderMonths: new Set(),
         productLines: new Set(),
         productSeriesValues: new Set(),
         originalQuantityKeys: new Set(),
@@ -6025,6 +6036,10 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
       if (row.orderNo) group.orderNos.add(row.orderNo);
       group.orderTypes.add(row.orderType || '正常订单');
       if (row.originalOrderNo) group.originalOrderNos.add(row.originalOrderNo);
+      const originalOrderMonth = normalize(row.originalOrderMonth || (row.originalOrderNo ? row.reportingMonth : ''));
+      const currentOrderMonth = normalize(row.month) || normalize(row.currentOrderDate).slice(0, 7);
+      if (originalOrderMonth) group.originalOrderMonths.add(originalOrderMonth);
+      if (currentOrderMonth) group.currentOrderMonths.add(currentOrderMonth);
       if (row.productLine) group.productLines.add(row.productLine);
       if (row.productSeries) group.productSeriesValues.add(row.productSeries);
       if (row.originalOrderNo && row.changeValidationStatus === 'valid') {
@@ -6476,6 +6491,11 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
           const currentOrderNoLabel = [...group.orderNos].join('、') || '无采购订单';
           const orderTypeLabel = [...group.orderTypes].join('、');
           const originalOrderNoLabel = [...group.originalOrderNos].join('、') || '-';
+          const originalOrderMonthLabel = formatProgressMonthLabel(
+            [...group.originalOrderMonths],
+            group.originalOrderNos.size ? '待核验' : '-'
+          );
+          const currentOrderMonthLabel = formatProgressMonthLabel([...group.currentOrderMonths], '待核验');
           const productLineLabel = [...group.productLines].join('、') || '未填写';
           const productSeriesLabel = [...group.productSeriesValues].join('、') || '未填写';
           const originalPurchaseQtyLabel = group.originalQuantityKeys.size
@@ -6518,9 +6538,10 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
                       </button>
                     </strong>
                     <span className={`progress-order-type type-${pendingOnly ? 'pending' : 'valid'}`}>订单状态：{orderTypeLabel}</span>
-                    <span>月份：{group.reportingMonth}</span>
-                    <span>采购订单号：{currentOrderNoLabel}</span>
+                    <span>原采购月份：{originalOrderMonthLabel}</span>
                     <span>原采购订单号：{originalOrderNoLabel}</span>
+                    <span>新采购月份：{currentOrderMonthLabel}</span>
+                    <span>当前采购订单号：{currentOrderNoLabel}</span>
                     <span>产品线：{productLineLabel}</span>
                     <span>系列：{productSeriesLabel}</span>
                     <span>原订单采购数量：{originalPurchaseQtyLabel}</span>

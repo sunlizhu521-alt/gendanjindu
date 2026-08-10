@@ -254,9 +254,10 @@ test('生产跟进汇总父行展示供应商订单状态月份原订单产品�
   assert.match(progressSource, /className="supplier-filter-link"[\s\S]*?\{supplierLabel\}/);
   assert.doesNotMatch(progressSource, /供应商简称：/);
   assert.match(progressSource, /订单状态：\{orderTypeLabel\}/);
-  assert.match(progressSource, /月份：\{group\.reportingMonth\}/);
-  assert.match(progressSource, /采购订单号：\{currentOrderNoLabel\}/);
+  assert.match(progressSource, /原采购月份：\{originalOrderMonthLabel\}/);
   assert.match(progressSource, /原采购订单号：\{originalOrderNoLabel\}/);
+  assert.match(progressSource, /新采购月份：\{currentOrderMonthLabel\}/);
+  assert.match(progressSource, /当前采购订单号：\{currentOrderNoLabel\}/);
   assert.match(progressSource, /产品线：\{productLineLabel\}/);
   assert.match(progressSource, /系列：\{productSeriesLabel\}/);
   assert.match(progressSource, /原订单采购数量：\{originalPurchaseQtyLabel\}/);
@@ -265,10 +266,23 @@ test('生产跟进汇总父行展示供应商订单状态月份原订单产品�
   assert.match(progressSource, /下单数量：不计入汇总/);
   assert.match(progressSource, /group\.reportingPurchaseQty\.toLocaleString\('zh-CN'\)/);
   assert.match(progressSource, /originalOrderNos: new Set\(\)/);
+  assert.match(progressSource, /originalOrderMonths: new Set\(\)/);
+  assert.match(progressSource, /currentOrderMonths: new Set\(\)/);
+  assert.match(progressSource, /row\.originalOrderMonth \|\| \(row\.originalOrderNo \? row\.reportingMonth : ''\)/);
+  assert.match(progressSource, /normalize\(row\.month\) \|\| normalize\(row\.currentOrderDate\)\.slice\(0, 7\)/);
   assert.match(progressSource, /originalQuantityKeys: new Set\(\)/);
   assert.match(progressSource, /group\.originalQuantityKeys\.has\(originalQuantityKey\)/);
   assert.match(progressSource, /group\.originalPurchaseQty \+= numberValue\(row\.originalPurchaseQty\)/);
   assert.match(styleSource, /\.kingdee-progress-page \.progress-order-toggle\s*\{[\s\S]*?flex-wrap: wrap/);
+});
+
+test('生产跟进父汇总月份显示为中文年月', () => {
+  const helperSource = appSource.slice(
+    appSource.indexOf('function formatProgressMonthLabel('),
+    appSource.indexOf('function uniqueSupplierShortNames(')
+  );
+  assert.match(helperSource, /month\.match\(\/\^\(\\d\{4\}\)-\(\\d\{1,2\}\)\//);
+  assert.match(helperSource, /`\$\{match\[1\]\}年\$\{match\[2\]\.padStart\(2, '0'\)\}月`/);
 });
 
 test('生产跟进支持月份与供应商两种产品下单汇总并切换分页', () => {

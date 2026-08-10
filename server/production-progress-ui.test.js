@@ -459,7 +459,7 @@ test('生产跟进使用固定默认显示列并按用户持久保存', () => {
   assert.match(columnSource, /修改显示列 \{selected\.size\}\/\{columns\.length\}/);
   assert.match(columnSource, /默认显示列/);
   assert.match(columnSource, /columns\.map\(\(\[key, label\]\)/);
-  assert.match(progressSource, /gendanjindu:progress-columns:v2:\$\{user\?\.id \|\| user\?\.name \|\| 'user'\}/);
+  assert.match(progressSource, /gendanjindu:progress-columns:v3:\$\{user\?\.id \|\| user\?\.name \|\| 'user'\}/);
   assert.match(progressSource, /JSON\.stringify\(\{[\s\S]*?columns: visibleColumnKeys,[\s\S]*?customized: columnPreferenceCustomized/);
   assert.doesNotMatch(progressSource, /applyResponsiveDefault/);
   assert.match(progressSource, /setColumnPreferenceCustomized\(true\)[\s\S]*?setVisibleColumnKeys\(keys\)/);

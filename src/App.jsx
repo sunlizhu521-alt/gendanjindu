@@ -6011,7 +6011,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, ti
   const [groupMode, setGroupMode] = useState('currentMonth');
   const progressTableWrapRef = useRef(null);
   const [stickyOffsets, setStickyOffsets] = useState({});
-  const columnStorageKey = `gendanjindu:progress-columns:v2:${user?.id || user?.name || 'user'}`;
+  const columnStorageKey = `gendanjindu:progress-columns:v3:${user?.id || user?.name || 'user'}`;
   const initialColumnPreference = useRef();
   if (!initialColumnPreference.current) initialColumnPreference.current = readProgressColumnPreference(columnStorageKey);
   const [columnPreferenceCustomized, setColumnPreferenceCustomized] = useState(initialColumnPreference.current.customized);

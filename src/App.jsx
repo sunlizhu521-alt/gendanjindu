@@ -213,32 +213,31 @@ const LINGXING_INVENTORY_SLOTS = [
 
 const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
   { id: 'inventorySummaryFile1', title: 'FBA库存报表', requiredFields: ['sku', 'warehouseName', 'inventoryAttribute', 'endingInventoryQty'], fields: [
-    ['storeName', '店铺'], ['marketplace', '站点'], ['sku', 'SKU'], ['fnsku', 'FNSKU'],
-    ['asin', 'ASIN'], ['warehouseName', '仓库名称'], ['inventoryAttribute', '库存属性'], ['endingInventoryQty', '期末库存(含移仓)-数量']
+    ['sku', 'SKU'], ['warehouseName', '仓库名称'], ['inventoryAttribute', '库存属性'], ['endingInventoryQty', '期末库存(含移仓)-数量']
   ] },
   { id: 'inventorySummaryFile2', title: 'FBM库存报表', requiredFields: ['identifier', 'warehouseName', 'actualTotalQty'], fields: [
-    ['storeName', '店铺'], ['marketplace', '站点'], ['identifier', '识别码'],
-    ['warehouseName', '仓库名称'], ['actualTotalQty', '实际总量']
+    ['identifier', '识别码'], ['warehouseName', '仓库名称'], ['actualTotalQty', '实际总量']
   ] },
   { id: 'inventorySummaryFile3', title: 'WFS库存报表', requiredFields: ['sku', 'warehouseName', 'totalInventoryQty'], fields: [
-    ['storeName', '店铺'], ['marketplace', '站点'], ['sku', 'SKU'], ['itemId', 'Item ID'],
-    ['warehouseName', '仓库名称'], ['totalInventoryQty', '总库存数量']
+    ['sku', 'SKU'], ['warehouseName', '仓库名称'], ['totalInventoryQty', '总库存数量']
   ] },
   { id: 'inventorySummaryFile4', title: 'FBA在途报表', requiredFields: ['storeName', 'sku', 'shipmentStatus', 'dispatchQty', 'shippedQty', 'signedQty'], fields: [
-    ['storeName', '店铺'], ['marketplace', '站点'], ['sku', 'SKU'],
+    ['storeName', '店铺'], ['sku', 'SKU'],
     ['shipmentStatus', '货件状态'], ['dispatchQty', '发货数量'], ['shippedQty', '已发货'], ['signedQty', '签收量']
   ] },
   { id: 'inventorySummaryFile5', title: 'FBM在途报表', requiredFields: ['sku', 'warehouseName', 'receivingWarehouseName', 'documentStatus', 'stockupQty', 'receivedQty'], fields: [
-    ['storeName', '店铺'], ['marketplace', '站点'], ['sku', 'SKU'],
-    ['warehouseName', '发货仓库（单据）'], ['receivingWarehouseName', '收货仓库'], ['documentStatus', '单据状态'],
+    ['sku', 'SKU'], ['warehouseName', '发货仓库（单据）'], ['receivingWarehouseName', '收货仓库'], ['documentStatus', '单据状态'],
     ['stockupQty', '备货数量'], ['receivedQty', '收货数量']
+  ] },
+  { id: 'inventorySummaryFile17', title: 'WFS在途报表', requiredFields: ['sku', 'warehouseName', 'wfsTransitQty'], fields: [
+    ['sku', 'SKU'], ['warehouseName', '仓库名称'], ['wfsTransitQty', '在途数量']
   ] },
   { id: 'inventorySummaryFile6', title: '国内在库报表', requiredFields: ['subject', 'warehouseName', 'materialCode', 'domesticStockQty'], fields: [
     ['subject', '使用组织/库存组织'], ['warehouseName', '仓库名称'],
     ['materialCode', '物料编码'], ['domesticStockQty', '库存量(主单位)']
   ] },
   { id: 'inventorySummaryFile7', title: '京东在库报表', requiredFields: ['jdId', 'jdStockQty'], fields: [
-    ['jdId', 'SKU/京东ID'], ['jdRdc', 'RDC（新格式）'], ['jdStockQty', '现货库存/全国现货库存']
+    ['jdId', 'SKU/京东ID'], ['jdStockQty', '现货库存/全国现货库存']
   ] },
   { id: 'inventorySummaryFile14', title: '京东在途', requiredFields: ['materialCode', 'jdTransitQty'], fields: [
     ['materialCode', '物料编码'], ['jdTransitQty', '在途数量']
@@ -252,7 +251,7 @@ const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
     ['kingdeeWarehouseName', '金蝶仓库名称']
   ] },
   { id: 'inventorySummaryFile10', title: 'Dim-领星SKU对应物料编码-产品管理', requiredFields: ['lingxingSku', 'identifier'], fields: [
-    ['lingxingSku', 'SKU'], ['identifier', '识别码'], ['remark', '备注']
+    ['lingxingSku', 'SKU'], ['identifier', '识别码']
   ] },
   { id: 'inventorySummaryFile11', title: 'Dim-京东ID与品号匹配', requiredFields: ['jdId', 'materialCode'], fields: [
     ['jdId', '京东ID'], ['materialCode', '品号']
@@ -265,43 +264,45 @@ const INVENTORY_SUMMARY_LIBRARY_SLOTS = [
     ['remainingQty', '备货剩余数量'], ['finishedQty', '完工未发产品'],
     ['unpreparedQty', '已下单未备料未生产'], ['preparedNotStartedQty', '已备料未生产'],
     ['inProductionQty', '生产中产品'], ['deliveryStatus', '是否需正常交货'],
-    ['supplierShortName', '供应商简称'],
     ['unfulfilledReason', '未履约原因'], ['reasonDetail', '原因详情'], ['remark', '备注']
   ] },
   { id: 'inventorySummaryFile13', title: 'Dim-领星FBA在途&金蝶仓库', requiredFields: ['subject', 'storeName', 'kingdeeWarehouseName'], fields: [
     ['subject', '主体'], ['storeName', '店铺'], ['kingdeeWarehouseName', '金蝶仓库名称']
   ] },
   { id: 'inventorySummaryFile15', title: '销售预测', fields: [], requiresSheetSelection: true },
-  { id: 'inventorySummaryFile16', title: '库龄文件', fields: [], requiredSheetCount: 2 }
+  { id: 'inventorySummaryFile16', title: '库龄文件', fields: [], requiredSheetCount: 2 },
+  { id: 'inventorySummaryFile18', title: '备用', fields: [] },
+  { id: 'inventorySummaryFile19', title: '备用', fields: [] },
+  { id: 'inventorySummaryFile20', title: '备用', fields: [] }
 ];
 
-const INVENTORY_MANUAL_LIBRARY_SLOTS = INVENTORY_SUMMARY_LIBRARY_SLOTS.map((slot) => ({
+const INVENTORY_MANUAL_SLOT_ORDER = [1, 2, 3, 4, 5, 6, 7, 14, 17, 8, 9, 10, 11, 12, 13, 15, 16, 18, 19, 20];
+const INVENTORY_SUMMARY_SLOT_MAP = new Map(INVENTORY_SUMMARY_LIBRARY_SLOTS.map((slot) => [slot.id, slot]));
+const INVENTORY_MANUAL_LIBRARY_SLOTS = INVENTORY_MANUAL_SLOT_ORDER.map((slotNumber) => INVENTORY_SUMMARY_SLOT_MAP.get(`inventorySummaryFile${slotNumber}`)).map((slot) => ({
   ...slot,
   id: slot.id.replace('inventorySummaryFile', 'inventoryManualFile'),
-  title: slot.id === 'inventorySummaryFile14'
-    ? '京东在途手工'
+  title: slot.id === 'inventorySummaryFile17'
+    ? 'WFS在途手工'
+    : slot.id === 'inventorySummaryFile14'
+      ? '京东在途手工'
     : slot.id === 'inventorySummaryFile8'
       ? '不可售手工'
-      : /^inventorySummaryFile1[0-6]$/.test(slot.id) ? '备用' : `${slot.title}手工`,
+      : /^inventorySummaryFile(?:1[0-6]|1[8-9]|20)$/.test(slot.id) ? '备用' : `${slot.title}手工`,
   fields: slot.id === 'inventorySummaryFile8'
     ? [
       ['businessUnit', '事业部'],
-      ['warehouseName', '仓库'],
-      ['subject', '主体'],
       ['materialCode', '物料编码'],
       ['inventoryQty', '在库量'],
       ['transitQty', '在途量']
     ]
     : [
       ['businessUnit', '事业部'],
-      ['warehouseName', '仓库'],
-      ['subject', '主体'],
       ['materialCode', '物料编码'],
       ['quantity', '数量']
     ],
   requiredFields: slot.id === 'inventorySummaryFile8'
-    ? ['materialCode', 'inventoryQty', 'transitQty']
-    : ['materialCode'],
+    ? ['businessUnit', 'materialCode', 'inventoryQty', 'transitQty']
+    : ['businessUnit', 'materialCode', 'quantity'],
   requiresSheetSelection: false,
   requiredSheetCount: 0,
   manualFieldSelection: true
@@ -1315,6 +1316,7 @@ function inventoryDashboardTotals(rows) {
     'domesticMainInventoryQty', 'domesticMainInventoryValue', 'jdInventoryQty', 'jdInventoryValue',
     'domesticInventoryQty', 'domesticInventoryValue', 'inventoryQty', 'inventoryValue',
     'fbaTransitQty', 'fbaTransitValue', 'fbmTransitQty', 'fbmTransitValue',
+    'wfsTransitQty', 'wfsTransitValue',
     'jdTransitQty', 'jdTransitValue',
     'transitQty', 'transitValue', 'finishedNotShippedQty', 'finishedNotShippedValue',
     'unpreparedQty', 'unpreparedValue', 'preparedNotStartedQty', 'preparedNotStartedValue',
@@ -1344,6 +1346,7 @@ const INVENTORY_SUBJECT_MEASURE_FIELDS = [
   'jdInventoryQty', 'jdInventoryValue',
   'fbaTransitQty', 'fbaTransitValue',
   'fbmTransitQty', 'fbmTransitValue',
+  'wfsTransitQty', 'wfsTransitValue',
   'jdTransitQty', 'jdTransitValue'
 ];
 const INVENTORY_PRODUCT_TYPE_OPTIONS = ['成品', '配件', '不可售'];
@@ -1442,8 +1445,8 @@ function inventoryRowForFilters(row, selectedSubjects, selectedProductTypes) {
   const domesticInventoryValue = amounts.domesticMainInventoryValue + amounts.jdInventoryValue;
   const inventoryQty = crossBorderInventoryQty + domesticInventoryQty;
   const inventoryValue = crossBorderInventoryValue + domesticInventoryValue;
-  const transitQty = amounts.fbaTransitQty + amounts.fbmTransitQty + amounts.jdTransitQty;
-  const transitValue = amounts.fbaTransitValue + amounts.fbmTransitValue + amounts.jdTransitValue;
+  const transitQty = amounts.fbaTransitQty + amounts.fbmTransitQty + amounts.wfsTransitQty + amounts.jdTransitQty;
+  const transitValue = amounts.fbaTransitValue + amounts.fbmTransitValue + amounts.wfsTransitValue + amounts.jdTransitValue;
   const inventorySourceDetails = (row.inventorySourceDetails || []).filter((item) => (
     (subjectSet.size === 0 || subjectSet.has(normalize(item.subject)))
     && (typeSet.size === 0 || typeSet.has(normalize(item.productType)))
@@ -2326,6 +2329,7 @@ function InventorySummary({ token, active }) {
       ['京东在库', (row) => formatDashboardNumber(row.jdInventoryQty)],
       ['FBA在途', (row) => formatDashboardNumber(row.fbaTransitQty)],
       ['FBM在途', (row) => formatDashboardNumber(row.fbmTransitQty)],
+      ['WFS在途', (row) => formatDashboardNumber(row.wfsTransitQty)],
       ['京东在途', (row) => formatDashboardNumber(row.jdTransitQty)],
       ['已生产未发货', (row) => formatDashboardNumber(row.finishedNotShippedQty)],
       ['已下单未备料未生产', (row) => formatDashboardNumber(row.unpreparedQty)],
@@ -2357,7 +2361,7 @@ function InventorySummary({ token, active }) {
           ...(showSourceBreakdown ? [
             numberValue(row.fbaInventoryQty), numberValue(row.fbmInventoryQty), numberValue(row.wfsInventoryQty),
             numberValue(row.domesticMainInventoryQty), numberValue(row.jdInventoryQty),
-            numberValue(row.fbaTransitQty), numberValue(row.fbmTransitQty), numberValue(row.jdTransitQty),
+            numberValue(row.fbaTransitQty), numberValue(row.fbmTransitQty), numberValue(row.wfsTransitQty), numberValue(row.jdTransitQty),
             numberValue(row.finishedNotShippedQty), numberValue(row.unpreparedQty),
             numberValue(row.preparedNotStartedQty), numberValue(row.inProductionQty)
           ] : []),
@@ -2460,6 +2464,7 @@ function InventorySummary({ token, active }) {
               <div className="inventory-kpi-grid inventory-transit-kpis">
                 <InventoryPurchaseMetric label="FBA在途" quantity={totals.fbaTransitQty} fullQuantity={fullTotals.fbaTransitQty} value={formatDashboardWan(totals.fbaTransitValue)} note="占筛选后在途合计" share={share(totals.fbaTransitQty, totals.transitQty)} tone="fba-transit" />
                 <InventoryPurchaseMetric label="FBM在途" quantity={totals.fbmTransitQty} fullQuantity={fullTotals.fbmTransitQty} value={formatDashboardWan(totals.fbmTransitValue)} note="占筛选后在途合计" share={share(totals.fbmTransitQty, totals.transitQty)} tone="fbm-transit" />
+                <InventoryPurchaseMetric label="WFS在途" quantity={totals.wfsTransitQty} fullQuantity={fullTotals.wfsTransitQty} value={formatDashboardWan(totals.wfsTransitValue)} note="占筛选后在途合计" share={share(totals.wfsTransitQty, totals.transitQty)} tone="wfs-transit" />
                 <InventoryPurchaseMetric label="京东在途" quantity={totals.jdTransitQty} fullQuantity={fullTotals.jdTransitQty} value={formatDashboardWan(totals.jdTransitValue)} note="占筛选后在途合计" share={share(totals.jdTransitQty, totals.transitQty)} tone="jd-transit" />
               </div>
             </section>
@@ -3473,6 +3478,16 @@ function validMappingForColumns(mapping = {}, columns = [], fields = [], inferMi
         : '';
     return next;
   }, {});
+}
+
+const INVENTORY_MAPPING_PRESET_KIND = 'inventory-slot-fields';
+
+function isInventoryMappingSlot(slotId) {
+  return /^inventory(?:Summary|Manual)File\d+$/.test(normalize(slotId));
+}
+
+function hasMappedInventoryFields(mapping = {}, fields = []) {
+  return fields.some(([key]) => normalize(mapping?.[key]));
 }
 
 function clearInvalidFilterValues(filters, optionMap) {
@@ -7332,7 +7347,10 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
   const [records, setRecords] = useState([]);
   const [local, setLocal] = useState({});
   const [issuePage, setIssuePage] = useState(1);
+  const mappingPresetsRef = useRef({});
+  const mappingSaveQueueRef = useRef(Promise.resolve());
   const isFirstMileLibrary = slots.some((slot) => slot.firstMile);
+  const usesInventoryMappings = slots.some((slot) => isInventoryMappingSlot(slot.id));
   const issuePageSize = 20;
   const issueRows = useMemo(() => records.flatMap((record) => {
     const summary = record.mapping?.__firstMileSummary;
@@ -7353,8 +7371,29 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
   }
 
   async function load() {
-    const payload = await request('/api/dimensions', { token });
+    const [payload, presetPayload] = await Promise.all([
+      request('/api/dimensions', { token }),
+      usesInventoryMappings
+        ? request(`/api/mappings/${INVENTORY_MAPPING_PRESET_KIND}`, { token })
+        : Promise.resolve({ mapping: {} })
+    ]);
     setRecords(payload.rows || []);
+    if (usesInventoryMappings) mappingPresetsRef.current = presetPayload.mapping || {};
+  }
+
+  function persistInventoryMapping(slot, mapping) {
+    if (!isInventoryMappingSlot(slot.id)) return;
+    const nextPresets = { ...mappingPresetsRef.current, [slot.id]: mapping };
+    mappingPresetsRef.current = nextPresets;
+    const body = JSON.stringify({ mapping: nextPresets });
+    mappingSaveQueueRef.current = mappingSaveQueueRef.current
+      .catch(() => {})
+      .then(() => request(`/api/mappings/${INVENTORY_MAPPING_PRESET_KIND}`, {
+        token,
+        method: 'PUT',
+        body
+      }))
+      .catch(() => {});
   }
 
   useEffect(() => { load().catch(() => {}); }, []);
@@ -7390,8 +7429,13 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       const requiresMultipleSheets = Number(slot.requiredSheetCount || 0) > 0;
       setLocal((prev) => {
         const prevState = prev[slot.id] || {};
-        const savedMapping = prevState.savedMapping || prevState.mapping || record?.mapping || {};
-        const hasSavedMapping = (slot.fields || []).some(([key]) => normalize(savedMapping[key]));
+        const savedMapping = [
+          prevState.mapping,
+          prevState.savedMapping,
+          mappingPresetsRef.current[slot.id],
+          record?.mapping
+        ].find((candidate) => hasMappedInventoryFields(candidate, slot.fields || [])) || {};
+        const hasSavedMapping = hasMappedInventoryFields(savedMapping, slot.fields || []);
         const sheetMappings = { ...(prevState.sheetMappings || {}) };
         const mapping = validMappingForColumns(
           sheetMappings[''] || savedMapping,
@@ -7466,8 +7510,13 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
     const currentKey = state.sheetName || '';
     const nextKey = sheetName || '';
     const sheetMappings = { ...(state.sheetMappings || {}), [currentKey]: state.mapping || {} };
-    const savedMapping = sheetMappings[nextKey] || state.savedMapping || {};
-    const hasSavedMapping = (slot.fields || []).some(([key]) => normalize(savedMapping[key]));
+    const savedMapping = [
+      sheetMappings[nextKey],
+      state.mapping,
+      state.savedMapping,
+      mappingPresetsRef.current[slot.id]
+    ].find((candidate) => hasMappedInventoryFields(candidate, slot.fields || [])) || {};
+    const hasSavedMapping = hasMappedInventoryFields(savedMapping, slot.fields || []);
     const mapping = validMappingForColumns(
       savedMapping,
       nextColumns,
@@ -7574,6 +7623,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       if (state.sheetName) data.append('sheetName', state.sheetName);
       if (slot.requiredSheetCount) data.append('sheetNames', JSON.stringify(state.selectedSheetNames || []));
       const payload = await request(`/api/dimensions/${slot.id}/upload`, { token, method: 'POST', body: data });
+      persistInventoryMapping(slot, state.mapping || {});
       const parseSummary = payload.parseSummary;
       const inventoryParseSummary = parseSummary?.parserType === 'inventorySummary' ? parseSummary : null;
       const manualParseSummary = parseSummary?.parserType === 'inventoryManual' ? parseSummary : null;
@@ -7783,7 +7833,16 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
                   onChange={(mapping) => {
                     const nextMapping = validMappingForColumns(mapping, state.columns, slot.fields, false);
                     const sheetKey = state.sheetName || '';
-                    setLocal({ ...local, [slot.id]: { ...state, mapping: nextMapping, sheetMappings: { ...(state.sheetMappings || {}), [sheetKey]: nextMapping } } });
+                    setLocal((prev) => ({
+                      ...prev,
+                      [slot.id]: {
+                        ...(prev[slot.id] || {}),
+                        mapping: nextMapping,
+                        savedMapping: nextMapping,
+                        sheetMappings: { ...(prev[slot.id]?.sheetMappings || {}), [sheetKey]: nextMapping }
+                      }
+                    }));
+                    persistInventoryMapping(slot, nextMapping);
                   }}
                 />
               )}

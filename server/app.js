@@ -128,6 +128,10 @@ const DIMENSION_SLOTS = {
   inventorySummaryFile14: '京东在途',
   inventorySummaryFile15: '销售预测',
   inventorySummaryFile16: '库龄文件',
+  inventorySummaryFile17: 'WFS在途报表',
+  inventorySummaryFile18: '备用',
+  inventorySummaryFile19: '备用',
+  inventorySummaryFile20: '备用',
   firstMileData1: '张婷婷头程数据',
   firstMileData2: '扈翠芸头程数据',
   firstMileData3: '魏静头程数据',
@@ -141,10 +145,11 @@ Object.entries(DIMENSION_SLOTS)
     DIMENSION_SLOTS[slotId.replace('inventorySummaryFile', 'inventoryManualFile')] = `${title}手工`;
   });
 DIMENSION_SLOTS.inventoryManualFile8 = '不可售手工';
-for (let slotNumber = 10; slotNumber <= 16; slotNumber += 1) {
+for (let slotNumber = 10; slotNumber <= 20; slotNumber += 1) {
   DIMENSION_SLOTS[`inventoryManualFile${slotNumber}`] = '备用';
 }
 DIMENSION_SLOTS.inventoryManualFile14 = '京东在途手工';
+DIMENSION_SLOTS.inventoryManualFile17 = 'WFS在途手工';
 
 function inventoryLibraryBaseSlotId(slotId) {
   return String(slotId || '').replace(/^inventoryManualFile(?=\d+$)/, 'inventorySummaryFile');
@@ -5264,6 +5269,7 @@ app.get('/api/dimension-missing/cross-border', requireAuth, requirePage('dimensi
     WFS库存: 'inventorySummaryFile3',
     FBA在途: 'inventorySummaryFile4',
     FBM在途: 'inventorySummaryFile5',
+    WFS在途: 'inventorySummaryFile17',
     国内在库: 'inventorySummaryFile6',
     京东在库: 'inventorySummaryFile7',
     京东在途: 'inventorySummaryFile14',

@@ -1,6 +1,9 @@
 import xlsx from 'xlsx';
 
-const INVENTORY_SLOT_IDS = new Set(Array.from({ length: 14 }, (_, index) => `inventorySummaryFile${index + 1}`));
+const INVENTORY_SLOT_IDS = new Set([
+  ...Array.from({ length: 14 }, (_, index) => `inventorySummaryFile${index + 1}`),
+  ...Array.from({ length: 4 }, (_, index) => `inventorySummaryFile${index + 17}`)
+]);
 const UNIQUE_SHEET_SLOT_IDS = new Set([
   'inventorySummaryFile1',
   'inventorySummaryFile2',
@@ -14,7 +17,8 @@ const UNIQUE_SHEET_SLOT_IDS = new Set([
   'inventorySummaryFile11',
   'inventorySummaryFile12',
   'inventorySummaryFile13',
-  'inventorySummaryFile14'
+  'inventorySummaryFile14',
+  'inventorySummaryFile17'
 ]);
 const FBA_TRANSIT_STATUSES = new Set([
   'RECEIVING',
@@ -66,6 +70,7 @@ const FIELD_ALIASES = {
   jdRdc: ['RDC'],
   jdStockQty: ['全国现货库存', '现货库存'],
   jdTransitQty: ['在途数量'],
+  wfsTransitQty: ['在途数量', '在途量', '运输中数量', '入库中数量', '数量'],
   date: ['日期'],
   businessUnit: ['事业部'],
   materialCode: ['物料编码', '品号'],
@@ -170,6 +175,10 @@ const SLOT_SCHEMAS = {
   inventorySummaryFile14: {
     required: ['materialCode', 'jdTransitQty'],
     fields: ['materialCode', 'jdTransitQty']
+  },
+  inventorySummaryFile17: {
+    required: ['sku', 'warehouseName', 'wfsTransitQty'],
+    fields: ['sku', 'warehouseName', 'wfsTransitQty']
   }
 };
 
@@ -210,7 +219,8 @@ const INVENTORY_QUANTITY_FIELDS = {
   inventorySummaryFile2: 'actualTotalQty',
   inventorySummaryFile3: 'totalInventoryQty',
   inventorySummaryFile6: 'domesticStockQty',
-  inventorySummaryFile7: 'jdStockQty'
+  inventorySummaryFile7: 'jdStockQty',
+  inventorySummaryFile17: 'wfsTransitQty'
 };
 const SUMMARY_ROW_LABELS = new Set([
   '合计',
@@ -230,7 +240,8 @@ const FACT_SUMMARY_IDENTITY_FIELDS = {
   inventorySummaryFile7: ['jdId'],
   inventorySummaryFile8: ['materialCode'],
   inventorySummaryFile12: ['materialCode'],
-  inventorySummaryFile14: ['materialCode']
+  inventorySummaryFile14: ['materialCode'],
+  inventorySummaryFile17: ['sku']
 };
 const INVENTORY_SOURCE_TYPES = new Set([
   'FBA库存',
@@ -240,6 +251,7 @@ const INVENTORY_SOURCE_TYPES = new Set([
   '京东在库',
   'FBA在途',
   'FBM在途',
+  'WFS在途',
   '京东在途',
   '库存风险',
   '供应计划分析'
@@ -252,11 +264,12 @@ const INVENTORY_SOURCE_TABLE_LABELS = {
   京东在库: '京东在库报表',
   FBA在途: 'FBA在途报表',
   FBM在途: 'FBM在途报表',
+  WFS在途: 'WFS在途报表',
   京东在途: '京东在途'
 };
 
-const INVENTORY_MANUAL_FIELDS = ['businessUnit', 'warehouseName', 'subject', 'materialCode', 'quantity'];
-const INVENTORY_UNSELLABLE_MANUAL_FIELDS = ['businessUnit', 'warehouseName', 'subject', 'materialCode', 'inventoryQty', 'transitQty'];
+const INVENTORY_MANUAL_FIELDS = ['businessUnit', 'materialCode', 'quantity'];
+const INVENTORY_UNSELLABLE_MANUAL_FIELDS = ['businessUnit', 'materialCode', 'inventoryQty', 'transitQty'];
 const INVENTORY_MANUAL_RECONCILIATION_SOURCES = [
   { sourceType: 'FBA库存', label: 'FBA在库', group: '在库', systemSlotId: 'inventorySummaryFile1', manualSlotId: 'inventoryManualFile1' },
   { sourceType: 'FBM库存', label: 'FBM在库', group: '在库', systemSlotId: 'inventorySummaryFile2', manualSlotId: 'inventoryManualFile2' },
@@ -265,6 +278,7 @@ const INVENTORY_MANUAL_RECONCILIATION_SOURCES = [
   { sourceType: '京东在库', label: '京东在库', group: '在库', systemSlotId: 'inventorySummaryFile7', manualSlotId: 'inventoryManualFile7' },
   { sourceType: 'FBA在途', label: 'FBA在途', group: '在途', systemSlotId: 'inventorySummaryFile4', manualSlotId: 'inventoryManualFile4' },
   { sourceType: 'FBM在途', label: 'FBM在途', group: '在途', systemSlotId: 'inventorySummaryFile5', manualSlotId: 'inventoryManualFile5' },
+  { sourceType: 'WFS在途', label: 'WFS在途', group: '在途', systemSlotId: 'inventorySummaryFile17', manualSlotId: 'inventoryManualFile17' },
   { sourceType: '京东在途', label: '京东在途', group: '在途', systemSlotId: 'inventorySummaryFile14', manualSlotId: 'inventoryManualFile14' }
 ];
 const INVENTORY_MANUAL_RECONCILIATION_CATEGORIES = ['全部', '成品+配件', '成品', '配件', '不可售'];
@@ -276,6 +290,7 @@ const QUANTITY_RECONCILIATION_SOURCES = [
   { sourceType: '京东在库', label: '京东在库', slotId: 'inventorySummaryFile7', group: '在库', field: 'jdInventoryQty' },
   { sourceType: 'FBA在途', label: 'FBA在途', slotId: 'inventorySummaryFile4', group: '在途', field: 'fbaTransitQty' },
   { sourceType: 'FBM在途', label: 'FBM在途', slotId: 'inventorySummaryFile5', group: '在途', field: 'fbmTransitQty' },
+  { sourceType: 'WFS在途', label: 'WFS在途', slotId: 'inventorySummaryFile17', group: '在途', field: 'wfsTransitQty' },
   { sourceType: '京东在途', label: '京东在途', slotId: 'inventorySummaryFile14', group: '在途', field: 'jdTransitQty' },
   { sourceType: '采购跟单', label: '采购未交付', slotId: 'inventorySummaryFile12', group: '未交付', field: 'unfulfilledQty' }
 ];
@@ -297,6 +312,7 @@ const INVENTORY_SUBJECT_FIELDS = new Set([
   'jdInventoryQty', 'jdInventoryValue',
   'fbaTransitQty', 'fbaTransitValue',
   'fbmTransitQty', 'fbmTransitValue',
+  'wfsTransitQty', 'wfsTransitValue',
   'jdTransitQty', 'jdTransitValue'
 ]);
 const INVENTORY_STOCK_FIELDS = new Set([
@@ -744,7 +760,9 @@ export function parseInventoryManualWorkbook(file, mapping = {}, options = {}) {
   if (!sheetName) throw inventoryValidationError('手工表中没有可读取的工作表');
   const isUnsellable = text(options.slotId) === 'inventoryManualFile8';
   const fields = isUnsellable ? INVENTORY_UNSELLABLE_MANUAL_FIELDS : INVENTORY_MANUAL_FIELDS;
-  const requiredFields = isUnsellable ? ['materialCode', 'inventoryQty', 'transitQty'] : ['materialCode'];
+  const requiredFields = isUnsellable
+    ? ['businessUnit', 'materialCode', 'inventoryQty', 'transitQty']
+    : ['businessUnit', 'materialCode', 'quantity'];
   const schema = { required: requiredFields, fields };
   const parsed = worksheetRows(
     workbook.Sheets[sheetName],
@@ -758,7 +776,9 @@ export function parseInventoryManualWorkbook(file, mapping = {}, options = {}) {
   const missingFields = requiredFields.filter((field) => !columnMap[field]);
   if (missingFields.length) {
     const labels = {
+      businessUnit: '事业部',
       materialCode: '物料编码',
+      quantity: '数量',
       inventoryQty: '在库量',
       transitQty: '在途量'
     };
@@ -906,6 +926,8 @@ function emptySummaryRow(id, businessUnit, product, rawIdentifier) {
     fbaTransitValue: 0,
     fbmTransitQty: 0,
     fbmTransitValue: 0,
+    wfsTransitQty: 0,
+    wfsTransitValue: 0,
     jdTransitQty: 0,
     jdTransitValue: 0,
     finishedNotShippedQty: 0,
@@ -1324,12 +1346,13 @@ export function buildInventorySummaryModel({
   includeManualReconciliation = true,
   manualReconciliationCategories = INVENTORY_MANUAL_RECONCILIATION_CATEGORIES
 }) {
-  const source = Object.fromEntries(Array.from({ length: 14 }, (_, index) => {
-    const slotId = `inventorySummaryFile${index + 1}`;
+  const inventorySourceSlotNumbers = [...Array.from({ length: 14 }, (_, index) => index + 1), 17, 18, 19, 20];
+  const source = Object.fromEntries(inventorySourceSlotNumbers.map((slotNumber) => {
+    const slotId = `inventorySummaryFile${slotNumber}`;
     return [slotId, rowsRecord(getRecord, slotId)];
   }));
   const manualSource = includeManualReconciliation
-    ? Object.fromEntries(Array.from({ length: 16 }, (_, index) => {
+    ? Object.fromEntries(Array.from({ length: 20 }, (_, index) => {
       const slotId = `inventoryManualFile${index + 1}`;
       return [slotId, rowsRecord(getRecord, slotId)];
     }))
@@ -1630,6 +1653,7 @@ export function buildInventorySummaryModel({
       ['jdInventoryQty', 'jdInventoryValue'],
       ['fbaTransitQty', 'fbaTransitValue'],
       ['fbmTransitQty', 'fbmTransitValue'],
+      ['wfsTransitQty', 'wfsTransitValue'],
       ['jdTransitQty', 'jdTransitValue'],
       ['unfulfilledQty', 'unfulfilledValue'],
       ['salesQty', 'salesAmount']
@@ -1968,6 +1992,34 @@ export function buildInventorySummaryModel({
     });
   });
 
+  source.inventorySummaryFile17.rows.forEach((raw) => {
+    const qty = inventoryQuantity(raw, 'inventorySummaryFile17', 'WFS在途', raw.sku, '在途数量');
+    if (qty === null) return;
+    const reconciliationId = expectQuantity('WFS在途', qty, raw.sku);
+    const skuResult = resolveSku(raw.sku);
+    const warehouseResult = skuResult.materialCode
+      ? resolveWfsWarehouse(raw.warehouseName, skuResult.materialCode)
+      : { businessUnit: '', issue: '' };
+    const product = resolveProduct(skuResult.materialCode, 'WFS在途', raw.sku);
+    addFact({
+      sourceType: 'WFS在途',
+      rawIdentifier: raw.sku,
+      materialCode: skuResult.materialCode,
+      businessUnit: warehouseResult.businessUnit,
+      issues: [skuResult.issue, warehouseResult.issue],
+      inventorySubject: warehouseResult.subject,
+      inventoryWarehouseName: warehouseResult.kingdeeWarehouseName,
+      reconciliationId,
+      quantities: { wfsTransitQty: qty, wfsTransitValue: qty * product.product.pretaxPrice },
+      sourceContext: {
+        sourceSku: text(raw.sku),
+        sourceWarehouseName: text(raw.warehouseName),
+        subject: warehouseResult.subject || '',
+        kingdeeWarehouseName: warehouseResult.kingdeeWarehouseName || ''
+      }
+    });
+  });
+
   source.inventorySummaryFile6.rows.forEach((raw) => {
     if (isIgnoredDomesticWarehouse(raw.warehouseName)) return;
     const qty = inventoryQuantity(raw, 'inventorySummaryFile6', '国内在库', raw.materialCode, '库存量(主单位)');
@@ -2147,8 +2199,8 @@ export function buildInventorySummaryModel({
     const domesticInventoryValue = row.domesticMainInventoryValue + row.jdInventoryValue;
     const inventoryQty = crossBorderInventoryQty + domesticInventoryQty;
     const inventoryValue = crossBorderInventoryValue + domesticInventoryValue;
-    const transitQty = row.fbaTransitQty + row.fbmTransitQty + row.jdTransitQty;
-    const transitValue = row.fbaTransitValue + row.fbmTransitValue + row.jdTransitValue;
+    const transitQty = row.fbaTransitQty + row.fbmTransitQty + row.wfsTransitQty + row.jdTransitQty;
+    const transitValue = row.fbaTransitValue + row.fbmTransitValue + row.wfsTransitValue + row.jdTransitValue;
     const scaleQty = inventoryQty + transitQty + row.unfulfilledQty;
     const scaleValue = inventoryValue + transitValue + row.unfulfilledValue;
     const deliveryStatuses = [...row.deliveryStatuses];
@@ -2244,6 +2296,7 @@ export function buildInventorySummaryModel({
       'inventoryQty', 'inventoryValue',
       'fbaTransitQty', 'fbaTransitValue',
       'fbmTransitQty', 'fbmTransitValue',
+      'wfsTransitQty', 'wfsTransitValue',
       'jdTransitQty', 'jdTransitValue',
       'transitQty', 'transitValue',
       'finishedNotShippedQty', 'finishedNotShippedValue',

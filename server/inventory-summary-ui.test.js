@@ -98,16 +98,19 @@ test('库存数据提供独立的底表文件和手工表库', () => {
 
   assert.match(client, /inventorySummaryLibrary: '底表文件'/);
   assert.match(client, /inventoryManualLibrary: '手工表库'/);
-  assert.match(client, /const INVENTORY_MANUAL_LIBRARY_SLOTS = INVENTORY_SUMMARY_LIBRARY_SLOTS\.map/);
+  assert.match(client, /const INVENTORY_MANUAL_SLOT_ORDER = \[1, 2, 3, 4, 5, 6, 7, 14, 17, 8, 9, 10, 11, 12, 13, 15, 16, 18, 19, 20\]/);
+  assert.match(client, /const INVENTORY_MANUAL_LIBRARY_SLOTS = INVENTORY_MANUAL_SLOT_ORDER\.map/);
   assert.match(client, /replace\('inventorySummaryFile', 'inventoryManualFile'\)/);
+  assert.match(client, /slot\.id === 'inventorySummaryFile17'[\s\S]*?\? 'WFS在途手工'/);
   assert.match(client, /slot\.id === 'inventorySummaryFile14'[\s\S]*?\? '京东在途手工'/);
   assert.match(client, /slot\.id === 'inventorySummaryFile8'[\s\S]*?\? '不可售手工'/);
   assert.match(server, /DIMENSION_SLOTS\.inventoryManualFile8 = '不可售手工'/);
-  assert.match(server, /for \(let slotNumber = 10; slotNumber <= 16; slotNumber \+= 1\)[\s\S]*?DIMENSION_SLOTS\[`inventoryManualFile\$\{slotNumber\}`\] = '备用'/);
+  assert.match(server, /for \(let slotNumber = 10; slotNumber <= 20; slotNumber \+= 1\)[\s\S]*?DIMENSION_SLOTS\[`inventoryManualFile\$\{slotNumber\}`\] = '备用'/);
   assert.match(server, /DIMENSION_SLOTS\.inventoryManualFile14 = '京东在途手工'/);
+  assert.match(server, /DIMENSION_SLOTS\.inventoryManualFile17 = 'WFS在途手工'/);
   assert.match(client, /manualFieldSelection: true/);
   assert.match(client, /\['materialCode', '物料编码'\][\s\S]*?\['inventoryQty', '在库量'\][\s\S]*?\['transitQty', '在途量'\]/);
-  assert.match(client, /requiredFields: slot\.id === 'inventorySummaryFile8'[\s\S]*?\['materialCode', 'inventoryQty', 'transitQty'\][\s\S]*?\['materialCode'\]/);
+  assert.match(client, /requiredFields: slot\.id === 'inventorySummaryFile8'[\s\S]*?\['businessUnit', 'materialCode', 'inventoryQty', 'transitQty'\][\s\S]*?\['businessUnit', 'materialCode', 'quantity'\]/);
   assert.match(client, /请选择必选字段：\$\{missingLabels\}/);
   assert.match(client, /请手动选择标记为必选的字段；其他未选择字段按空值保存/);
   assert.match(client, /validMappingForColumns\(mapping = \{\}, columns = \[\], fields = \[\], inferMissing = true\)/);
@@ -127,8 +130,10 @@ test('所有文件槽位重新选择文件时强制解析并保留仍有效的�
   );
 
   assert.match(library, /onClick=\{\(event\) => \{ event\.currentTarget\.value = ''; \}\}/);
-  assert.match(library, /const savedMapping = prevState\.savedMapping \|\| prevState\.mapping \|\| record\?\.mapping \|\| \{\}/);
-  assert.match(library, /const hasSavedMapping = \(slot\.fields \|\| \[\]\)\.some\(\(\[key\]\) => normalize\(savedMapping\[key\]\)\)/);
+  assert.match(library, /mappingPresetsRef\.current\[slot\.id\]/);
+  assert.match(library, /hasMappedInventoryFields\(savedMapping, slot\.fields \|\| \[\]\)/);
+  assert.match(library, /\/api\/mappings\/\$\{INVENTORY_MAPPING_PRESET_KIND\}/);
+  assert.match(library, /persistInventoryMapping\(slot, nextMapping\)/);
   assert.match(library, /!slot\.manualFieldSelection && !hasSavedMapping/);
   assert.doesNotMatch(library, /slot\.manualFieldSelection \? \{\} : \(prevState\.savedMapping/);
   assert.match(library, /validMappingForColumns\(mapping, state\.columns, slot\.fields, false\)/);

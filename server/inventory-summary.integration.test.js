@@ -64,41 +64,37 @@ async function waitForServer(url, child, logs) {
 test('手工库存表按物料编码保存标准数量或不可售在库在途数量', () => {
   const workbook = xlsx.utils.book_new();
   xlsx.utils.book_append_sheet(workbook, xlsx.utils.aoa_to_sheet([
-    ['自定义物料列', '自定义仓库列', '自定义主体列', '自定义数量列', '自定义在途列'],
-    [1002010248, '仓库一', '主体一', 25, 6]
+    ['自定义事业部列', '自定义物料列', '自定义数量列', '自定义在途列'],
+    ['海外事业一部', 1002010248, 25, 6]
   ]), '手工表');
   const file = { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) };
 
   const partial = parseInventoryManualWorkbook(file, {
+    businessUnit: '自定义事业部列',
     materialCode: '自定义物料列',
-    warehouseName: '自定义仓库列',
     quantity: '自定义数量列'
   });
   assert.equal(partial.rows.length, 1);
   assert.deepEqual(partial.rows[0], {
-    businessUnit: '',
-    warehouseName: '仓库一',
-    subject: '',
+    businessUnit: '海外事业一部',
     materialCode: '1002010248',
     quantity: 25
   });
   assert.throws(
     () => parseInventoryManualWorkbook(file, {}),
-    /请选择必选字段：物料编码/
+    /请选择必选字段：事业部、物料编码、数量/
   );
   assert.equal(Object.hasOwn(partial.rows[0], 'sku'), false);
   assert.equal(Object.hasOwn(partial.rows[0], 'endingInventoryQty'), false);
 
   const unsellable = parseInventoryManualWorkbook(file, {
+    businessUnit: '自定义事业部列',
     materialCode: '自定义物料列',
-    subject: '自定义主体列',
     inventoryQty: '自定义数量列',
     transitQty: '自定义在途列'
   }, { slotId: 'inventoryManualFile8' });
   assert.deepEqual(unsellable.rows[0], {
-    businessUnit: '',
-    warehouseName: '',
-    subject: '主体一',
+    businessUnit: '海外事业一部',
     materialCode: '1002010248',
     inventoryQty: 25,
     transitQty: 6
@@ -148,6 +144,7 @@ test('inventory summary model uses inventory library facts, layered totals and s
       stockupQty: '200',
       receivedQty: '50'
     }]],
+    ['inventorySummaryFile17', [{ sku: 'SKU-1', warehouseName: 'WFS源仓', wfsTransitQty: '25' }]],
     ['inventorySummaryFile6', [
       { subject: '国内主体', warehouseName: '国内仓', materialCode: 'M2', domesticStockQty: '50' },
       { subject: '主体一', warehouseName: 'FBM仓', materialCode: 'M1', domesticStockQty: '700' }
@@ -188,12 +185,12 @@ test('inventory summary model uses inventory library facts, layered totals and s
     getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: '2026-07-30 12:00:00' })
   });
   assert.deepEqual(result.在库量, { 国内: 80, 跨境: 1500, 合计: 1580 });
-  assert.equal(result.在途量, 550);
+  assert.equal(result.在途量, 575);
   assert.equal(result.在制量, 70);
   assert.equal(result.totals.inventoryValue, 16600);
-  assert.equal(result.totals.transitValue, 5500);
+  assert.equal(result.totals.transitValue, 5750);
   assert.equal(result.totals.unfulfilledValue, 900);
-  assert.equal(result.totals.scaleQty, 2200);
+  assert.equal(result.totals.scaleQty, 2225);
   assert.deepEqual(result.months, ['2026-01', '2026-02']);
   const crossBorderM1 = result.rows.find((row) => row.matchKey === '跨境事业部+M1');
   assert.deepEqual({
@@ -202,6 +199,7 @@ test('inventory summary model uses inventory library facts, layered totals and s
     wfs: crossBorderM1?.wfsInventoryQty,
     fbaTransit: crossBorderM1?.fbaTransitQty,
     fbmTransit: crossBorderM1?.fbmTransitQty,
+    wfsTransit: crossBorderM1?.wfsTransitQty,
     salesQty: crossBorderM1?.salesQty,
     salesAmount: crossBorderM1?.salesAmount,
     january: crossBorderM1?.salesByMonth['2026-01'],
@@ -217,6 +215,7 @@ test('inventory summary model uses inventory library facts, layered totals and s
     wfs: 300,
     fbaTransit: 400,
     fbmTransit: 150,
+    wfsTransit: 25,
     salesQty: 100,
     salesAmount: 10000,
     january: 80,
@@ -233,8 +232,8 @@ test('inventory summary model uses inventory library facts, layered totals and s
   );
   assert.deepEqual(crossBorderM1?.unfulfilledReasons, [{ name: '未填写', qty: 50, value: 500 }]);
   assert.deepEqual(result.quantityReconciliation.summary, {
-    sourceCount: 9,
-    checkedQuantity: 2200,
+    sourceCount: 10,
+    checkedQuantity: 2225,
     missingQuantity: 0,
     overlapQuantity: 0,
     issueSourceCount: 0,
@@ -249,7 +248,7 @@ test('inventory summary model uses inventory library facts, layered totals and s
     })),
     [
       { group: '在库', expectedQuantity: 1580, dashboardQuantity: 1580, status: '校准通过' },
-      { group: '在途', expectedQuantity: 550, dashboardQuantity: 550, status: '校准通过' },
+      { group: '在途', expectedQuantity: 575, dashboardQuantity: 575, status: '校准通过' },
       { group: '未交付', expectedQuantity: 70, dashboardQuantity: 70, status: '校准通过' }
     ]
   );
@@ -267,7 +266,8 @@ test('inventory summary model uses inventory library facts, layered totals and s
       { sourceTable: 'FBA在途报表', sourceWarehouseName: '', receivingWarehouseName: '', mappedWarehouseName: 'FBA在途金蝶仓', storeName: '店铺一' },
       { sourceTable: 'FBM库存报表', sourceWarehouseName: 'FBM仓', receivingWarehouseName: '', mappedWarehouseName: 'FBM仓', storeName: '' },
       { sourceTable: 'FBM在途报表', sourceWarehouseName: '102-US-海外二部-海上在途', receivingWarehouseName: '', mappedWarehouseName: '102-US-海外二部-海上在途', storeName: '' },
-      { sourceTable: 'WFS库存报表', sourceWarehouseName: 'WFS源仓', receivingWarehouseName: '', mappedWarehouseName: 'WFS仓', storeName: '' }
+      { sourceTable: 'WFS库存报表', sourceWarehouseName: 'WFS源仓', receivingWarehouseName: '', mappedWarehouseName: 'WFS仓', storeName: '' },
+      { sourceTable: 'WFS在途报表', sourceWarehouseName: 'WFS源仓', receivingWarehouseName: '', mappedWarehouseName: 'WFS仓', storeName: '' }
     ]
   );
   assert.equal(crossBorderM1?.inventorySourceDetails.every((item) => item.site === '美国'), true);
@@ -1174,6 +1174,12 @@ test('all inventory workbook parsers exclude zero quantity rows from saved data'
       mapping: { jdId: 'jdId', jdStockQty: 'jdStockQty' },
       zero: { jdId: 'JD-ZERO', jdStockQty: '0' },
       stock: { jdId: 'JD-STOCK', jdStockQty: '40' }
+    },
+    {
+      slotId: 'inventorySummaryFile17',
+      mapping: { sku: 'sku', warehouseName: 'warehouseName', wfsTransitQty: 'wfsTransitQty' },
+      zero: { sku: 'SKU-ZERO', warehouseName: 'WFS Warehouse', wfsTransitQty: '0' },
+      stock: { sku: 'SKU-STOCK', warehouseName: 'WFS Warehouse', wfsTransitQty: '50' }
     }
   ];
   cases.forEach(({ slotId, mapping, zero, stock }) => {
@@ -2602,7 +2608,7 @@ test('inventory summary and domestic board use complete source models and enforc
       body: JSON.stringify({ category: '无效分类', businessUnit: '国内事业部', materialCode: 'M1', remark: '无效' })
     });
     assert.equal(invalidNoteResponse.status, 400);
-    assert.equal(summary.quantityReconciliation.summary.sourceCount, 9);
+    assert.equal(summary.quantityReconciliation.summary.sourceCount, 10);
     assert.equal(summary.quantityReconciliation.summary.missingQuantity, 0);
     assert.equal(summary.quantityReconciliation.summary.overlapQuantity, 0);
     assert.ok(Array.isArray(summary.quantityReconciliation.sources));
@@ -3022,6 +3028,7 @@ test('inventory summary and domestic board use complete source models and enforc
         店铺: 'US Store',
         站点: 'US',
         SKU: 'SKU-FBA-1',
+        事业部: '海外事业一部',
         物料编码: 'M-FBA-1',
         FNSKU: 'FNSKU-1',
         ASIN: 'ASIN-1',
@@ -3085,8 +3092,8 @@ test('inventory summary and domestic board use complete source models and enforc
       'FBA库存报表手工.xlsx'
     );
     manualInventoryForm.append('mapping', JSON.stringify({
+      businessUnit: '事业部',
       materialCode: '物料编码',
-      warehouseName: '仓库名称',
       quantity: '期末库存(含移仓)-数量'
     }));
     const manualInventoryUploadResponse = await fetch(`http://127.0.0.1:${port}/api/dimensions/inventoryManualFile1/upload`, {
@@ -3164,12 +3171,10 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.deepEqual(
       {
         businessUnit: manualInventoryRecord?.mapping?.businessUnit,
-        warehouseName: manualInventoryRecord?.mapping?.warehouseName,
-        subject: manualInventoryRecord?.mapping?.subject,
         materialCode: manualInventoryRecord?.mapping?.materialCode,
         quantity: manualInventoryRecord?.mapping?.quantity
       },
-      { businessUnit: '', warehouseName: '仓库名称', subject: '', materialCode: '物料编码', quantity: '期末库存(含移仓)-数量' }
+      { businessUnit: '事业部', materialCode: '物料编码', quantity: '期末库存(含移仓)-数量' }
     );
     assert.equal(Object.hasOwn(manualInventoryRecord?.mapping || {}, 'endingInventoryQty'), false);
     const transitWarehouseRecord = inventoryDimensionRows.find((row) => row.slot_id === 'inventorySummaryFile13');

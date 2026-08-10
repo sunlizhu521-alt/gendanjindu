@@ -1,7 +1,7 @@
 const DOMESTIC_BUSINESS_UNITS = new Set(['国内事业部', '销售部-工厂']);
 const RISK_SOURCE_TYPES = new Set([
   'FBA库存', 'FBM库存', 'WFS库存', '国内在库', '京东在库',
-  'FBA在途', 'FBM在途', '京东在途', '采购跟单', '库存风险', '供应计划分析'
+  'FBA在途', 'FBM在途', 'WFS在途', '京东在途', '采购跟单', '库存风险', '供应计划分析'
 ]);
 
 export const INVENTORY_RISK_CHANNELS = Object.freeze([

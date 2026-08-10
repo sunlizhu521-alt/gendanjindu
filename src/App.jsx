@@ -6479,7 +6479,10 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, ti
           {!onlyIssues && exporting && <span className="progress-export-status">正在生成文件 {exportProgress}%</span>}
         </div>
         <div className="progress-scheme-bar" aria-label="生产跟进方案">
-          <strong>我的方案</strong>
+          <div className="progress-scheme-heading">
+            <strong>筛选方案</strong>
+            <small>根据习惯选择任意一个</small>
+          </div>
           <button
             type="button"
             className={groupMode === 'currentMonth' && filters.allocationStatus.length === 0 ? 'active' : ''}

@@ -312,9 +312,12 @@ test('生产跟进支持新月份、原月份与供应商三种产品下单汇�
   assert.match(progressSource, />按新下单月份<\/button>/);
   assert.match(progressSource, />按原下单月份<\/button>/);
   assert.match(progressSource, />按供应商<\/button>/);
+  assert.match(progressSource, /className="progress-scheme-heading"[\s\S]*?<strong>筛选方案<\/strong>[\s\S]*?<small>根据习惯选择任意一个<\/small>/);
+  assert.doesNotMatch(progressSource, /<strong>我的方案<\/strong>/);
   assert.match(progressSource, /className=\{groupMode === 'supplier' \? 'active' : ''\}[\s\S]*?setGroupMode\('supplier'\)[\s\S]*?setExpandedOrders\(new Set\(\)\)[\s\S]*?setCurrentPage\(1\)/);
   assert.match(progressSource, /每页 20 个下单汇总组/);
   assert.match(styleSource, /\.progress-scheme-bar button\.active\s*\{[\s\S]*?color: #246bdb/);
+  assert.match(styleSource, /\.progress-scheme-heading\s*\{[\s\S]*?flex-direction: column/);
 });
 
 test('生产跟进同一采购订单号只生成一个汇总父行', () => {

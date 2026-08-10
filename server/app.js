@@ -7288,6 +7288,10 @@ app.use((err, req, res, next) => {
 });
 
 const distDir = path.join(rootDir, 'dist');
+app.use('/gendanjindu/assets', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  next();
+});
 app.use('/gendanjindu', express.static(distDir));
 app.use(express.static(distDir));
 app.get(/^\/gendanjindu\/(?!api).*/, (req, res) => res.sendFile(path.join(distDir, 'index.html')));

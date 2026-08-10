@@ -1,10 +1,11 @@
 import React, { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { purchaseTrackingBusinessUnit } from './business-unit.js';
-import InventoryCalculationGuide from './InventoryCalculationGuide.jsx';
-import InventoryRiskPage from './InventoryRiskPage.jsx';
 import { writeStyledExcelFile } from '../shared/excel-export.js';
 import { getLoadingProgress, installGlobalFetchProgress, subscribeLoadingProgress } from './loading-progress.js';
+
+const InventoryCalculationGuide = React.lazy(() => import('./InventoryCalculationGuide.jsx'));
+const InventoryRiskPage = React.lazy(() => import('./InventoryRiskPage.jsx'));
 
 installGlobalFetchProgress();
 
@@ -2376,7 +2377,11 @@ function InventorySummary({ token, active }) {
   }
 
   if (showMethodology) {
-    return <InventoryCalculationGuide onBack={() => setShowMethodology(false)} />;
+    return (
+      <React.Suspense fallback={<div className="loading-fallback">加载中...</div>}>
+        <InventoryCalculationGuide onBack={() => setShowMethodology(false)} />
+      </React.Suspense>
+    );
   }
 
   if (showManualReconciliation) {
@@ -8519,7 +8524,7 @@ function App() {
         {demandsLoading && DEMAND_DATA_PAGES.has(activeTab) && <p className="section-count">正在加载采购订单数据...</p>}
         {shouldMount('domesticBoard') && <PagePane page="domesticBoard" activeTab={activeTab}><DomesticBoard token={token} setMessage={setMessage} /></PagePane>}
         {shouldMount('inventorySummary') && <PagePane page="inventorySummary" activeTab={activeTab}><InventorySummary token={token} active={activeTab === 'inventorySummary'} /></PagePane>}
-        {shouldMount('inventoryRisk') && <PagePane page="inventoryRisk" activeTab={activeTab}><InventoryRiskPage token={token} active={activeTab === 'inventoryRisk'} /></PagePane>}
+        {shouldMount('inventoryRisk') && <PagePane page="inventoryRisk" activeTab={activeTab}><React.Suspense fallback={<div className="loading-fallback">加载中...</div>}><InventoryRiskPage token={token} active={activeTab === 'inventoryRisk'} /></React.Suspense></PagePane>}
         {shouldMount('inventoryPurchase') && <PagePane page="inventoryPurchase" activeTab={activeTab}><InventoryPurchaseFilePage token={token} active={activeTab === 'inventoryPurchase'} /></PagePane>}
         {shouldMount('inventorySummaryLibrary') && <PagePane page="inventorySummaryLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="底表文件" slots={INVENTORY_SUMMARY_LIBRARY_SLOTS} gridColumns={4} onDataApplied={refreshCrossBorderData} /></PagePane>}
         {shouldMount('inventoryManualLibrary') && <PagePane page="inventoryManualLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="手工表库" slots={INVENTORY_MANUAL_LIBRARY_SLOTS} gridColumns={4} /></PagePane>}

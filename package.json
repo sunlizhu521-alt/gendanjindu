@@ -30,5 +30,8 @@
     "unzipper": "^0.12.5",
     "vite": "^7.1.5",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "terser": "^5.49.2"
   }
 }

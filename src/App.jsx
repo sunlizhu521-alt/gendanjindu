@@ -3658,7 +3658,7 @@ function OperationBoardPage({ token, active }) {
     let cancelled = false;
     setLoading(true);
     setError('');
-    request('/api/demands?orderLevel=1', { token })
+    request('/api/operation-board/demands', { token })
       .then((payload) => {
         if (cancelled) return;
         setRows(payload.rows || []);

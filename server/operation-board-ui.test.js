@@ -71,3 +71,19 @@ test('运营看板支持成品和配件联动筛选', () => {
   assert.match(dashboard, /label="成品\/配件" allLabel="全部类型"[\s\S]*?value=\{filters\.productType\}[\s\S]*?options=\{options\.productTypes\}/);
   assert.match(dashboard, /const clearFilters = \(\) => setFilters\([\s\S]*?productType: \[\]/);
 });
+
+test('运营看板使用页面权限保护的全量只读接口，不套用生产跟进采购负责人过滤', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
+  const server = fs.readFileSync(path.join(root, 'server', 'app.js'), 'utf8');
+  const page = client.slice(client.indexOf('function OperationBoardPage('), client.indexOf('function Dashboard('));
+  const route = server.slice(
+    server.indexOf("app.get('/api/operation-board/demands'"),
+    server.indexOf("app.get('/api/table-relationships'")
+  );
+
+  assert.match(page, /request\('\/api\/operation-board\/demands', \{ token \}\)/);
+  assert.doesNotMatch(page, /request\('\/api\/demands\?orderLevel=1'/);
+  assert.match(route, /requireAuth, requirePage\('operationBoard'\)/);
+  assert.match(route, /demandRows\(false, null, \{ includeOperationOrders: true \}\)/);
+});

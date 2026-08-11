@@ -5588,6 +5588,13 @@ app.get('/api/demands', requireAuth, (req, res) => {
   });
 });
 
+app.get('/api/operation-board/demands', requireAuth, requirePage('operationBoard'), (req, res) => {
+  res.json({
+    rows: demandRows(false, null, { includeOperationOrders: true }),
+    currentAppliedAt: currentAppliedAt()
+  });
+});
+
 app.get('/api/table-relationships', requireAuth, (req, res) => {
   const tables = [
     { name: 'kingdee_import_batches', label: '金蝶导入批次', group: '金蝶数据', groupColor: '#3b82f6' },

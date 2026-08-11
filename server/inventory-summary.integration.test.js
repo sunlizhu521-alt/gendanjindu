@@ -2458,13 +2458,15 @@ test('inventory summary and domestic board use complete source models and enforc
   try {
     await waitForServer(`http://127.0.0.1:${port}/gendanjindu/`, child, logs);
     const endpoint = `http://127.0.0.1:${port}/api/inventory-summary`;
-    const [adminResponse, manualReconciliationResponse, purchaseSummaryResponse, domesticResponse, dimensionMissingResponse, demandsResponse, firstMileResponse, anonymousResponse, limitedResponse, expiredResponse] = await Promise.all([
+    const [adminResponse, manualReconciliationResponse, purchaseSummaryResponse, domesticResponse, dimensionMissingResponse, demandsResponse, operationBoardResponse, deniedOperationBoardResponse, firstMileResponse, anonymousResponse, limitedResponse, expiredResponse] = await Promise.all([
       fetch(endpoint, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`${endpoint}/manual-reconciliation?category=${encodeURIComponent('成品+配件')}`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/inventory-purchase-summary`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/domestic-board`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/dimension-missing/cross-border`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(`http://127.0.0.1:${port}/api/demands?orderLevel=1`, { headers: { Authorization: 'Bearer admin-token' } }),
+      fetch(`http://127.0.0.1:${port}/api/operation-board/demands`, { headers: { Authorization: 'Bearer limited-token' } }),
+      fetch(`http://127.0.0.1:${port}/api/operation-board/demands`, { headers: { Authorization: 'Bearer purchase-owner-token' } }),
       fetch(`http://127.0.0.1:${port}/api/first-mile-board`, { headers: { Authorization: 'Bearer admin-token' } }),
       fetch(endpoint),
       fetch(endpoint, { headers: { Authorization: 'Bearer limited-token' } }),
@@ -2477,11 +2479,16 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(domesticResponse.status, 200);
     assert.equal(dimensionMissingResponse.status, 200);
     assert.equal(demandsResponse.status, 200);
+    assert.equal(operationBoardResponse.status, 200);
+    assert.equal(deniedOperationBoardResponse.status, 403);
     assert.equal(firstMileResponse.status, 200);
     assert.equal(anonymousResponse.status, 401);
     assert.equal(limitedResponse.status, 403);
     assert.equal(expiredResponse.status, 401);
     assert.equal((await expiredResponse.json()).error, '登录已过期，请重新登录');
+    const operationBoardRows = (await operationBoardResponse.json()).rows;
+    assert.ok(operationBoardRows.length > 0);
+    assert.ok(operationBoardRows.every((row) => row.canEdit === false));
 
     const purchaseOwnerDemandsResponse = await fetch(`http://127.0.0.1:${port}/api/demands`, {
       headers: { Authorization: 'Bearer purchase-owner-token' }

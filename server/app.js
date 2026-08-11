@@ -2745,7 +2745,7 @@ function defaultProgress(demandKeyValue) {
   };
 }
 
-function demandLoadContext(demands, options = {}) {
+function demandLoadContext(demands) {
   const lookups = dimensionLookups();
   const progressMap = new Map(all('SELECT * FROM supplier_progress').map((row) => [row.demand_key, row]));
   const inventoryMap = new Map(all('SELECT * FROM inventory').map((row) => [row.stock_key, row]));
@@ -2770,7 +2770,7 @@ function demandLoadContext(demands, options = {}) {
       currentOrderRows.push(row);
       if (!demandKeys.has(normalize(row.demand_key))) return;
       const key = demandBatchKey(row.batch_id, row.demand_key);
-      if (!options.includeClosedOrders && normalize(row.close_status) && normalize(row.close_status) !== TRACKING_CLOSE_STATUS) return;
+      if (normalize(row.close_status) && normalize(row.close_status) !== TRACKING_CLOSE_STATUS) return;
       const allRows = allOrderRowsByDemand.get(key) || [];
       allRows.push(orderRowDateSort(row, index));
       allOrderRowsByDemand.set(key, allRows);
@@ -3939,7 +3939,7 @@ function operationOrderBreakdown(baseRow, sourceRows, orderChangeIndex) {
 function demandRows(includeInactive = false, user = null, options = {}) {
   const where = includeInactive ? '' : 'WHERE active = 1';
   const demands = all(`SELECT * FROM order_demands ${where} ORDER BY month DESC, business_unit, supplier, material_code`);
-  const context = demandLoadContext(demands, { includeClosedOrders: options.currentKingdeeOnly });
+  const context = demandLoadContext(demands);
   const rows = demands.map((demand) => {
     const progress = context.progressMap.get(demand.demand_key) || defaultProgress(demand.demand_key);
     const stock = context.inventoryMap.get(stockKey(demand.business_unit, demand.supplier, demand.material_code)) || { stock_qty: 0 };

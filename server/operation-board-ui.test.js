@@ -121,12 +121,13 @@ test('运营看板后端排除手工行并统一标记为金蝶系统数据', ()
   assert.match(demandRows, /dataStatus: '采购订单数据'/);
 });
 
-test('运营看板保留当前采购订单中的已关闭非零订单，生产跟进继续排除', () => {
+test('运营看板和生产跟进均排除关闭状态不是未关闭的订单', () => {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const server = fs.readFileSync(path.join(root, 'server', 'app.js'), 'utf8');
   const loadContext = server.slice(server.indexOf('function demandLoadContext('), server.indexOf('function currentKingdeeNonZeroOrderGroups('));
   const demandRows = server.slice(server.indexOf('function demandRows('), server.indexOf('function uniqueOrderNos('));
 
-  assert.match(loadContext, /!options\.includeClosedOrders/);
-  assert.match(demandRows, /demandLoadContext\(demands, \{ includeClosedOrders: options\.currentKingdeeOnly \}\)/);
+  assert.match(loadContext, /if \(normalize\(row\.close_status\) && normalize\(row\.close_status\) !== TRACKING_CLOSE_STATUS\) return;/);
+  assert.match(demandRows, /const context = demandLoadContext\(demands\);/);
+  assert.doesNotMatch(server, /includeClosedOrders/);
 });

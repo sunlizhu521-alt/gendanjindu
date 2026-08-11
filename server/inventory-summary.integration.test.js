@@ -2495,6 +2495,7 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.ok(operationBoardRows.length > 0);
     assert.ok(operationBoardRows.every((row) => row.canEdit === false));
     assert.ok(operationBoardRows.filter((row) => row.operationOrderLevel).every((row) => row.sourceFile));
+    assert.ok(operationBoardRows.every((row) => row.operationOrderLevel && row.dataSource === '金蝶系统'));
 
     const purchaseOwnerDemandsResponse = await fetch(`http://127.0.0.1:${port}/api/demands`, {
       headers: { Authorization: 'Bearer purchase-owner-token' }

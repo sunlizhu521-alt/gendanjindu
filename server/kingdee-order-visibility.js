@@ -13,6 +13,13 @@ export function kingdeeOrderIdentity(demandKey, orderNo) {
   return `${normalizePart(demandKey)}|${normalizePart(orderNo)}`;
 }
 
+export function isEffectivePurchaseOrder(row) {
+  const documentStatus = normalizePart(row?.documentStatus ?? row?.document_status);
+  if (documentStatus === '暂存') return true;
+  return normalizePart(row?.businessClose ?? row?.business_close) === '正常'
+    && normalizePart(row?.closeStatus ?? row?.close_status) === '未关闭';
+}
+
 export function groupCurrentKingdeeOrderRows(rows) {
   const groups = new Map();
   rows.forEach((row) => {

@@ -3757,7 +3757,8 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       series: unique(rowsFor('series').map((row) => row.productSeries)),
       skus: unique(rowsFor('sku').map((row) => row.sku)),
       purchaseOwners: unique(rowsFor('purchaseOwner').map((row) => row.purchaseOwner)),
-      dataSources: ['金蝶系统', '手工录入'].filter((value) => rowsFor('dataSource').some((row) => (row.dataSource || ((row.orderNo && row.orderNo !== '无采购订单') ? '金蝶系统' : '手工录入')) === value)),
+      dataSources: (usesOperationBoardLayout ? ['金蝶系统'] : ['金蝶系统', '手工录入'])
+        .filter((value) => rowsFor('dataSource').some((row) => (row.dataSource || ((row.orderNo && row.orderNo !== '无采购订单') ? '金蝶系统' : '手工录入')) === value)),
       productTypes: ['成品', '配件'],
       effectiveOrderConditions: ['有效订单', '非有效订单'].filter((value) => rowsFor('effectiveOrderCondition').some((row) => row.effectiveOrderCondition === value))
     };

@@ -28,7 +28,7 @@ import {
   normalizeInventoryRiskParams
 } from './inventory-risk.js';
 import { buildInventoryRiskWorkbook } from './inventory-risk-export.js';
-import { groupCurrentKingdeeOrderRows, kingdeeOrderIdentity } from './kingdee-order-visibility.js';
+import { groupCurrentKingdeeOrderRows, isEffectivePurchaseOrder, kingdeeOrderIdentity } from './kingdee-order-visibility.js';
 import { buildOrderChangeIndex, classifyOrderChange, NORMAL_ORDER_TYPE } from './order-change.js';
 import { buildStyledExcelBuffer } from '../shared/excel-export.js';
 import {
@@ -172,7 +172,6 @@ const DIFF_ALLOCATION_REASONS = [DIFF_NORMAL_ORDER, '业务调整', '型号迭�
 const UNASSIGNED_PURCHASE_OWNER = '未分配采购下单人';
 const UNASSIGNED_BUSINESS_UNIT = '之前未分配事业部';
 const TRACKING_CLOSE_STATUS = '未关闭';
-const VALID_BUSINESS_CLOSE_STATUS = '正常';
 
 const app = express();
 const UPLOAD_LIMIT_BYTES = 100 * 1024 * 1024;
@@ -2746,7 +2745,7 @@ function defaultProgress(demandKeyValue) {
   };
 }
 
-function demandLoadContext(demands) {
+function demandLoadContext(demands, options = {}) {
   const lookups = dimensionLookups();
   const progressMap = new Map(all('SELECT * FROM supplier_progress').map((row) => [row.demand_key, row]));
   const inventoryMap = new Map(all('SELECT * FROM inventory').map((row) => [row.stock_key, row]));
@@ -2771,7 +2770,7 @@ function demandLoadContext(demands) {
       currentOrderRows.push(row);
       if (!demandKeys.has(normalize(row.demand_key))) return;
       const key = demandBatchKey(row.batch_id, row.demand_key);
-      if (normalize(row.close_status) && normalize(row.close_status) !== TRACKING_CLOSE_STATUS) return;
+      if (!options.includeClosedOrders && normalize(row.close_status) && normalize(row.close_status) !== TRACKING_CLOSE_STATUS) return;
       const allRows = allOrderRowsByDemand.get(key) || [];
       allRows.push(orderRowDateSort(row, index));
       allOrderRowsByDemand.set(key, allRows);
@@ -3866,11 +3865,6 @@ function manualProgressDisplayRows(systemRows, user = null) {
   return [...visibleSystemRows, ...manualRows];
 }
 
-function isEffectivePurchaseOrder(row) {
-  return normalize(row?.businessClose || row?.business_close) === VALID_BUSINESS_CLOSE_STATUS
-    && normalize(row?.closeStatus || row?.close_status) === TRACKING_CLOSE_STATUS;
-}
-
 function operationOrderBreakdown(baseRow, sourceRows, orderChangeIndex) {
   const details = groupCurrentKingdeeOrderRows(sourceRows).map(({ orderNo, rows, remainingInboundQty }) => {
     const effectiveOrder = rows.some(isEffectivePurchaseOrder);
@@ -3945,7 +3939,7 @@ function operationOrderBreakdown(baseRow, sourceRows, orderChangeIndex) {
 function demandRows(includeInactive = false, user = null, options = {}) {
   const where = includeInactive ? '' : 'WHERE active = 1';
   const demands = all(`SELECT * FROM order_demands ${where} ORDER BY month DESC, business_unit, supplier, material_code`);
-  const context = demandLoadContext(demands);
+  const context = demandLoadContext(demands, { includeClosedOrders: options.currentKingdeeOnly });
   const rows = demands.map((demand) => {
     const progress = context.progressMap.get(demand.demand_key) || defaultProgress(demand.demand_key);
     const stock = context.inventoryMap.get(stockKey(demand.business_unit, demand.supplier, demand.material_code)) || { stock_qty: 0 };
@@ -4063,7 +4057,18 @@ function demandRows(includeInactive = false, user = null, options = {}) {
     };
     return operationOrderBreakdown(row, allOrderRows, context.orderChangeIndex).map((orderRow) => ({ ...row, ...orderRow }));
   }).flat();
-  const displayRows = includeInactive ? rows : manualProgressDisplayRows(rows, user);
+  const displayRows = includeInactive
+    ? rows
+    : options.currentKingdeeOnly
+      ? rows
+        .filter((row) => row.operationOrderLevel)
+        .map((row) => ({
+          ...row,
+          dataSource: '金蝶系统',
+          dataStatus: '采购订单数据',
+          manualSourceRows: []
+        }))
+      : manualProgressDisplayRows(rows, user);
   if (!user || user.role === ROLE_ADMIN) return displayRows;
   return displayRows.filter((row) => !row.adminOnly && canEditDemand(user, { purchase_owner: row.purchaseOwner }));
 }
@@ -5592,7 +5597,7 @@ app.get('/api/demands', requireAuth, (req, res) => {
 
 app.get('/api/operation-board/demands', requireAuth, requirePage('operationBoard'), (req, res) => {
   res.json({
-    rows: demandRows(false, null, { includeOperationOrders: true }),
+    rows: demandRows(false, null, { includeOperationOrders: true, currentKingdeeOnly: true }),
     currentAppliedAt: currentAppliedAt()
   });
 });

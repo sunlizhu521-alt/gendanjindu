@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { groupCurrentKingdeeOrderRows, kingdeeOrderIdentity } from './kingdee-order-visibility.js';
+import { groupCurrentKingdeeOrderRows, isEffectivePurchaseOrder, kingdeeOrderIdentity } from './kingdee-order-visibility.js';
 
 test('当前金蝶订单按 demand_key 和采购订单号唯一分组', () => {
   const groups = groupCurrentKingdeeOrderRows([
@@ -28,4 +28,11 @@ test('当前金蝶订单仅排除订单级剩余未交付合计为零的数据',
   assert.deepEqual(groups.map((group) => group.orderNo), ['NEGATIVE']);
   assert.equal(groups[0].remainingInboundQty, -2);
   assert.equal(kingdeeOrderIdentity(' D1 ', ' CG1 '), 'D1|CG1');
+});
+
+test('暂存单据直接视为有效订单，其他单据仍校验业务关闭和关闭状态', () => {
+  assert.equal(isEffectivePurchaseOrder({ document_status: '暂存', business_close: '', close_status: '' }), true);
+  assert.equal(isEffectivePurchaseOrder({ document_status: '已审核', business_close: '正常', close_status: '未关闭' }), true);
+  assert.equal(isEffectivePurchaseOrder({ document_status: '已审核', business_close: '已关闭', close_status: '未关闭' }), false);
+  assert.equal(isEffectivePurchaseOrder({ document_status: '已审核', business_close: '正常', close_status: '已关闭' }), false);
 });

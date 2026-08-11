@@ -3577,7 +3577,7 @@ function systemOrderDetails(demandKeyValue, orderNo, materialCode) {
     closeStatus: uniqueDelimitedValues(rows.map((row) => row.close_status)),
     businessClose: uniqueDelimitedValues(rows.map((row) => row.business_close)),
     sourceFile: uniqueDelimitedValues(rows.map((row) => row.source_file)),
-    effectiveOrderCondition: rows.length > 0 && rows.every(isEffectivePurchaseOrder) ? '有效订单' : '非有效订单'
+    effectiveOrderCondition: rows.some(isEffectivePurchaseOrder) ? '有效订单' : '非有效订单'
   };
 }
 
@@ -3620,7 +3620,9 @@ function distributedManualProgressAllocations(row) {
 }
 
 function manualProgressDisplayRows(systemRows, user = null) {
-  const batchId = normalize(latestAppliedManualProgressBatch()?.id);
+  const manualBatch = latestAppliedManualProgressBatch();
+  const batchId = normalize(manualBatch?.id);
+  const manualSourceFile = normalize(manualBatch?.file_name);
   if (!batchId) return systemRows.map((row) => ({ ...row, dataStatus: '采购订单数据', manualSourceRows: [] }));
   const sourceRows = all(
     `SELECT * FROM manual_progress_rows
@@ -3792,7 +3794,7 @@ function manualProgressDisplayRows(systemRows, user = null) {
         || UNASSIGNED_PURCHASE_OWNER,
       purchaseOrg: orderDetails?.purchaseOrg || candidate?.purchaseOrg || system?.purchaseOrg || '',
       orderNo: first.orderNo,
-      sourceFile: orderDetails?.sourceFile || '',
+      sourceFile: orderDetails?.sourceFile || manualSourceFile,
       effectiveOrderCondition: orderDetails?.effectiveOrderCondition || '非有效订单',
       businessClose: orderDetails?.businessClose || '',
       closeStatus: orderDetails?.closeStatus || candidate?.closeStatus || system?.closeStatus || '',
@@ -3871,7 +3873,7 @@ function isEffectivePurchaseOrder(row) {
 
 function operationOrderBreakdown(baseRow, sourceRows, orderChangeIndex) {
   const details = groupCurrentKingdeeOrderRows(sourceRows).map(({ orderNo, rows, remainingInboundQty }) => {
-    const effectiveOrder = rows.length > 0 && rows.every(isEffectivePurchaseOrder);
+    const effectiveOrder = rows.some(isEffectivePurchaseOrder);
     const orderChange = classifyOrderChange({
       currentRows: rows,
       batchId: rows[0]?.batch_id,

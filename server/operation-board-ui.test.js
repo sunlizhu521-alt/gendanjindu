@@ -87,3 +87,25 @@ test('运营看板使用页面权限保护的全量只读接口，不套用生�
   assert.match(route, /requireAuth, requirePage\('operationBoard'\)/);
   assert.match(route, /demandRows\(false, null, \{ includeOperationOrders: true \}\)/);
 });
+
+test('运营看板支持有效订单联动筛选', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
+  const dashboard = client.slice(client.indexOf('function Dashboard('), client.indexOf('function AppliedTimeNote('));
+
+  assert.match(dashboard, /effectiveOrderCondition: \[\]/);
+  assert.match(dashboard, /omit === 'effectiveOrderCondition'[\s\S]*?filters\.effectiveOrderCondition[\s\S]*?row\.effectiveOrderCondition/);
+  assert.match(dashboard, /effectiveOrderConditions: \['有效订单', '非有效订单'\]\.filter/);
+  assert.match(dashboard, /effectiveOrderCondition: options\.effectiveOrderConditions/);
+  assert.match(dashboard, /label="是否有效订单" allLabel="全部订单"[\s\S]*?value=\{filters\.effectiveOrderCondition\}[\s\S]*?options=\{options\.effectiveOrderConditions\}/);
+});
+
+test('同订单同物料存在有效明细即判有效，手工行使用手工导入来源文件', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const server = fs.readFileSync(path.join(root, 'server', 'app.js'), 'utf8');
+
+  assert.equal((server.match(/rows\.some\(isEffectivePurchaseOrder\)/g) || []).length, 2);
+  assert.doesNotMatch(server, /rows\.every\(isEffectivePurchaseOrder\)/);
+  assert.match(server, /const manualSourceFile = normalize\(manualBatch\?\.file_name\)/);
+  assert.match(server, /sourceFile: orderDetails\?\.sourceFile \|\| manualSourceFile/);
+});

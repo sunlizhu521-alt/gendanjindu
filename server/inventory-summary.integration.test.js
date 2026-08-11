@@ -2108,6 +2108,11 @@ test('inventory summary and domestic board use complete source models and enforc
   );
   database.run(
     kingdeeOrderSql,
+    ['order-june-date-2-closed-line', 'batch-june', 'active-june', '2026-06', '国内事业部', 'Supplier A', 'M1', 0,
+      0, 0, '', '薛文乐7月柜1', 'CGDD011560', '已审核', '未关闭', '已关闭', '{}']
+  );
+  database.run(
+    kingdeeOrderSql,
     ['order-june-invalid', 'batch-june', 'active-june', '2026-06', '国内事业部', 'Supplier A', 'M1', 100,
       0, 100, '2026/09/15 08:00:00', '薛文乐7月柜1', 'CGDD011482', '已审核', '未关闭', '异常', '{}']
   );
@@ -2489,6 +2494,7 @@ test('inventory summary and domestic board use complete source models and enforc
     const operationBoardRows = (await operationBoardResponse.json()).rows;
     assert.ok(operationBoardRows.length > 0);
     assert.ok(operationBoardRows.every((row) => row.canEdit === false));
+    assert.ok(operationBoardRows.filter((row) => row.operationOrderLevel).every((row) => row.sourceFile));
 
     const purchaseOwnerDemandsResponse = await fetch(`http://127.0.0.1:${port}/api/demands`, {
       headers: { Authorization: 'Bearer purchase-owner-token' }

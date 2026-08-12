@@ -3888,8 +3888,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
   }
 
   const operationTableColumns = [
-    '下单月份',
-    '采购订单号',
+    ...(operationViewMode === 'materialCode' ? [] : ['下单月份', '采购订单号']),
     ...(showOperationAuxiliaryColumns ? ['来源文件', '有效订单条件', '关闭状态', '单据状态'] : []),
     '事业部',
     ...(showOperationAuxiliaryColumns ? ['运营', '供应商', '创建人'] : []),
@@ -3898,8 +3897,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     ...(showOperationAuxiliaryColumns ? ['OA备货流程号'] : [])
   ];
   const operationTableValues = (row) => [
-    row.month,
-    row.orderNo,
+    ...(operationViewMode === 'materialCode' ? [] : [row.month, row.orderNo]),
     ...(showOperationAuxiliaryColumns ? [row.sourceFile, row.effectiveOrderCondition, row.closeStatus, row.documentStatus] : []),
     row.businessUnit,
     ...(showOperationAuxiliaryColumns ? [row.operatorName, row.supplier, row.orderCreator] : []),

@@ -161,3 +161,14 @@ test('运营看板先筛选订单明细再按物料汇总，页面和导出统�
   assert.match(dashboard, /rows=\{filteredRows\}/);
   assert.match(dashboard, /rows=\{pageRows\}/);
 });
+
+test('运营看板方案二隐藏下单月份和采购订单号列但导出继续保留', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
+  const dashboard = client.slice(client.indexOf('function Dashboard('), client.indexOf('function AppliedTimeNote('));
+
+  assert.match(dashboard, /operationViewMode === 'materialCode' \? \[\] : \['下单月份', '采购订单号'\]/);
+  assert.match(dashboard, /operationViewMode === 'materialCode' \? \[\] : \[row\.month, row\.orderNo\]/);
+  assert.match(dashboard, /\? \['下单月份', '采购订单号', '来源文件'/);
+  assert.match(dashboard, /row\.month,\s+row\.orderNo,\s+row\.sourceFile/);
+});

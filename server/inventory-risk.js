@@ -29,6 +29,42 @@ export const INVENTORY_RISK_DEFAULT_PARAMS = Object.freeze({
   channels: Object.freeze(Object.fromEntries(INVENTORY_RISK_CHANNELS.map(({ key }) => [key, Object.freeze({ ...DEFAULT_CHANNEL_PARAMS })])))
 });
 
+const SUPPLY_PLAN_CHANNELS = [
+  { key: 'overseasUs', label: '海外-美国', salesRegion: '美国' },
+  { key: 'overseasEurope', label: '海外-欧洲', salesRegion: '欧洲' },
+  { key: 'domestic', label: '国内', salesRegion: '中国' }
+];
+
+const SUPPLY_PLAN_DEFAULT_CHANNEL_PARAMS = {
+  overseasUs: {
+    onHandSellableDays: 60,
+    dispatchToShelfDays: 10,
+    transportDays: 40,
+    bookingDays: 10,
+    averageLeadTimeDays: 45,
+    contractSigningDays: 10,
+    safetyDays: 175
+  },
+  overseasEurope: {
+    onHandSellableDays: 60,
+    dispatchToShelfDays: 10,
+    transportDays: 55,
+    bookingDays: 10,
+    averageLeadTimeDays: 45,
+    contractSigningDays: 10,
+    safetyDays: 190
+  },
+  domestic: {
+    onHandSellableDays: 30,
+    dispatchToShelfDays: 7,
+    transportDays: 7,
+    bookingDays: 3,
+    averageLeadTimeDays: 45,
+    contractSigningDays: 10,
+    safetyDays: 102
+  }
+};
+
 function text(value) {
   return String(value ?? '').trim();
 }
@@ -254,6 +290,35 @@ export function normalizeInventoryRiskParams(input = {}) {
   };
 }
 
+export function normalizeSupplyPlanParams(input = {}) {
+  const editableFields = [
+    'onHandSellableDays',
+    'dispatchToShelfDays',
+    'transportDays',
+    'bookingDays',
+    'averageLeadTimeDays',
+    'contractSigningDays'
+  ];
+  const channels = Object.fromEntries(SUPPLY_PLAN_CHANNELS.map(({ key, label }) => {
+    const source = input?.channels?.[key] || {};
+    const defaults = SUPPLY_PLAN_DEFAULT_CHANNEL_PARAMS[key];
+    const normalized = Object.fromEntries(editableFields.map((field) => [
+      field,
+      numberParam(source, field, defaults[field], `${label}${field}`)
+    ]));
+    normalized.spotDays = normalized.onHandSellableDays
+      + normalized.dispatchToShelfDays
+      + normalized.transportDays
+      + normalized.bookingDays;
+    normalized.fullChainDays = normalized.spotDays
+      + normalized.averageLeadTimeDays
+      + normalized.contractSigningDays;
+    normalized.safetyDays = numberParam(source, 'safetyDays', normalized.fullChainDays, `${label}safetyDays`);
+    return [key, normalized];
+  }));
+  return { channels };
+}
+
 function uniqueSkuMap(rows) {
   const candidates = new Map();
   for (const row of rows) {
@@ -418,6 +483,54 @@ function addAggregate(map, row) {
   });
   map.set(key, current);
   return 'included';
+}
+
+export function buildSupplyPlanSummary({ inventoryModel = {}, params: input = {}, now = new Date() } = {}) {
+  const params = normalizeSupplyPlanParams(input);
+  const aggregate = new Map();
+  const summaryRows = Array.isArray(inventoryModel.rows) ? inventoryModel.rows : [];
+  summaryRows.forEach((row) => addAggregate(aggregate, row));
+
+  const rows = [...aggregate.values()].flatMap((row) => {
+    if (!(row.onHandQty > 0 || row.inTransitQty > 0 || row.undeliveredQty > 0)) return [];
+    const channelSettings = params.channels[row.channelKey];
+    if (!channelSettings) return [];
+    return [{
+      materialCode: row.materialCode,
+      sku: row.sku,
+      materialName: row.materialName,
+      productLine: row.productLine,
+      productSeries: row.productSeries,
+      model: row.model,
+      salesRegion: row.salesRegion,
+      channelKey: row.channelKey,
+      channel: row.channel,
+      businessUnit: row.businessUnit,
+      warehouseLocations: [...row.warehouseLocations].sort((left, right) => left.localeCompare(right, 'zh-Hans-CN')),
+      onHandQty: row.onHandQty,
+      inTransitQty: row.inTransitQty,
+      undeliveredQty: row.undeliveredQty,
+      inventoryQty: row.onHandQty + row.inTransitQty,
+      onHandSellableDays: channelSettings.onHandSellableDays,
+      dispatchToShelfDays: channelSettings.dispatchToShelfDays,
+      transportDays: channelSettings.transportDays,
+      bookingDays: channelSettings.bookingDays,
+      spotDays: channelSettings.spotDays,
+      averageLeadTimeDays: channelSettings.averageLeadTimeDays,
+      contractSigningDays: channelSettings.contractSigningDays,
+      fullChainDays: channelSettings.fullChainDays,
+      safetyDays: channelSettings.safetyDays
+    }];
+  }).sort((left, right) => (
+    left.businessUnit.localeCompare(right.businessUnit, 'zh-Hans-CN')
+    || left.materialCode.localeCompare(right.materialCode, 'zh-Hans-CN', { numeric: true })
+  ));
+
+  return {
+    ok: true,
+    rows,
+    generatedAt: new Date(now).toISOString()
+  };
 }
 
 function actionFor(transitDays, chainDays, settings) {

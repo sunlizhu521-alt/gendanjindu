@@ -24,8 +24,10 @@ import {
 } from './inventory-summary.js';
 import {
   buildInventoryRiskAnalysis,
+  buildSupplyPlanSummary,
   inventoryRiskCacheKey,
-  normalizeInventoryRiskParams
+  normalizeInventoryRiskParams,
+  normalizeSupplyPlanParams
 } from './inventory-risk.js';
 import { buildInventoryRiskWorkbook } from './inventory-risk-export.js';
 import { groupCurrentKingdeeOrderRows, isEffectivePurchaseOrder, kingdeeOrderIdentity } from './kingdee-order-visibility.js';
@@ -55,6 +57,7 @@ const ALL_PAGES = [
   'lingxingInventory',
   'inventorySummary',
   'inventoryRisk',
+  'supplyPlanBoard',
   'inventoryPurchase',
   'inventorySummaryLibrary',
   'inventoryManualLibrary',
@@ -75,6 +78,7 @@ const PAGE_LABELS = {
   domesticBoard: '国内事业部看板',
   inventorySummary: '库存汇总',
   inventoryRisk: '供应计划分析',
+  supplyPlanBoard: '供应计划工具',
   inventoryPurchase: '采购未交付',
   inventorySummaryLibrary: '底表文件',
   inventoryManualLibrary: '手工表库',
@@ -436,6 +440,7 @@ function auditIpAddress(req) {
 function auditPageForRequest(req) {
   const requestPath = req.path;
   if (requestPath.startsWith('/api/auth/')) return { key: 'system', label: '系统登录' };
+  if (requestPath.startsWith('/api/supply-plan')) return { key: 'supplyPlanBoard', label: PAGE_LABELS.supplyPlanBoard };
   if (requestPath.startsWith('/api/inventory-risk')) return { key: 'inventoryRisk', label: PAGE_LABELS.inventoryRisk };
   if (requestPath.startsWith('/api/inventory-summary')) return { key: 'inventorySummary', label: PAGE_LABELS.inventorySummary };
   if (requestPath.startsWith('/api/operation-logs')) return { key: 'operationLogs', label: PAGE_LABELS.operationLogs };
@@ -2620,6 +2625,45 @@ function saveInventoryRiskSettings(input, userName) {
          (id, setting_key, params_json, updated_by, updated_at)
        VALUES (?, ?, ?, ?, ?)`,
       [randomUUID(), INVENTORY_RISK_SETTING_KEY, paramsJson, updatedBy, updatedAt]
+    );
+  });
+  return { params, updatedBy, updatedAt };
+}
+
+const SUPPLY_PLAN_SETTING_KEY = 'supplyPlan';
+
+function currentSupplyPlanSettings() {
+  const saved = get(
+    'SELECT params_json, updated_by, updated_at FROM inventory_risk_settings WHERE setting_key = ?',
+    [SUPPLY_PLAN_SETTING_KEY]
+  );
+  let params;
+  try {
+    params = normalizeSupplyPlanParams(saved ? JSON.parse(saved.params_json) : {});
+  } catch {
+    params = normalizeSupplyPlanParams({});
+  }
+  return {
+    params,
+    updatedBy: saved?.updated_by || '',
+    updatedAt: saved?.updated_at || ''
+  };
+}
+
+function saveSupplyPlanSettings(input, userName) {
+  const params = normalizeSupplyPlanParams(input);
+  const paramsJson = JSON.stringify(params);
+  const updatedAt = nowText();
+  const updatedBy = normalize(userName) || '未知用户';
+  transaction(() => {
+    run(
+      `INSERT INTO inventory_risk_settings (setting_key, params_json, updated_by, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(setting_key) DO UPDATE SET
+         params_json = excluded.params_json,
+         updated_by = excluded.updated_by,
+         updated_at = excluded.updated_at`,
+      [SUPPLY_PLAN_SETTING_KEY, paramsJson, updatedBy, updatedAt]
     );
   });
   return { params, updatedBy, updatedAt };
@@ -5230,6 +5274,39 @@ app.put('/api/inventory-summary/manual-reconciliation/note', requireAuth, requir
 app.get('/api/inventory-risk/params', requireAuth, requirePage('inventoryRisk'), (_req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   return res.json(currentInventoryRiskSettings());
+});
+
+app.get('/api/supply-plan/summary', requireAuth, requirePage('supplyPlanBoard'), (_req, res) => {
+  try {
+    const settings = currentSupplyPlanSettings();
+    const payload = buildSupplyPlanSummary({
+      inventoryModel: inventorySummaryData(),
+      params: settings.params
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({
+      ...payload,
+      params: settings.params,
+      updatedBy: settings.updatedBy,
+      updatedAt: settings.updatedAt
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error.message || '供应计划数据生成失败' });
+  }
+});
+
+app.get('/api/supply-plan/params', requireAuth, requirePage('supplyPlanBoard'), (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json(currentSupplyPlanSettings());
+});
+
+app.post('/api/supply-plan/params', requireAuth, requirePage('supplyPlanBoard'), (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json(saveSupplyPlanSettings(req.body || {}, req.user.name));
+  } catch (error) {
+    return res.status(400).json({ error: error.message || '供应计划参数无效' });
+  }
 });
 
 app.post('/api/inventory-risk/query', requireAuth, requirePage('inventoryRisk'), (req, res) => {

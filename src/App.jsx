@@ -3955,7 +3955,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       </section>
       {usesOperationBoardLayout ? (
         <section className="progress-chart-grid operation-chart-grid">
-          <ProgressStackedChart title={`供应商${remainingShortLabel} / 在产品 / 完工产品`} rows={operationDimensionChartRows} groupBy={(row) => normalize(row.supplier) || orderSupplierName(row)} />
+          <ProgressStackedChart title={`供应商${remainingShortLabel} / 在产品 / 完工产品`} rows={operationDimensionChartRows} groupBy={(row) => orderSupplierName(row)} />
           <ProgressStackedChart title={`事业部${remainingShortLabel} / 在产品 / 完工产品`} rows={operationDimensionChartRows} groupBy={(row) => purchaseTrackingBusinessUnit(row.businessUnit)} />
           <ProgressStackedChart title={`系列${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => row.productSeries} />
           <ProgressStackedChart title={`SKU${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => row.sku} />

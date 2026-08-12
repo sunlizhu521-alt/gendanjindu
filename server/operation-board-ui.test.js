@@ -188,7 +188,8 @@ test('运营看板方案二供应商和事业部图按订单明细分别聚合�
   assert.match(dashboard, /groupOperationBoardRowsByMaterial\(filteredOrderRows\)/);
   assert.match(dashboard, /const operationDimensionChartRows = usesOperationBoardLayout && operationViewMode === 'materialCode'[\s\S]*?\? filteredOrderRows[\s\S]*?: filteredRows/);
   assert.equal((dashboard.match(/rows=\{operationDimensionChartRows\}/g) || []).length, 2);
-  assert.match(dashboard, /rows=\{operationDimensionChartRows\} groupBy=\{\(row\) => normalize\(row\.supplier\) \|\| orderSupplierName\(row\)\}/);
+  assert.match(dashboard, /rows=\{operationDimensionChartRows\} groupBy=\{\(row\) => orderSupplierName\(row\)\}/);
+  assert.doesNotMatch(dashboard, /groupBy=\{\(row\) => normalize\(row\.supplier\)/);
   assert.match(dashboard, /rows=\{operationDimensionChartRows\} groupBy=\{\(row\) => purchaseTrackingBusinessUnit\(row\.businessUnit\)\}/);
   assert.equal((dashboard.match(/rows=\{filteredRows\} groupBy=/g) || []).length, 2);
 });

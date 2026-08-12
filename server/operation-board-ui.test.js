@@ -131,3 +131,33 @@ test('运营看板和生产跟进均排除关闭状态不是未关闭的订单',
   assert.match(demandRows, /const context = demandLoadContext\(demands\);/);
   assert.doesNotMatch(server, /includeClosedOrders/);
 });
+
+test('运营看板提供采购订单号和物料编码双方案并默认按订单展示', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
+  const styles = fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8');
+  const dashboard = client.slice(client.indexOf('function Dashboard('), client.indexOf('function AppliedTimeNote('));
+
+  assert.match(dashboard, /const \[operationViewMode, setOperationViewMode\] = useState\('orderNo'\)/);
+  assert.match(dashboard, />方案一：采购订单号<\/button>/);
+  assert.match(dashboard, />方案二：按物料编码<\/button>/);
+  assert.match(dashboard, /aria-label="运营看板展示方案"/);
+  assert.match(dashboard, /setOperationViewMode\('orderNo'\)/);
+  assert.match(dashboard, /setOperationViewMode\('materialCode'\)/);
+  assert.match(dashboard, /\[filters, operationViewMode\]/);
+  assert.match(styles, /\.operation-board-scheme-bar\s*\{/);
+});
+
+test('运营看板先筛选订单明细再按物料汇总，页面和导出统一使用方案数据', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
+  const dashboard = client.slice(client.indexOf('function Dashboard('), client.indexOf('function AppliedTimeNote('));
+
+  assert.match(dashboard, /const matchedOrderRows = activeRows\.filter\(\(row\) => matchesDashboardFilters\(row\)\);/);
+  assert.match(dashboard, /groupOperationBoardRowsByMaterial\(matchedOrderRows\)/);
+  assert.match(dashboard, /groupOperationBoardRowsByMaterial\(activeRows\)/);
+  assert.match(dashboard, /当前显示 \{filteredRows\.length\} \/ \{schemeActiveRows\.length\} 条/);
+  assert.match(dashboard, /\.\.\.filteredRows\.map/);
+  assert.match(dashboard, /rows=\{filteredRows\}/);
+  assert.match(dashboard, /rows=\{pageRows\}/);
+});

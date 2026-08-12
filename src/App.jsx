@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { purchaseTrackingBusinessUnit } from './business-unit.js';
 import { writeStyledExcelFile } from '../shared/excel-export.js';
 import { getLoadingProgress, installGlobalFetchProgress, subscribeLoadingProgress } from './loading-progress.js';
+import { groupOperationBoardRowsByMaterial } from './operation-board-grouping.js';
 
 const InventoryCalculationGuide = React.lazy(() => import('./InventoryCalculationGuide.jsx'));
 const InventoryRiskPage = React.lazy(() => import('./InventoryRiskPage.jsx'));
@@ -3696,6 +3697,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
   const [filters, setFilters] = useSessionFilters(filterKey, { month: [], businessUnit: [], operatorName: [], supplierCount: [], supplierShortName: [], productLine: [], series: [], sku: [], purchaseOwner: [], dataSource: [], productType: [], effectiveOrderCondition: [], keyword: '' });
   const [currentPage, setCurrentPage] = useState(1);
   const [showOperationAuxiliaryColumns, setShowOperationAuxiliaryColumns] = useState(false);
+  const [operationViewMode, setOperationViewMode] = useState('orderNo');
   const pageSize = 20;
   const unique = (values) => [...new Set(values.map((value) => normalize(value)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const selectedValues = (value) => Array.isArray(value) ? value : (normalize(value) ? [normalize(value)] : []);
@@ -3780,7 +3782,17 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
     });
     if (next) setFilters(next);
   }, [options, filters, setFilters]);
-  const filteredRows = useMemo(() => activeRows.filter((row) => matchesDashboardFilters(row)), [activeRows, filters]);
+  const schemeActiveRows = useMemo(() => (
+    usesOperationBoardLayout && operationViewMode === 'materialCode'
+      ? groupOperationBoardRowsByMaterial(activeRows)
+      : activeRows
+  ), [activeRows, operationViewMode, usesOperationBoardLayout]);
+  const filteredRows = useMemo(() => {
+    const matchedOrderRows = activeRows.filter((row) => matchesDashboardFilters(row));
+    return usesOperationBoardLayout && operationViewMode === 'materialCode'
+      ? groupOperationBoardRowsByMaterial(matchedOrderRows)
+      : matchedOrderRows;
+  }, [activeRows, filters, operationViewMode, usesOperationBoardLayout]);
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const pageRows = useMemo(
     () => filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize),
@@ -3812,7 +3824,7 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [filters]);
+  }, [filters, operationViewMode]);
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
@@ -3910,11 +3922,32 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       <div className="section-heading-row dashboard-heading">
         <h2>{title}</h2>
         <span className="section-count dashboard-explain">
-          当前显示 {filteredRows.length} / {activeRows.length} 条；{remainingLabel}=剩余入库数量，已发货=累计入库数量，在产品=供应商在生产中，完工产品=供应商已经生产完待入采购入库
+          当前显示 {filteredRows.length} / {schemeActiveRows.length} 条；{remainingLabel}=剩余入库数量，已发货=累计入库数量，在产品=供应商在生产中，完工产品=供应商已经生产完待入采购入库
         </span>
       </div>
       {usesOperationBoardLayout && (
         <AppliedTimeNote value={currentAppliedAt} />
+      )}
+      {usesOperationBoardLayout && (
+        <div className="operation-board-scheme-bar" aria-label="运营看板展示方案">
+          <div className="operation-board-scheme-heading">
+            <strong>展示方案</strong>
+            <small>根据查看习惯选择</small>
+          </div>
+          <button
+            type="button"
+            className={operationViewMode === 'orderNo' ? 'active' : ''}
+            aria-pressed={operationViewMode === 'orderNo'}
+            onClick={() => setOperationViewMode('orderNo')}
+          >方案一：采购订单号</button>
+          <button
+            type="button"
+            className={operationViewMode === 'materialCode' ? 'active' : ''}
+            aria-pressed={operationViewMode === 'materialCode'}
+            onClick={() => setOperationViewMode('materialCode')}
+          >方案二：按物料编码</button>
+          <span>{operationViewMode === 'materialCode' ? '当前按物料编码汇总' : '当前按采购订单号展示'}</span>
+        </div>
       )}
       <div className="toolbar filters-row">
         <MultiSelectFilter label="下单月份" allLabel="全部月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />

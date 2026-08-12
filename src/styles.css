@@ -4453,6 +4453,64 @@ th {
   white-space: nowrap;
 }
 
+.operation-board-scheme-bar {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 8px;
+  margin: -2px 0 10px;
+  padding: 5px 10px;
+  border: 1px solid #dbe6f3;
+  border-radius: 6px;
+  background: #f8fbff;
+}
+
+.operation-board-scheme-heading {
+  display: flex;
+  min-width: 112px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  line-height: 1.2;
+}
+
+.operation-board-scheme-heading strong {
+  color: #53657b;
+  font-size: 12px;
+}
+
+.operation-board-scheme-heading small {
+  color: #8a97a8;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.operation-board-scheme-bar button {
+  height: 27px;
+  padding: 0 11px;
+  border: 1px solid #ced8e6;
+  border-radius: 3px;
+  background: #fff;
+  color: #526178;
+  box-shadow: none;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.operation-board-scheme-bar button:hover,
+.operation-board-scheme-bar button.active {
+  border-color: #7ba9fb;
+  background: #eff5ff;
+  color: #246bdb;
+}
+
+.operation-board-scheme-bar > span {
+  margin-left: auto;
+  color: #8390a1;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .stack-total {
   display: flex;
   height: 100%;
@@ -7608,7 +7666,8 @@ th {
   }
 
   .progress-command-bar,
-  .progress-scheme-bar {
+  .progress-scheme-bar,
+  .operation-board-scheme-bar {
     overflow-x: auto;
   }
 

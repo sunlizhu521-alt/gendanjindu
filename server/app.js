@@ -2580,6 +2580,50 @@ function inventorySummaryData({ manualCategory = '' } = {}) {
 }
 
 let inventoryRiskResultCache = { key: '', payload: null };
+const INVENTORY_RISK_SETTING_KEY = 'global';
+
+function currentInventoryRiskSettings() {
+  const saved = get(
+    'SELECT params_json, updated_by, updated_at FROM inventory_risk_settings WHERE setting_key = ?',
+    [INVENTORY_RISK_SETTING_KEY]
+  );
+  let params;
+  try {
+    params = normalizeInventoryRiskParams(saved ? JSON.parse(saved.params_json) : {});
+  } catch {
+    params = normalizeInventoryRiskParams({});
+  }
+  return {
+    params,
+    updatedBy: saved?.updated_by || '',
+    updatedAt: saved?.updated_at || ''
+  };
+}
+
+function saveInventoryRiskSettings(input, userName) {
+  const params = normalizeInventoryRiskParams(input);
+  const paramsJson = JSON.stringify(params);
+  const updatedAt = nowText();
+  const updatedBy = normalize(userName) || '未知用户';
+  transaction(() => {
+    run(
+      `INSERT INTO inventory_risk_settings (setting_key, params_json, updated_by, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(setting_key) DO UPDATE SET
+         params_json = excluded.params_json,
+         updated_by = excluded.updated_by,
+         updated_at = excluded.updated_at`,
+      [INVENTORY_RISK_SETTING_KEY, paramsJson, updatedBy, updatedAt]
+    );
+    run(
+      `INSERT INTO inventory_risk_setting_history
+         (id, setting_key, params_json, updated_by, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      [randomUUID(), INVENTORY_RISK_SETTING_KEY, paramsJson, updatedBy, updatedAt]
+    );
+  });
+  return { params, updatedBy, updatedAt };
+}
 
 function inventoryRiskSourceVersion() {
   return all(
@@ -5183,6 +5227,11 @@ app.put('/api/inventory-summary/manual-reconciliation/note', requireAuth, requir
   });
 });
 
+app.get('/api/inventory-risk/params', requireAuth, requirePage('inventoryRisk'), (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json(currentInventoryRiskSettings());
+});
+
 app.post('/api/inventory-risk/query', requireAuth, requirePage('inventoryRisk'), (req, res) => {
   try {
     const payload = inventoryRiskData(req.body, { force: Boolean(req.body?.force) });
@@ -5190,7 +5239,10 @@ app.post('/api/inventory-risk/query', requireAuth, requirePage('inventoryRisk'),
     if (!payload.ok) {
       return res.status(payload.status === 'invalid_params' ? 400 : 422).json(payload);
     }
-    return res.json(payload);
+    const parameterSettings = req.body?.saveParams
+      ? saveInventoryRiskSettings(payload.params || req.body, req.user.name)
+      : currentInventoryRiskSettings();
+    return res.json({ ...payload, parameterSettings });
   } catch (error) {
     return res.status(400).json({ error: error.message || '供应计划分析参数无效' });
   }

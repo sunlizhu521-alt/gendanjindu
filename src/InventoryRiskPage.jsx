@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { loadInventoryRiskParams, saveInventoryRiskParams } from './inventory-risk-params.js';
 
 const API = import.meta.env.DEV ? 'http://localhost:4003' : '';
 
@@ -341,7 +340,11 @@ function InventoryRiskLogic({ onBack }) {
 }
 
 export default function InventoryRiskPage({ token, active }) {
-  const [params, setParams] = useState(() => loadInventoryRiskParams(DEFAULT_PARAMS));
+  const [params, setParams] = useState(DEFAULT_PARAMS);
+  const [paramsReady, setParamsReady] = useState(false);
+  const [paramsLoading, setParamsLoading] = useState(false);
+  const [paramsLoadAttempted, setParamsLoadAttempted] = useState(false);
+  const [paramsMeta, setParamsMeta] = useState({ updatedBy: '', updatedAt: '' });
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -362,6 +365,22 @@ export default function InventoryRiskPage({ token, active }) {
     }
   }));
 
+  async function loadServerParams() {
+    setParamsLoading(true);
+    setParamsLoadAttempted(true);
+    setError('');
+    try {
+      const payload = await apiRequest('/api/inventory-risk/params', token);
+      setParams(payload.params || DEFAULT_PARAMS);
+      setParamsMeta({ updatedBy: payload.updatedBy || '', updatedAt: payload.updatedAt || '' });
+      setParamsReady(true);
+    } catch (requestError) {
+      setError(`读取腾讯云最后参数失败：${requestError.message}`);
+    } finally {
+      setParamsLoading(false);
+    }
+  }
+
   async function calculate(force = false) {
     setLoading(true);
     setError('');
@@ -369,10 +388,16 @@ export default function InventoryRiskPage({ token, active }) {
     try {
       const payload = await apiRequest('/api/inventory-risk/query', token, {
         method: 'POST',
-        body: JSON.stringify({ ...params, force })
+        body: JSON.stringify({ ...params, force, saveParams: force })
       });
       setResult(payload);
-      setParams(saveInventoryRiskParams(payload.params || params, DEFAULT_PARAMS));
+      setParams(payload.params || params);
+      if (payload.parameterSettings) {
+        setParamsMeta({
+          updatedBy: payload.parameterSettings.updatedBy || '',
+          updatedAt: payload.parameterSettings.updatedAt || ''
+        });
+      }
       setFilters({ ...EMPTY_RISK_FILTERS });
       setLoaded(true);
     } catch (requestError) {
@@ -385,8 +410,19 @@ export default function InventoryRiskPage({ token, active }) {
   }
 
   useEffect(() => {
-    if (active && !loaded && !loading) calculate();
-  }, [active, loaded, loading]);
+    if (active && !paramsReady && !paramsLoading && !paramsLoadAttempted) loadServerParams();
+  }, [active, paramsReady, paramsLoading, paramsLoadAttempted]);
+
+  useEffect(() => {
+    if (active && paramsReady && !loaded && !loading) calculate();
+  }, [active, paramsReady, loaded, loading]);
+
+  useEffect(() => {
+    if (active) return;
+    setParamsReady(false);
+    setParamsLoadAttempted(false);
+    setLoaded(false);
+  }, [active]);
 
   async function exportResult() {
     if (exporting) return;
@@ -551,11 +587,20 @@ export default function InventoryRiskPage({ token, active }) {
         </div>
       )}
 
-      <RiskParameterMatrix params={params} onChannelChange={setChannelParam} onRootChange={setRootParam} />
+      {paramsReady && (
+        <>
+          <div className="inventory-risk-parameter-source">
+            参数保存在腾讯云：{paramsMeta.updatedAt
+              ? `最后由 ${paramsMeta.updatedBy || '未知用户'} 于 ${paramsMeta.updatedAt} 保存`
+              : '暂无历史设置，当前使用系统默认值；点击“重新计算”后保存'}
+          </div>
+          <RiskParameterMatrix params={params} onChannelChange={setChannelParam} onRootChange={setRootParam} />
+        </>
+      )}
 
       {error && <div className="inventory-risk-alert error"><strong>计算失败</strong><span>{error}</span></div>}
       {error && <ForecastParsingDiagnostics diagnostics={errorDiagnostics} />}
-      {loading && !result && <div className="inventory-risk-loading">正在读取库存、在途、采购未交付、销售和预测数据...</div>}
+      {(paramsLoading || (loading && !result)) && <div className="inventory-risk-loading">{paramsLoading ? '正在读取腾讯云最后参数...' : '正在读取库存、在途、采购未交付、销售和预测数据...'}</div>}
 
       {result && (
         <>

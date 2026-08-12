@@ -364,6 +364,7 @@ test('供应计划分析页面、权限与API均注册在gendanjindu', () => {
   const styles = fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8');
   assert.match(server, /'inventoryRisk'/);
   assert.match(server, /\/api\/inventory-risk\/query/);
+  assert.match(server, /\/api\/inventory-risk\/params/);
   assert.match(server, /\/api\/inventory-risk\/export/);
   assert.match(client, /供应计划分析/);
   assert.match(client, /InventoryRiskPage/);
@@ -408,8 +409,10 @@ test('供应计划分析页面、权限与API均注册在gendanjindu', () => {
   assert.ok(summaryMarkup.indexOf('库存总量') < summaryMarkup.indexOf('className="restricted"'));
   assert.match(riskPage, /在库在途周转天数/);
   assert.match(riskPage, /供应计划分析/);
-  assert.match(riskPage, /loadInventoryRiskParams\(DEFAULT_PARAMS\)/);
-  assert.match(riskPage, /saveInventoryRiskParams\(payload\.params \|\| params, DEFAULT_PARAMS\)/);
+  assert.doesNotMatch(riskPage, /localStorage|loadInventoryRiskParams|saveInventoryRiskParams/);
+  assert.match(riskPage, /apiRequest\('\/api\/inventory-risk\/params', token\)/);
+  assert.match(riskPage, /saveParams: force/);
+  assert.match(riskPage, /参数保存在腾讯云/);
   assert.match(riskPage, /未交付供应商简称/);
   assert.match(riskPage, /在库量可销天数/);
   assert.match(riskPage, /全链路天数/);

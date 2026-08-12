@@ -143,6 +143,17 @@
   to { transform: translateX(310%); }
 }
 
+.inventory-risk-parameter-source {
+  margin: 0;
+  padding: 8px 11px;
+  border: 1px solid #b9ddd7;
+  border-radius: 7px;
+  background: #effaf8;
+  color: #087f76;
+  font-size: .76rem;
+  font-weight: 700;
+}
+
 .inventory-risk-parameters {
   display: grid;
   grid-template-columns: 220px minmax(920px, 1fr) minmax(430px, .55fr);

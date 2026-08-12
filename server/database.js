@@ -118,6 +118,21 @@ function migrate() {
     CREATE INDEX IF NOT EXISTS idx_operation_logs_created_at ON operation_logs(created_at);
     CREATE INDEX IF NOT EXISTS idx_operation_logs_user_name ON operation_logs(user_name);
     CREATE INDEX IF NOT EXISTS idx_operation_logs_page_key ON operation_logs(page_key);
+    CREATE TABLE IF NOT EXISTS inventory_risk_settings (
+      setting_key TEXT PRIMARY KEY,
+      params_json TEXT NOT NULL,
+      updated_by TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS inventory_risk_setting_history (
+      id TEXT PRIMARY KEY,
+      setting_key TEXT NOT NULL,
+      params_json TEXT NOT NULL,
+      updated_by TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_inventory_risk_setting_history_updated_at
+      ON inventory_risk_setting_history(updated_at);
     CREATE TABLE IF NOT EXISTS import_mappings (
       kind TEXT PRIMARY KEY,
       mapping_json TEXT NOT NULL,

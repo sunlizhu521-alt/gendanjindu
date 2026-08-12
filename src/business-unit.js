@@ -1,3 +1,7 @@
 export function purchaseTrackingBusinessUnit(value) {
-  return String(value ?? '').trim().split(/[*\uff0a]/, 1)[0].trim();
+  const normalizedUnits = String(value ?? '')
+    .split(/[、,，+]/)
+    .map((unit) => unit.trim().split(/[*\uff0a]/, 1)[0].trim())
+    .filter(Boolean);
+  return [...new Set(normalizedUnits)].join('、');
 }

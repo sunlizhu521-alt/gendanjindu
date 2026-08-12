@@ -44,18 +44,12 @@ test('运营看板默认隐藏八个辅助列并可切换显示，导出保留�
   assert.match(dashboard, /demandKey: `\$\{row\.demandKey\}\|\$\{orderRow\.orderNo\}`/);
 });
 
-test('运营看板数据来源只允许当前应用金蝶采购订单', () => {
+test('运营看板数据仍只来自当前应用金蝶采购订单', () => {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
   const dashboard = client.slice(client.indexOf('function Dashboard('), client.indexOf('function AppliedTimeNote('));
 
-  assert.match(dashboard, /dataSource: \[\]/);
-  assert.match(dashboard, /row\.orderNo && row\.orderNo !== '无采购订单'/);
   assert.doesNotMatch(dashboard, /row\.dataStatus === '采购订单数据'/);
-  assert.match(dashboard, /dataSources: \(usesOperationBoardLayout \? \['金蝶系统'\] : \['金蝶系统', '手工录入'\]\)/);
-  assert.match(dashboard, /omit === 'dataSource'/);
-  assert.match(dashboard, /dataSource: options\.dataSources/);
-  assert.match(dashboard, /label="数据来源" allLabel="全部来源"/);
 });
 
 test('运营看板支持成品和配件联动筛选', () => {
@@ -63,7 +57,7 @@ test('运营看板支持成品和配件联动筛选', () => {
   const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
   const dashboard = client.slice(client.indexOf('function Dashboard('), client.indexOf('function AppliedTimeNote('));
 
-  assert.match(dashboard, /dataSource: \[\], productType: \[\]/);
+  assert.match(dashboard, /purchaseOwner: \[\], productType: \[\]/);
   assert.match(dashboard, /omit === 'productType'[\s\S]*?row\.productLine === '其他\/配件' \? '配件' : '成品'/);
   assert.match(dashboard, /productTypes: \['成品', '配件'\]/);
   assert.doesNotMatch(dashboard, /productTypes: \['成品', '配件'\]\.filter/);
@@ -88,16 +82,28 @@ test('运营看板使用页面权限保护的全量只读接口，不套用生�
   assert.match(route, /demandRows\(false, null, \{ includeOperationOrders: true, currentKingdeeOnly: true \}\)/);
 });
 
-test('运营看板支持有效订单联动筛选', () => {
+test('运营看板删除是否多家供应、数据来源和是否有效订单筛选器', () => {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
   const dashboard = client.slice(client.indexOf('function Dashboard('), client.indexOf('function AppliedTimeNote('));
 
-  assert.match(dashboard, /effectiveOrderCondition: \[\]/);
-  assert.match(dashboard, /omit === 'effectiveOrderCondition'[\s\S]*?filters\.effectiveOrderCondition[\s\S]*?row\.effectiveOrderCondition/);
-  assert.match(dashboard, /effectiveOrderConditions: \['有效订单', '非有效订单'\]\.filter/);
-  assert.match(dashboard, /effectiveOrderCondition: options\.effectiveOrderConditions/);
-  assert.match(dashboard, /label="是否有效订单" allLabel="全部订单"[\s\S]*?value=\{filters\.effectiveOrderCondition\}[\s\S]*?options=\{options\.effectiveOrderConditions\}/);
+  assert.doesNotMatch(dashboard, /label="是否多家供应"/);
+  assert.doesNotMatch(dashboard, /label="数据来源"/);
+  assert.doesNotMatch(dashboard, /label="是否有效订单"/);
+  assert.doesNotMatch(dashboard, /filters\.(supplierCount|dataSource|effectiveOrderCondition)/);
+  assert.doesNotMatch(dashboard, /(supplierCounts|dataSources|effectiveOrderConditions):/);
+});
+
+test('运营看板事业部统一只保留星号前内容', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
+  const grouping = fs.readFileSync(path.join(root, 'src', 'operation-board-grouping.js'), 'utf8');
+  const dashboard = client.slice(client.indexOf('function Dashboard('), client.indexOf('function AppliedTimeNote('));
+
+  assert.match(dashboard, /\.map\(\(row\) => \(\{ \.\.\.row, businessUnit: purchaseTrackingBusinessUnit\(row\.businessUnit\) \}\)\)/);
+  assert.match(grouping, /import \{ purchaseTrackingBusinessUnit \} from '\.\/business-unit\.js'/);
+  assert.match(grouping, /const businessUnit = purchaseTrackingBusinessUnit\(row\.businessUnit\)/);
+  assert.doesNotMatch(grouping, /function normalizedBusinessUnit/);
 });
 
 test('同订单同物料存在有效明细即判有效，手工行使用手工导入来源文件', () => {
@@ -148,13 +154,13 @@ test('运营看板提供采购订单号和物料编码双方案并默认按订�
   assert.match(styles, /\.operation-board-scheme-bar\s*\{/);
 });
 
-test('运营看板先筛选订单明细再按物料汇总，页面和导出统一使用方案数据', () => {
+test('运营看板先筛选订单明细再按物料和事业部汇总，页面和导出统一使用方案数据', () => {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
   const dashboard = client.slice(client.indexOf('function Dashboard('), client.indexOf('function AppliedTimeNote('));
 
-  assert.match(dashboard, /const matchedOrderRows = activeRows\.filter\(\(row\) => matchesDashboardFilters\(row\)\);/);
-  assert.match(dashboard, /groupOperationBoardRowsByMaterial\(matchedOrderRows\)/);
+  assert.match(dashboard, /const filteredOrderRows = useMemo\([\s\S]*?activeRows\.filter\(\(row\) => matchesDashboardFilters\(row\)\)/);
+  assert.match(dashboard, /groupOperationBoardRowsByMaterial\(filteredOrderRows\)/);
   assert.match(dashboard, /groupOperationBoardRowsByMaterial\(activeRows\)/);
   assert.match(dashboard, /当前显示 \{filteredRows\.length\} \/ \{schemeActiveRows\.length\} 条/);
   assert.match(dashboard, /\.\.\.filteredRows\.map/);
@@ -171,4 +177,18 @@ test('运营看板方案二隐藏下单月份和采购订单号列但导出继�
   assert.match(dashboard, /operationViewMode === 'materialCode' \? \[\] : \[row\.month, row\.orderNo\]/);
   assert.match(dashboard, /\? \['下单月份', '采购订单号', '来源文件'/);
   assert.match(dashboard, /row\.month,\s+row\.orderNo,\s+row\.sourceFile/);
+});
+
+test('运营看板方案二供应商和事业部图按订单明细分别聚合而不使用组合名称', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
+  const dashboard = client.slice(client.indexOf('function Dashboard('), client.indexOf('function AppliedTimeNote('));
+
+  assert.match(dashboard, /const filteredOrderRows = useMemo\([\s\S]*?activeRows\.filter\(\(row\) => matchesDashboardFilters\(row\)\)/);
+  assert.match(dashboard, /groupOperationBoardRowsByMaterial\(filteredOrderRows\)/);
+  assert.match(dashboard, /const operationDimensionChartRows = usesOperationBoardLayout && operationViewMode === 'materialCode'[\s\S]*?\? filteredOrderRows[\s\S]*?: filteredRows/);
+  assert.equal((dashboard.match(/rows=\{operationDimensionChartRows\}/g) || []).length, 2);
+  assert.match(dashboard, /rows=\{operationDimensionChartRows\} groupBy=\{\(row\) => normalize\(row\.supplier\) \|\| orderSupplierName\(row\)\}/);
+  assert.match(dashboard, /rows=\{operationDimensionChartRows\} groupBy=\{\(row\) => purchaseTrackingBusinessUnit\(row\.businessUnit\)\}/);
+  assert.equal((dashboard.match(/rows=\{filteredRows\} groupBy=/g) || []).length, 2);
 });

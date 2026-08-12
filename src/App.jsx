@@ -385,20 +385,6 @@ function orderSupplierName(row) {
   return normalize(row.orderSupplierShortName) || '未匹配';
 }
 
-function supplierCountLabel(value) {
-  const count = Math.max(0, Math.trunc(numberValue(value)));
-  if (count === 0) return '未匹配';
-  const digits = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
-  if (count < 10) return `${digits[count]}家供应`;
-  if (count === 10) return '十家供应';
-  if (count < 20) return `十${digits[count % 10]}家供应`;
-  if (count < 100) {
-    const ones = count % 10;
-    return `${digits[Math.floor(count / 10)]}十${ones ? digits[ones] : ''}家供应`;
-  }
-  return `${count}家供应`;
-}
-
 function uniqueProgressValues(values) {
   return [...new Set(values.map(normalize).filter(Boolean))]
     .sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
@@ -3693,8 +3679,10 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       }));
     });
   }, [rows, usesOperationBoardLayout]);
-  const activeRows = useMemo(() => dashboardRows.filter((row) => row.active && numberValue(row.remainingInboundQty) !== 0), [dashboardRows]);
-  const [filters, setFilters] = useSessionFilters(filterKey, { month: [], businessUnit: [], operatorName: [], supplierCount: [], supplierShortName: [], productLine: [], series: [], sku: [], purchaseOwner: [], dataSource: [], productType: [], effectiveOrderCondition: [], keyword: '' });
+  const activeRows = useMemo(() => dashboardRows
+    .filter((row) => row.active && numberValue(row.remainingInboundQty) !== 0)
+    .map((row) => ({ ...row, businessUnit: purchaseTrackingBusinessUnit(row.businessUnit) })), [dashboardRows]);
+  const [filters, setFilters] = useSessionFilters(filterKey, { month: [], businessUnit: [], operatorName: [], supplierShortName: [], productLine: [], series: [], sku: [], purchaseOwner: [], productType: [], keyword: '' });
   const [currentPage, setCurrentPage] = useState(1);
   const [showOperationAuxiliaryColumns, setShowOperationAuxiliaryColumns] = useState(false);
   const [operationViewMode, setOperationViewMode] = useState('orderNo');
@@ -3708,7 +3696,6 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
   const matchesDashboardFilters = (row, omit = '') => {
     const keyword = filters.keyword.toLowerCase();
     const displaySupplier = orderSupplierName(row);
-    const supplyCount = supplierCountLabel(row.supplierCount);
     const text = [
       row.demandKey,
       row.month,
@@ -3735,15 +3722,12 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       && (omit === 'month' || matchesSelected(filters.month, row.month))
       && (omit === 'businessUnit' || matchesSelected(filters.businessUnit, purchaseTrackingBusinessUnit(row.businessUnit)))
       && (omit === 'operatorName' || matchesSelected(filters.operatorName, row.operatorName))
-      && (omit === 'supplierCount' || matchesSelected(filters.supplierCount, supplyCount))
       && (omit === 'supplierShortName' || matchesSelected(filters.supplierShortName, displaySupplier))
       && (omit === 'productLine' || matchesSelected(filters.productLine, row.productLine))
       && (omit === 'series' || matchesSelected(filters.series, row.productSeries))
       && (omit === 'sku' || matchesSelected(filters.sku, row.sku))
       && (omit === 'purchaseOwner' || matchesSelected(filters.purchaseOwner, row.purchaseOwner))
-      && (omit === 'dataSource' || matchesSelected(filters.dataSource, row.dataSource || ((row.orderNo && row.orderNo !== '无采购订单') ? '金蝶系统' : '手工录入')))
-      && (omit === 'productType' || matchesSelected(filters.productType, (row.productLine === '其他/配件' ? '配件' : '成品')))
-      && (omit === 'effectiveOrderCondition' || matchesSelected(filters.effectiveOrderCondition, row.effectiveOrderCondition));
+      && (omit === 'productType' || matchesSelected(filters.productType, (row.productLine === '其他/配件' ? '配件' : '成品')));
   };
   const options = useMemo(() => {
     const rowsFor = (field) => activeRows.filter((row) => matchesDashboardFilters(row, field));
@@ -3751,18 +3735,12 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       months: unique(rowsFor('month').map((row) => row.month)),
       businessUnits: unique(rowsFor('businessUnit').map((row) => purchaseTrackingBusinessUnit(row.businessUnit))),
       operators: unique(rowsFor('operatorName').map((row) => row.operatorName)),
-      supplierCounts: [...new Set(rowsFor('supplierCount').map((row) => numberValue(row.supplierCount)))]
-        .sort((a, b) => a - b)
-        .map(supplierCountLabel),
       supplierShortNames: uniqueSupplierShortNames(rowsFor('supplierShortName').map((row) => orderSupplierName(row))),
       productLines: unique(rowsFor('productLine').map((row) => row.productLine)),
       series: unique(rowsFor('series').map((row) => row.productSeries)),
       skus: unique(rowsFor('sku').map((row) => row.sku)),
       purchaseOwners: unique(rowsFor('purchaseOwner').map((row) => row.purchaseOwner)),
-      dataSources: (usesOperationBoardLayout ? ['金蝶系统'] : ['金蝶系统', '手工录入'])
-        .filter((value) => rowsFor('dataSource').some((row) => (row.dataSource || ((row.orderNo && row.orderNo !== '无采购订单') ? '金蝶系统' : '手工录入')) === value)),
-      productTypes: ['成品', '配件'],
-      effectiveOrderConditions: ['有效订单', '非有效订单'].filter((value) => rowsFor('effectiveOrderCondition').some((row) => row.effectiveOrderCondition === value))
+      productTypes: ['成品', '配件']
     };
   }, [activeRows, filters]);
   useEffect(() => {
@@ -3770,15 +3748,12 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       month: options.months,
       businessUnit: options.businessUnits,
       operatorName: options.operators,
-      supplierCount: options.supplierCounts,
       supplierShortName: options.supplierShortNames,
       productLine: options.productLines,
       series: options.series,
       sku: options.skus,
       purchaseOwner: options.purchaseOwners,
-      dataSource: options.dataSources,
-      productType: options.productTypes,
-      effectiveOrderCondition: options.effectiveOrderConditions
+      productType: options.productTypes
     });
     if (next) setFilters(next);
   }, [options, filters, setFilters]);
@@ -3787,18 +3762,24 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       ? groupOperationBoardRowsByMaterial(activeRows)
       : activeRows
   ), [activeRows, operationViewMode, usesOperationBoardLayout]);
-  const filteredRows = useMemo(() => {
-    const matchedOrderRows = activeRows.filter((row) => matchesDashboardFilters(row));
-    return usesOperationBoardLayout && operationViewMode === 'materialCode'
-      ? groupOperationBoardRowsByMaterial(matchedOrderRows)
-      : matchedOrderRows;
-  }, [activeRows, filters, operationViewMode, usesOperationBoardLayout]);
+  const filteredOrderRows = useMemo(
+    () => activeRows.filter((row) => matchesDashboardFilters(row)),
+    [activeRows, filters]
+  );
+  const filteredRows = useMemo(() => (
+    usesOperationBoardLayout && operationViewMode === 'materialCode'
+      ? groupOperationBoardRowsByMaterial(filteredOrderRows)
+      : filteredOrderRows
+  ), [filteredOrderRows, operationViewMode, usesOperationBoardLayout]);
+  const operationDimensionChartRows = usesOperationBoardLayout && operationViewMode === 'materialCode'
+    ? filteredOrderRows
+    : filteredRows;
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const pageRows = useMemo(
     () => filteredRows.slice((currentPage - 1) * pageSize, currentPage * pageSize),
     [filteredRows, currentPage]
   );
-  const clearFilters = () => setFilters({ month: [], businessUnit: [], operatorName: [], supplierCount: [], supplierShortName: [], productLine: [], series: [], sku: [], purchaseOwner: [], dataSource: [], productType: [], effectiveOrderCondition: [], keyword: '' });
+  const clearFilters = () => setFilters({ month: [], businessUnit: [], operatorName: [], supplierShortName: [], productLine: [], series: [], sku: [], purchaseOwner: [], productType: [], keyword: '' });
   const remainingLabel = usesOperationBoardLayout ? '备货剩余数量' : '未交付数量';
   const remainingShortLabel = usesOperationBoardLayout ? '备货剩余' : '未交付';
   const summary = filteredRows.reduce((acc, row) => {
@@ -3951,12 +3932,9 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
         <MultiSelectFilter label="下单月份" allLabel="全部月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
         <MultiSelectFilter label="事业部" allLabel="全部事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
         {usesOperationBoardLayout && <MultiSelectFilter label="运营" allLabel="全部运营" value={filters.operatorName} options={options.operators} onChange={(value) => setFilters({ ...filters, operatorName: value })} />}
-        <MultiSelectFilter label="是否多家供应" allLabel="全部供应家数" value={filters.supplierCount} options={options.supplierCounts} onChange={(value) => setFilters({ ...filters, supplierCount: value })} />
         <MultiSelectFilter label="供应商简称" allLabel="全部供应商简称" value={filters.supplierShortName} options={options.supplierShortNames} onChange={(value) => setFilters({ ...filters, supplierShortName: value })} />
         <MultiSelectFilter label="产品线" allLabel="全部产品线" value={filters.productLine} options={options.productLines} onChange={(value) => setFilters({ ...filters, productLine: value })} />
         <MultiSelectFilter label="系列" allLabel="全部系列" value={filters.series} options={options.series} onChange={(value) => setFilters({ ...filters, series: value })} />
-        <MultiSelectFilter label="数据来源" allLabel="全部来源" value={filters.dataSource} options={options.dataSources} onChange={(value) => setFilters({ ...filters, dataSource: value })} />
-        {usesOperationBoardLayout && <MultiSelectFilter label="是否有效订单" allLabel="全部订单" value={filters.effectiveOrderCondition} options={options.effectiveOrderConditions} onChange={(value) => setFilters({ ...filters, effectiveOrderCondition: value })} />}
         <MultiSelectFilter label="SKU" allLabel="全部SKU" value={filters.sku} options={options.skus} onChange={(value) => setFilters({ ...filters, sku: value })} />
         <MultiSelectFilter label="采购下单人" allLabel="全部采购下单人" value={filters.purchaseOwner} options={options.purchaseOwners} onChange={(value) => setFilters({ ...filters, purchaseOwner: value })} />
         <MultiSelectFilter label="成品/配件" allLabel="全部类型" value={filters.productType} options={options.productTypes} onChange={(value) => setFilters({ ...filters, productType: value })} />
@@ -3977,8 +3955,8 @@ function Dashboard({ rows, title = '采购总览', filterKey = 'dashboard', curr
       </section>
       {usesOperationBoardLayout ? (
         <section className="progress-chart-grid operation-chart-grid">
-          <ProgressStackedChart title={`供应商${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => orderSupplierName(row)} />
-          <ProgressStackedChart title={`事业部${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => purchaseTrackingBusinessUnit(row.businessUnit)} />
+          <ProgressStackedChart title={`供应商${remainingShortLabel} / 在产品 / 完工产品`} rows={operationDimensionChartRows} groupBy={(row) => normalize(row.supplier) || orderSupplierName(row)} />
+          <ProgressStackedChart title={`事业部${remainingShortLabel} / 在产品 / 完工产品`} rows={operationDimensionChartRows} groupBy={(row) => purchaseTrackingBusinessUnit(row.businessUnit)} />
           <ProgressStackedChart title={`系列${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => row.productSeries} />
           <ProgressStackedChart title={`SKU${remainingShortLabel} / 在产品 / 完工产品`} rows={filteredRows} groupBy={(row) => row.sku} />
         </section>

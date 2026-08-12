@@ -30,7 +30,7 @@ function row(overrides = {}) {
   };
 }
 
-test('方案二跨订单、供应商、月份和事业部按物料合并并汇总数量', () => {
+test('方案二同一物料跨事业部时每个事业部单独一行', () => {
   const result = groupOperationBoardRowsByMaterial([
     row(),
     row({
@@ -56,20 +56,28 @@ test('方案二跨订单、供应商、月份和事业部按物料合并并汇�
     })
   ]);
 
-  assert.equal(result.length, 1);
+  assert.equal(result.length, 2);
   assert.equal(result[0].materialCode, 'M-001');
+  assert.equal(result[0].businessUnit, '国内事业部');
+  assert.equal(result[0].orderNo, 'CGDD001');
+  assert.equal(result[0].remainingInboundQty, 10);
+  assert.equal(result[1].materialCode, 'M-001');
+  assert.equal(result[1].businessUnit, '海外事业一部');
+  assert.equal(result[1].orderNo, 'CGDD002');
+  assert.equal(result[1].remainingInboundQty, 20);
+});
+
+test('方案二同一物料同一事业部仍汇总订单和数量', () => {
+  const result = groupOperationBoardRowsByMaterial([
+    row(),
+    row({ demandKey: 'demand-2', orderNo: 'CGDD002', supplier: '供应商乙', remainingInboundQty: 20 })
+  ]);
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0].businessUnit, '国内事业部');
   assert.equal(result[0].orderNo, 'CGDD001、CGDD002');
-  assert.equal(result[0].month, '2026-07、2026-08');
   assert.equal(result[0].supplier, '供应商甲、供应商乙');
-  assert.equal(result[0].orderSupplierShortName, '甲供应商、乙供应商');
-  assert.equal(result[0].businessUnit, '国内事业部、海外事业一部');
-  assert.equal(result[0].documentStatus, '已审核、暂存');
   assert.equal(result[0].remainingInboundQty, 30);
-  assert.equal(result[0].shippedQty, 7);
-  assert.equal(result[0].unpreparedQty, 9);
-  assert.equal(result[0].preparedNotStartedQty, 3);
-  assert.equal(result[0].inProductionQty, 12);
-  assert.equal(result[0].finishedQty, 6);
 });
 
 test('方案二文本去重、物料精确匹配并按物料编码升序排列', () => {

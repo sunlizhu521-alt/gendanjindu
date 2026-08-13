@@ -29,6 +29,12 @@ export function buildSupplyPlanWeeks() {
 
 export const SUPPLY_PLAN_WEEKS = Object.freeze(buildSupplyPlanWeeks());
 
+export const SUPPLY_PLAN_FILTER_FIELDS = Object.freeze([
+  { key: 'businessUnit', label: '事业部' },
+  { key: 'productLine', label: '产品线' },
+  { key: 'productSeries', label: '系列' }
+]);
+
 function text(value) {
   return String(value ?? '').normalize('NFKC').trim();
 }
@@ -52,6 +58,28 @@ export function normalizeSupplyPlanImportKey(value, keyType = 'sku') {
 
 export function supplyPlanRowKey(row) {
   return `${text(row?.businessUnit)}\u001f${normalizeSupplyPlanImportKey(row?.materialCode, 'materialCode')}`;
+}
+
+export function matchesSupplyPlanFilters(row, filters = {}, omit = '') {
+  return SUPPLY_PLAN_FILTER_FIELDS.every(({ key }) => (
+    key === omit || !text(filters[key]) || text(row?.[key]) === text(filters[key])
+  ));
+}
+
+export function buildSupplyPlanFilterOptions(rows = [], filters = {}) {
+  return Object.fromEntries(SUPPLY_PLAN_FILTER_FIELDS.map(({ key }) => {
+    const values = new Set();
+    rows.forEach((row) => {
+      if (!matchesSupplyPlanFilters(row, filters, key)) return;
+      const value = text(row?.[key]);
+      if (value) values.add(value);
+    });
+    return [key, [...values].sort((left, right) => left.localeCompare(right, 'zh-CN'))];
+  }));
+}
+
+export function filterSupplyPlanRows(rows = [], filters = {}) {
+  return rows.filter((row) => matchesSupplyPlanFilters(row, filters));
 }
 
 function importKeyType(header) {

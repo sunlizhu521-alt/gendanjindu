@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
+  SUPPLY_PLAN_FILTER_FIELDS,
   SUPPLY_PLAN_PAGE_SIZE,
   SUPPLY_PLAN_ROW_TYPES,
   SUPPLY_PLAN_WEEKS,
   applySupplyPlanImport,
+  buildSupplyPlanFilterOptions,
   calculateSupplyPlanRow,
+  filterSupplyPlanRows,
   parseSupplyPlanWorksheet,
   supplyPlanRowKey
 } from './supply-plan.js';
@@ -38,6 +41,7 @@ const FIXED_COLUMNS = [
 const FIXED_LEFTS = FIXED_COLUMNS.map((_, index) => (
   FIXED_COLUMNS.slice(0, index).reduce((sum, column) => sum + column.width, 0)
 ));
+const EMPTY_FILTERS = Object.freeze({ businessUnit: '', productLine: '', productSeries: '' });
 
 function numberText(value, maximumFractionDigits = 2) {
   const number = Number(value);
@@ -164,6 +168,7 @@ export default function SupplyPlanBoard({ token, active }) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
   const forecastInputRef = useRef(null);
   const safetyInputRef = useRef(null);
 
@@ -256,16 +261,41 @@ export default function SupplyPlanBoard({ token, active }) {
     );
   }), [rows, params, forecasts, safetyOverrides]);
 
-  const totalPages = Math.max(1, Math.ceil(calculatedRows.length / SUPPLY_PLAN_PAGE_SIZE));
+  const filterOptions = useMemo(
+    () => buildSupplyPlanFilterOptions(calculatedRows, filters),
+    [calculatedRows, filters]
+  );
+  const filteredRows = useMemo(
+    () => filterSupplyPlanRows(calculatedRows, filters),
+    [calculatedRows, filters]
+  );
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / SUPPLY_PLAN_PAGE_SIZE));
   const visibleRows = useMemo(() => {
     const safePage = Math.min(currentPage, totalPages);
     const start = (safePage - 1) * SUPPLY_PLAN_PAGE_SIZE;
-    return calculatedRows.slice(start, start + SUPPLY_PLAN_PAGE_SIZE);
-  }, [calculatedRows, currentPage, totalPages]);
+    return filteredRows.slice(start, start + SUPPLY_PLAN_PAGE_SIZE);
+  }, [filteredRows, currentPage, totalPages]);
 
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    setFilters((current) => {
+      const next = { ...current };
+      let changed = false;
+      SUPPLY_PLAN_FILTER_FIELDS.forEach(({ key }) => {
+        if (!next[key]) return;
+        const options = buildSupplyPlanFilterOptions(rows, next);
+        if (!options[key].includes(next[key])) {
+          next[key] = '';
+          changed = true;
+        }
+      });
+      return changed ? next : current;
+    });
+  }, [rows]);
 
   if (!params && loading) return <div className="loading-fallback">正在读取供应计划数据...</div>;
 
@@ -293,7 +323,35 @@ export default function SupplyPlanBoard({ token, active }) {
           importWorkbook(event.target.files?.[0], 'safety');
           event.target.value = '';
         }} />
-        <span className="section-count">共 {calculatedRows.length} 个事业部＋物料编码</span>
+        <span className="section-count">当前显示 {filteredRows.length} / {calculatedRows.length} 个事业部＋物料编码</span>
+      </div>
+
+      <div className="supply-plan-filter-bar" aria-label="供应计划筛选器">
+        {SUPPLY_PLAN_FILTER_FIELDS.map(({ key, label }) => (
+          <label key={key}>
+            <span>{label}</span>
+            <select value={filters[key]} onChange={(event) => {
+              const value = event.target.value;
+              setFilters((current) => {
+                const next = { ...current, [key]: value };
+                SUPPLY_PLAN_FILTER_FIELDS.forEach(({ key: otherKey }) => {
+                  if (otherKey === key || !next[otherKey]) return;
+                  const nextOptions = buildSupplyPlanFilterOptions(calculatedRows, next);
+                  if (!nextOptions[otherKey].includes(next[otherKey])) next[otherKey] = '';
+                });
+                return next;
+              });
+              setCurrentPage(1);
+            }}>
+              <option value="">全部{label}</option>
+              {filterOptions[key].map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </label>
+        ))}
+        <button type="button" className="ghost" disabled={!Object.values(filters).some(Boolean)} onClick={() => {
+          setFilters(EMPTY_FILTERS);
+          setCurrentPage(1);
+        }}>清空筛选</button>
       </div>
 
       {message ? <p className="message">{message}</p> : null}

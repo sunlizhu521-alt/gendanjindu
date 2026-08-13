@@ -141,6 +141,10 @@ test('供应计划工具接口、独立设置键、权限和操作日志均完�
   assert.match(page, /重算/);
   assert.match(page, /导入销售预测/);
   assert.match(page, /导入安全库存/);
+  assert.match(page, /供应计划筛选器/);
+  assert.match(page, /SUPPLY_PLAN_FILTER_FIELDS/);
+  assert.match(page, /当前显示/);
   assert.match(styles, /\.supply-plan-table \.supply-plan-sticky/);
   assert.match(styles, /\.supply-plan-table \.gap-positive/);
+  assert.match(styles, /\.supply-plan-filter-bar/);
 });

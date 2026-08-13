@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   applySupplyPlanImport,
+  buildSupplyPlanFilterOptions,
   buildSupplyPlanWeeks,
   calculateSupplyPlanRow,
+  filterSupplyPlanRows,
   parseSupplyPlanWorksheet,
   supplyPlanRowKey
 } from './supply-plan.js';
@@ -83,4 +85,28 @@ test('导入文件缺少关键列时给出明确错误', () => {
     () => parseSupplyPlanWorksheet([['SKU'], ['SKU-1']], { mode: 'safety' }),
     /安全库存列/
   );
+});
+
+test('供应计划按事业部、产品线和系列精确筛选', () => {
+  const sourceRows = [
+    { businessUnit: '国内事业部', productLine: '护理床', productSeries: 'A系列', materialCode: '1' },
+    { businessUnit: '国内事业部', productLine: '轮椅', productSeries: 'B系列', materialCode: '2' },
+    { businessUnit: '海外事业部', productLine: '护理床', productSeries: 'A系列', materialCode: '3' }
+  ];
+  assert.deepEqual(
+    filterSupplyPlanRows(sourceRows, { businessUnit: '国内事业部', productLine: '护理床', productSeries: 'A系列' }).map((row) => row.materialCode),
+    ['1']
+  );
+});
+
+test('供应计划筛选选项按其他已选条件联动', () => {
+  const sourceRows = [
+    { businessUnit: '国内事业部', productLine: '护理床', productSeries: 'A系列' },
+    { businessUnit: '国内事业部', productLine: '轮椅', productSeries: 'B系列' },
+    { businessUnit: '海外事业部', productLine: '护理床', productSeries: 'C系列' }
+  ];
+  const options = buildSupplyPlanFilterOptions(sourceRows, { businessUnit: '国内事业部', productLine: '护理床', productSeries: '' });
+  assert.deepEqual(options.businessUnit, ['国内事业部', '海外事业部']);
+  assert.deepEqual(options.productLine, ['护理床', '轮椅']);
+  assert.deepEqual(options.productSeries, ['A系列']);
 });

@@ -119,6 +119,9 @@ test('供应计划工具排除零数量和非三渠道数据', () => {
 test('供应计划工具接口、独立设置键、权限和操作日志均完成注册', () => {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const server = fs.readFileSync(path.join(root, 'server', 'app.js'), 'utf8');
+  const client = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
+  const page = fs.readFileSync(path.join(root, 'src', 'SupplyPlanBoard.jsx'), 'utf8');
+  const styles = fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8');
   assert.match(server, /'supplyPlanBoard'/);
   assert.match(server, /supplyPlanBoard: '供应计划工具'/);
   assert.match(server, /SUPPLY_PLAN_SETTING_KEY = 'supplyPlan'/);
@@ -128,4 +131,16 @@ test('供应计划工具接口、独立设置键、权限和操作日志均完�
   assert.match(server, /app\.post\('\/api\/supply-plan\/params', requireAuth, requirePage\('supplyPlanBoard'\)/);
   assert.match(server, /normalizeSupplyPlanParams\(saved \? JSON\.parse\(saved\.params_json\) : \{\}\)/);
   assert.match(server, /\[SUPPLY_PLAN_SETTING_KEY, paramsJson, updatedBy, updatedAt\]/);
+  assert.match(client, /React\.lazy\(\(\) => import\('\.\/SupplyPlanBoard\.jsx'\)\)/);
+  assert.match(client, /'inventoryRisk',[\s\S]*?'supplyPlanBoard',[\s\S]*?'inventoryPurchase'/);
+  assert.match(client, /shouldMount\('supplyPlanBoard'\)/);
+  assert.match(page, /SUPPLY_PLAN_PAGE_SIZE/);
+  assert.match(page, /parseSupplyPlanWorksheet/);
+  assert.match(page, /applySupplyPlanImport/);
+  assert.match(page, /rowSpan=\{SUPPLY_PLAN_ROW_TYPES\.length\}/);
+  assert.match(page, /重算/);
+  assert.match(page, /导入销售预测/);
+  assert.match(page, /导入安全库存/);
+  assert.match(styles, /\.supply-plan-table \.supply-plan-sticky/);
+  assert.match(styles, /\.supply-plan-table \.gap-positive/);
 });

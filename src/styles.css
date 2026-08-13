@@ -7705,3 +7705,268 @@ th {
     max-height: calc(100vh - 350px);
   }
 }
+
+/* 供应计划工具 */
+.supply-plan-board {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.supply-plan-title-row,
+.supply-plan-section-heading,
+.supply-plan-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.supply-plan-title-row h2,
+.supply-plan-section-heading h3 {
+  margin: 0;
+}
+
+.supply-plan-title-row p,
+.supply-plan-section-heading p,
+.supply-plan-formula-note {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: .75rem;
+}
+
+.supply-plan-title-row > span {
+  color: #64748b;
+  font-size: .74rem;
+  white-space: nowrap;
+}
+
+.supply-plan-route-wrap {
+  padding: 14px 16px;
+  border: 1px solid #dce5ef;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .05);
+}
+
+.supply-plan-section-heading h3 {
+  color: #2878c7;
+  font-size: .88rem;
+}
+
+.supply-plan-route-table-wrap {
+  margin-top: 10px;
+  overflow-x: auto;
+}
+
+.supply-plan-route-table {
+  width: 100%;
+  min-width: 1080px;
+  border-collapse: collapse;
+  font-size: .72rem;
+}
+
+.supply-plan-route-table th,
+.supply-plan-route-table td {
+  padding: 6px 7px;
+  border: 1px solid #dce3ec;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.supply-plan-route-table thead th {
+  background: #f0f3f7;
+  color: #526174;
+  font-weight: 800;
+}
+
+.supply-plan-route-table tbody th {
+  background: #f8fafc;
+  color: #334155;
+  text-align: left;
+}
+
+.supply-plan-route-table th.calculated,
+.supply-plan-route-table td.calculated {
+  background: #edf7ff;
+  color: #2878c7;
+  font-weight: 800;
+}
+
+.supply-plan-route-table th.total,
+.supply-plan-route-table td.total {
+  background: #fff2f2;
+  color: #b42318;
+  font-weight: 800;
+}
+
+.supply-plan-route-table input {
+  width: 84px;
+  height: 29px;
+  padding: 3px 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #fff;
+  color: #172033;
+  font: inherit;
+  text-align: center;
+}
+
+.supply-plan-route-table output {
+  display: inline-block;
+  min-width: 48px;
+}
+
+.supply-plan-toolbar {
+  margin: 0;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.supply-plan-toolbar .section-count {
+  margin-left: auto;
+}
+
+.supply-plan-table-wrap {
+  max-height: 68vh;
+  overflow: auto;
+  border: 1px solid #dce3ec;
+  border-radius: 8px;
+  background: #fff;
+  scrollbar-gutter: stable;
+}
+
+.supply-plan-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  color: #243247;
+  font-size: .68rem;
+}
+
+.supply-plan-table th,
+.supply-plan-table td {
+  height: 29px;
+  padding: 5px 7px;
+  border-right: 1px solid #dce3ec;
+  border-bottom: 1px solid #dce3ec;
+  background: #fff;
+  white-space: nowrap;
+}
+
+.supply-plan-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: #337fc8;
+  color: #fff;
+  font-weight: 800;
+  text-align: center;
+}
+
+.supply-plan-table .supply-plan-sticky {
+  position: sticky;
+  left: var(--supply-plan-left);
+  z-index: 8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: #fff;
+}
+
+.supply-plan-table thead .supply-plan-sticky {
+  z-index: 30;
+  background: #337fc8;
+}
+
+.supply-plan-table .supply-plan-rowspan {
+  vertical-align: middle;
+  font-weight: 650;
+}
+
+.supply-plan-table .metric-name {
+  color: #334155;
+  font-weight: 800;
+}
+
+.supply-plan-table .inventory-column {
+  min-width: 82px;
+  background: #edf7ff;
+  color: #205e9c;
+  font-weight: 800;
+}
+
+.supply-plan-table thead .inventory-column {
+  background: #2874ba;
+  color: #fff;
+}
+
+.supply-plan-table .week-column {
+  min-width: 72px;
+}
+
+.supply-plan-table .week-column strong,
+.supply-plan-table .week-column small {
+  display: block;
+}
+
+.supply-plan-table .week-column small {
+  margin-top: 2px;
+  font-size: .58rem;
+  font-weight: 500;
+  opacity: .9;
+}
+
+.supply-plan-table .numeric-cell {
+  min-width: 72px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.supply-plan-table tr.metric-row-0 td,
+.supply-plan-table tr.metric-row-0 .supply-plan-sticky {
+  background: #f1f6ff;
+}
+
+.supply-plan-table tr.metric-row-4 td,
+.supply-plan-table tr.metric-row-4 .supply-plan-sticky {
+  background: #fff9f2;
+}
+
+.supply-plan-table tr.sku-group td {
+  border-top: 2px solid #75aee4;
+}
+
+.supply-plan-table .gap-positive {
+  color: #d92d20;
+  font-weight: 900;
+}
+
+.supply-plan-table .empty-cell {
+  padding: 28px;
+  color: #64748b;
+  text-align: center;
+}
+
+.supply-plan-pagination {
+  color: #64748b;
+  font-size: .75rem;
+}
+
+.supply-plan-pagination > div {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 900px) {
+  .supply-plan-title-row,
+  .supply-plan-section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .supply-plan-title-row > span,
+  .supply-plan-toolbar .section-count {
+    margin-left: 0;
+  }
+}

@@ -822,6 +822,10 @@ function warehouseLocation(row) {
   return text(aliasValue(row, ['warehouseLocation', 'warehousePosition', '仓位位置', '仓库位置', '仓位']));
 }
 
+function warehouseLevel1Category(row) {
+  return text(aliasValue(row, ['level1WarehouseCategory', '一级仓库分类', '仓库一级分类', '一级分类', '仓库大类', '一级仓库类型']));
+}
+
 function warehouseLevel2Category(row) {
   const rawHColumnValue = row?.raw && typeof row.raw === 'object'
     ? Object.values(row.raw)[7]
@@ -1414,6 +1418,7 @@ export function buildInventorySummaryModel({
     (row) => ({
       site: warehouseSite(row),
       warehouseLocation: warehouseLocation(row),
+      level1WarehouseCategory: warehouseLevel1Category(row),
       level2WarehouseCategory: warehouseLevel2Category(row)
     })
   );
@@ -1548,15 +1553,17 @@ export function buildInventorySummaryModel({
       if (!candidates.length) continue;
       const sites = [...new Set(candidates.map((item) => text(item.site)).filter(Boolean))];
       const warehouseLocations = [...new Set(candidates.map((item) => text(item.warehouseLocation)).filter(Boolean))];
+      const level1WarehouseCategories = [...new Set(candidates.map((item) => text(item.level1WarehouseCategory)).filter(Boolean))];
       const level2WarehouseCategories = [...new Set(candidates.map((item) => text(item.level2WarehouseCategory)).filter(Boolean))];
       const metadata = {
         site: sites.length === 1 ? sites[0] : '',
         warehouseLocation: warehouseLocations.length === 1 ? warehouseLocations[0] : '',
+        level1WarehouseCategory: level1WarehouseCategories.length === 1 ? level1WarehouseCategories[0] : '',
         level2WarehouseCategory: level2WarehouseCategories.length === 1 ? level2WarehouseCategories[0] : ''
       };
-      if (metadata.site || metadata.warehouseLocation || metadata.level2WarehouseCategory) return metadata;
+      if (metadata.site || metadata.warehouseLocation || metadata.level1WarehouseCategory || metadata.level2WarehouseCategory) return metadata;
     }
-    return { site: '', warehouseLocation: '', level2WarehouseCategory: '' };
+    return { site: '', warehouseLocation: '', level1WarehouseCategory: '', level2WarehouseCategory: '' };
   };
 
   const resolveGeneralWarehouse = (sourceWarehouse, materialCode) => {
@@ -1749,6 +1756,7 @@ export function buildInventorySummaryModel({
           productType: segmentType,
           warehouseLocation: text(warehouseMetadata.warehouseLocation),
           site: text(warehouseMetadata.site),
+          level1WarehouseCategory: text(warehouseMetadata.level1WarehouseCategory),
           level2WarehouseCategory: text(warehouseMetadata.level2WarehouseCategory)
         };
         const detailKey = combinedKey(
@@ -1761,6 +1769,7 @@ export function buildInventorySummaryModel({
           sourceDetail.productType,
           sourceDetail.warehouseLocation,
           sourceDetail.site,
+          sourceDetail.level1WarehouseCategory,
           sourceDetail.level2WarehouseCategory
         );
         const existingSourceDetail = row.inventorySourceDetails[detailKey] || sourceDetail;

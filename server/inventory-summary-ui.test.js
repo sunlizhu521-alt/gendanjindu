@@ -30,7 +30,9 @@ test('事业部订单库存明细默认隐藏来源仓库并可同步展示和�
   assert.match(dashboard, /InventorySummaryVerticalGroupedBars title="销售产品线库存、在途与未交付"/);
   assert.match(dashboard, /<div className="inventory-composition-row">[\s\S]*?在库构成[\s\S]*?在途构成[\s\S]*?<\/div>/);
   assert.match(dashboard, /<MultiSelectFilter label="站点"[\s\S]*?value=\{filters\.sites\}/);
+  assert.match(dashboard, /<MultiSelectFilter label="一级仓库分类"[\s\S]*?value=\{filters\.level1WarehouseCategories\}[\s\S]*?<MultiSelectFilter label="二级仓库分类"/);
   assert.match(dashboard, /<MultiSelectFilter label="二级仓库分类"[\s\S]*?value=\{filters\.level2WarehouseCategories\}/);
+  assert.doesNotMatch(dashboard, /<MultiSelectFilter label="交货状态"/);
   assert.doesNotMatch(dashboard, /<MultiSelectFilter label="销量等级"/);
   assert.doesNotMatch(dashboard, /<MultiSelectFilter label="销售额等级"/);
   assert.match(dashboard, /inventorySourceDetailMatches/);

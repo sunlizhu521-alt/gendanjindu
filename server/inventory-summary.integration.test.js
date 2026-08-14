@@ -1652,6 +1652,7 @@ test('warehouse level 2 category prefers column H from the original warehouse fi
       subject: '主体一',
       warehouseName: 'FBM仓',
       marketplace: '美国',
+      level1WarehouseCategory: '一级分类',
       level2WarehouseCategory: '三级分类'
     }]],
     ['warehouseMaterialMap', [{
@@ -1671,6 +1672,7 @@ test('warehouse level 2 category prefers column H from the original warehouse fi
     getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
   });
   const row = result.rows.find((item) => item.materialCode === 'M-H');
+  assert.equal(row?.inventorySourceDetails[0]?.level1WarehouseCategory, '一级分类');
   assert.equal(row?.inventorySourceDetails[0]?.level2WarehouseCategory, '正确二级分类');
 });
 

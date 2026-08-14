@@ -92,7 +92,7 @@ const PAGE_LABELS = {
   inventoryRisk: '供应计划分析',
   supplyPlanBoard: '供应计划工具',
   productArchive: '产品档案',
-  businessUnitFeedback: '事业部反馈',
+  businessUnitFeedback: '产品数据',
   inventoryPurchase: '采购未交付',
   inventorySummaryLibrary: '底表文件',
   inventoryManualLibrary: '手工表库',
@@ -161,7 +161,7 @@ const DIMENSION_SLOTS = {
   '海外事业一部',
   '海外事业二部',
   '国内事业部',
-  '备用1',
+  '产品项目',
   '备用2',
   '备用3',
   '备用4',
@@ -169,6 +169,7 @@ const DIMENSION_SLOTS = {
 ].forEach((title, index) => {
   DIMENSION_SLOTS[`businessUnitFeedback${index + 1}`] = title;
 });
+const PRODUCT_PROJECT_SLOT_ID = 'businessUnitFeedback4';
 Object.entries(DIMENSION_SLOTS)
   .filter(([slotId]) => /^inventorySummaryFile\d+$/.test(slotId))
   .forEach(([slotId, title]) => {
@@ -6609,8 +6610,8 @@ function currentProductArchive() {
     'SELECT file_name, sheet_name, uploaded_by, updated_at, applied FROM dimension_files WHERE slot_id = ?',
     ['productCategory']
   );
-  const feedbackSources = Array.from({ length: 8 }, (_, index) => {
-    const slotId = `businessUnitFeedback${index + 1}`;
+  const feedbackSources = [1, 2, 3, 5, 6, 7, 8].map((slotNumber) => {
+    const slotId = `businessUnitFeedback${slotNumber}`;
     const record = get(
       'SELECT file_name, uploaded_by, updated_at, applied, rows_json FROM dimension_files WHERE slot_id = ?',
       [slotId]
@@ -6642,6 +6643,61 @@ function currentProductArchive() {
       applied: Boolean(productSource?.applied)
     },
     generatedAt: new Date().toISOString()
+  };
+}
+
+const PRODUCT_PROJECT_FILE_MAPPING = Object.freeze({
+  projectName: 'projectName',
+  businessUnit: 'businessUnit',
+  productPositioning: 'productPositioning',
+  projectStage: 'projectStage',
+  owner: 'owner',
+  plannedLaunchDate: 'plannedLaunchDate',
+  projectStatus: 'projectStatus',
+  remark: 'remark',
+  materialCode: 'materialCode',
+  sku: 'sku',
+  modifiedAt: 'modifiedAt'
+});
+
+function currentProductProjectFileData() {
+  const record = get(
+    'SELECT file_name, sheet_name, uploaded_by, updated_at, applied, rows_json FROM dimension_files WHERE slot_id = ?',
+    [PRODUCT_PROJECT_SLOT_ID]
+  );
+  if (!record?.applied) return null;
+  const sourceRows = parseJson(record.rows_json, []);
+  const records = sourceRows.map((row, index) => ({
+    id: `file-${index + 1}`,
+    createdTime: record.updated_at,
+    lastModifiedTime: row.modifiedAt || record.updated_at,
+    fields: {
+      projectName: row.projectName,
+      businessUnit: row.businessUnit,
+      productPositioning: row.productPositioning,
+      projectStage: row.projectStage,
+      owner: row.owner,
+      plannedLaunchDate: row.plannedLaunchDate,
+      projectStatus: row.projectStatus,
+      remark: row.remark,
+      materialCode: row.materialCode,
+      sku: row.sku,
+      modifiedAt: row.modifiedAt
+    }
+  }));
+  const normalized = normalizeProjectRecords(records, PRODUCT_PROJECT_FILE_MAPPING);
+  return {
+    rows: normalized.rows,
+    report: normalized.report,
+    source: {
+      sourceType: 'file',
+      slotId: PRODUCT_PROJECT_SLOT_ID,
+      fileName: record.file_name || '',
+      sheetName: record.sheet_name || '',
+      uploadedBy: record.uploaded_by || '',
+      updatedAt: record.updated_at || '',
+      configured: true
+    }
   };
 }
 
@@ -6721,6 +6777,49 @@ function databaseProjectRows(runId) {
   }));
 }
 
+function currentProductProjectData() {
+  const fileData = currentProductProjectFileData();
+  if (fileData) {
+    return {
+      rows: fileData.rows,
+      source: fileData.source,
+      sync: {
+        running: false,
+        currentRunId: '',
+        lastSuccessAt: fileData.source.updatedAt,
+        latestStatus: '文件已应用',
+        latestError: '',
+        report: fileData.report
+      }
+    };
+  }
+  const settings = currentProductProjectSettings();
+  const currentRun = settings.currentRunId ? get('SELECT * FROM product_project_sync_runs WHERE id = ?', [settings.currentRunId]) : null;
+  const latestRun = get('SELECT * FROM product_project_sync_runs ORDER BY started_at DESC LIMIT 1');
+  return {
+    rows: databaseProjectRows(settings.currentRunId),
+    sync: {
+      running: Boolean(productProjectSyncPromise),
+      currentRunId: settings.currentRunId,
+      lastSuccessAt: currentRun?.finished_at || '',
+      latestStatus: latestRun?.status || '',
+      latestError: latestRun?.status === 'failed' ? latestRun.error_message : ''
+    },
+    source: {
+      sourceType: 'dingTalk',
+      documentReference: settings.documentReference,
+      baseId: settings.baseId,
+      sheetId: settings.sheetId,
+      sheetName: settings.sheetName,
+      configured: Boolean(settings.baseId && settings.sheetId),
+      appCredentialsConfigured: settings.appCredentialsConfigured,
+      operatorConfigured: settings.operatorConfigured,
+      updatedBy: settings.updatedBy,
+      updatedAt: settings.updatedAt
+    }
+  };
+}
+
 let productProjectSyncPromise = null;
 
 async function runProductProjectSync({ triggerType, userName }) {
@@ -6792,7 +6891,7 @@ function productProjectHistory() {
 app.get('/api/product-archive', requireAuth, requirePage('productArchive'), (_req, res) => {
   const archive = currentProductArchive();
   const linkedCounts = new Map();
-  linkProjectsToProducts(databaseProjectRows(currentProductProjectSettings().currentRunId), archive.rows).forEach((row) => {
+  linkProjectsToProducts(currentProductProjectData().rows, archive.rows).forEach((row) => {
     if (row.linkedProductId) linkedCounts.set(row.linkedProductId, (linkedCounts.get(row.linkedProductId) || 0) + 1);
   });
   res.setHeader('Cache-Control', 'no-store');
@@ -6800,34 +6899,16 @@ app.get('/api/product-archive', requireAuth, requirePage('productArchive'), (_re
 });
 
 app.get('/api/product-projects', requireAuth, requirePage('productArchive'), (_req, res) => {
-  const settings = currentProductProjectSettings();
+  const projectData = currentProductProjectData();
   const archive = currentProductArchive();
-  const rows = linkProjectsToProducts(databaseProjectRows(settings.currentRunId), archive.rows);
-  const currentRun = settings.currentRunId ? get('SELECT * FROM product_project_sync_runs WHERE id = ?', [settings.currentRunId]) : null;
-  const latestRun = get('SELECT * FROM product_project_sync_runs ORDER BY started_at DESC LIMIT 1');
+  const rows = linkProjectsToProducts(projectData.rows, archive.rows);
   res.setHeader('Cache-Control', 'no-store');
   res.json({
     ok: true,
     rows,
     metrics: buildProjectMetrics(rows),
-    sync: {
-      running: Boolean(productProjectSyncPromise),
-      currentRunId: settings.currentRunId,
-      lastSuccessAt: currentRun?.finished_at || '',
-      latestStatus: latestRun?.status || '',
-      latestError: latestRun?.status === 'failed' ? latestRun.error_message : ''
-    },
-    source: {
-      documentReference: settings.documentReference,
-      baseId: settings.baseId,
-      sheetId: settings.sheetId,
-      sheetName: settings.sheetName,
-      configured: Boolean(settings.baseId && settings.sheetId),
-      appCredentialsConfigured: settings.appCredentialsConfigured,
-      operatorConfigured: settings.operatorConfigured,
-      updatedBy: settings.updatedBy,
-      updatedAt: settings.updatedAt
-    }
+    sync: projectData.sync,
+    source: projectData.source
   });
 });
 
@@ -6992,6 +7073,22 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         purchaseOwner: pick(row, mapping.purchaseOwner) || pickAny(row, ['采购下单人', '下单人', '采购负责人']),
         purchaseGroup: pick(row, mapping.purchaseGroup) || pickAny(row, ['采购组', '采购分组']),
         purchaseOrg: pick(row, mapping.purchaseOrg)
+      };
+    }
+    if (slotId === PRODUCT_PROJECT_SLOT_ID) {
+      return {
+        raw: row,
+        projectName: pick(row, mapping.projectName) || pickAny(row, ['项目名称', '项目', '产品项目', '研发项目']),
+        businessUnit: pick(row, mapping.businessUnit) || pickAny(row, ['事业部', '所属事业部', '负责事业部']),
+        productPositioning: pick(row, mapping.productPositioning) || pickAny(row, ['产品定位', '项目定位', '市场定位']),
+        projectStage: pick(row, mapping.projectStage) || pickAny(row, ['项目阶段', '研发阶段', '阶段', '当前阶段']),
+        owner: pick(row, mapping.owner) || pickAny(row, ['负责人', '项目负责人', '产品经理']),
+        plannedLaunchDate: pick(row, mapping.plannedLaunchDate) || pickAny(row, ['计划上市日期', '预计上市日期', '上市日期', '计划完成日期']),
+        projectStatus: pick(row, mapping.projectStatus) || pickAny(row, ['项目状态', '状态', '进度状态']),
+        remark: pick(row, mapping.remark) || pickAny(row, ['备注', '项目备注', '进度说明']),
+        materialCode: pick(row, mapping.materialCode) || pickAny(row, ['物料编码', '物料代码', '品号']),
+        sku: pick(row, mapping.sku) || pickAny(row, ['SKU', 'sku', '产品SKU']),
+        modifiedAt: pick(row, mapping.modifiedAt) || pickAny(row, ['修改时间', '更新时间', '最后修改时间'])
       };
     }
     if (slotId.startsWith('businessUnitFeedback')) {
@@ -7804,6 +7901,7 @@ sessionCleanupTimer.unref?.();
 await ensureAdmin();
 async function checkScheduledProductProjectSync() {
   try {
+    if (currentProductProjectFileData()) return;
     const settings = currentProductProjectSettings();
     const lastSuccessAt = get("SELECT finished_at FROM product_project_sync_runs WHERE status='success' ORDER BY finished_at DESC LIMIT 1")?.finished_at || '';
     if (!settings.baseId || !settings.sheetId || !settings.appCredentialsConfigured || !settings.operatorConfigured) return;

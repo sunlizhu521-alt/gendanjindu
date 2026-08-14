@@ -360,7 +360,7 @@ test('生产跟进去掉供应商标签栏和只看按钮', () => {
   assert.doesNotMatch(styleSource, /\.supplier-lookonly-btn/);
 });
 
-test('生产跟进隐藏公共导航和通用布局并提供独立返回入口', () => {
+test('生产跟进隐藏公共导航和通用布局并提供返回与退出入口', () => {
   const appRenderSource = appSource.slice(appSource.indexOf('function App()'));
   const progressSource = appSource.slice(
     appSource.indexOf('function ProgressPage('),
@@ -372,10 +372,10 @@ test('生产跟进隐藏公共导航和通用布局并提供独立返回入口',
   assert.match(appRenderSource, /\{!progressStandalone && \(\s*<aside className="sidebar"/);
   assert.match(appRenderSource, /className=\{progressStandalone \? 'progress-standalone-content' : 'content'\}/);
   assert.match(appRenderSource, /onExit=\{progressReturnPage \? \(\) => setActiveTab\(progressReturnPage\) : null\}/);
-  assert.doesNotMatch(appRenderSource, /<ProgressPage[^>]*onLogout=/);
+  assert.match(appRenderSource, /onLogout=\{logout\}/);
   assert.doesNotMatch(appRenderSource, /kingdee-shell/);
   assert.match(progressSource, />返回系统<\/button>/);
-  assert.doesNotMatch(progressSource, />退出登录<\/button>/);
+  assert.match(progressSource, />退出登录<\/button>/);
   assert.match(styleSource, /\.progress-standalone-shell\s*\{[\s\S]*?min-height: 100vh/);
   assert.match(styleSource, /\.progress-standalone-content\s*\{[\s\S]*?min-height: 100vh[\s\S]*?overflow: auto/);
 });

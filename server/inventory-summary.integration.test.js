@@ -2503,12 +2503,17 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(purchaseOwnerDemandsResponse.status, 200);
     const purchaseOwnerDemandRows = (await purchaseOwnerDemandsResponse.json()).rows;
     assert.ok(purchaseOwnerDemandRows.length > 0);
-    assert.ok(purchaseOwnerDemandRows.every((row) => String(row.purchaseOwner).split(/[+、]/).includes('当前采购员')));
+    assert.ok(purchaseOwnerDemandRows.some((row) => String(row.purchaseOwner).split(/[+、]/).includes('当前采购员')));
+    assert.ok(purchaseOwnerDemandRows.some((row) => !String(row.purchaseOwner).split(/[+、]/).includes('当前采购员')));
+    assert.ok(purchaseOwnerDemandRows.some((row) => row.canEdit === true));
+    assert.ok(purchaseOwnerDemandRows.some((row) => row.canEdit === false));
     const unrelatedDemandsResponse = await fetch(`http://127.0.0.1:${port}/api/demands`, {
       headers: { Authorization: 'Bearer limited-token' }
     });
     assert.equal(unrelatedDemandsResponse.status, 200);
-    assert.deepEqual((await unrelatedDemandsResponse.json()).rows, []);
+    const unrelatedDemandRows = (await unrelatedDemandsResponse.json()).rows;
+    assert.equal(unrelatedDemandRows.length, purchaseOwnerDemandRows.length);
+    assert.ok(unrelatedDemandRows.every((row) => row.canEdit === false));
 
     const nonAdminManualImportResponse = await fetch(`http://127.0.0.1:${port}/api/progress/manual-import/preview`, {
       method: 'POST',

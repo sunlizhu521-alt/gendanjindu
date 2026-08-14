@@ -1399,8 +1399,8 @@ function inventoryDefaultFilters() {
     productLines: [],
     productSeries: [],
     skus: [],
-    quantityAbcs: [],
-    amountAbcs: [],
+    sites: [],
+    level2WarehouseCategories: [],
     inventorySources: [],
     deliveryStatuses: [],
     keyword: ''
@@ -1443,6 +1443,12 @@ function inventorySegmentMatches(item, selectedSubjects, selectedProductTypes) {
     && (selectedProductTypes.length === 0 || selectedProductTypes.includes(normalize(item.productType)));
 }
 
+function inventorySourceDetailMatches(item, selectedSubjects, selectedProductTypes, selectedSites, selectedLevel2Categories) {
+  return inventorySegmentMatches(item, selectedSubjects, selectedProductTypes)
+    && (selectedSites.length === 0 || selectedSites.includes(normalize(item.site)))
+    && (selectedLevel2Categories.length === 0 || selectedLevel2Categories.includes(normalize(item.level2WarehouseCategory)));
+}
+
 function inventoryRowMatchesProductTypes(row, selectedSubjects, selectedProductTypes) {
   if (selectedProductTypes.length === 0) return true;
   if (selectedProductTypes.includes(inventoryProductType(row))) return true;
@@ -1452,17 +1458,23 @@ function inventoryRowMatchesProductTypes(row, selectedSubjects, selectedProductT
   ));
 }
 
-function inventoryRowForFilters(row, selectedSubjects, selectedProductTypes) {
+function inventoryRowForFilters(row, selectedSubjects, selectedProductTypes, selectedSites, selectedLevel2Categories) {
   const subjectSet = new Set(selectedSubjects);
   const typeSet = new Set(selectedProductTypes);
+  const siteSet = new Set(selectedSites);
+  const level2CategorySet = new Set(selectedLevel2Categories);
   const baseProductType = inventoryProductType(row);
   const selectedBreakdown = (row.inventorySegmentBreakdown || []).filter((item) => (
     (subjectSet.size === 0 || subjectSet.has(normalize(item.subject)))
     && (typeSet.size === 0 || typeSet.has(normalize(item.productType)))
   ));
+  const selectedSourceDetails = (row.inventorySourceDetails || []).filter((item) => (
+    inventorySourceDetailMatches(item, selectedSubjects, selectedProductTypes, selectedSites, selectedLevel2Categories)
+  ));
+  const warehouseScoped = siteSet.size > 0 || level2CategorySet.size > 0;
   const amounts = Object.fromEntries(INVENTORY_SUBJECT_MEASURE_FIELDS.map((field) => [
     field,
-    selectedBreakdown.reduce((sum, item) => sum + numberValue(item[field]), 0)
+    (warehouseScoped ? selectedSourceDetails : selectedBreakdown).reduce((sum, item) => sum + numberValue(item[field]), 0)
   ]));
   const includeBaseMeasures = typeSet.size === 0 || typeSet.has(baseProductType);
   const nonStockAmounts = Object.fromEntries(INVENTORY_NON_STOCK_FIELDS.map((field) => [
@@ -1477,16 +1489,12 @@ function inventoryRowForFilters(row, selectedSubjects, selectedProductTypes) {
   const inventoryValue = crossBorderInventoryValue + domesticInventoryValue;
   const transitQty = amounts.fbaTransitQty + amounts.fbmTransitQty + amounts.wfsTransitQty + amounts.jdTransitQty;
   const transitValue = amounts.fbaTransitValue + amounts.fbmTransitValue + amounts.wfsTransitValue + amounts.jdTransitValue;
-  const inventorySourceDetails = (row.inventorySourceDetails || []).filter((item) => (
-    (subjectSet.size === 0 || subjectSet.has(normalize(item.subject)))
-    && (typeSet.size === 0 || typeSet.has(normalize(item.productType)))
-  ));
   return {
     ...row,
     ...amounts,
     ...nonStockAmounts,
-    inventorySubjects: [...new Set(selectedBreakdown.map((item) => item.subject))],
-    inventorySourceDetails,
+    inventorySubjects: [...new Set((warehouseScoped ? selectedSourceDetails : selectedBreakdown).map((item) => item.subject))],
+    inventorySourceDetails: selectedSourceDetails,
     salesByMonth: includeBaseMeasures ? row.salesByMonth : {},
     salesAmountByMonth: includeBaseMeasures ? row.salesAmountByMonth : {},
     purchaseByMonth: includeBaseMeasures ? row.purchaseByMonth : {},
@@ -2251,9 +2259,7 @@ function InventorySummary({ token, active }) {
     ['businessUnits', 'businessUnit'],
     ['productLines', 'productLine'],
     ['productSeries', 'productSeries'],
-    ['skus', 'sku'],
-    ['quantityAbcs', 'quantityAbc'],
-    ['amountAbcs', 'amountAbc']
+    ['skus', 'sku']
   ];
   const rowMatches = (row, omitted = '') => {
     const scalarMatches = filterDefinitions.every(([filterKey, rowKey]) => (
@@ -2268,6 +2274,14 @@ function InventorySummary({ token, active }) {
     const productTypeMatches = omitted === 'productTypes'
       || filters.productTypes.length === 0
       || inventoryRowMatchesProductTypes(row, filters.inventorySubjects, filters.productTypes);
+    const selectedSubjects = omitted === 'inventorySubjects' ? [] : filters.inventorySubjects;
+    const selectedProductTypes = omitted === 'productTypes' ? [] : filters.productTypes;
+    const selectedSites = omitted === 'sites' ? [] : filters.sites;
+    const selectedLevel2Categories = omitted === 'level2WarehouseCategories' ? [] : filters.level2WarehouseCategories;
+    const warehouseMatches = (selectedSites.length === 0 && selectedLevel2Categories.length === 0)
+      || (row.inventorySourceDetails || []).some((item) => (
+        inventorySourceDetailMatches(item, selectedSubjects, selectedProductTypes, selectedSites, selectedLevel2Categories)
+      ));
     const deliveryMatches = omitted === 'deliveryStatuses'
       || filters.deliveryStatuses.length === 0
       || (row.deliveryStatuses || [row.deliveryStatus]).some((value) => filters.deliveryStatuses.includes(value));
@@ -2276,35 +2290,45 @@ function InventorySummary({ token, active }) {
       row.matchKey, row.businessUnit, row.productLine, row.productSeries, row.materialCode,
       row.sku, row.materialName, row.rawIdentifier, ...inventoryRowProductTypes(row),
       ...(row.inventorySubjects || []), ...(row.issues || []),
+      ...(row.inventorySourceDetails || []).flatMap((item) => [item.site, item.level2WarehouseCategory]),
       inventorySourceWarehouses(row)
     ].join(' ').toLowerCase().includes(keyword);
-    return scalarMatches && sourceMatches && subjectMatches && productTypeMatches && deliveryMatches && keywordMatches;
+    return scalarMatches && sourceMatches && subjectMatches && productTypeMatches && warehouseMatches && deliveryMatches && keywordMatches;
   };
   const unique = (values) => [...new Set(values.flat().map(normalize).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
   const options = useMemo(() => {
     const rowsFor = (key) => rows.filter((row) => rowMatches(row, key));
+    const matchingSourceDetails = (row, omitted = '') => (row.inventorySourceDetails || []).filter((item) => (
+      inventorySourceDetailMatches(
+        item,
+        omitted === 'inventorySubjects' ? [] : filters.inventorySubjects,
+        omitted === 'productTypes' ? [] : filters.productTypes,
+        omitted === 'sites' ? [] : filters.sites,
+        omitted === 'level2WarehouseCategories' ? [] : filters.level2WarehouseCategories
+      )
+    ));
     return {
       businessUnits: unique(rowsFor('businessUnits').map((row) => row.businessUnit)),
-      inventorySubjects: unique(rowsFor('inventorySubjects').map((row) => (
-        filters.productTypes.length === 0
-          ? row.inventorySubjects || []
-          : (row.inventorySegmentBreakdown || [])
-            .filter((item) => inventorySegmentMatches(item, [], filters.productTypes))
-            .map((item) => item.subject)
-      ))),
+      inventorySubjects: unique(rowsFor('inventorySubjects').map((row) => matchingSourceDetails(row, 'inventorySubjects').map((item) => item.subject))),
       productTypes: INVENTORY_PRODUCT_TYPE_OPTIONS,
       productLines: unique(rowsFor('productLines').map((row) => row.productLine)),
       productSeries: unique(rowsFor('productSeries').map((row) => row.productSeries)),
       skus: unique(rowsFor('skus').map((row) => row.sku)),
-      quantityAbcs: unique(rowsFor('quantityAbcs').map((row) => row.quantityAbc)),
-      amountAbcs: unique(rowsFor('amountAbcs').map((row) => row.amountAbc)),
+      sites: unique(rowsFor('sites').map((row) => matchingSourceDetails(row, 'sites').map((item) => item.site))),
+      level2WarehouseCategories: unique(rowsFor('level2WarehouseCategories').map((row) => matchingSourceDetails(row, 'level2WarehouseCategories').map((item) => item.level2WarehouseCategory))),
       inventorySources: unique(rowsFor('inventorySources').map((row) => row.inventorySources || [])),
       deliveryStatuses: unique(rowsFor('deliveryStatuses').map((row) => row.deliveryStatuses || [row.deliveryStatus]))
     };
   }, [rows, filters]);
   const filteredRows = useMemo(() => rows
     .filter((row) => rowMatches(row))
-    .map((row) => inventoryRowForFilters(row, filters.inventorySubjects, filters.productTypes)), [rows, filters]);
+    .map((row) => inventoryRowForFilters(
+      row,
+      filters.inventorySubjects,
+      filters.productTypes,
+      filters.sites,
+      filters.level2WarehouseCategories
+    )), [rows, filters]);
   const totals = useMemo(() => inventoryDashboardTotals(filteredRows), [filteredRows]);
   const fullTotals = useMemo(() => inventoryDashboardTotals(rows), [rows]);
   const businessUnitRows = useMemo(() => inventoryDashboardGroups(filteredRows, (row) => row.businessUnit), [filteredRows]);
@@ -2451,12 +2475,12 @@ function InventorySummary({ token, active }) {
           <div className="toolbar filters-row inventory-summary-filters inventory-summary-filter-grid">
             <MultiSelectFilter label="事业部" allLabel="全部事业部" value={filters.businessUnits} options={options.businessUnits} onChange={(value) => updateFilter('businessUnits', value)} />
             <MultiSelectFilter label="库存主体" allLabel="全部库存主体" value={filters.inventorySubjects} options={options.inventorySubjects} onChange={(value) => updateFilter('inventorySubjects', value)} />
+            <MultiSelectFilter label="站点" allLabel="全部站点" value={filters.sites} options={options.sites} onChange={(value) => updateFilter('sites', value)} />
+            <MultiSelectFilter label="二级仓库分类" allLabel="全部二级仓库分类" value={filters.level2WarehouseCategories} options={options.level2WarehouseCategories} onChange={(value) => updateFilter('level2WarehouseCategories', value)} />
             <MultiSelectFilter label="成品/配件" allLabel="全部类型" value={filters.productTypes} options={options.productTypes} onChange={(value) => updateFilter('productTypes', value)} />
             <MultiSelectFilter label="产品线" allLabel="全部产品线" value={filters.productLines} options={options.productLines} onChange={(value) => updateFilter('productLines', value)} />
             <MultiSelectFilter label="系列" allLabel="全部系列" value={filters.productSeries} options={options.productSeries} onChange={(value) => updateFilter('productSeries', value)} />
             <MultiSelectFilter label="SKU" allLabel="全部SKU" value={filters.skus} options={options.skus} onChange={(value) => updateFilter('skus', value)} />
-            <MultiSelectFilter label="销量等级" allLabel="全部销量等级" value={filters.quantityAbcs} options={options.quantityAbcs} onChange={(value) => updateFilter('quantityAbcs', value)} />
-            <MultiSelectFilter label="销售额等级" allLabel="全部销售额等级" value={filters.amountAbcs} options={options.amountAbcs} onChange={(value) => updateFilter('amountAbcs', value)} />
             <MultiSelectFilter label="库存来源" allLabel="全部库存来源" value={filters.inventorySources} options={options.inventorySources} onChange={(value) => updateFilter('inventorySources', value)} />
             <MultiSelectFilter label="交货状态" allLabel="全部交货状态" value={filters.deliveryStatuses} options={options.deliveryStatuses} onChange={(value) => updateFilter('deliveryStatuses', value)} />
             <input className="search-input" placeholder="搜索事业部、物料编码、SKU或名称" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />

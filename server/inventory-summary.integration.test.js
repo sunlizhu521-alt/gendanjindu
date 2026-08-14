@@ -111,12 +111,12 @@ test('inventory summary model uses inventory library facts, layered totals and s
       { materialCode: 'M4', sku: 'SKU-4', materialName: 'Material Four', productLine: 'Line A', productSeries: 'Series C', pretaxPrice: '15' }
     ]],
     ['spare1', [
-      { subject: '主体一', warehouseName: 'FBA金蝶仓', marketplace: '美国', warehouseLocation: '海外在库' },
-      { subject: '主体一', warehouseName: 'FBA在途金蝶仓', marketplace: '美国', warehouseLocation: '海外在途' },
-      { subject: '主体一', warehouseName: 'FBM仓', marketplace: '美国', warehouseLocation: '海外在库' },
-      { subject: '主体一', warehouseName: 'WFS仓', marketplace: '美国', warehouseLocation: '海外在库' },
-      { subject: '主体一', warehouseName: '102-US-海外二部-海上在途', marketplace: '美国', warehouseLocation: '海外在途' },
-      { subject: '国内主体', warehouseName: '国内仓', marketplace: '中国', warehouseLocation: '国内在库' }
+      { subject: '主体一', warehouseName: 'FBA金蝶仓', marketplace: '美国', warehouseLocation: '海外在库', level2WarehouseCategory: '平台仓' },
+      { subject: '主体一', warehouseName: 'FBA在途金蝶仓', marketplace: '美国', warehouseLocation: '海外在途', level2WarehouseCategory: '平台在途' },
+      { subject: '主体一', warehouseName: 'FBM仓', marketplace: '美国', warehouseLocation: '海外在库', level2WarehouseCategory: '海外仓' },
+      { subject: '主体一', warehouseName: 'WFS仓', marketplace: '美国', warehouseLocation: '海外在库', level2WarehouseCategory: '平台仓' },
+      { subject: '主体一', warehouseName: '102-US-海外二部-海上在途', marketplace: '美国', warehouseLocation: '海外在途', level2WarehouseCategory: '海外在途' },
+      { subject: '国内主体', warehouseName: '国内仓', marketplace: '中国', warehouseLocation: '国内在库', level2WarehouseCategory: '国内仓' }
     ]],
     ['warehouseMaterialMap', [
       { subject: '主体一', warehouseName: 'FBA金蝶仓', materialCode: 'M1', businessUnit: '跨境事业部' },
@@ -274,6 +274,14 @@ test('inventory summary model uses inventory library facts, layered totals and s
   assert.deepEqual(
     [...new Set(crossBorderM1?.inventorySourceDetails.map((item) => item.warehouseLocation))].sort(),
     ['海外在库', '海外在途']
+  );
+  assert.deepEqual(
+    [...new Set(crossBorderM1?.inventorySourceDetails.map((item) => item.level2WarehouseCategory))].sort(),
+    ['平台仓', '平台在途', '海外仓', '海外在途']
+  );
+  assert.equal(
+    crossBorderM1?.inventorySourceDetails.reduce((sum, item) => sum + Number(item.fbaInventoryQty || 0), 0),
+    crossBorderM1?.fbaInventoryQty
   );
 });
 

@@ -4187,8 +4187,7 @@ function demandRows(includeInactive = false, user = null, options = {}) {
           manualSourceRows: []
         }))
       : manualProgressDisplayRows(rows, user);
-  if (!user || user.role === ROLE_ADMIN) return displayRows;
-  return displayRows.filter((row) => !row.adminOnly && canEditDemand(user, { purchase_owner: row.purchaseOwner }));
+  return displayRows;
 }
 
 function uniqueOrderNos(rows) {

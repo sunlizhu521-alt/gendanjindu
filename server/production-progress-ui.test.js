@@ -82,7 +82,9 @@ test('生产跟进四阶段、履约字段和导出状态完整呈现', () => {
   assert.match(progressSource, /不含税采购价/);
   assert.match(appSource, /配件无采购价/);
   assert.doesNotMatch(progressSource.slice(progressSource.indexOf('<DataTable'), progressSource.indexOf('function DifferenceAllocationPage(')), /'采购组'/);
-  assert.match(serverSource, /return displayRows\.filter\(\(row\) => !row\.adminOnly && canEditDemand\(user, \{ purchase_owner: row\.purchaseOwner \}\)\)/);
+  assert.match(serverSource, /const displayRows = includeInactive[\s\S]*?return displayRows;\n}/);
+  assert.doesNotMatch(serverSource, /return displayRows\.filter\(\(row\) => !row\.adminOnly && canEditDemand\(user/);
+  assert.match(serverSource, /app\.patch\('\/api\/progress\/:demandKey'[\s\S]*?if \(!canEditDemand\(req\.user/);
 });
 
 test('生产跟进展示当前金蝶所有剩余未交付非零订单', () => {

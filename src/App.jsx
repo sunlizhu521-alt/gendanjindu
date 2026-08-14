@@ -8,6 +8,7 @@ import { groupOperationBoardRowsByMaterial } from './operation-board-grouping.js
 const InventoryCalculationGuide = React.lazy(() => import('./InventoryCalculationGuide.jsx'));
 const InventoryRiskPage = React.lazy(() => import('./InventoryRiskPage.jsx'));
 const SupplyPlanBoard = React.lazy(() => import('./SupplyPlanBoard.jsx'));
+const ProductArchivePage = React.lazy(() => import('./ProductArchivePage.jsx'));
 
 installGlobalFetchProgress();
 
@@ -23,6 +24,8 @@ const PAGE_ORDER = [
   'inventorySummary',
   'inventoryRisk',
   'supplyPlanBoard',
+  'productArchive',
+  'businessUnitFeedback',
   'inventoryPurchase',
   'inventorySummaryLibrary',
   'inventoryManualLibrary',
@@ -45,6 +48,8 @@ const PAGE_LABELS = {
   inventorySummary: '库存汇总',
   inventoryRisk: '供应计划分析',
   supplyPlanBoard: '供应计划工具',
+  productArchive: '产品档案',
+  businessUnitFeedback: '事业部反馈',
   inventoryPurchase: '采购未交付',
   inventorySummaryLibrary: '底表文件',
   inventoryManualLibrary: '手工表库',
@@ -69,6 +74,7 @@ const NAV_GROUPS = [
   { title: '国内数据', pages: ['domesticBoard', 'wangdianData'] },
   { title: '跨境数据', pages: ['crossBorderInventory', 'lingxingInventory'] },
   { title: '库存数据', pages: ['inventorySummary', 'inventoryRisk', 'supplyPlanBoard', 'inventoryPurchase', 'inventorySummaryLibrary', 'inventoryManualLibrary'] },
+  { title: '产品数据', pages: ['productArchive', 'businessUnitFeedback'] },
   { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'trace', 'purchaseBoard'] },
   { title: '头程数据', pages: ['firstMileBoard', 'firstMileDatabase'] },
   { title: '维护数据', pages: ['dimensionMissing', 'dimensionLibrary', 'kingdeeImport'] },
@@ -161,6 +167,27 @@ const DIMENSION_SLOTS = [
   ] },
   { id: 'dimensionSpare3', title: '备用3', fields: [] }
 ];
+
+const BUSINESS_UNIT_FEEDBACK_SLOTS = [
+  '海外事业一部',
+  '海外事业二部',
+  '国内事业部',
+  '备用1',
+  '备用2',
+  '备用3',
+  '备用4',
+  '备用5'
+].map((title, index) => ({
+  id: `businessUnitFeedback${index + 1}`,
+  title,
+  fields: [
+    ['materialCode', '物料编码'],
+    ['sku', 'SKU'],
+    ['productLifecycle', '产品生命周期'],
+    ['productPositioning', '产品定位'],
+    ['feedbackRemark', '反馈备注']
+  ]
+}));
 
 const WANGDIAN_SLOTS = [
   { id: 'wangdianDataMain', title: '国内数据', fields: [
@@ -8614,6 +8641,8 @@ function App() {
         {shouldMount('inventorySummary') && <PagePane page="inventorySummary" activeTab={activeTab}><InventorySummary token={token} active={activeTab === 'inventorySummary'} /></PagePane>}
         {shouldMount('inventoryRisk') && <PagePane page="inventoryRisk" activeTab={activeTab}><React.Suspense fallback={<div className="loading-fallback">加载中...</div>}><InventoryRiskPage token={token} active={activeTab === 'inventoryRisk'} /></React.Suspense></PagePane>}
         {shouldMount('supplyPlanBoard') && <PagePane page="supplyPlanBoard" activeTab={activeTab}><React.Suspense fallback={<div className="loading-fallback">加载中...</div>}><SupplyPlanBoard token={token} active={activeTab === 'supplyPlanBoard'} /></React.Suspense></PagePane>}
+        {shouldMount('productArchive') && <PagePane page="productArchive" activeTab={activeTab}><React.Suspense fallback={<div className="loading-fallback">加载中...</div>}><ProductArchivePage token={token} active={activeTab === 'productArchive'} user={user} /></React.Suspense></PagePane>}
+        {shouldMount('businessUnitFeedback') && <PagePane page="businessUnitFeedback" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="事业部反馈" slots={BUSINESS_UNIT_FEEDBACK_SLOTS} gridColumns={4} /></PagePane>}
         {shouldMount('inventoryPurchase') && <PagePane page="inventoryPurchase" activeTab={activeTab}><InventoryPurchaseFilePage token={token} active={activeTab === 'inventoryPurchase'} /></PagePane>}
         {shouldMount('inventorySummaryLibrary') && <PagePane page="inventorySummaryLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="底表文件" slots={INVENTORY_SUMMARY_LIBRARY_SLOTS} gridColumns={4} onDataApplied={refreshCrossBorderData} /></PagePane>}
         {shouldMount('inventoryManualLibrary') && <PagePane page="inventoryManualLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="手工表库" slots={INVENTORY_MANUAL_LIBRARY_SLOTS} gridColumns={4} /></PagePane>}

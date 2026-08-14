@@ -133,6 +133,54 @@ function migrate() {
     );
     CREATE INDEX IF NOT EXISTS idx_inventory_risk_setting_history_updated_at
       ON inventory_risk_setting_history(updated_at);
+    CREATE TABLE IF NOT EXISTS product_project_settings (
+      setting_key TEXT PRIMARY KEY,
+      document_reference TEXT NOT NULL DEFAULT '',
+      base_id TEXT NOT NULL DEFAULT '',
+      sheet_id TEXT NOT NULL DEFAULT '',
+      sheet_name TEXT NOT NULL DEFAULT '',
+      mapping_json TEXT NOT NULL DEFAULT '{}',
+      current_run_id TEXT NOT NULL DEFAULT '',
+      updated_by TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT ''
+    );
+    CREATE TABLE IF NOT EXISTS product_project_sync_runs (
+      id TEXT PRIMARY KEY,
+      status TEXT NOT NULL,
+      trigger_type TEXT NOT NULL DEFAULT '',
+      triggered_by TEXT NOT NULL DEFAULT '',
+      started_at TEXT NOT NULL,
+      finished_at TEXT NOT NULL DEFAULT '',
+      source_count INTEGER NOT NULL DEFAULT 0,
+      accepted_count INTEGER NOT NULL DEFAULT 0,
+      missing_name_count INTEGER NOT NULL DEFAULT 0,
+      duplicate_count INTEGER NOT NULL DEFAULT 0,
+      invalid_date_count INTEGER NOT NULL DEFAULT 0,
+      error_message TEXT NOT NULL DEFAULT '',
+      report_json TEXT NOT NULL DEFAULT '{}'
+    );
+    CREATE INDEX IF NOT EXISTS idx_product_project_runs_started_at
+      ON product_project_sync_runs(started_at);
+    CREATE TABLE IF NOT EXISTS product_project_rows (
+      run_id TEXT NOT NULL,
+      source_record_id TEXT NOT NULL,
+      project_name TEXT NOT NULL,
+      business_unit TEXT NOT NULL DEFAULT '',
+      product_positioning TEXT NOT NULL DEFAULT '',
+      project_stage TEXT NOT NULL DEFAULT '',
+      owner TEXT NOT NULL DEFAULT '',
+      planned_launch_date TEXT NOT NULL DEFAULT '',
+      project_status TEXT NOT NULL DEFAULT '',
+      remark TEXT NOT NULL DEFAULT '',
+      material_code TEXT NOT NULL DEFAULT '',
+      sku TEXT NOT NULL DEFAULT '',
+      source_modified_at TEXT NOT NULL DEFAULT '',
+      source_created_at TEXT NOT NULL DEFAULT '',
+      raw_json TEXT NOT NULL DEFAULT '{}',
+      PRIMARY KEY (run_id, source_record_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_product_project_rows_run_id
+      ON product_project_rows(run_id);
     CREATE TABLE IF NOT EXISTS import_mappings (
       kind TEXT PRIMARY KEY,
       mapping_json TEXT NOT NULL,

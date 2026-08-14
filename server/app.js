@@ -33,6 +33,16 @@ import { buildInventoryRiskWorkbook } from './inventory-risk-export.js';
 import { groupCurrentKingdeeOrderRows, isEffectivePurchaseOrder, kingdeeOrderIdentity } from './kingdee-order-visibility.js';
 import { buildOrderChangeIndex, classifyOrderChange, NORMAL_ORDER_TYPE } from './order-change.js';
 import { buildStyledExcelBuffer } from '../shared/excel-export.js';
+import { buildProductArchive } from './product-archive.js';
+import {
+  buildProjectMetrics,
+  createDingTalkProjectClient,
+  extractDingTalkBaseId,
+  linkProjectsToProducts,
+  normalizeProjectMapping,
+  normalizeProjectRecords,
+  shouldRunDailyProjectSync
+} from './product-projects.js';
 import {
   allocateIntegerByWeights,
   allocateNumberByWeights,
@@ -58,6 +68,8 @@ const ALL_PAGES = [
   'inventorySummary',
   'inventoryRisk',
   'supplyPlanBoard',
+  'productArchive',
+  'businessUnitFeedback',
   'inventoryPurchase',
   'inventorySummaryLibrary',
   'inventoryManualLibrary',
@@ -79,6 +91,8 @@ const PAGE_LABELS = {
   inventorySummary: '库存汇总',
   inventoryRisk: '供应计划分析',
   supplyPlanBoard: '供应计划工具',
+  productArchive: '产品档案',
+  businessUnitFeedback: '事业部反馈',
   inventoryPurchase: '采购未交付',
   inventorySummaryLibrary: '底表文件',
   inventoryManualLibrary: '手工表库',
@@ -143,6 +157,18 @@ const DIMENSION_SLOTS = {
   firstMileData5: '李宛宸头程数据',
   firstMileSpare: '备用'
 };
+[
+  '海外事业一部',
+  '海外事业二部',
+  '国内事业部',
+  '备用1',
+  '备用2',
+  '备用3',
+  '备用4',
+  '备用5'
+].forEach((title, index) => {
+  DIMENSION_SLOTS[`businessUnitFeedback${index + 1}`] = title;
+});
 Object.entries(DIMENSION_SLOTS)
   .filter(([slotId]) => /^inventorySummaryFile\d+$/.test(slotId))
   .forEach(([slotId, title]) => {
@@ -441,6 +467,8 @@ function auditPageForRequest(req) {
   const requestPath = req.path;
   if (requestPath.startsWith('/api/auth/')) return { key: 'system', label: '系统登录' };
   if (requestPath.startsWith('/api/supply-plan')) return { key: 'supplyPlanBoard', label: PAGE_LABELS.supplyPlanBoard };
+  if (requestPath.startsWith('/api/product-projects')) return { key: 'productArchive', label: PAGE_LABELS.productArchive };
+  if (requestPath.startsWith('/api/product-archive')) return { key: 'productArchive', label: PAGE_LABELS.productArchive };
   if (requestPath.startsWith('/api/inventory-risk')) return { key: 'inventoryRisk', label: PAGE_LABELS.inventoryRisk };
   if (requestPath.startsWith('/api/inventory-summary')) return { key: 'inventorySummary', label: PAGE_LABELS.inventorySummary };
   if (requestPath.startsWith('/api/operation-logs')) return { key: 'operationLogs', label: PAGE_LABELS.operationLogs };
@@ -456,6 +484,7 @@ function auditPageForRequest(req) {
   if (requestPath.startsWith('/api/dimensions') || requestPath.startsWith('/api/workbook/inspect')) {
     const pathSlot = requestPath.match(/^\/api\/dimensions\/([^/]+)/)?.[1];
     const slotId = normalize(pathSlot || req.body?.slotId);
+    if (slotId.startsWith('businessUnitFeedback')) return { key: 'businessUnitFeedback', label: PAGE_LABELS.businessUnitFeedback };
     if (slotId.startsWith('firstMile')) return { key: 'firstMileDatabase', label: PAGE_LABELS.firstMileDatabase };
     if (slotId.startsWith('wangdian')) return { key: 'wangdianData', label: PAGE_LABELS.wangdianData };
     if (slotId.startsWith('lingxingF')) return { key: 'lingxingInventory', label: PAGE_LABELS.lingxingInventory };
@@ -6575,7 +6604,270 @@ app.post('/api/difference-allocations/:sessionId/apply', requireAuth, requirePag
   res.json({ batchId, status: { ...allocationStatus(req.params.sessionId), applied: true }, demands: demandRows(false, req.user) });
 });
 
-app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase']), (req, res) => {
+function currentProductArchive() {
+  const productSource = get(
+    'SELECT file_name, sheet_name, uploaded_by, updated_at, applied FROM dimension_files WHERE slot_id = ?',
+    ['productCategory']
+  );
+  const feedbackSources = Array.from({ length: 8 }, (_, index) => {
+    const slotId = `businessUnitFeedback${index + 1}`;
+    const record = get(
+      'SELECT file_name, uploaded_by, updated_at, applied, rows_json FROM dimension_files WHERE slot_id = ?',
+      [slotId]
+    );
+    return {
+      slotId,
+      title: DIMENSION_SLOTS[slotId],
+      fileName: record?.file_name || '',
+      uploadedBy: record?.uploaded_by || '',
+      updatedAt: record?.updated_at || '',
+      applied: Boolean(record?.applied),
+      rows: record?.applied ? parseJson(record.rows_json, []) : []
+    };
+  });
+  const archive = buildProductArchive({
+    productRows: getDimensionRows('productCategory'),
+    feedbackSources
+  });
+  return {
+    ok: true,
+    ...archive,
+    source: {
+      slotId: 'productCategory',
+      title: DIMENSION_SLOTS.productCategory,
+      fileName: productSource?.file_name || '',
+      sheetName: productSource?.sheet_name || '',
+      uploadedBy: productSource?.uploaded_by || '',
+      updatedAt: productSource?.updated_at || '',
+      applied: Boolean(productSource?.applied)
+    },
+    generatedAt: new Date().toISOString()
+  };
+}
+
+function dingTalkEnvironmentStatus() {
+  return {
+    appCredentialsConfigured: Boolean(process.env.DINGTALK_APP_KEY && process.env.DINGTALK_APP_SECRET),
+    operatorConfigured: Boolean(process.env.DINGTALK_OPERATOR_ID)
+  };
+}
+
+function currentProductProjectSettings() {
+  const row = get('SELECT * FROM product_project_settings WHERE setting_key = ?', ['dingTalk']);
+  return {
+    documentReference: row?.document_reference || '',
+    baseId: row?.base_id || '',
+    sheetId: row?.sheet_id || '',
+    sheetName: row?.sheet_name || '',
+    mapping: parseJson(row?.mapping_json, {}),
+    currentRunId: row?.current_run_id || '',
+    updatedBy: row?.updated_by || '',
+    updatedAt: row?.updated_at || '',
+    ...dingTalkEnvironmentStatus()
+  };
+}
+
+function saveProductProjectSettings(input, userName) {
+  const documentReference = normalize(input.documentReference);
+  const baseId = normalize(input.baseId) || extractDingTalkBaseId(documentReference);
+  const sheetId = normalize(input.sheetId);
+  const sheetName = normalize(input.sheetName);
+  if (!baseId) throw Object.assign(new Error('请填写钉钉AI表格ID'), { status: 400 });
+  if (!sheetId) throw Object.assign(new Error('请选择研发项目数据表'), { status: 400 });
+  const mapping = normalizeProjectMapping(input.mapping || {});
+  const now = nowText();
+  run(
+    `INSERT INTO product_project_settings (
+       setting_key, document_reference, base_id, sheet_id, sheet_name, mapping_json, current_run_id, updated_by, updated_at
+     ) VALUES ('dingTalk', ?, ?, ?, ?, ?, '', ?, ?)
+     ON CONFLICT(setting_key) DO UPDATE SET
+       document_reference = excluded.document_reference,
+       base_id = excluded.base_id,
+       sheet_id = excluded.sheet_id,
+       sheet_name = excluded.sheet_name,
+       mapping_json = excluded.mapping_json,
+       updated_by = excluded.updated_by,
+       updated_at = excluded.updated_at`,
+    [documentReference, baseId, sheetId, sheetName, JSON.stringify(mapping), normalize(userName), now]
+  );
+  saveDatabase();
+  return currentProductProjectSettings();
+}
+
+function dingTalkProjectClient() {
+  return createDingTalkProjectClient({
+    appKey: process.env.DINGTALK_APP_KEY,
+    appSecret: process.env.DINGTALK_APP_SECRET,
+    operatorId: process.env.DINGTALK_OPERATOR_ID
+  });
+}
+
+function databaseProjectRows(runId) {
+  if (!runId) return [];
+  return all('SELECT * FROM product_project_rows WHERE run_id = ? ORDER BY business_unit, project_name, source_record_id', [runId]).map((row) => ({
+    sourceRecordId: row.source_record_id,
+    projectName: row.project_name,
+    businessUnit: row.business_unit,
+    productPositioning: row.product_positioning,
+    projectStage: row.project_stage,
+    owner: row.owner,
+    plannedLaunchDate: row.planned_launch_date,
+    projectStatus: row.project_status,
+    remark: row.remark,
+    materialCode: row.material_code,
+    sku: row.sku,
+    sourceModifiedAt: row.source_modified_at,
+    sourceCreatedAt: row.source_created_at
+  }));
+}
+
+let productProjectSyncPromise = null;
+
+async function runProductProjectSync({ triggerType, userName }) {
+  if (productProjectSyncPromise) throw Object.assign(new Error('研发项目正在同步，请稍后再试'), { status: 409 });
+  const settings = currentProductProjectSettings();
+  if (!settings.baseId || !settings.sheetId) throw Object.assign(new Error('请先保存钉钉研发项目数据源设置'), { status: 400 });
+  const runId = randomUUID();
+  run(
+    `INSERT INTO product_project_sync_runs (id, status, trigger_type, triggered_by, started_at)
+     VALUES (?, 'running', ?, ?, ?)`,
+    [runId, triggerType, userName, nowText()]
+  );
+  saveDatabase();
+  productProjectSyncPromise = (async () => {
+    try {
+      const fieldNames = [...new Set(Object.values(settings.mapping).map(normalize).filter(Boolean))];
+      const records = await dingTalkProjectClient().listAllRecords(settings.baseId, settings.sheetId, fieldNames);
+      const normalized = normalizeProjectRecords(records, settings.mapping);
+      const finishedAt = nowText();
+      transaction(() => {
+        runMany(
+          `INSERT INTO product_project_rows (
+             run_id, source_record_id, project_name, business_unit, product_positioning, project_stage, owner,
+             planned_launch_date, project_status, remark, material_code, sku, source_modified_at, source_created_at, raw_json
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          normalized.rows.map((row) => [
+            runId, row.sourceRecordId, row.projectName, row.businessUnit, row.productPositioning, row.projectStage,
+            row.owner, row.plannedLaunchDate, row.projectStatus, row.remark, row.materialCode, row.sku,
+            row.sourceModifiedAt, row.sourceCreatedAt, row.rawJson
+          ])
+        );
+        run(
+          `UPDATE product_project_sync_runs SET status='success', finished_at=?, source_count=?, accepted_count=?,
+             missing_name_count=?, duplicate_count=?, invalid_date_count=?, report_json=? WHERE id=?`,
+          [finishedAt, normalized.report.sourceCount, normalized.report.acceptedCount, normalized.report.missingNameCount,
+            normalized.report.duplicateCount, normalized.report.invalidDateCount, JSON.stringify(normalized.report), runId]
+        );
+        run("UPDATE product_project_settings SET current_run_id = ? WHERE setting_key = 'dingTalk'", [runId]);
+        const retainedIds = all("SELECT id FROM product_project_sync_runs WHERE status='success' ORDER BY started_at DESC LIMIT 5").map((row) => row.id);
+        if (retainedIds.length) {
+          const placeholders = retainedIds.map(() => '?').join(',');
+          run(`DELETE FROM product_project_rows WHERE run_id NOT IN (${placeholders})`, retainedIds);
+        }
+      });
+      return { runId, ...normalized.report };
+    } catch (error) {
+      run(
+        "UPDATE product_project_sync_runs SET status='failed', finished_at=?, error_message=? WHERE id=?",
+        [nowText(), normalize(error.message).slice(0, 500), runId]
+      );
+      saveDatabase();
+      throw error;
+    } finally {
+      productProjectSyncPromise = null;
+    }
+  })();
+  return productProjectSyncPromise;
+}
+
+function productProjectHistory() {
+  return all('SELECT * FROM product_project_sync_runs ORDER BY started_at DESC LIMIT 20').map((row) => ({
+    id: row.id, status: row.status, triggerType: row.trigger_type, triggeredBy: row.triggered_by,
+    startedAt: row.started_at, finishedAt: row.finished_at, sourceCount: row.source_count,
+    acceptedCount: row.accepted_count, missingNameCount: row.missing_name_count,
+    duplicateCount: row.duplicate_count, invalidDateCount: row.invalid_date_count, errorMessage: row.error_message
+  }));
+}
+
+app.get('/api/product-archive', requireAuth, requirePage('productArchive'), (_req, res) => {
+  const archive = currentProductArchive();
+  const linkedCounts = new Map();
+  linkProjectsToProducts(databaseProjectRows(currentProductProjectSettings().currentRunId), archive.rows).forEach((row) => {
+    if (row.linkedProductId) linkedCounts.set(row.linkedProductId, (linkedCounts.get(row.linkedProductId) || 0) + 1);
+  });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ ...archive, rows: archive.rows.map((row) => ({ ...row, linkedProjectCount: linkedCounts.get(row.id) || 0 })) });
+});
+
+app.get('/api/product-projects', requireAuth, requirePage('productArchive'), (_req, res) => {
+  const settings = currentProductProjectSettings();
+  const archive = currentProductArchive();
+  const rows = linkProjectsToProducts(databaseProjectRows(settings.currentRunId), archive.rows);
+  const currentRun = settings.currentRunId ? get('SELECT * FROM product_project_sync_runs WHERE id = ?', [settings.currentRunId]) : null;
+  const latestRun = get('SELECT * FROM product_project_sync_runs ORDER BY started_at DESC LIMIT 1');
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    ok: true,
+    rows,
+    metrics: buildProjectMetrics(rows),
+    sync: {
+      running: Boolean(productProjectSyncPromise),
+      currentRunId: settings.currentRunId,
+      lastSuccessAt: currentRun?.finished_at || '',
+      latestStatus: latestRun?.status || '',
+      latestError: latestRun?.status === 'failed' ? latestRun.error_message : ''
+    },
+    source: {
+      documentReference: settings.documentReference,
+      baseId: settings.baseId,
+      sheetId: settings.sheetId,
+      sheetName: settings.sheetName,
+      configured: Boolean(settings.baseId && settings.sheetId),
+      appCredentialsConfigured: settings.appCredentialsConfigured,
+      operatorConfigured: settings.operatorConfigured,
+      updatedBy: settings.updatedBy,
+      updatedAt: settings.updatedAt
+    }
+  });
+});
+
+app.get('/api/product-projects/source-schema', requireAuth, requirePage('productArchive'), requireAdmin, async (req, res) => {
+  try {
+    const baseId = normalize(req.query.baseId) || extractDingTalkBaseId(req.query.documentReference);
+    if (!baseId) return res.status(400).json({ error: '请填写钉钉AI表格ID或链接' });
+    const client = dingTalkProjectClient();
+    const sheets = await client.listSheets(baseId);
+    const sheetId = normalize(req.query.sheetId);
+    const fields = sheetId ? await client.listFields(baseId, sheetId) : [];
+    return res.json({ baseId, sheets, fields });
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.message || '读取钉钉数据源失败' });
+  }
+});
+
+app.put('/api/product-projects/settings', requireAuth, requirePage('productArchive'), requireAdmin, (req, res) => {
+  try {
+    res.json(saveProductProjectSettings(req.body || {}, req.user.name));
+  } catch (error) {
+    res.status(error.status || 400).json({ error: error.message || '保存研发项目设置失败' });
+  }
+});
+
+app.post('/api/product-projects/sync', requireAuth, requirePage('productArchive'), requireAdmin, async (req, res) => {
+  try {
+    const result = await runProductProjectSync({ triggerType: 'manual', userName: req.user.name });
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    res.status(error.status || 400).json({ error: error.message || '同步研发项目失败' });
+  }
+});
+
+app.get('/api/product-projects/sync-history', requireAuth, requirePage('productArchive'), (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ rows: productProjectHistory() });
+});
+
+app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase']), (req, res) => {
   const rows = all('SELECT slot_id, title, file_name, sheet_name, sheet_names, selected_sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at FROM dimension_files');
   res.json({
     rows: rows.map((row) => {
@@ -6598,7 +6890,7 @@ app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'wan
   });
 });
 
-app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase']), dimensionWorkbookUpload, cleanupKingdeeUpload, serializeInventoryUpload, async (req, res) => {
+app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase']), dimensionWorkbookUpload, cleanupKingdeeUpload, serializeInventoryUpload, async (req, res) => {
   const slotId = req.params.slotId;
   const baseSlotId = inventoryLibraryBaseSlotId(slotId);
   const mapping = parseJson(req.body.mapping, {});
@@ -6700,6 +6992,16 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
         purchaseOwner: pick(row, mapping.purchaseOwner) || pickAny(row, ['采购下单人', '下单人', '采购负责人']),
         purchaseGroup: pick(row, mapping.purchaseGroup) || pickAny(row, ['采购组', '采购分组']),
         purchaseOrg: pick(row, mapping.purchaseOrg)
+      };
+    }
+    if (slotId.startsWith('businessUnitFeedback')) {
+      return {
+        raw: row,
+        materialCode: pick(row, mapping.materialCode) || pickAny(row, ['物料编码', '物料代码', '品号']),
+        sku: pick(row, mapping.sku) || pickAny(row, ['SKU', 'sku', '产品SKU']),
+        productLifecycle: pick(row, mapping.productLifecycle) || pickAny(row, ['产品生命周期', '生命周期', '生命周期阶段']),
+        productPositioning: pick(row, mapping.productPositioning) || pickAny(row, ['产品定位', '市场定位', '定位']),
+        feedbackRemark: pick(row, mapping.feedbackRemark) || pickAny(row, ['反馈备注', '备注', '事业部反馈'])
       };
     }
     if (slotId === 'spare1') {
@@ -6853,7 +7155,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   });
 });
 
-app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase']), (req, res) => {
+app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase']), (req, res) => {
   const beforeOrderCounts = orderDataCounts();
   transaction(() => {
     run('UPDATE dimension_files SET applied = 1, updated_at = ? WHERE slot_id = ?', [nowText(), req.params.slotId]);
@@ -6863,7 +7165,7 @@ app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensio
   res.json(isInventoryLibrarySlot(req.params.slotId) ? { applied: true } : { rows: demandRows(false, req.user) });
 });
 
-app.delete('/api/dimensions/:slotId', requireAuth, requireAnyPage(['dimensionLibrary', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase']), (req, res) => {
+app.delete('/api/dimensions/:slotId', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase']), (req, res) => {
   run('DELETE FROM dimension_files WHERE slot_id = ?', [req.params.slotId]);
   saveDatabase();
   res.json({ ok: true });
@@ -7500,6 +7802,20 @@ const sessionCleanupTimer = setInterval(() => {
 sessionCleanupTimer.unref?.();
 
 await ensureAdmin();
+async function checkScheduledProductProjectSync() {
+  try {
+    const settings = currentProductProjectSettings();
+    const lastSuccessAt = get("SELECT finished_at FROM product_project_sync_runs WHERE status='success' ORDER BY finished_at DESC LIMIT 1")?.finished_at || '';
+    if (!settings.baseId || !settings.sheetId || !settings.appCredentialsConfigured || !settings.operatorConfigured) return;
+    if (!shouldRunDailyProjectSync({ now: new Date(), lastSuccessAt, running: Boolean(productProjectSyncPromise) })) return;
+    await runProductProjectSync({ triggerType: 'scheduled', userName: '系统定时同步' });
+  } catch (error) {
+    console.error('[Product projects] scheduled sync failed:', error.message);
+  }
+}
+const productProjectSyncTimer = setInterval(checkScheduledProductProjectSync, 5 * 60 * 1000);
+productProjectSyncTimer.unref?.();
+setTimeout(checkScheduledProductProjectSync, 15_000).unref?.();
 try {
   const latestSession = get('SELECT * FROM difference_compare_sessions ORDER BY created_at DESC, rowid DESC LIMIT 1');
   if (latestSession) rebuildLegacyOrderCompareSession(latestSession, { name: '系统修复', role: ROLE_ADMIN });

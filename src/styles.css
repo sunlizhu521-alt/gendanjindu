@@ -3938,6 +3938,105 @@ h3 {
   display: none !important;
 }
 
+.product-archive-page {
+  display: grid;
+  gap: 14px;
+}
+
+.product-archive-heading {
+  align-items: flex-start;
+}
+
+.product-archive-heading h2,
+.product-archive-heading p {
+  margin: 0;
+}
+
+.product-archive-heading p {
+  margin-top: 5px;
+}
+
+.product-archive-source {
+  display: flex;
+  align-items: center;
+  gap: 10px 18px;
+  flex-wrap: wrap;
+  padding: 11px 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #475569;
+  font-size: 13px;
+}
+
+.product-archive-source strong {
+  color: #1e40af;
+}
+
+.product-archive-metrics {
+  margin-bottom: 0;
+}
+
+.product-archive-panel {
+  min-width: 0;
+}
+
+.product-archive-filters {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr)) minmax(220px, 1.5fr) auto;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 16px;
+}
+
+.product-archive-search input {
+  width: 100%;
+}
+
+.product-archive-table-wrap {
+  max-height: calc(100vh - 420px);
+}
+
+.product-archive-table-wrap table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.product-archive-table-wrap th,
+.product-archive-table-wrap td {
+  white-space: nowrap;
+}
+
+.product-archive-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.product-archive-pending {
+  background: #fffaf0;
+}
+
+.product-archive-table-wrap .status-pending {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.product-archive-table-wrap .number-cell {
+  text-align: right;
+}
+
+@media (max-width: 1280px) {
+  .product-archive-filters {
+    grid-template-columns: repeat(3, minmax(150px, 1fr));
+  }
+}
+
 table {
   width: 100%;
   min-width: 980px;
@@ -7992,6 +8091,91 @@ th {
 .supply-plan-pagination > div {
   display: flex;
   gap: 8px;
+}
+
+.product-archive-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 12px 0;
+  border-bottom: 1px solid #dce3ec;
+}
+
+.product-archive-tabs button {
+  padding: 8px 16px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #526174;
+  font-weight: 700;
+}
+
+.product-archive-tabs button.active {
+  border-bottom-color: #2878c7;
+  color: #2878c7;
+}
+
+.product-project-settings {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #dce3ec;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.product-project-settings summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.product-project-config-status,
+.product-project-settings-grid,
+.product-project-mapping {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.product-project-config-status {
+  color: #526174;
+  font-size: .75rem;
+}
+
+.product-project-settings-grid .filter-control {
+  min-width: 230px;
+}
+
+.product-project-mapping .filter-control {
+  min-width: 170px;
+}
+
+.product-project-charts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.product-project-chart {
+  padding: 14px;
+  border: 1px solid #dce3ec;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.product-project-chart h4 { margin: 0 0 10px; }
+.product-project-bar { display: grid; grid-template-columns: 95px 1fr 36px; gap: 8px; align-items: center; margin: 7px 0; font-size: .72rem; }
+.product-project-bar > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.product-project-bar i { height: 10px; overflow: hidden; border-radius: 6px; background: #e8eef5; }
+.product-project-bar b { display: block; height: 100%; border-radius: inherit; background: #4b8fd1; }
+.product-project-bar strong { text-align: right; }
+.product-archive-table-wrap td small { display: block; margin-top: 2px; color: #7a8798; white-space: nowrap; }
+.product-archive-table-wrap .link-button { padding: 0; border: 0; background: transparent; color: #2878c7; font: inherit; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.product-project-history { max-height: 240px; margin-top: 12px; }
+
+@media (max-width: 1000px) {
+  .product-project-charts { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 900px) {

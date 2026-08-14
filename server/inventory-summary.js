@@ -823,6 +823,10 @@ function warehouseLocation(row) {
 }
 
 function warehouseLevel2Category(row) {
+  const rawHColumnValue = row?.raw && typeof row.raw === 'object'
+    ? Object.values(row.raw)[7]
+    : '';
+  if (text(rawHColumnValue)) return text(rawHColumnValue);
   return text(aliasValue(row, ['level2WarehouseCategory', '二级仓库分类', '仓库二级分类', '二级分类', '仓库小类', '二级仓库类型']));
 }
 

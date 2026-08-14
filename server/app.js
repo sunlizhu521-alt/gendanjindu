@@ -1516,6 +1516,19 @@ function rowAliasValue(row, aliases = []) {
   return '';
 }
 
+function rawDimensionColumnValue(row, zeroBasedColumnIndex) {
+  const raw = row && typeof row === 'object' ? row.raw : null;
+  if (!raw || typeof raw !== 'object') return '';
+  return normalize(Object.values(raw)[zeroBasedColumnIndex]);
+}
+
+function warehouseLevel2CategoryValue(row) {
+  // “仓库名称”底表的二级仓库分类固定在 H 列；优先读取原始 H 列，
+  // 以兼容修正历史文件中曾经保存错误映射的记录。
+  return rawDimensionColumnValue(row, 7)
+    || rowAliasValue(row, ['level2WarehouseCategory', '二级仓库分类']);
+}
+
 function productDimensionMaterialName(product, materialCode = '') {
   const materialKey = normalizeMatchPart(materialCode || rowAliasValue(product, ['materialCode', '物料编码', '品号']));
   const sourceName = rowAliasValue(product, ['金蝶名称', '物料名称', '商品名称', '产品名称', '中文名称', 'SKU名称']);
@@ -2286,7 +2299,7 @@ function buildCrossBorderInventoryModel() {
       warehouseCode: rowAliasValue(row, ['warehouseCode', 'kingdeeWarehouseCode', '金蝶仓库编码', '仓库编码']),
       marketplace: rowAliasValue(row, ['marketplace', '站点', '站点名称', '国家站点', '销售站点', '国家/地区']),
       level1WarehouseCategory: rowAliasValue(row, ['level1WarehouseCategory', '一级仓库分类']),
-      level2WarehouseCategory: rowAliasValue(row, ['level2WarehouseCategory', '二级仓库分类'])
+      level2WarehouseCategory: warehouseLevel2CategoryValue(row)
     })
   );
 
@@ -7031,6 +7044,9 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
       )
       : workbookRows(req.file, sheetName || null, { includePreviews: false })
   );
+  const rowMapping = slotId === 'spare1' && parsed.columns?.[7]
+    ? { ...mapping, level2WarehouseCategory: parsed.columns[7] }
+    : mapping;
   const parsedRows = firstMileParsed || inventoryParsed ? parsed.rows : parsed.rows.map((row) => {
     if (['inventorySummaryFile4', 'inventorySummaryFile5'].includes(slotId)) {
       return {
@@ -7103,13 +7119,13 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     if (slotId === 'spare1') {
       return {
         raw: row,
-        subject: pick(row, mapping.subject) || pickDimensionAlias(row, ['主体', '使用组织', '库存组织']),
-        warehouseCode: pick(row, mapping.warehouseCode) || pickDimensionAlias(row, ['仓库编码', '仓库代码', '仓库编号', '金蝶仓库编码', '仓库ID']),
-        warehouseName: pick(row, mapping.warehouseName) || pickDimensionAlias(row, ['仓库名称', '仓库名', '金蝶仓库名称']),
-        warehouseLocation: pick(row, mapping.warehouseLocation) || pickDimensionAlias(row, ['仓位位置', '仓库位置', '仓位']),
-        marketplace: pick(row, mapping.marketplace) || pickDimensionAlias(row, ['站点', '站点名称', '国家站点', '销售站点', '国家/地区']),
-        level1WarehouseCategory: pick(row, mapping.level1WarehouseCategory) || pickDimensionAlias(row, ['一级仓库分类', '仓库一级分类', '一级分类', '仓库大类', '一级仓库类型']),
-        level2WarehouseCategory: pick(row, mapping.level2WarehouseCategory) || pickDimensionAlias(row, ['二级仓库分类', '仓库二级分类', '二级分类', '仓库小类', '二级仓库类型'])
+        subject: pick(row, rowMapping.subject) || pickDimensionAlias(row, ['主体', '使用组织', '库存组织']),
+        warehouseCode: pick(row, rowMapping.warehouseCode) || pickDimensionAlias(row, ['仓库编码', '仓库代码', '仓库编号', '金蝶仓库编码', '仓库ID']),
+        warehouseName: pick(row, rowMapping.warehouseName) || pickDimensionAlias(row, ['仓库名称', '仓库名', '金蝶仓库名称']),
+        warehouseLocation: pick(row, rowMapping.warehouseLocation) || pickDimensionAlias(row, ['仓位位置', '仓库位置', '仓位']),
+        marketplace: pick(row, rowMapping.marketplace) || pickDimensionAlias(row, ['站点', '站点名称', '国家站点', '销售站点', '国家/地区']),
+        level1WarehouseCategory: pick(row, rowMapping.level1WarehouseCategory) || pickDimensionAlias(row, ['一级仓库分类', '仓库一级分类', '一级分类', '仓库大类', '一级仓库类型']),
+        level2WarehouseCategory: pick(row, rowMapping.level2WarehouseCategory)
       };
     }
     if (slotId === 'warehouseMaterialMap') {
@@ -7226,7 +7242,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   }
   const storedMapping = firstMileParsed
     ? { ...mapping, __firstMileSummary: firstMileParsed.summary }
-    : inventoryParsed?.mapping || mapping;
+    : inventoryParsed?.mapping || rowMapping;
   const now = nowText();
   const beforeOrderCounts = orderDataCounts();
   transaction(() => {

@@ -1627,6 +1627,53 @@ test('WFS inventory marks conflicting business unit mappings instead of guessing
   assert.equal(result.anomalies.some((row) => row.issue === '主体、仓库与物料映射冲突'), true);
 });
 
+test('warehouse level 2 category prefers column H from the original warehouse file', () => {
+  const rowsBySlot = new Map([
+    ['productCategory', [{
+      materialCode: 'M-H',
+      sku: 'SKU-H',
+      materialName: 'H Column Item',
+      productLine: 'Line H',
+      productSeries: 'Series H',
+      pretaxPrice: '10'
+    }]],
+    ['spare1', [{
+      raw: {
+        A列: '主体一',
+        B列: 'WH-H',
+        C列: 'FBM仓',
+        D列: '海外在库',
+        E列: '美国',
+        F列: '一级分类',
+        G列: '辅助字段',
+        H列: '正确二级分类',
+        I列: '三级分类'
+      },
+      subject: '主体一',
+      warehouseName: 'FBM仓',
+      marketplace: '美国',
+      level2WarehouseCategory: '三级分类'
+    }]],
+    ['warehouseMaterialMap', [{
+      subject: '主体一',
+      warehouseName: 'FBM仓',
+      materialCode: 'M-H',
+      businessUnit: '海外事业一部'
+    }]],
+    ['inventorySummaryFile2', [{
+      identifier: 'M-H',
+      warehouseName: 'FBM仓',
+      actualTotalQty: '5'
+    }]]
+  ]);
+  const result = buildInventorySummaryModel({
+    getRows: (slotId) => rowsBySlot.get(slotId) || [],
+    getRecord: (slotId) => ({ rows: rowsBySlot.get(slotId) || [], updatedAt: now })
+  });
+  const row = result.rows.find((item) => item.materialCode === 'M-H');
+  assert.equal(row?.inventorySourceDetails[0]?.level2WarehouseCategory, '正确二级分类');
+});
+
 test('inventory business unit mapping reads legacy raw dimensions and stays independent from product price issues', () => {
   const rowsBySlot = new Map([
     ['productCategory', [{

@@ -203,7 +203,7 @@ const BUSINESS_UNIT_FEEDBACK_SLOTS = [
   id: `businessUnitFeedback${index + 1}`,
   title,
   fields: index === 3 ? PRODUCT_PROJECT_FIELDS : BUSINESS_UNIT_FEEDBACK_FIELDS,
-  ...(index === 3 ? { manualFieldSelection: true, requiredFields: ['projectName'] } : {})
+  ...(index === 3 ? { productProjectWorkbook: true } : {})
 }));
 
 const WANGDIAN_SLOTS = [
@@ -7516,6 +7516,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       const record = records.find((item) => item.slot_id === slot.id);
       const columns = payload.columns || [];
       const inspectRowCount = payload.rowCount == null ? null : Number(payload.rowCount || 0);
+      const productProjectSummary = payload.parseSummary?.parserType === 'productProject' ? payload.parseSummary : null;
       const requiresSheetSelection = Boolean(slot.requiresSheetSelection && (payload.sheetNames?.length || 0) > 1);
       const requiresMultipleSheets = Number(slot.requiredSheetCount || 0) > 0;
       setLocal((prev) => {
@@ -7562,6 +7563,8 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
               ? `检测到 ${payload.sheetNames?.length || 0} 个工作表，请选择 ${slot.requiredSheetCount} 个工作表应用`
               : requiresSheetSelection
               ? `检测到 ${payload.sheetNames.length} 个工作表，请先选择要使用的工作表`
+              : productProjectSummary
+              ? `已识别重点工作表“${productProjectSummary.primarySheet}”，共 ${productProjectSummary.validRows || 0} 个产品项目`
               : columns.length
               ? slot.firstMile
                 ? `解析完成：识别 ${payload.recognizedSheets || payload.sheetNames?.length || 1} 个业务工作表，共 ${inspectRowCount} 行`
@@ -7579,7 +7582,9 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       } else if (requiresSheetSelection) {
         setMessage(`${slot.title} 检测到多个工作表，请先选择要使用的工作表`);
       } else {
-        setMessage(slot.firstMile
+        setMessage(productProjectSummary
+          ? `${slot.title} 已自动识别重点工作表“${productProjectSummary.primarySheet}”，将解析 ${productProjectSummary.validRows || 0} 个产品项目`
+          : slot.firstMile
           ? `${slot.title} 解析完成，将自动读取全部业务工作表`
           : `${slot.title} 解析完成，请检查字段映射后上传保存`);
       }
@@ -7716,19 +7721,24 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       const payload = await request(`/api/dimensions/${slot.id}/upload`, { token, method: 'POST', body: data });
       persistInventoryMapping(slot, state.mapping || {});
       const parseSummary = payload.parseSummary;
+      const productProjectSummary = parseSummary?.parserType === 'productProject' ? parseSummary : null;
       const inventoryParseSummary = parseSummary?.parserType === 'inventorySummary' ? parseSummary : null;
       const manualParseSummary = parseSummary?.parserType === 'inventoryManual' ? parseSummary : null;
       const jdParseSummaryText = inventoryParseSummary?.jdFormat
         ? `，识别格式 ${inventoryParseSummary.jdFormat}，区域行过滤 ${inventoryParseSummary.filteredJdRegionalRows || 0} 行，有效库存 ${numberValue(inventoryParseSummary.jdScopeQuantity).toLocaleString(undefined, { maximumFractionDigits: 1 })}`
         : '';
-      const uploadSummaryText = inventoryParseSummary
+      const uploadSummaryText = productProjectSummary
+        ? `上传保存完成：重点工作表 ${productProjectSummary.primarySheet}，有效项目 ${payload.rowCount} 个`
+        : inventoryParseSummary
         ? `上传保存完成：源数据 ${inventoryParseSummary.sourceRowCount || 0} 行，有效保存 ${payload.rowCount} 行${jdParseSummaryText}`
         : manualParseSummary
           ? `上传保存完成：源数据 ${manualParseSummary.sourceRowCount || 0} 行，有效保存 ${payload.rowCount} 行`
         : parseSummary
           ? `上传保存完成：${payload.rowCount} 行，${parseSummary.issueRows || 0} 行异常`
           : `上传保存完成：${payload.rowCount} 行`;
-      const appliedSummaryText = inventoryParseSummary
+      const appliedSummaryText = productProjectSummary
+        ? `${slot.title} 已从重点工作表“${productProjectSummary.primarySheet}”解析并应用 ${payload.rowCount} 个产品项目。`
+        : inventoryParseSummary
         ? `${slot.title} 已自动解析并应用 ${payload.rowCount} 行；源数据 ${inventoryParseSummary.sourceRowCount || 0} 行，零数量过滤 ${inventoryParseSummary.filteredZeroQtyRows || 0} 行，汇总行过滤 ${inventoryParseSummary.filteredSummaryRows || 0} 行${jdParseSummaryText}。`
         : manualParseSummary
           ? `${slot.title} 已按手工映射解析并应用 ${payload.rowCount} 行。`
@@ -7848,7 +7858,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
           const record = records.find((item) => item.slot_id === slot.id);
           const state = local[slot.id] || {};
           const busy = Boolean(state.busy);
-          const hasSheets = !slot.firstMile && (state.sheetNames?.length || record?.sheetNames?.length || 0) > 1;
+          const hasSheets = !slot.firstMile && !slot.productProjectWorkbook && (state.sheetNames?.length || record?.sheetNames?.length || 0) > 1;
           const sheetNames = state.sheetNames?.length ? state.sheetNames : (record?.sheetNames || []);
           const currentSheet = state.file ? (state.sheetName || '') : (state.sheetName || record?.sheetName || '');
           const selectedSheetNames = state.file
@@ -7914,7 +7924,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
                 </div>
                 )
               )}
-              {state.columns?.length > 0 && slot.fields.length > 0 && (
+              {!slot.productProjectWorkbook && state.columns?.length > 0 && slot.fields.length > 0 && (
                 <FieldMapping
                   fields={slot.fields}
                   columns={state.columns}
@@ -7950,6 +7960,13 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
                     业务工作表：{record.mapping.__firstMileSummary.recognizedSheets?.length || 0}，
                     有效 {record.mapping.__firstMileSummary.validRows || 0} 行，
                     异常 {record.mapping.__firstMileSummary.issueRows || 0} 行
+                  </span>
+                )}
+                {record?.mapping?.__productProject && (
+                  <span>
+                    重点工作表：{record.mapping.__productProject.primarySheet}，
+                    有效项目 {record.mapping.__productProject.validRows || record.rowCount || 0} 个，
+                    跳过 {record.mapping.__productProject.skippedRows || 0} 行
                   </span>
                 )}
                 {record?.mapping?.__inventorySummary && (

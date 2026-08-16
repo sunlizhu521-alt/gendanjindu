@@ -24,7 +24,8 @@ test('产品数据提供八个四列槽位及产品项目专用映射', () => {
   assert.match(appSource, /\['productLifecycle', '产品生命周期'\]/);
   assert.match(appSource, /\['productPositioning', '产品定位'\]/);
   assert.match(appSource, /\['projectName', '项目名称'\]/);
-  assert.match(appSource, /requiredFields: \['projectName'\]/);
+  assert.match(appSource, /productProjectWorkbook: true/);
+  assert.doesNotMatch(appSource, /index === 3 \? \{ manualFieldSelection: true/);
   assert.match(appSource, /slots=\{BUSINESS_UNIT_FEEDBACK_SLOTS\} gridColumns=\{4\}/);
 });
 
@@ -42,6 +43,8 @@ test('产品档案包含研发项目页签并优先读取产品项目文件槽�
   assert.match(pageSource, /研发项目看板/);
   assert.match(pageSource, /产品数据-产品项目/);
   assert.match(serverSource, /PRODUCT_PROJECT_SLOT_ID = 'businessUnitFeedback4'/);
+  assert.match(serverSource, /parseProductProjectWorkbook\(req\.file\)/);
+  assert.match(serverSource, /inspectProductProjectWorkbook\(file\)/);
   assert.match(serverSource, /currentProductProjectFileData\(\)/);
   assert.match(serverSource, /sourceType: 'file'/);
   assert.match(serverSource, /app\.get\('\/api\/product-projects', requireAuth, requirePage\('productArchive'\)/);

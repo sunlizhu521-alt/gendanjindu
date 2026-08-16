@@ -178,16 +178,18 @@ const BUSINESS_UNIT_FEEDBACK_FIELDS = [
 
 const PRODUCT_PROJECT_FIELDS = [
   ['projectName', '项目名称'],
-  ['businessUnit', '事业部'],
-  ['productPositioning', '产品定位'],
-  ['projectStage', '项目阶段'],
-  ['owner', '负责人'],
-  ['plannedLaunchDate', '计划上市日期'],
-  ['projectStatus', '项目状态'],
-  ['remark', '备注'],
-  ['materialCode', '物料编码'],
-  ['sku', 'SKU'],
-  ['modifiedAt', '修改时间']
+  ['priority', '优先级'],
+  ['innovationType', '创新类型'],
+  ['projectStage', '当前阶段'],
+  ['responsibilityDepartment', '责任部门'],
+  ['owner', '项目负责人'],
+  ['technicalContact', '技术对接人'],
+  ['supplyChainContact', '供应链对接人'],
+  ['manufacturer', '生产商（已重新盘点）'],
+  ['projectType', '项目类型'],
+  ['productLine', '产品线'],
+  ['demandInitiationDate', '1-需求立项'],
+  ['weeklyMeetingNote', '最新周会纪要']
 ];
 
 const BUSINESS_UNIT_FEEDBACK_SLOTS = [

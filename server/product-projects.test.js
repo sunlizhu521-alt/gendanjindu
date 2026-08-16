@@ -30,6 +30,34 @@ test('normalizeProjectRecords drops missing names and keeps newest duplicate', (
   assert.equal(result.report.missingNameCount, 1);
 });
 
+test('normalizeProjectRecords preserves product project workbook detail fields', () => {
+  const detailMapping = {
+    projectName: '项目名称',
+    priority: '优先级',
+    innovationType: '创新类型',
+    responsibilityDepartment: '责任部门',
+    technicalContact: '技术对接人',
+    supplyChainContact: '供应链对接人',
+    manufacturer: '生产商',
+    projectType: '项目类型',
+    productLine: '产品线',
+    demandInitiationDate: '1-需求立项',
+    weeklyMeetingTitle: '周会标题',
+    weeklyMeetingNote: '周会纪要'
+  };
+  const result = normalizeProjectRecords([{ id: 'detail-1', fields: {
+    项目名称: '护理床项目', 优先级: 'A', 创新类型: '绝对创新', 责任部门: '产品一部',
+    技术对接人: '张三', 供应链对接人: '李四', 生产商: '供应商甲', 项目类型: '整机',
+    产品线: '护理床', '1-需求立项': '2026-08-12', 周会标题: '本周周会纪要8-12', 周会纪要: '完成评审'
+  } }], detailMapping);
+  assert.equal(result.rows[0].priority, 'A');
+  assert.equal(result.rows[0].responsibilityDepartment, '产品一部');
+  assert.equal(result.rows[0].manufacturer, '供应商甲');
+  assert.equal(result.rows[0].demandInitiationDate.slice(0, 10), '2026-08-12');
+  assert.equal(result.rows[0].weeklyMeetingTitle, '本周周会纪要8-12');
+  assert.equal(result.rows[0].weeklyMeetingNote, '完成评审');
+});
+
 test('linkProjectsToProducts prioritizes material and detects conflicts', () => {
   const products = [{ id: 'a', materialCode: '1001', sku: 'A' }, { id: 'b', materialCode: '1002', sku: 'B' }];
   const [linked, conflict] = linkProjectsToProducts([
@@ -42,8 +70,8 @@ test('linkProjectsToProducts prioritizes material and detects conflicts', () => 
 
 test('buildProjectMetrics counts 90-day launches', () => {
   const metrics = buildProjectMetrics([
-    { businessUnit: '国内', projectStage: '立项', plannedLaunchDate: '2026-08-20' },
-    { businessUnit: '海外', projectStage: '测试', plannedLaunchDate: '2027-01-20' }
+    { businessUnit: '国内', projectStage: '立项', demandInitiationDate: '2026-08-20' },
+    { businessUnit: '海外', projectStage: '测试', demandInitiationDate: '2027-01-20' }
   ], new Date('2026-08-14T00:00:00+08:00'));
   assert.equal(metrics.totalProjects, 2);
   assert.equal(metrics.businessUnitCount, 2);

@@ -48,4 +48,8 @@ test('产品档案包含研发项目页签并优先读取产品项目文件槽�
   assert.match(serverSource, /currentProductProjectFileData\(\)/);
   assert.match(serverSource, /sourceType: 'file'/);
   assert.match(serverSource, /app\.get\('\/api\/product-projects', requireAuth, requirePage\('productArchive'\)/);
+  assert.match(pageSource, /生产商（已重新盘点）/);
+  assert.match(pageSource, /1-需求立项/);
+  assert.match(pageSource, /weeklyMeetingTitle/);
+  assert.match(pageSource, /weeklyMeetingNote/);
 });

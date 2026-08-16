@@ -19,7 +19,7 @@ export function productProjectFilterOptions(rows = []) {
     statuses: unique(rows.map((row) => row.projectStatus)),
     positions: unique(rows.map((row) => row.productPositioning)),
     owners: unique(rows.map((row) => row.owner)),
-    launchMonths: unique(rows.map((row) => text(row.plannedLaunchDate).slice(0, 7)))
+    launchMonths: unique(rows.map((row) => text(row.demandInitiationDate).slice(0, 7)))
   };
 }
 
@@ -31,9 +31,11 @@ export function filterProductProjectRows(rows = [], filters = EMPTY_PROJECT_FILT
     && (!filters.projectStatus || row.projectStatus === filters.projectStatus)
     && (!filters.productPositioning || row.productPositioning === filters.productPositioning)
     && (!filters.owner || row.owner === filters.owner)
-    && (!filters.launchMonth || text(row.plannedLaunchDate).startsWith(filters.launchMonth))
+    && (!filters.launchMonth || text(row.demandInitiationDate).startsWith(filters.launchMonth))
     && (!keyword || [row.projectName, row.businessUnit, row.projectStage, row.projectStatus, row.owner, row.productPositioning,
-      row.materialCode, row.sku, row.remark].some((value) => text(value).toLocaleLowerCase('zh-CN').includes(keyword)))
+      row.materialCode, row.sku, row.remark, row.priority, row.innovationType, row.responsibilityDepartment,
+      row.technicalContact, row.supplyChainContact, row.manufacturer, row.projectType, row.productLine,
+      row.weeklyMeetingTitle, row.weeklyMeetingNote].some((value) => text(value).toLocaleLowerCase('zh-CN').includes(keyword)))
   ));
 }
 
@@ -50,7 +52,18 @@ export function mappingSuggestions(fields = []) {
     remark: ['备注', '说明'],
     materialCode: ['物料编码', '品号'],
     sku: ['SKU', 'sku'],
-    modifiedAt: ['钉钉修改时间', '修改时间', '最后修改时间']
+    modifiedAt: ['钉钉修改时间', '修改时间', '最后修改时间'],
+    priority: ['优先级'],
+    innovationType: ['创新类型'],
+    responsibilityDepartment: ['责任部门', '事业部', '所属事业部'],
+    technicalContact: ['技术对接人'],
+    supplyChainContact: ['供应链对接人'],
+    manufacturer: ['生产商（已重新盘点）', '生产商'],
+    projectType: ['项目类型'],
+    productLine: ['产品线'],
+    demandInitiationDate: ['1-需求立项', '需求立项日期'],
+    weeklyMeetingTitle: ['周会纪要标题'],
+    weeklyMeetingNote: ['本周周会纪要', '最新周会纪要']
   };
   return Object.fromEntries(Object.entries(aliases).map(([key, candidates]) => [
     key,
@@ -67,12 +80,12 @@ export function summarizeProductProjectRows(rows = [], now = new Date()) {
   const start = new Date(now); start.setHours(0, 0, 0, 0);
   const end = new Date(start); end.setDate(end.getDate() + 90);
   const months = new Map();
-  rows.forEach((row) => { const month = text(row.plannedLaunchDate).slice(0, 7); if (month) months.set(month, (months.get(month) || 0) + 1); });
+  rows.forEach((row) => { const month = text(row.demandInitiationDate).slice(0, 7); if (month) months.set(month, (months.get(month) || 0) + 1); });
   return {
     totalProjects: rows.length,
     businessUnitCount: new Set(rows.map((row) => text(row.businessUnit)).filter(Boolean)).size,
     stageCount: new Set(rows.map((row) => text(row.projectStage)).filter(Boolean)).size,
-    launchWithin90Days: rows.filter((row) => { const time = Date.parse(row.plannedLaunchDate || ''); return Number.isFinite(time) && time >= start.getTime() && time < end.getTime(); }).length,
+    launchWithin90Days: rows.filter((row) => { const time = Date.parse(row.demandInitiationDate || ''); return Number.isFinite(time) && time >= start.getTime() && time < end.getTime(); }).length,
     businessUnits: grouped('businessUnit'), stages: grouped('projectStage'),
     launchMonths: [...months].sort(([a], [b]) => a.localeCompare(b)).map(([label, value]) => ({ label, value }))
   };

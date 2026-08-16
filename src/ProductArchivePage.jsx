@@ -4,7 +4,22 @@ import { EMPTY_PROJECT_FILTERS, PRODUCT_PROJECT_PAGE_SIZE, filterProductProjectR
 
 const API = import.meta.env.DEV ? 'http://localhost:4003' : '';
 const EMPTY_FILTERS = Object.freeze({ businessUnit: '', productLine: '', productSeries: '', productLifecycle: '', productPositioning: '', keyword: '' });
-const MAPPING_FIELDS = [['projectName', '项目名称', true], ['businessUnit', '事业部'], ['productPositioning', '产品定位'], ['projectStage', '项目阶段'], ['owner', '负责人'], ['plannedLaunchDate', '计划上市日期'], ['projectStatus', '项目状态'], ['remark', '备注'], ['materialCode', '物料编码'], ['sku', 'SKU'], ['modifiedAt', '钉钉修改时间']];
+const MAPPING_FIELDS = [
+  ['projectName', '项目名称', true],
+  ['priority', '优先级'],
+  ['innovationType', '创新类型'],
+  ['projectStage', '当前阶段'],
+  ['responsibilityDepartment', '责任部门'],
+  ['owner', '项目负责人'],
+  ['technicalContact', '技术对接人'],
+  ['supplyChainContact', '供应链对接人'],
+  ['manufacturer', '生产商（已重新盘点）'],
+  ['projectType', '项目类型'],
+  ['productLine', '产品线'],
+  ['demandInitiationDate', '1-需求立项'],
+  ['weeklyMeetingNote', '最新周会纪要'],
+  ['modifiedAt', '钉钉修改时间']
+];
 
 async function request(path, token, options = {}) {
   const response = await fetch(`${API}${path}`, { ...options, headers: { Authorization: `Bearer ${token}`, ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(options.headers || {}) } });
@@ -76,7 +91,52 @@ function ProjectsTab({ payload, focusProductId, onOpenProduct }) {
   const sourceName = payload.source?.sourceType === 'file'
     ? payload.source.fileName
     : payload.source?.sheetName;
-  return <><div className="product-archive-source"><strong>项目进度来源：{sourceName || '请在“产品数据-产品项目”槽位上传并应用文件'}</strong><span>工作表：{payload.source?.sheetName || '-'}</span><span>上传人：{payload.source?.uploadedBy || '-'}</span><span>更新时间：{dateTimeText(payload.source?.updatedAt || payload.sync?.lastSuccessAt)}</span><span>状态：{payload.sync?.running ? '处理中' : (payload.sync?.latestStatus || '未上传')}</span>{payload.sync?.latestError && <span className="status-pending">最近失败：{payload.sync.latestError}（仍展示上次成功数据）</span>}</div><section className="metric-grid product-archive-metrics"><Metric label="研发项目" value={metrics.totalProjects} /><Metric label="涉及事业部" value={metrics.businessUnitCount} /><Metric label="项目阶段" value={metrics.stageCount} /><Metric label="未来90天计划上市" value={metrics.launchWithin90Days} /></section><section className="product-project-charts"><MiniBars title="事业部项目分布" rows={metrics.businessUnits} /><MiniBars title="项目阶段分布" rows={metrics.stages} /><MiniBars title="计划上市月份" rows={metrics.launchMonths} /></section><section className="panel product-archive-panel">{focusProductId && <p className="message">正在查看所选在售产品关联的研发项目，点击上方“研发项目看板”可清除。</p>}<div className="product-archive-filters"><FilterSelect label="事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(v) => change('businessUnit', v)} /><FilterSelect label="阶段" value={filters.projectStage} options={options.stages} onChange={(v) => change('projectStage', v)} /><FilterSelect label="状态" value={filters.projectStatus} options={options.statuses} onChange={(v) => change('projectStatus', v)} /><FilterSelect label="定位" value={filters.productPositioning} options={options.positions} onChange={(v) => change('productPositioning', v)} /><FilterSelect label="负责人" value={filters.owner} options={options.owners} onChange={(v) => change('owner', v)} /><FilterSelect label="上市月份" value={filters.launchMonth} options={options.launchMonths} onChange={(v) => change('launchMonth', v)} /><label className="filter-control product-archive-search"><span>搜索</span><input value={filters.keyword} placeholder="项目、物料、SKU、负责人、备注" onChange={(event) => change('keyword', event.target.value)} /></label><button type="button" className="ghost compact-button" onClick={() => { setFilters(EMPTY_PROJECT_FILTERS); setPage(1); }}>清空筛选</button></div><div className="section-heading-row"><h3>研发项目明细</h3><span className="section-count">当前显示 {filteredRows.length.toLocaleString('zh-CN')} 条</span></div><div className="table-wrap product-archive-table-wrap"><table><thead><tr><th>项目名称</th><th>事业部</th><th>产品定位</th><th>项目阶段</th><th>负责人</th><th>计划上市日期</th><th>项目状态</th><th>物料编码</th><th>SKU</th><th>在售产品关联</th><th>备注</th><th>修改时间</th></tr></thead><tbody>{!rows.length ? <tr><td className="empty" colSpan="12">暂无研发项目数据</td></tr> : rows.map((row) => <tr key={row.sourceRecordId}><td><strong>{row.projectName}</strong></td><td>{row.businessUnit}</td><td>{row.productPositioning || '-'}</td><td>{row.projectStage || '-'}</td><td>{row.owner || '-'}</td><td>{dateText(row.plannedLaunchDate)}</td><td>{row.projectStatus || '-'}</td><td>{row.materialCode || '-'}</td><td>{row.sku || '-'}</td><td>{row.linkedProductId ? <button type="button" className="link-button" onClick={() => onOpenProduct(row.linkedProductId)}>已关联，查看</button> : <><span className={row.linkStatus === '关联冲突' ? 'status-pending' : ''}>{row.linkStatus}</span><small>{row.linkMessage}</small></>}</td><td>{row.remark || '-'}</td><td>{dateTimeText(row.sourceModifiedAt)}</td></tr>)}</tbody></table></div><Pagination page={currentPage} totalPages={totalPages} pageSize={PRODUCT_PROJECT_PAGE_SIZE} onChange={setPage} /></section></>;
+  const latestMeetingTitle = useMemo(
+    () => payload.rows.find((row) => row.weeklyMeetingTitle)?.weeklyMeetingTitle || '最新周会纪要',
+    [payload.rows]
+  );
+  return <>
+    <div className="product-archive-source">
+      <strong>项目进度来源：{sourceName || '请在“产品数据-产品项目”槽位上传并应用文件'}</strong>
+      <span>工作表：{payload.source?.sheetName || '-'}</span>
+      <span>上传人：{payload.source?.uploadedBy || '-'}</span>
+      <span>更新时间：{dateTimeText(payload.source?.updatedAt || payload.sync?.lastSuccessAt)}</span>
+      <span>状态：{payload.sync?.running ? '处理中' : (payload.sync?.latestStatus || '未上传')}</span>
+      {payload.sync?.latestError && <span className="status-pending">最近失败：{payload.sync.latestError}（仍展示上次成功数据）</span>}
+    </div>
+    <section className="metric-grid product-archive-metrics">
+      <Metric label="研发项目" value={metrics.totalProjects} />
+      <Metric label="涉及责任部门" value={metrics.businessUnitCount} />
+      <Metric label="项目阶段" value={metrics.stageCount} />
+      <Metric label="已填写需求立项日期" value={metrics.launchMonths.reduce((sum, row) => sum + row.value, 0)} />
+    </section>
+    <section className="product-project-charts">
+      <MiniBars title="责任部门项目分布" rows={metrics.businessUnits} />
+      <MiniBars title="项目阶段分布" rows={metrics.stages} />
+      <MiniBars title="需求立项月份" rows={metrics.launchMonths} />
+    </section>
+    <section className="panel product-archive-panel">
+      {focusProductId && <p className="message">正在查看所选在售产品关联的研发项目，点击上方“研发项目看板”可清除。</p>}
+      <div className="product-archive-filters">
+        <FilterSelect label="责任部门" value={filters.businessUnit} options={options.businessUnits} onChange={(v) => change('businessUnit', v)} />
+        <FilterSelect label="当前阶段" value={filters.projectStage} options={options.stages} onChange={(v) => change('projectStage', v)} />
+        <FilterSelect label="状态" value={filters.projectStatus} options={options.statuses} onChange={(v) => change('projectStatus', v)} />
+        <FilterSelect label="创新类型" value={filters.productPositioning} options={options.positions} onChange={(v) => change('productPositioning', v)} />
+        <FilterSelect label="项目负责人" value={filters.owner} options={options.owners} onChange={(v) => change('owner', v)} />
+        <FilterSelect label="立项月份" value={filters.launchMonth} options={options.launchMonths} onChange={(v) => change('launchMonth', v)} />
+        <label className="filter-control product-archive-search"><span>搜索</span><input value={filters.keyword} placeholder="项目、部门、负责人、对接人、生产商、周会纪要" onChange={(event) => change('keyword', event.target.value)} /></label>
+        <button type="button" className="ghost compact-button" onClick={() => { setFilters(EMPTY_PROJECT_FILTERS); setPage(1); }}>清空筛选</button>
+      </div>
+      <div className="section-heading-row"><h3>研发项目明细</h3><span className="section-count">当前显示 {filteredRows.length.toLocaleString('zh-CN')} 条</span></div>
+      <div className="table-wrap product-archive-table-wrap">
+        <table>
+          <thead><tr><th>项目名称</th><th>优先级</th><th>创新类型</th><th>当前阶段</th><th>责任部门</th><th>项目负责人</th><th>技术对接人</th><th>供应链对接人</th><th>生产商（已重新盘点）</th><th>项目类型</th><th>产品线</th><th>1-需求立项</th><th>{latestMeetingTitle}</th><th>在售产品关联</th><th>修改时间</th></tr></thead>
+          <tbody>{!rows.length ? <tr><td className="empty" colSpan="15">暂无研发项目数据</td></tr> : rows.map((row) => <tr key={row.sourceRecordId}><td><strong>{row.projectName}</strong></td><td>{row.priority || '-'}</td><td>{row.innovationType || row.productPositioning || '-'}</td><td>{row.projectStage || '-'}</td><td>{row.responsibilityDepartment || row.businessUnit || '-'}</td><td>{row.owner || '-'}</td><td>{row.technicalContact || '-'}</td><td>{row.supplyChainContact || '-'}</td><td>{row.manufacturer || '-'}</td><td>{row.projectType || '-'}</td><td>{row.productLine || '-'}</td><td>{dateText(row.demandInitiationDate)}</td><td>{row.weeklyMeetingNote || '-'}</td><td>{row.linkedProductId ? <button type="button" className="link-button" onClick={() => onOpenProduct(row.linkedProductId)}>已关联，查看</button> : <><span className={row.linkStatus === '关联冲突' ? 'status-pending' : ''}>{row.linkStatus}</span><small>{row.linkMessage}</small></>}</td><td>{dateTimeText(row.sourceModifiedAt)}</td></tr>)}</tbody>
+        </table>
+      </div>
+      <Pagination page={currentPage} totalPages={totalPages} pageSize={PRODUCT_PROJECT_PAGE_SIZE} onChange={setPage} />
+    </section>
+  </>;
 }
 
 export default function ProductArchivePage({ token, active }) {

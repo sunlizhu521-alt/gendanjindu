@@ -4,16 +4,18 @@ export const PRODUCT_PROJECT_PRIMARY_SHEET = '（整机）在研项目-绝对创
 
 export const PRODUCT_PROJECT_OUTPUT_COLUMNS = [
   '项目名称',
-  '事业部',
-  '产品定位',
-  '项目阶段',
-  '负责人',
-  '计划上市日期',
-  '项目状态',
-  '备注',
-  '物料编码',
-  'SKU',
-  '修改时间'
+  '优先级',
+  '创新类型',
+  '当前阶段',
+  '责任部门',
+  '项目负责人',
+  '技术对接人',
+  '供应链对接人',
+  '生产商（已重新盘点）',
+  '项目类型',
+  '产品线',
+  '1-需求立项',
+  '最新周会纪要'
 ];
 
 const HEADER_SCAN_ROWS = 15;
@@ -174,9 +176,10 @@ export function parseProductProjectWorkbook(file) {
     owner: columnIndex(headers, ['项目负责人']),
     technicalContact: columnIndex(headers, ['技术对接人']),
     supplyChainContact: columnIndex(headers, ['供应链对接人']),
-    manufacturer: columnIndex(headers, ['生产商']),
+    manufacturer: columnIndex(headers, ['生产商（已重新盘点）', '生产商']),
     projectType: columnIndex(headers, ['项目类型']),
     productLine: columnIndex(headers, ['产品线']),
+    demandInitiation: columnIndex(headers, ['1-需求立项']),
     trialProduction: columnIndex(headers, ['9-试产（供应链）', '9-试产(供应链)', '9-试产']),
     projectFile: columnIndex(headers, ['项目文件']),
     pending: columnIndex(headers, ['项目待办'])
@@ -184,6 +187,7 @@ export function parseProductProjectWorkbook(file) {
   const weeklyColumns = headers
     .map((header, index) => ({ header: text(header), index }))
     .filter(({ header }) => WEEKLY_NOTE_PATTERN.test(header));
+  const currentWeeklyColumn = weeklyColumns.find(({ header }) => compact(header).startsWith('本周周会纪要')) || weeklyColumns[0];
   const workbookUpdateDate = findWorkbookUpdateDate(aoa, headerIndex);
   const rows = [];
   const issues = [];
@@ -203,12 +207,18 @@ export function parseProductProjectWorkbook(file) {
       skippedRows += 1;
       continue;
     }
-    const weekly = weeklyColumns.find(({ index }) => text(valueAt(sourceRow, index)));
+    const weekly = currentWeeklyColumn;
     const priority = text(mergedValue(sheet, rowIndex, indexes.priority, valueAt(sourceRow, indexes.priority)));
     const innovationType = text(mergedValue(sheet, rowIndex, indexes.innovationType, valueAt(sourceRow, indexes.innovationType)));
     const projectType = text(mergedValue(sheet, rowIndex, indexes.projectType, valueAt(sourceRow, indexes.projectType)));
     const productLine = text(mergedValue(sheet, rowIndex, indexes.productLine, valueAt(sourceRow, indexes.productLine)));
     const businessUnit = responsibility || group || '未分配事业部';
+    const demandInitiationValue = displayedCellValue(
+      sheet,
+      rowIndex,
+      indexes.demandInitiation,
+      valueAt(sourceRow, indexes.demandInitiation)
+    );
     const trialProductionValue = displayedCellValue(
       sheet,
       rowIndex,
@@ -238,10 +248,13 @@ export function parseProductProjectWorkbook(file) {
       innovationType,
       productLine,
       projectType,
+      demandInitiationDate: excelDate(demandInitiationValue),
       responsibilityDepartment: responsibility,
       technicalContact: text(valueAt(sourceRow, indexes.technicalContact)),
       supplyChainContact: text(valueAt(sourceRow, indexes.supplyChainContact)),
       manufacturer: text(valueAt(sourceRow, indexes.manufacturer)),
+      weeklyMeetingTitle: weekly?.header || '',
+      weeklyMeetingNote: weekly ? text(valueAt(sourceRow, weekly.index)) : '',
       projectFile: text(valueAt(sourceRow, indexes.projectFile)),
       sourceSheet: sheetName,
       sourceExcelRow: rowIndex + 1

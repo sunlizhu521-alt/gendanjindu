@@ -6671,7 +6671,18 @@ const PRODUCT_PROJECT_FILE_MAPPING = Object.freeze({
   remark: 'remark',
   materialCode: 'materialCode',
   sku: 'sku',
-  modifiedAt: 'modifiedAt'
+  modifiedAt: 'modifiedAt',
+  priority: 'priority',
+  innovationType: 'innovationType',
+  responsibilityDepartment: 'responsibilityDepartment',
+  technicalContact: 'technicalContact',
+  supplyChainContact: 'supplyChainContact',
+  manufacturer: 'manufacturer',
+  projectType: 'projectType',
+  productLine: 'productLine',
+  demandInitiationDate: 'demandInitiationDate',
+  weeklyMeetingTitle: 'weeklyMeetingTitle',
+  weeklyMeetingNote: 'weeklyMeetingNote'
 });
 
 function currentProductProjectFileData() {
@@ -6696,7 +6707,18 @@ function currentProductProjectFileData() {
       remark: row.remark,
       materialCode: row.materialCode,
       sku: row.sku,
-      modifiedAt: row.modifiedAt
+      modifiedAt: row.modifiedAt,
+      priority: row.priority,
+      innovationType: row.innovationType,
+      responsibilityDepartment: row.responsibilityDepartment,
+      technicalContact: row.technicalContact,
+      supplyChainContact: row.supplyChainContact,
+      manufacturer: row.manufacturer,
+      projectType: row.projectType,
+      productLine: row.productLine,
+      demandInitiationDate: row.demandInitiationDate,
+      weeklyMeetingTitle: row.weeklyMeetingTitle,
+      weeklyMeetingNote: row.weeklyMeetingNote
     }
   }));
   const normalized = normalizeProjectRecords(records, PRODUCT_PROJECT_FILE_MAPPING);

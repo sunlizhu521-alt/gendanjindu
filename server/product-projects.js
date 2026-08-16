@@ -1,6 +1,9 @@
 const STANDARD_FIELDS = [
   'projectName', 'businessUnit', 'productPositioning', 'projectStage', 'owner',
-  'plannedLaunchDate', 'projectStatus', 'remark', 'materialCode', 'sku', 'modifiedAt'
+  'plannedLaunchDate', 'projectStatus', 'remark', 'materialCode', 'sku', 'modifiedAt',
+  'priority', 'innovationType', 'responsibilityDepartment', 'technicalContact',
+  'supplyChainContact', 'manufacturer', 'projectType', 'productLine',
+  'demandInitiationDate', 'weeklyMeetingTitle', 'weeklyMeetingNote'
 ];
 
 function text(value) {
@@ -77,6 +80,17 @@ export function mapDingTalkProjectRecord(record, mapping) {
     remark: text(mapped.remark),
     materialCode: text(mapped.materialCode),
     sku: text(mapped.sku),
+    priority: text(mapped.priority),
+    innovationType: text(mapped.innovationType) || text(mapped.productPositioning),
+    responsibilityDepartment: text(mapped.responsibilityDepartment) || text(mapped.businessUnit) || '未分配事业部',
+    technicalContact: text(mapped.technicalContact),
+    supplyChainContact: text(mapped.supplyChainContact),
+    manufacturer: text(mapped.manufacturer),
+    projectType: text(mapped.projectType),
+    productLine: text(mapped.productLine),
+    demandInitiationDate: dateValue(mapped.demandInitiationDate),
+    weeklyMeetingTitle: text(mapped.weeklyMeetingTitle),
+    weeklyMeetingNote: text(mapped.weeklyMeetingNote),
     sourceModifiedAt: modifiedAt,
     sourceCreatedAt: dateValue(record?.createdTime),
     rawJson: JSON.stringify(record || {})
@@ -109,6 +123,7 @@ export function normalizeProjectRecords(records = [], mapping = {}) {
       return;
     }
     if (fieldValue(record?.fields || {}, validMapping.plannedLaunchDate) && !row.plannedLaunchDate) report.invalidDateCount += 1;
+    if (fieldValue(record?.fields || {}, validMapping.demandInitiationDate) && !row.demandInitiationDate) report.invalidDateCount += 1;
     const businessUnit = text(row.businessUnit) || '未分配事业部';
     const materialKey = normalizeProjectIdentifier(row.materialCode) ? `${businessUnit}|${normalizeProjectIdentifier(row.materialCode)}` : '';
     const skuKey = normalizeProjectIdentifier(row.sku) ? `${businessUnit}|${normalizeProjectIdentifier(row.sku)}` : '';
@@ -168,7 +183,7 @@ export function buildProjectMetrics(rows = [], now = new Date()) {
   }, new Map())].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, 'zh-Hans-CN'));
   const launchMonthMap = new Map();
   rows.forEach((row) => {
-    const month = text(row.plannedLaunchDate).slice(0, 7);
+    const month = text(row.demandInitiationDate).slice(0, 7);
     if (month) launchMonthMap.set(month, (launchMonthMap.get(month) || 0) + 1);
   });
   return {
@@ -176,7 +191,7 @@ export function buildProjectMetrics(rows = [], now = new Date()) {
     businessUnitCount: new Set(rows.map((row) => text(row.businessUnit)).filter(Boolean)).size,
     stageCount: new Set(rows.map((row) => text(row.projectStage)).filter(Boolean)).size,
     launchWithin90Days: rows.filter((row) => {
-      const time = Date.parse(row.plannedLaunchDate || '');
+      const time = Date.parse(row.demandInitiationDate || '');
       return Number.isFinite(time) && time >= start.getTime() && time < end.getTime();
     }).length,
     businessUnits: counts('businessUnit'),

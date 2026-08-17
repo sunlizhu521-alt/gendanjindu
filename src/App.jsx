@@ -5777,6 +5777,36 @@ function ManualProgressImportPanel({ token, reloadDemands, setMessage }) {
     }
   }
 
+  async function deleteAllUnmatchedRows() {
+    if (busy || !preview?.batchId) return;
+    const expectedCount = numberValue(preview.summary?.manualUnmatchedRows);
+    if (!expectedCount) {
+      setMessage('当前批次没有手工待匹配记录。');
+      return;
+    }
+    if (!window.confirm(`确定软删除当前批次全部 ${expectedCount} 条手工待匹配记录吗？已匹配数据和金蝶采购订单不会受影响。`)) return;
+    setBusy(true);
+    try {
+      const payload = await request('/api/progress/manual-import/unmatched/delete-all', {
+        token,
+        method: 'POST',
+        body: JSON.stringify({ expectedCount, reason: '管理员批量删除手工待匹配记录' })
+      });
+      setPreview((current) => current ? {
+        ...current,
+        summary: payload.summary || current.summary,
+        rows: payload.rows || current.rows || []
+      } : current);
+      setLatest((current) => current ? { ...current, summary: payload.summary || current.summary } : current);
+      await reloadDemands();
+      setMessage(`已软删除 ${payload.deletedCount || 0} 条手工待匹配记录，当前剩余 ${payload.remainingCount || 0} 条；删除记录已写入审计。`);
+    } catch (error) {
+      setMessage('批量删除失败：' + error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function exportDetails() {
     if (!preview?.batchId || busy) return;
     setBusy(true);
@@ -5884,6 +5914,7 @@ function ManualProgressImportPanel({ token, reloadDemands, setMessage }) {
             <button type="button" className="compact-button" disabled={!file || busy} onClick={previewFile}>{busy ? '处理中...' : '解析预览'}</button>
             {preview && <button type="button" className="compact-button" disabled={busy || preview.alreadyApplied} onClick={applyPreview}>{preview.alreadyApplied ? '已应用' : '确认应用'}</button>}
             {preview && <button type="button" className="ghost compact-button" disabled={busy} onClick={exportDetails}>导出校验明细</button>}
+            {preview?.alreadyApplied && numberValue(preview.summary?.manualUnmatchedRows) > 0 && <button type="button" className="danger compact-button" disabled={busy} onClick={deleteAllUnmatchedRows}>删除全部待匹配（{numberValue(preview.summary.manualUnmatchedRows)}）</button>}
           </div>
           {progress > 0 && <div className="manual-progress-bar"><i style={{ width: `${progress}%` }} /><span>{progress}%</span></div>}
           {history.length > 0 && (

@@ -788,6 +788,11 @@ test('生产跟进支持手工登记表预览和采购订单折叠', () => {
   assert.match(serverSource, /app\.get\('\/api\/progress\/manual-import\/latest', requireAuth, requirePage\('progressRefresh'\), requireSystemOwner/);
   assert.match(serverSource, /app\.get\('\/api\/progress\/manual-import\/:batchId\/rows', requireAuth, requirePage\('progressRefresh'\), requireSystemOwner/);
   assert.match(serverSource, /app\.get\('\/api\/progress\/manual-import\/:batchId\/export', requireAuth, requirePage\('progressRefresh'\), requireSystemOwner/);
+  assert.match(progressSource, /删除全部待匹配（\{numberValue\(preview\.summary\.manualUnmatchedRows\)\}）/);
+  assert.match(progressSource, /expectedCount, reason: '管理员批量删除手工待匹配记录'/);
+  assert.match(serverSource, /app\.post\('\/api\/progress\/manual-import\/unmatched\/delete-all', requireAuth, requirePage\('progressRefresh'\), requireSystemOwner/);
+  assert.match(serverSource, /仅\$\{ADMIN_NAME\}可以删除手工待匹配记录/);
+  assert.match(serverSource, /data_status = '已删除'[\s\S]*?validation_status = 'deleted'/);
   assert.doesNotMatch(serverSource, /app\.(?:get|post)\('\/api\/progress\/manual-import[^\n]*requireAdmin/);
   assert.match(serverSource, /本次手工表未出现/);
   assert.match(serverSource, /function latestAppliedManualProgressBatch\(\)/);

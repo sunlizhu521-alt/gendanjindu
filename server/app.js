@@ -6202,6 +6202,25 @@ function manualProgressPreviewRows(batchId, limit = 80) {
   }));
 }
 
+function refreshManualProgressBatchSummary(batchId) {
+  const batch = get('SELECT summary_json FROM manual_progress_import_batches WHERE id = ?', [batchId]);
+  const summary = {
+    ...parseJson(batch?.summary_json, {}),
+    manualUnmatchedRows: numberValue(get(
+      `SELECT COUNT(*) AS count FROM manual_progress_rows
+       WHERE batch_id = ? AND data_status = '手工待匹配' AND deleted_at = ''`,
+      [batchId]
+    )?.count),
+    deletedRows: numberValue(get(
+      `SELECT COUNT(*) AS count FROM manual_progress_rows
+       WHERE batch_id = ? AND data_status = '已删除'`,
+      [batchId]
+    )?.count)
+  };
+  run('UPDATE manual_progress_import_batches SET summary_json = ? WHERE id = ?', [JSON.stringify(summary), batchId]);
+  return summary;
+}
+
 app.post('/api/progress/manual-import/preview', requireAuth, requirePage('progressRefresh'), requireSystemOwner, upload.single('file'), (req, res) => {
   try {
     if (!req.file?.buffer?.length) return res.status(400).json({ error: '请选择手工登记表文件' });
@@ -6392,6 +6411,70 @@ app.post('/api/progress/manual-import/rows/:rowId/confirm', requireAuth, require
     res.json({ confirmedAt: now, candidate, reconciliation });
   } catch (error) {
     res.status(error.status || 500).json({ error: error.message || '确认匹配失败' });
+  }
+});
+
+app.post('/api/progress/manual-import/unmatched/delete-all', requireAuth, requirePage('progressRefresh'), requireSystemOwner, (req, res) => {
+  try {
+    if (normalize(req.user.name) !== normalize(ADMIN_NAME)) {
+      return res.status(403).json({ error: `仅${ADMIN_NAME}可以删除手工待匹配记录` });
+    }
+    const batch = latestAppliedManualProgressBatch();
+    if (!batch) return res.status(404).json({ error: '当前没有已应用的手工登记表' });
+    const currentCount = numberValue(get(
+      `SELECT COUNT(*) AS count FROM manual_progress_rows
+       WHERE batch_id = ? AND active = 1 AND stale = 0 AND deleted_at = '' AND data_status = '手工待匹配'`,
+      [batch.id]
+    )?.count);
+    const expectedCount = Math.max(0, Math.floor(numberValue(req.body.expectedCount)));
+    if (expectedCount !== currentCount) {
+      return res.status(409).json({ error: `待匹配数量已变化，当前为${currentCount}条，请刷新后重试` });
+    }
+    if (!currentCount) {
+      return res.json({ batchId: batch.id, deletedCount: 0, remainingCount: 0, summary: refreshManualProgressBatchSummary(batch.id), rows: manualProgressPreviewRows(batch.id, 500) });
+    }
+    const reason = normalize(req.body.reason) || '管理员批量删除手工待匹配记录';
+    const now = nowText();
+    let reconciliation;
+    transaction(() => {
+      run(
+        `UPDATE manual_progress_rows
+         SET deleted_by = ?, deleted_at = ?, delete_reason = ?, data_status = '已删除',
+             validation_status = 'deleted', demand_key = '', updated_by = ?, updated_at = ?
+         WHERE batch_id = ? AND active = 1 AND stale = 0 AND deleted_at = '' AND data_status = '手工待匹配'`,
+        [req.user.name, now, reason, req.user.name, now, batch.id]
+      );
+      run(
+        `UPDATE manual_progress_allocations
+         SET active = 0, updated_at = ?
+         WHERE batch_id = ? AND source_row_id IN (
+           SELECT id FROM manual_progress_rows WHERE batch_id = ? AND deleted_at = ?
+         )`,
+        [now, batch.id, batch.id, now]
+      );
+      reconciliation = reconcileActiveManualProgress(req.user.name, now, batch.id);
+    });
+    const remainingCount = numberValue(get(
+      `SELECT COUNT(*) AS count FROM manual_progress_rows
+       WHERE batch_id = ? AND active = 1 AND stale = 0 AND deleted_at = '' AND data_status = '手工待匹配'`,
+      [batch.id]
+    )?.count);
+    const summary = refreshManualProgressBatchSummary(batch.id);
+    req.auditTarget = `${currentCount} 条手工待匹配记录`;
+    req.auditDetails = `批量软删除当前手工批次待匹配记录；原因：${reason}`;
+    res.json({
+      batchId: batch.id,
+      deletedCount: currentCount,
+      remainingCount,
+      deletedAt: now,
+      deletedBy: req.user.name,
+      reason,
+      summary,
+      rows: manualProgressPreviewRows(batch.id, 500),
+      reconciliation
+    });
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message || '批量删除手工待匹配记录失败' });
   }
 });
 

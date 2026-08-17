@@ -5986,48 +5986,33 @@ function ProgressEditor({ row, token, setMessage, visibleColumnKeys, stickyOffse
     remark: row.remark || ''
   });
   const [saving, setSaving] = useState(false);
-  const [quantityEdited, setQuantityEdited] = useState(false);
   const [showSources, setShowSources] = useState(false);
 
   const remainingQty = numberValue(row.remainingInboundQty);
   const requestedUnpreparedQty = numberValue(values.unpreparedQty);
   const manuallyAssignedQty = numberValue(values.preparedNotStartedQty)
     + numberValue(values.inProductionQty);
-  const allProductionStagesZero = requestedUnpreparedQty + manuallyAssignedQty <= 0.000001;
-  const calculatedUnpreparedQty = remainingQty - manuallyAssignedQty;
-  const stageQtyInvalid = calculatedUnpreparedQty < -0.000001;
-  const finishedQtyInvalid = numberValue(values.finishedQty) - remainingQty > 0.000001;
-  const invalidQty = stageQtyInvalid || finishedQtyInvalid;
-  const preserveStoredAllocation = row.progressAdjustmentRequired && !quantityEdited;
-  const unpreparedQty = invalidQty || preserveStoredAllocation
-    ? requestedUnpreparedQty
-    : allProductionStagesZero ? 0 : Math.max(calculatedUnpreparedQty, 0);
-  const progressGap = allProductionStagesZero ? 0 : remainingQty - unpreparedQty - manuallyAssignedQty;
+  const stageTotalQty = requestedUnpreparedQty + manuallyAssignedQty + numberValue(values.finishedQty);
+  const progressGap = remainingQty - stageTotalQty;
+  const stageQtyInvalid = Math.abs(progressGap) > 0.000001;
+  const invalidQty = stageQtyInvalid;
   const normalFulfillmentQty = numberValue(row.normalFulfillmentQty);
   const abnormalFulfillmentQty = numberValue(row.abnormalFulfillmentQty);
   const pretaxPrice = numberValue(row.pretaxPrice);
 
-  const toPayload = (nextValues, preserveUnprepared = false) => {
-    const nextAssignedQty = numberValue(nextValues.preparedNotStartedQty)
-      + numberValue(nextValues.inProductionQty);
-    const nextRequestedUnpreparedQty = numberValue(nextValues.unpreparedQty);
-    const nextAllProductionStagesZero = nextRequestedUnpreparedQty + nextAssignedQty <= 0.000001;
-    return {
-      unpreparedQty: preserveUnprepared
-        ? nextRequestedUnpreparedQty
-        : nextAllProductionStagesZero ? 0 : Math.max(remainingQty - nextAssignedQty, 0),
-      preparedNotStartedQty: numberValue(nextValues.preparedNotStartedQty),
-      inProductionQty: numberValue(nextValues.inProductionQty),
-      finishedQty: numberValue(nextValues.finishedQty),
-      productionDeliveryDate: normalizeProgressDateValue(nextValues.productionDeliveryDate),
-      unproducedEstimatedDeliveryDate: normalizeProgressDateValue(nextValues.unproducedEstimatedDeliveryDate),
-      fulfillmentStatus: nextValues.fulfillmentStatus || '',
-      fulfillmentRemark: nextValues.fulfillmentRemark || '',
-      unfulfilledReason: nextValues.unfulfilledReason || '',
-      reasonDetail: nextValues.reasonDetail || '',
-      remark: nextValues.remark || ''
-    };
-  };
+  const toPayload = (nextValues) => ({
+    unpreparedQty: numberValue(nextValues.unpreparedQty),
+    preparedNotStartedQty: numberValue(nextValues.preparedNotStartedQty),
+    inProductionQty: numberValue(nextValues.inProductionQty),
+    finishedQty: numberValue(nextValues.finishedQty),
+    productionDeliveryDate: normalizeProgressDateValue(nextValues.productionDeliveryDate),
+    unproducedEstimatedDeliveryDate: normalizeProgressDateValue(nextValues.unproducedEstimatedDeliveryDate),
+    fulfillmentStatus: nextValues.fulfillmentStatus || '',
+    fulfillmentRemark: nextValues.fulfillmentRemark || '',
+    unfulfilledReason: nextValues.unfulfilledReason || '',
+    reasonDetail: nextValues.reasonDetail || '',
+    remark: nextValues.remark || ''
+  });
 
   useEffect(() => {
     const nextValues = {
@@ -6044,8 +6029,7 @@ function ProgressEditor({ row, token, setMessage, visibleColumnKeys, stickyOffse
       remark: row.remark || ''
     };
     setValues(nextValues);
-    setQuantityEdited(false);
-    onDraftChange?.(row.rowKey || row.demandKey, toPayload(nextValues, row.progressAdjustmentRequired));
+    onDraftChange?.(row.rowKey || row.demandKey, toPayload(nextValues));
   }, [
     row.rowKey, row.demandKey, row.unpreparedQty, row.preparedNotStartedQty, row.inProductionQty, row.finishedQty,
     row.productionDeliveryDate, row.unproducedEstimatedDeliveryDate, row.fulfillmentStatus, row.fulfillmentRemark,
@@ -6055,7 +6039,6 @@ function ProgressEditor({ row, token, setMessage, visibleColumnKeys, stickyOffse
   function handleQtyChange(key, rawValue) {
     const nextValues = { ...values, [key]: rawValue };
     setValues(nextValues);
-    setQuantityEdited(true);
     onDraftChange?.(row.rowKey || row.demandKey, toPayload(nextValues));
   }
 
@@ -6067,11 +6050,7 @@ function ProgressEditor({ row, token, setMessage, visibleColumnKeys, stickyOffse
 
   async function save() {
     if (stageQtyInvalid) {
-      setMessage('生产中产品、已备料未生产合计不能超过未交付数量。');
-      return;
-    }
-    if (finishedQtyInvalid) {
-      setMessage('完工未发产品不能大于未交付数量。');
+      setMessage(`未备料未生产、已备料未生产、生产中产品、完工未发产品合计必须等于未交付数量（当前相差 ${progressGap.toLocaleString('zh-CN')}）。`);
       return;
     }
     if (values.fulfillmentStatus === '否' && !normalize(values.unfulfilledReason)) {
@@ -6169,7 +6148,7 @@ function ProgressEditor({ row, token, setMessage, visibleColumnKeys, stickyOffse
     ['materialCode', <span className="progress-record-link">{row.materialCode}</span>], ['sku', <span className="progress-record-link">{row.sku}</span>], ['materialName', row.materialName || row.materialCode],
     ['operationStockQty', numberValue(row.operationStockQty)], ['remainingInboundQty', row.remainingInboundQty],
     ['shippedQty', <span className="progress-readonly-qty" title="来自金蝶采购订单累计入库数量，不能手动修改">{numberValue(row.shippedQty).toLocaleString('zh-CN')}</span>],
-    ['unpreparedQty', quantityInput('unpreparedQty', { value: displayQty(unpreparedQty) })],
+    ['unpreparedQty', quantityInput('unpreparedQty')],
     ['preparedNotStartedQty', quantityInput('preparedNotStartedQty')], ['inProductionQty', quantityInput('inProductionQty')],
     ['finishedQty', quantityInput('finishedQty')],
     ['contractDeliveryDates', <span className="progress-contract-date" title={row.contractDeliveryDates ? `来自手工登记表：${row.contractDeliveryDates}` : '暂无'}>{row.contractDeliveryDates || '暂无'}</span>],
@@ -6577,13 +6556,11 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
   function bulkProgressPayload(row) {
     const rowKey = row.rowKey || row.demandKey;
     if (drafts[rowKey]) return drafts[rowKey];
-    const remainingQty = numberValue(row.remainingInboundQty);
     const preparedNotStartedQty = numberValue(row.preparedNotStartedQty);
     const inProductionQty = numberValue(row.inProductionQty);
-    const assignedQty = preparedNotStartedQty + inProductionQty;
     const requestedUnpreparedQty = numberValue(row.unpreparedQty);
     return {
-      unpreparedQty: requestedUnpreparedQty + assignedQty <= 0.000001 ? 0 : Math.max(remainingQty - assignedQty, 0),
+      unpreparedQty: requestedUnpreparedQty,
       preparedNotStartedQty,
       inProductionQty,
       finishedQty: numberValue(row.finishedQty),
@@ -6600,11 +6577,12 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
   function validateBulkProgressRow(row, payload) {
     const orderLabel = row.orderNo || row.materialCode || row.demandKey;
     const remainingQty = numberValue(row.remainingInboundQty);
-    if (numberValue(payload.preparedNotStartedQty) + numberValue(payload.inProductionQty) - remainingQty > 0.000001) {
-      return `${orderLabel}：生产中产品、已备料未生产合计不能超过未交付数量`;
-    }
-    if (numberValue(payload.finishedQty) - remainingQty > 0.000001) {
-      return `${orderLabel}：完工未发产品不能大于未交付数量`;
+    const stageTotalQty = numberValue(payload.unpreparedQty)
+      + numberValue(payload.preparedNotStartedQty)
+      + numberValue(payload.inProductionQty)
+      + numberValue(payload.finishedQty);
+    if (Math.abs(stageTotalQty - remainingQty) > 0.000001) {
+      return `${orderLabel}：未备料未生产、已备料未生产、生产中产品、完工未发产品合计必须等于未交付数量`;
     }
     if (payload.fulfillmentStatus === '否' && !normalize(payload.unfulfilledReason)) {
       return `${orderLabel}：非正常履约必须填写未履约原因`;
@@ -7174,7 +7152,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
           </div>
           <div className="progress-logic-rules">
             <strong>数量逻辑：</strong>
-            未备料未生产、已备料未生产、生产中产品允许同时为0；任一列大于0时，三列合计必须等于未交付数量，未备料未生产自动补差。完工未发产品不参与该合计，但不能大于未交付数量。运营备货数量等于未交付数量加已发货数量。新增数量进入未备料未生产；未交付减少后原分配超出时标记待人工调整。
+            未备料未生产、已备料未生产、生产中产品、完工未发产品均可独立填写，不自动补差；四列合计必须等于未交付数量。运营备货数量等于未交付数量加已发货数量；未交付数量变化后四阶段合计不一致时标记待人工调整。
           </div>
           <div className="progress-logic-rules progress-order-change-rules">
             <strong>订单类型与下单数量口径：</strong>

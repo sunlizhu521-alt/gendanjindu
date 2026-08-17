@@ -3007,6 +3007,7 @@ test('inventory summary and domestic board use complete source models and enforc
       body: JSON.stringify({
         ...progressIdentity,
         requestId: currentProgressRequestId,
+        unpreparedQty: 0,
         preparedNotStartedQty: 100,
         inProductionQty: 500,
         finishedQty: 400,
@@ -3052,7 +3053,7 @@ test('inventory summary and domestic board use complete source models and enforc
       unfulfilledReason: savedProgress?.unfulfilledReason,
       reasonDetail: savedProgress?.reasonDetail
     }, {
-      unpreparedQty: 400,
+      unpreparedQty: 0,
       preparedNotStartedQty: 100,
       inProductionQty: 500,
       finishedQty: 400,
@@ -3109,9 +3110,10 @@ test('inventory summary and domestic board use complete source models and enforc
       body: JSON.stringify({
         ...progressIdentity,
         requestId: ordinaryResubmitRequestId,
+        unpreparedQty: 0,
         preparedNotStartedQty: 120,
         inProductionQty: 480,
-        finishedQty: 410,
+        finishedQty: 400,
         productionDeliveryDate: '2026.9.11',
         unproducedEstimatedDeliveryDate: '2026年8月21日',
         fulfillmentStatus: '否',
@@ -3293,12 +3295,12 @@ test('inventory summary and domestic board use complete source models and enforc
       fulfillmentStatus: increasedM1?.fulfillmentStatus,
       unfulfilledReason: increasedM1?.unfulfilledReason
     }, {
-      unpreparedQty: 500,
+      unpreparedQty: 0,
       preparedNotStartedQty: 100,
       inProductionQty: 500,
       finishedQty: 400,
-      progressTotal: 1100,
-      progressAdjustmentRequired: false,
+      progressTotal: 1000,
+      progressAdjustmentRequired: true,
       fulfillmentStatus: '否',
       unfulfilledReason: '供应商延期'
     });
@@ -3309,6 +3311,7 @@ test('inventory summary and domestic board use complete source models and enforc
       body: JSON.stringify({
         trackingKey: followedM1AfterReapply?.followupKey,
         orderNo: followedM1AfterReapply?.orderNo,
+        unpreparedQty: 100,
         preparedNotStartedQty: 100,
         inProductionQty: 500,
         finishedQty: 400,
@@ -3334,7 +3337,7 @@ test('inventory summary and domestic board use complete source models and enforc
       normalFulfillmentQty: normalM1?.normalFulfillmentQty,
       abnormalFulfillmentQty: normalM1?.abnormalFulfillmentQty
     }, {
-      unpreparedQty: 500,
+      unpreparedQty: 100,
       progressTotal: 1100,
       progressAdjustmentRequired: false,
       fulfillmentStatus: '是',

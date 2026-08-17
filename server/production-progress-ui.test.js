@@ -102,19 +102,17 @@ test('生产跟进展示当前金蝶所有剩余未交付非零订单', () => {
   ), /effectiveOrderCondition === '有效订单'/);
 });
 
-test('采购未交付变化时允许三个生产阶段全0，否则补差且完工未发独立校验', () => {
+test('采购未交付变化时保留四阶段原值并按四列合计标记差额', () => {
   const modelSource = serverSource.slice(
     serverSource.indexOf('function progressAfterInbound('),
     serverSource.indexOf('function hasManualProgressHistory(')
   );
-  assert.match(modelSource, /const progressTotal = unprepared \+ preparedNotStarted \+ inProduction/);
-  assert.match(modelSource, /if \(progressTotal > 0\.000001 && progressTotal < remainingInboundQty\) unprepared \+= remainingInboundQty - progressTotal/);
-  assert.doesNotMatch(modelSource, /progressTotal > remainingInboundQty/);
-  assert.match(serverSource, /function productionStageGap[\s\S]*?progressTotal <= 0\.000001 \? 0/);
-  assert.match(serverSource, /const allProductionStagesZero = requestedUnprepared \+ preparedNotStarted \+ inProduction <= 0\.000001/);
-  assert.match(appSource, /const allProductionStagesZero = requestedUnpreparedQty \+ manuallyAssignedQty <= 0\.000001/);
-  assert.match(appSource, /未备料未生产、已备料未生产、生产中产品允许同时为0/);
-  assert.match(serverSource, /if \(finished - remainingInboundQty > 0\.000001\)[\s\S]*?完工未发产品不能大于未交付数量/);
+  assert.doesNotMatch(modelSource, /unprepared \+= remainingInboundQty - progressTotal/);
+  assert.match(modelSource, /productionStageGap\(remainingInboundQty, unprepared, preparedNotStarted, inProduction, finished\)/);
+  assert.match(serverSource, /function productionStageGap[\s\S]*?numberValue\(inProductionQty\) \+ numberValue\(finishedQty\)/);
+  assert.match(serverSource, /const stageTotalQty = requestedUnprepared \+ preparedNotStarted \+ inProduction \+ finished/);
+  assert.match(serverSource, /Math\.abs\(stageTotalQty - remainingInboundQty\) > 0\.000001/);
+  assert.doesNotMatch(serverSource, /const allProductionStagesZero = requestedUnprepared \+ preparedNotStarted \+ inProduction/);
 });
 
 test('生产跟进表格使用清晰竖线和交替行色', () => {
@@ -747,7 +745,7 @@ test('生产跟进展开明细冻结关键识别与数量列', () => {
   assert.match(styleSource, /\.progress-sticky-column-last[\s\S]*?box-shadow:/);
 });
 
-test('生产跟进阶段公式排除完工未发并单独限制其上限', () => {
+test('生产跟进四阶段独立填写且合计必须等于未交付数量', () => {
   const editorSource = appSource.slice(
     appSource.indexOf('function ProgressEditor('),
     appSource.indexOf('function ProgressPage(')
@@ -757,12 +755,12 @@ test('生产跟进阶段公式排除完工未发并单独限制其上限', () =>
     appSource.indexOf('function DifferenceAllocationPage(')
   );
   assert.match(editorSource, /const manuallyAssignedQty = numberValue\(values\.preparedNotStartedQty\)[\s\S]*?\+ numberValue\(values\.inProductionQty\);/);
-  assert.doesNotMatch(editorSource, /const manuallyAssignedQty =[\s\S]*?numberValue\(values\.finishedQty\);/);
-  assert.match(editorSource, /const finishedQtyInvalid = numberValue\(values\.finishedQty\) - remainingQty > 0\.000001/);
-  assert.match(editorSource, /完工未发产品不能大于未交付数量/);
-  assert.match(progressSource, /未备料未生产、已备料未生产、生产中产品允许同时为0/);
-  assert.match(progressSource, /任一列大于0时，三列合计必须等于未交付数量/);
-  assert.match(progressSource, /完工未发产品不参与该合计，但不能大于未交付数量/);
+  assert.match(editorSource, /const stageTotalQty = requestedUnpreparedQty \+ manuallyAssignedQty \+ numberValue\(values\.finishedQty\)/);
+  assert.match(editorSource, /unpreparedQty: numberValue\(nextValues\.unpreparedQty\)/);
+  assert.doesNotMatch(editorSource, /Math\.max\(remainingQty - nextAssignedQty/);
+  assert.match(editorSource, /完工未发产品合计必须等于未交付数量/);
+  assert.match(progressSource, /四列合计必须等于未交付数量/);
+  assert.match(progressSource, /均可独立填写，不自动补差/);
 });
 
 test('生产跟进支持手工登记表预览和采购订单折叠', () => {

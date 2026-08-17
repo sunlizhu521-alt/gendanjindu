@@ -6534,6 +6534,7 @@ app.get('/api/progress/manual-import/history', requireAuth, requirePage('progres
 app.get('/api/progress/manual-import/latest', requireAuth, requirePage('progressRefresh'), requireSystemOwner, (req, res) => {
   const batch = latestAppliedManualProgressBatch();
   if (!batch) return res.json({ batch: null });
+  const summary = refreshManualProgressBatchSummary(batch.id);
   res.json({
     batch: {
       id: batch.id,
@@ -6542,7 +6543,7 @@ app.get('/api/progress/manual-import/latest', requireAuth, requirePage('progress
       rowCount: numberValue(batch.row_count),
       appliedAt: batch.applied_at,
       importedBy: batch.imported_by,
-      summary: parseJson(batch.summary_json, {})
+      summary
     }
   });
 });

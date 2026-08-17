@@ -7592,9 +7592,13 @@ th {
 }
 
 .kingdee-progress-page .progress-order-detail-header th {
+  position: sticky;
+  top: 0;
+  z-index: 7;
   height: 32px;
   border-color: #d6e0ec;
   background: #edf3fb;
+  box-shadow: 0 1px 0 #cbd5e1;
   color: #45566d;
   font-weight: 600;
 }
@@ -7622,7 +7626,7 @@ th {
 }
 
 .kingdee-progress-page .progress-order-detail-header > .progress-sticky-column {
-  z-index: 6;
+  z-index: 8;
   background: #edf3fb;
 }
 

@@ -729,6 +729,11 @@ test('生产跟进展开明细列按内容自适应且不换行', () => {
   assert.match(styleSource, /\.kingdee-progress-page \.progress-order-detail-row > td \*\s*\{[\s\S]*?white-space: nowrap !important;/);
 });
 
+test('生产跟进采购订单明细纵向滚动时冻结表头', () => {
+  assert.match(styleSource, /\.kingdee-progress-page \.progress-order-detail-header th\s*\{[\s\S]*?position: sticky;[\s\S]*?top: 0;[\s\S]*?z-index: 7;/);
+  assert.match(styleSource, /\.kingdee-progress-page \.progress-order-detail-header > \.progress-sticky-column\s*\{[\s\S]*?z-index: 8;/);
+});
+
 test('生产跟进展开明细冻结关键识别与数量列', () => {
   const columnSource = appSource.slice(
     appSource.indexOf('const PROGRESS_COLUMNS'),

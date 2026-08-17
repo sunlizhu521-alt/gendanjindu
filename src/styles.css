@@ -7666,6 +7666,71 @@ th {
   background: #f7faff !important;
 }
 
+.kingdee-progress-page .progress-supplier-parent-row > td {
+  padding: 0 !important;
+  border-top: 2px solid #8fb2e8 !important;
+  background: #edf5ff !important;
+}
+
+.kingdee-progress-page .progress-supplier-month-row > td {
+  padding: 0 !important;
+  border-top: 1px solid #d6e3f5 !important;
+  background: #f8fbff !important;
+}
+
+.kingdee-progress-page .progress-supplier-parent-toggle,
+.kingdee-progress-page .progress-supplier-month-toggle {
+  display: flex;
+  width: 100%;
+  min-height: 31px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 4px 8px;
+  color: #40536b;
+  text-align: left;
+  cursor: pointer;
+}
+
+.kingdee-progress-page .progress-supplier-month-toggle {
+  padding-left: 34px;
+}
+
+.kingdee-progress-page .progress-supplier-parent-toggle b,
+.kingdee-progress-page .progress-supplier-month-toggle b {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid #8fb2e8;
+  background: #fff;
+  color: #2f78f6;
+  font-size: 12px;
+}
+
+.kingdee-progress-page .progress-supplier-parent-toggle strong,
+.kingdee-progress-page .progress-supplier-month-toggle strong,
+.kingdee-progress-page .progress-supplier-parent-toggle span,
+.kingdee-progress-page .progress-supplier-month-toggle span,
+.kingdee-progress-page .progress-supplier-parent-toggle em {
+  font-size: 12px;
+}
+
+.kingdee-progress-page .progress-supplier-parent-toggle strong {
+  min-width: 160px;
+}
+
+.kingdee-progress-page .progress-supplier-parent-toggle span,
+.kingdee-progress-page .progress-supplier-month-toggle span {
+  color: #46616f;
+}
+
+.kingdee-progress-page .progress-supplier-parent-toggle em {
+  color: #0f766e;
+  font-style: normal;
+  font-weight: 700;
+}
+
 .kingdee-progress-page .progress-order-toggle {
   min-height: 31px;
   flex-wrap: wrap;

@@ -110,7 +110,7 @@ const PAGE_LABELS = {
   dimensionMissing: '维度表缺失',
   dimensionLibrary: '维度表库',
   trace: '变更追溯',
-  operationLogs: '操作日常',
+  operationLogs: '操作记录',
   permissions: '权限管理'
 };
 const DIMENSION_SLOTS = {

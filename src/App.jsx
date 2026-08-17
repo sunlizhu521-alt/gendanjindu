@@ -31,6 +31,7 @@ const PAGE_ORDER = [
   'inventoryManualLibrary',
   'operationBoard',
   'progressRefresh',
+  'differenceAllocation',
   'trace',
   'purchaseBoard',
   'firstMileBoard',
@@ -65,7 +66,8 @@ const PAGE_LABELS = {
   dimensionMissing: '维度表缺失',
   dimensionLibrary: '维度表库',
   trace: '变更追溯',
-  operationLogs: '操作日常',
+  differenceAllocation: '差异分配',
+  operationLogs: '操作记录',
   permissions: '权限管理',
   tableRelationships: '数据关系图'
 };
@@ -75,16 +77,23 @@ const NAV_GROUPS = [
   { title: '跨境数据', pages: ['crossBorderInventory', 'lingxingInventory'] },
   { title: '库存数据', pages: ['inventorySummary', 'inventoryRisk', 'supplyPlanBoard', 'inventoryPurchase', 'inventorySummaryLibrary', 'inventoryManualLibrary'] },
   { title: '产品数据', pages: ['productArchive', 'businessUnitFeedback'] },
-  { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'trace', 'purchaseBoard'] },
+  { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'differenceAllocation', 'operationLogs', 'trace', 'purchaseBoard'] },
   { title: '头程数据', pages: ['firstMileBoard', 'firstMileDatabase'] },
   { title: '维护数据', pages: ['dimensionMissing', 'dimensionLibrary', 'kingdeeImport'] },
-  { title: '系统操作', pages: ['permissions', 'operationLogs', 'tableRelationships'] }
+  { title: '系统操作', pages: ['permissions', 'tableRelationships'] }
 ];
 
 const DEMAND_DATA_PAGES = new Set(['inventoryPurchase', 'purchaseBoard', 'progressRefresh']);
+const PROGRESS_RELATED_PAGES = new Set(['differenceAllocation', 'operationLogs']);
 
 function visiblePagesForUser(user) {
-  return PAGE_ORDER.filter((page) => user?.role === '管理员' || user?.pageAccess?.includes(page));
+  const directPages = PAGE_ORDER.filter((page) => user?.role === '管理员' || user?.pageAccess?.includes(page));
+  const canViewProgress = directPages.includes('progressRefresh');
+  return PAGE_ORDER.filter((page) => (
+    PROGRESS_RELATED_PAGES.has(page)
+      ? canViewProgress
+      : directPages.includes(page)
+  ));
 }
 
 function storedActivePage() {
@@ -446,6 +455,29 @@ function formatProgressMonthLabel(values, fallback = '-') {
     const match = month.match(/^(\d{4})-(\d{1,2})/);
     return match ? `${match[1]}年${match[2].padStart(2, '0')}月` : month;
   }).join('、');
+}
+
+function compareProgressMonths(left, right) {
+  if (left === '待核验') return right === '待核验' ? 0 : 1;
+  if (right === '待核验') return -1;
+  return right.localeCompare(left, 'zh-Hans-CN');
+}
+
+function addOrderGroupToSupplierRollup(rollup, orderGroup) {
+  rollup.orderGroups.push(orderGroup);
+  rollup.supplierShortNames.add(orderGroup.supplierShortName);
+  orderGroup.productLines.forEach((value) => rollup.productLines.add(value));
+  orderGroup.productSeriesValues.forEach((value) => rollup.productSeriesValues.add(value));
+  orderGroup.reportingQuantities.forEach((quantity, key) => {
+    if (rollup.reportingQuantities.has(key)) return;
+    rollup.reportingQuantities.set(key, quantity);
+    rollup.reportingPurchaseQty += numberValue(quantity);
+  });
+  orderGroup.remainingInboundQuantities.forEach((quantity, key) => {
+    if (rollup.remainingInboundQuantities.has(key)) return;
+    rollup.remainingInboundQuantities.set(key, quantity);
+    rollup.remainingInboundQty += numberValue(quantity);
+  });
 }
 
 function uniqueSupplierShortNames(values) {
@@ -6096,11 +6128,11 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
   const [clearFilters, setClearFilters] = useState({ purchaseOwners: [], suppliers: [], productLines: [], productSeries: [] });
   const [clearPreview, setClearPreview] = useState(null);
   const [clearBusy, setClearBusy] = useState(false);
-  const [showDifferenceAllocation, setShowDifferenceAllocation] = useState(false);
-  const [showOperationLogs, setShowOperationLogs] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [expandedOrders, setExpandedOrders] = useState(() => new Set());
+  const [expandedSupplierGroups, setExpandedSupplierGroups] = useState(() => new Set());
+  const [expandedSupplierMonths, setExpandedSupplierMonths] = useState(() => new Set());
   const [groupMode, setGroupMode] = useState('currentMonth');
   const progressTableWrapRef = useRef(null);
   const [stickyOffsets, setStickyOffsets] = useState({});
@@ -6150,7 +6182,10 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
         originalQuantityKeys: new Set(),
         originalPurchaseQty: 0,
         quantityKeys: new Set(),
+        reportingQuantities: new Map(),
         reportingPurchaseQty: 0,
+        remainingInboundQuantities: new Map(),
+        remainingInboundQty: 0,
         pendingRows: 0
       };
       group.rows.push(row);
@@ -6168,6 +6203,12 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
       if (currentOrderMonth) group.currentOrderMonths.add(currentOrderMonth);
       if (row.productLine) group.productLines.add(row.productLine);
       if (row.productSeries) group.productSeriesValues.add(row.productSeries);
+      const remainingQuantityKey = row.rowKey || `${row.orderNo}|${row.demandKey}`;
+      if (!group.remainingInboundQuantities.has(remainingQuantityKey)) {
+        const remainingInboundQty = numberValue(row.remainingInboundQty);
+        group.remainingInboundQuantities.set(remainingQuantityKey, remainingInboundQty);
+        group.remainingInboundQty += remainingInboundQty;
+      }
       if (row.originalOrderNo && row.changeValidationStatus === 'valid') {
         const originalQuantityKey = `${row.originalOrderNo}|${normalize(row.supplier)}|${normalize(row.materialCode)}`;
         if (!group.originalQuantityKeys.has(originalQuantityKey)) {
@@ -6181,7 +6222,9 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
         const quantityKey = `${row.orderType === '订单变更' ? 'original' : 'current'}:${quantityOrderNo}|${normalize(row.supplier)}|${normalize(row.materialCode)}`;
         if (!group.quantityKeys.has(quantityKey)) {
           group.quantityKeys.add(quantityKey);
-          group.reportingPurchaseQty += numberValue(row.reportingPurchaseQty);
+          const reportingPurchaseQty = numberValue(row.reportingPurchaseQty);
+          group.reportingQuantities.set(quantityKey, reportingPurchaseQty);
+          group.reportingPurchaseQty += reportingPurchaseQty;
         }
       }
       map.set(key, group);
@@ -6196,37 +6239,76 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
       group.sku = [...group.skus].join('、');
       group.materialName = [...group.materialNames].join('、') || '未填写';
     });
-    const monthCompare = (left, right) => {
-      if (left === '待核验') return right === '待核验' ? 0 : 1;
-      if (right === '待核验') return -1;
-      return right.localeCompare(left, 'zh-Hans-CN');
-    };
     return groups.sort((left, right) => {
       const selectedMonth = (group) => groupMode === 'originalMonth'
         ? group.originalOrderMonth
         : group.currentOrderMonth;
       const primary = groupMode === 'supplier'
         ? left.supplierShortName.localeCompare(right.supplierShortName, 'zh-Hans-CN')
-        : monthCompare(selectedMonth(left), selectedMonth(right));
+        : compareProgressMonths(selectedMonth(left), selectedMonth(right));
       if (primary !== 0) return primary;
       const secondary = groupMode === 'supplier'
-        ? monthCompare(left.currentOrderMonth, right.currentOrderMonth)
+        ? compareProgressMonths(left.currentOrderMonth, right.currentOrderMonth)
         : left.supplierShortName.localeCompare(right.supplierShortName, 'zh-Hans-CN');
       if (secondary !== 0) return secondary;
       return left.materialCode.localeCompare(right.materialCode, 'zh-Hans-CN')
         || left.sku.localeCompare(right.sku, 'zh-Hans-CN');
     });
   }, [displayRows, groupMode]);
-  const activeGroups = summaryGroups;
+  const supplierGroups = useMemo(() => {
+    const map = new Map();
+    summaryGroups.forEach((orderGroup) => {
+      const supplierKey = normalize(orderGroup.supplier) || normalize(orderGroup.supplierShortName) || '未匹配';
+      const supplierGroup = map.get(supplierKey) || {
+        key: `supplier:${supplierKey}`,
+        supplierShortNames: new Set(),
+        productLines: new Set(),
+        productSeriesValues: new Set(),
+        reportingQuantities: new Map(),
+        reportingPurchaseQty: 0,
+        remainingInboundQuantities: new Map(),
+        remainingInboundQty: 0,
+        orderGroups: [],
+        months: new Map()
+      };
+      addOrderGroupToSupplierRollup(supplierGroup, orderGroup);
+      const month = orderGroup.currentOrderMonth || '待核验';
+      const monthKey = `${supplierGroup.key}:month:${month}`;
+      const monthGroup = supplierGroup.months.get(monthKey) || {
+        key: monthKey,
+        month,
+        supplierShortNames: new Set(),
+        productLines: new Set(),
+        productSeriesValues: new Set(),
+        reportingQuantities: new Map(),
+        reportingPurchaseQty: 0,
+        remainingInboundQuantities: new Map(),
+        remainingInboundQty: 0,
+        orderGroups: []
+      };
+      addOrderGroupToSupplierRollup(monthGroup, orderGroup);
+      supplierGroup.months.set(monthKey, monthGroup);
+      map.set(supplierKey, supplierGroup);
+    });
+    return [...map.values()].map((supplierGroup) => ({
+      ...supplierGroup,
+      supplierShortName: [...supplierGroup.supplierShortNames].join('、') || '未匹配',
+      months: [...supplierGroup.months.values()].sort((left, right) => compareProgressMonths(left.month, right.month))
+    })).sort((left, right) => left.supplierShortName.localeCompare(right.supplierShortName, 'zh-Hans-CN'));
+  }, [summaryGroups]);
+  const activeGroups = groupMode === 'supplier' ? supplierGroups : summaryGroups;
   const totalPages = Math.max(1, Math.ceil(activeGroups.length / pageSize));
   const pageGroups = useMemo(
     () => activeGroups.slice((currentPage - 1) * pageSize, currentPage * pageSize),
     [activeGroups, currentPage]
   );
-  const pageRows = useMemo(
-    () => pageGroups.flatMap((group) => expandedOrders.has(group.key) ? group.rows : []),
-    [pageGroups, expandedOrders]
-  );
+  const pageRows = useMemo(() => (
+    groupMode === 'supplier'
+      ? pageGroups.flatMap((supplierGroup) => supplierGroup.months.flatMap((monthGroup) => (
+        monthGroup.orderGroups.flatMap((orderGroup) => expandedOrders.has(orderGroup.key) ? orderGroup.rows : [])
+      )))
+      : pageGroups.flatMap((group) => expandedOrders.has(group.key) ? group.rows : [])
+  ), [pageGroups, expandedOrders, groupMode]);
   useLayoutEffect(() => {
     const tableWrap = progressTableWrapRef.current;
     if (!tableWrap) return undefined;
@@ -6261,7 +6343,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
       resizeObserver?.disconnect();
       window.removeEventListener('resize', updateStickyOffsets);
     };
-  }, [visibleColumnKeys, expandedOrders, pageGroups]);
+  }, [visibleColumnKeys, expandedOrders, expandedSupplierGroups, expandedSupplierMonths, pageGroups]);
   const pageNumbers = useMemo(() => {
     const visiblePages = totalPages <= 7
       ? Array.from({ length: totalPages }, (_, index) => index + 1)
@@ -6288,6 +6370,9 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
 
   useEffect(() => {
     setCurrentPage(1);
+    setExpandedOrders(new Set());
+    setExpandedSupplierGroups(new Set());
+    setExpandedSupplierMonths(new Set());
   }, [filters]);
 
   useEffect(() => {
@@ -6315,26 +6400,6 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
     setVisibleColumnKeys(defaultProgressColumnKeys());
   }
 
-  function setDifferenceAllocationView(open) {
-    setShowDifferenceAllocation(open);
-    if (open) setShowOperationLogs(false);
-    window.requestAnimationFrame(() => {
-      const content = document.querySelector('.content');
-      if (content) content.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-    });
-  }
-
-  function setOperationLogsView(open) {
-    setShowOperationLogs(open);
-    if (open) setShowDifferenceAllocation(false);
-    window.requestAnimationFrame(() => {
-      const content = document.querySelector('.content');
-      if (content) content.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-    });
-  }
-
   function toggleProgressRow(demandKey, checked) {
     setSelectedKeys(checked ? [...new Set([...selectedKeys, demandKey])] : selectedKeys.filter((key) => key !== demandKey));
   }
@@ -6354,6 +6419,30 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
       else next.add(key);
       return next;
     });
+  }
+
+  function toggleSupplierGroup(key) {
+    setExpandedSupplierGroups((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleSupplierMonth(key) {
+    setExpandedSupplierMonths((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function resetProgressGroupExpansion() {
+    setExpandedOrders(new Set());
+    setExpandedSupplierGroups(new Set());
+    setExpandedSupplierMonths(new Set());
   }
 
   function updateClearFilter(key, value) {
@@ -6530,31 +6619,6 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
     }
   }
 
-  if (showDifferenceAllocation && !onlyIssues) {
-    return (
-      <>
-        <div className="section-heading-row progress-internal-view-heading">
-          <h2>生产跟进 / 差异分配</h2>
-          <button type="button" className="ghost compact-button" onClick={() => setDifferenceAllocationView(false)}>返回生产跟进</button>
-        </div>
-        <DifferenceAllocationPage token={token} user={user} setMessage={setMessage} currentAppliedAt={currentAppliedAt} />
-      </>
-    );
-  }
-
-  if (showOperationLogs && !onlyIssues) {
-    return (
-      <OperationLogsPage
-        token={token}
-        user={user}
-        setMessage={setMessage}
-        title="生产跟进 / 操作记录"
-        fixedPageKey="progressRefresh"
-        onBack={() => setOperationLogsView(false)}
-      />
-    );
-  }
-
   const progressTableColumns = [{ key: '__select', label: (
     <label className="select-all-header" title="勾选当前显示的可编辑行">
       <input
@@ -6567,6 +6631,177 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
     </label>
   ) }, ...visibleProgressColumns.map(([key, label]) => ({ key, label }))];
 
+  function renderPurchaseOrderGroup(group, showSupplier = true) {
+    const expanded = expandedOrders.has(group.key);
+    const supplierLabel = group.supplierShortName;
+    const currentOrderNoLabel = [...group.orderNos].join('、') || '无采购订单';
+    const orderTypeLabel = [...group.orderTypes].join('、');
+    const originalOrderNoLabel = [...group.originalOrderNos].join('、') || '-';
+    const originalOrderMonthLabel = formatProgressMonthLabel(
+      [...group.originalOrderMonths],
+      group.originalOrderNos.size ? '待核验' : '-'
+    );
+    const currentOrderMonthLabel = formatProgressMonthLabel([...group.currentOrderMonths], '待核验');
+    const productLineLabel = [...group.productLines].join('、') || '未填写';
+    const productSeriesLabel = [...group.productSeriesValues].join('、') || '未填写';
+    const originalPurchaseQtyLabel = group.originalQuantityKeys.size
+      ? group.originalPurchaseQty.toLocaleString('zh-CN')
+      : (group.originalOrderNos.size ? '待核验' : '-');
+    const pendingOnly = group.pendingRows === group.rows.length;
+    return (
+      <Fragment key={group.key}>
+        <tr className="progress-order-parent-row">
+          <td colSpan={visibleProgressColumns.length + 1}>
+            <div
+              className="progress-order-toggle"
+              role="button"
+              tabIndex={0}
+              onClick={() => toggleOrderGroup(group.key)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  toggleOrderGroup(group.key);
+                }
+              }}
+              aria-expanded={expanded}
+              aria-label={`展开采购订单汇总 ${currentOrderNoLabel}`}
+            >
+              <b>{expanded ? '−' : '+'}</b>
+              {showSupplier && (
+                <strong>
+                  <button
+                    type="button"
+                    className="supplier-filter-link"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setFilters({
+                        ...filters,
+                        supplier: uniqueSupplierShortNames(group.rows.map((row) => progressSupplierName(row)))
+                      });
+                    }}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  >
+                    {supplierLabel}
+                  </button>
+                </strong>
+              )}
+              <span className={`progress-order-type type-${pendingOnly ? 'pending' : 'valid'}`}>订单状态：{orderTypeLabel}</span>
+              <span>原采购月份：{originalOrderMonthLabel}</span>
+              <span>原采购订单号：{originalOrderNoLabel}</span>
+              <span>新采购月份：{currentOrderMonthLabel}</span>
+              <span>当前采购订单号：{currentOrderNoLabel}</span>
+              <span>产品线：{productLineLabel}</span>
+              <span>系列：{productSeriesLabel}</span>
+              <span>原订单采购数量：{originalPurchaseQtyLabel}</span>
+              <span>订单数：{group.orderNos.size}</span>
+              <span>未交付数量：{group.remainingInboundQty.toLocaleString('zh-CN')}</span>
+              <span>{pendingOnly ? '下单数量：不计入汇总' : `下单数量：${group.reportingPurchaseQty.toLocaleString('zh-CN')}`}</span>
+            </div>
+          </td>
+        </tr>
+        {expanded && (
+          <tr className="progress-order-detail-header">
+            {progressTableColumns.map(({ key, label }) => (
+              <th key={key} {...progressStickyCellProps(key, stickyOffsets)}>{label}</th>
+            ))}
+          </tr>
+        )}
+        {expanded && group.rows.map((row) => (
+          <ProgressEditor
+            key={row.rowKey || row.demandKey}
+            row={row}
+            token={token}
+            reloadDemands={reloadDemands}
+            setMessage={setMessage}
+            visibleColumnKeys={visibleColumnKeys}
+            stickyOffsets={stickyOffsets}
+            selected={selectedKeys.includes(row.rowKey || row.demandKey)}
+            onSelect={toggleProgressRow}
+            onDraftChange={(demandKey, payload) => setDrafts((current) => ({ ...current, [demandKey]: payload }))}
+          />
+        ))}
+      </Fragment>
+    );
+  }
+
+  function renderSupplierGroup(supplierGroup) {
+    const expanded = expandedSupplierGroups.has(supplierGroup.key);
+    const productLineLabel = [...supplierGroup.productLines].join('、') || '未填写';
+    const productSeriesLabel = [...supplierGroup.productSeriesValues].join('、') || '未填写';
+    return (
+      <Fragment key={supplierGroup.key}>
+        <tr className="progress-supplier-parent-row">
+          <td colSpan={visibleProgressColumns.length + 1}>
+            <div
+              className="progress-supplier-parent-toggle"
+              role="button"
+              tabIndex={0}
+              onClick={() => toggleSupplierGroup(supplierGroup.key)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  toggleSupplierGroup(supplierGroup.key);
+                }
+              }}
+              aria-expanded={expanded}
+              aria-label={`展开供应商 ${supplierGroup.supplierShortName}`}
+            >
+              <b>{expanded ? '−' : '+'}</b>
+              <strong>
+                <button
+                  type="button"
+                  className="supplier-filter-link"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setFilters({ ...filters, supplier: [supplierGroup.supplierShortName] });
+                  }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  供应商：{supplierGroup.supplierShortName}
+                </button>
+              </strong>
+              <span>产品线：{productLineLabel}</span>
+              <span>系列：{productSeriesLabel}</span>
+              <em>下单数量：{supplierGroup.reportingPurchaseQty.toLocaleString('zh-CN')}</em>
+              <em>未交付数量：{supplierGroup.remainingInboundQty.toLocaleString('zh-CN')}</em>
+            </div>
+          </td>
+        </tr>
+        {expanded && supplierGroup.months.map((monthGroup) => {
+          const monthExpanded = expandedSupplierMonths.has(monthGroup.key);
+          return (
+            <Fragment key={monthGroup.key}>
+              <tr className="progress-supplier-month-row">
+                <td colSpan={visibleProgressColumns.length + 1}>
+                  <div
+                    className="progress-supplier-month-toggle"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => toggleSupplierMonth(monthGroup.key)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        toggleSupplierMonth(monthGroup.key);
+                      }
+                    }}
+                    aria-expanded={monthExpanded}
+                    aria-label={`展开下单月份 ${monthGroup.month}`}
+                  >
+                    <b>{monthExpanded ? '−' : '+'}</b>
+                    <strong>下单月份：{formatProgressMonthLabel(monthGroup.month, '待核验')}</strong>
+                    <span>下单数量：{monthGroup.reportingPurchaseQty.toLocaleString('zh-CN')}</span>
+                    <span>未交付数量：{monthGroup.remainingInboundQty.toLocaleString('zh-CN')}</span>
+                  </div>
+                </td>
+              </tr>
+              {monthExpanded && monthGroup.orderGroups.map((orderGroup) => renderPurchaseOrderGroup(orderGroup, false))}
+            </Fragment>
+          );
+        })}
+      </Fragment>
+    );
+  }
+
   return (
     <section className="kingdee-progress-page">
       <div className="progress-sticky-top">
@@ -6576,7 +6811,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
             <h2>{title}</h2>
           </div>
           <AppliedTimeNote value={currentAppliedAt} />
-          <span className="section-count">共 {activeGroups.length} 个下单汇总组、{displayRows.length} 条跟单明细</span>
+          <span className="section-count">共 {activeGroups.length} 个{groupMode === 'supplier' ? '供应商汇总组' : '下单汇总组'}、{displayRows.length} 条跟单明细</span>
         </div>
         <div className="progress-command-bar" aria-label="生产跟进操作栏">
           <button type="button" className="progress-command primary" onClick={() => reloadDemands().catch((error) => setMessage(`刷新失败：${error.message}`))}>刷新</button>
@@ -6587,8 +6822,6 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
             onReset={resetVisibleProgressColumns}
           />
           {!onlyIssues && <button type="button" className="progress-command" disabled={exporting || !displayRows.length} onClick={handleExport}>{exporting ? `导出中 ${exportProgress}%` : '导出 Excel'}</button>}
-          {!onlyIssues && <button type="button" className="progress-command" onClick={() => setDifferenceAllocationView(true)}>差异分配</button>}
-          {!onlyIssues && <button type="button" className="progress-command" onClick={() => setOperationLogsView(true)}>操作记录</button>}
           {!onlyIssues && onExit && <button type="button" className="progress-command" onClick={onExit}>返回系统</button>}
           {!onlyIssues && onLogout && <button type="button" className="progress-command" onClick={onLogout}>退出登录</button>}
           {!onlyIssues && normalize(user?.name) === '孙立柱' && (
@@ -6608,7 +6841,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
             className={groupMode === 'currentMonth' ? 'active' : ''}
             onClick={() => {
               setGroupMode('currentMonth');
-              setExpandedOrders(new Set());
+              resetProgressGroupExpansion();
               setCurrentPage(1);
             }}
           >按新下单月份</button>
@@ -6617,7 +6850,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
             className={groupMode === 'originalMonth' ? 'active' : ''}
             onClick={() => {
               setGroupMode('originalMonth');
-              setExpandedOrders(new Set());
+              resetProgressGroupExpansion();
               setCurrentPage(1);
             }}
           >按原下单月份</button>
@@ -6626,7 +6859,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
             className={groupMode === 'supplier' ? 'active' : ''}
             onClick={() => {
               setGroupMode('supplier');
-              setExpandedOrders(new Set());
+              resetProgressGroupExpansion();
               setCurrentPage(1);
             }}
           >按供应商</button>}
@@ -6654,7 +6887,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
             <span><b>变更单下单数量：</b>取原采购订单相同供应商＋物料编码的采购数量；当前替换订单数量另列展示。</span>
             <span><b>变更待核验：</b>原订单找不到、手工关闭不是“是”或供应商、物料、日期校验失败时保留展示，但不计入下单数量汇总。</span>
             <span><b>原订单展示规则：</b>剩余未交付为 0 的原订单不单独进入生产跟进，但仍用于识别变更单及读取原订单日期和数量。</span>
-            <span><b>汇总方式：</b>“按新下单月份”按当前采购订单创建月份查看；“按原下单月份”按变更单引用的原采购订单创建月份查看；“按供应商”查看某供应商各月份各产品的下单数量。</span>
+            <span><b>汇总方式：</b>“按新下单月份”按当前采购订单创建月份查看；“按原下单月份”按变更单引用的原采购订单创建月份查看；“按供应商”先按供应商汇总产品线、系列、下单数量和未交付数量，展开后按当前下单月份，再按采购订单查看跟单明细。</span>
           </div>
         </details>
         {clearPanelOpen && normalize(user?.name) === '孙立柱' && (
@@ -6692,95 +6925,11 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
         columns={progressTableColumns}
         showHeader={false}
         tableWrapRef={progressTableWrapRef}
-        renderRow={(group) => {
-          const expanded = expandedOrders.has(group.key);
-          const supplierLabel = group.supplierShortName;
-          const currentOrderNoLabel = [...group.orderNos].join('、') || '无采购订单';
-          const orderTypeLabel = [...group.orderTypes].join('、');
-          const originalOrderNoLabel = [...group.originalOrderNos].join('、') || '-';
-          const originalOrderMonthLabel = formatProgressMonthLabel(
-            [...group.originalOrderMonths],
-            group.originalOrderNos.size ? '待核验' : '-'
-          );
-          const currentOrderMonthLabel = formatProgressMonthLabel([...group.currentOrderMonths], '待核验');
-          const productLineLabel = [...group.productLines].join('、') || '未填写';
-          const productSeriesLabel = [...group.productSeriesValues].join('、') || '未填写';
-          const originalPurchaseQtyLabel = group.originalQuantityKeys.size
-            ? group.originalPurchaseQty.toLocaleString('zh-CN')
-            : (group.originalOrderNos.size ? '待核验' : '-');
-          const pendingOnly = group.pendingRows === group.rows.length;
-          return (
-            <Fragment key={group.key}>
-              <tr className="progress-order-parent-row">
-                <td colSpan={visibleProgressColumns.length + 1}>
-                  <div
-                    className="progress-order-toggle"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => toggleOrderGroup(group.key)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        toggleOrderGroup(group.key);
-                      }
-                    }}
-                    aria-expanded={expanded}
-                    aria-label={`展开采购订单汇总 ${currentOrderNoLabel}`}
-                  >
-                    <b>{expanded ? '−' : '+'}</b>
-                    <strong>
-                      <button
-                        type="button"
-                        className="supplier-filter-link"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setFilters({
-                            ...filters,
-                            supplier: uniqueSupplierShortNames(group.rows.map((row) => progressSupplierName(row)))
-                          });
-                        }}
-                        onKeyDown={(event) => event.stopPropagation()}
-                      >
-                        {supplierLabel}
-                      </button>
-                    </strong>
-                    <span className={`progress-order-type type-${pendingOnly ? 'pending' : 'valid'}`}>订单状态：{orderTypeLabel}</span>
-                    <span>原采购月份：{originalOrderMonthLabel}</span>
-                    <span>原采购订单号：{originalOrderNoLabel}</span>
-                    <span>新采购月份：{currentOrderMonthLabel}</span>
-                    <span>当前采购订单号：{currentOrderNoLabel}</span>
-                    <span>产品线：{productLineLabel}</span>
-                    <span>系列：{productSeriesLabel}</span>
-                    <span>原订单采购数量：{originalPurchaseQtyLabel}</span>
-                    <span>订单数：{group.orderNos.size}</span>
-                    <span>{pendingOnly ? '下单数量：不计入汇总' : `下单数量：${group.reportingPurchaseQty.toLocaleString('zh-CN')}`}</span>
-                  </div>
-                </td>
-              </tr>
-              {expanded && (
-                <tr className="progress-order-detail-header">
-                  {progressTableColumns.map(({ key, label }) => (
-                    <th key={key} {...progressStickyCellProps(key, stickyOffsets)}>{label}</th>
-                  ))}
-                </tr>
-              )}
-              {expanded && group.rows.map((row) => (
-                <ProgressEditor
-                  key={row.rowKey || row.demandKey}
-                  row={row}
-                  token={token}
-                  reloadDemands={reloadDemands}
-                  setMessage={setMessage}
-                  visibleColumnKeys={visibleColumnKeys}
-                  stickyOffsets={stickyOffsets}
-                  selected={selectedKeys.includes(row.rowKey || row.demandKey)}
-                  onSelect={toggleProgressRow}
-                  onDraftChange={(demandKey, payload) => setDrafts((current) => ({ ...current, [demandKey]: payload }))}
-                />
-              ))}
-            </Fragment>
-          );
-        }}
+        renderRow={(group) => (
+          groupMode === 'supplier'
+            ? renderSupplierGroup(group)
+            : renderPurchaseOrderGroup(group)
+        )}
       />
       <nav className="table-pagination" aria-label="生产跟进分页">
         <button type="button" className="ghost compact-button" disabled={currentPage === 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}>上一页</button>
@@ -6792,7 +6941,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
           ))}
         </div>
         <button type="button" className="ghost compact-button" disabled={currentPage === totalPages} onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}>下一页</button>
-        <span className="section-count">每页 20 个下单汇总组</span>
+        <span className="section-count">每页 20 个{groupMode === 'supplier' ? '供应商汇总组' : '下单汇总组'}</span>
       </nav>
     </section>
   );
@@ -8167,7 +8316,7 @@ function auditDeviceLabel(userAgent) {
   return `${system} / ${browser}`;
 }
 
-function OperationLogsPage({ token, user, setMessage, title = '操作日常', fixedPageKey = '', onBack = null }) {
+function OperationLogsPage({ token, user, setMessage, title = '操作记录', fixedPageKey = '', onBack = null }) {
   const initialFilters = { userName: '', pageKey: fixedPageKey, action: '', result: '', startDate: '', endDate: '', keyword: '' };
   const cacheSuffix = fixedPageKey || 'all';
   const exportName = fixedPageKey === 'progressRefresh' ? '生产跟进操作记录' : '操作日常';
@@ -8713,6 +8862,7 @@ function App() {
         {shouldMount('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
         {shouldMount('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
         {shouldMount('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} onExit={progressReturnPage ? () => setActiveTab(progressReturnPage) : null} onLogout={logout} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
+        {shouldMount('differenceAllocation') && <PagePane page="differenceAllocation" activeTab={activeTab}><DifferenceAllocationPage token={token} user={user} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('wangdianData') && <PagePane page="wangdianData" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="国内数据" slots={WANGDIAN_SLOTS} gridColumns={3} /></PagePane>}
         {shouldMount('lingxingInventory') && <PagePane page="lingxingInventory" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="领星库存" slots={LINGXING_INVENTORY_SLOTS} onDataApplied={refreshCrossBorderData} highlightSlotId={highlightSlotId} /></PagePane>}
         {shouldMount('firstMileDatabase') && <PagePane page="firstMileDatabase" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="头程数据库" slots={FIRST_MILE_DATABASE_SLOTS} gridColumns={3} onDataApplied={refreshFirstMileData} /></PagePane>}
@@ -8721,7 +8871,7 @@ function App() {
         {shouldMount('dimensionMissing') && <PagePane page="dimensionMissing" activeTab={activeTab}><DimensionMissingPage token={token} user={user} setMessage={setMessage} refreshVersion={crossBorderVersion} active={activeTab === 'dimensionMissing'} onMaintain={maintainDimensionSlot} /></PagePane>}
         {shouldMount('dimensionLibrary') && <PagePane page="dimensionLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} gridColumns={3} onDataApplied={refreshCrossBorderData} highlightSlotId={highlightSlotId} /></PagePane>}
         {shouldMount('trace') && <PagePane page="trace" activeTab={activeTab}><TracePage token={token} setMessage={setMessage} /></PagePane>}
-        {shouldMount('operationLogs') && <PagePane page="operationLogs" activeTab={activeTab}><OperationLogsPage token={token} user={user} setMessage={setMessage} /></PagePane>}
+        {shouldMount('operationLogs') && <PagePane page="operationLogs" activeTab={activeTab}><OperationLogsPage token={token} user={user} setMessage={setMessage} title="生产跟进 / 操作记录" fixedPageKey="progressRefresh" /></PagePane>}
         {shouldMount('permissions') && <PagePane page="permissions" activeTab={activeTab}><PermissionsPage token={token} currentUser={user} pages={pages} setMessage={setMessage} /></PagePane>}
         {shouldMount('tableRelationships') && <PagePane page="tableRelationships" activeTab={activeTab}><DataRelationshipsPage token={token} /></PagePane>}
         <PersistentHorizontalScrollbar activeTab={activeTab} />

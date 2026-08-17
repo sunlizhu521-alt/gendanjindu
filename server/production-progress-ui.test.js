@@ -299,7 +299,7 @@ test('生产跟进父汇总月份显示为中文年月', () => {
   assert.match(helperSource, /`\$\{match\[1\]\}年\$\{match\[2\]\.padStart\(2, '0'\)\}月`/);
 });
 
-test('生产跟进支持新月份、原月份与供应商三种产品下单汇总并切换分页', () => {
+test('生产跟进支持新月份、原月份与供应商三级汇总并切换分页', () => {
   const progressSource = appSource.slice(
     appSource.indexOf('function ProgressPage('),
     appSource.indexOf('function DifferenceAllocationPage(')
@@ -310,7 +310,9 @@ test('生产跟进支持新月份、原月份与供应商三种产品下单汇�
   assert.match(progressSource, /group\.materialCode = \[\.\.\.group\.materialCodes\]\.join\('、'\)/);
   assert.match(progressSource, /orderNos: new Set\(\)[\s\S]*?group\.orderNos\.add\(row\.orderNo\)/);
   assert.match(progressSource, /quantityKeys: new Set\(\)[\s\S]*?quantityOrderNo[\s\S]*?group\.quantityKeys\.has\(quantityKey\)/);
-  assert.match(progressSource, /const activeGroups = summaryGroups/);
+  assert.match(progressSource, /const supplierGroups = useMemo\(\(\) => \{[\s\S]*?summaryGroups\.forEach\(\(orderGroup\) =>/);
+  assert.match(progressSource, /addOrderGroupToSupplierRollup\(supplierGroup, orderGroup\)[\s\S]*?supplierGroup\.months\.set\(monthKey, monthGroup\)/);
+  assert.match(progressSource, /const activeGroups = groupMode === 'supplier' \? supplierGroups : summaryGroups/);
   assert.match(progressSource, /Math\.ceil\(activeGroups\.length \/ pageSize\)/);
   assert.match(progressSource, /activeGroups\.slice\(\(currentPage - 1\) \* pageSize, currentPage \* pageSize\)/);
   assert.match(progressSource, />按新下单月份<\/button>/);
@@ -318,8 +320,8 @@ test('生产跟进支持新月份、原月份与供应商三种产品下单汇�
   assert.match(progressSource, />按供应商<\/button>/);
   assert.match(progressSource, /className="progress-scheme-heading"[\s\S]*?<strong>筛选方案<\/strong>[\s\S]*?<small>根据习惯选择任意一个<\/small>/);
   assert.doesNotMatch(progressSource, /<strong>我的方案<\/strong>/);
-  assert.match(progressSource, /className=\{groupMode === 'supplier' \? 'active' : ''\}[\s\S]*?setGroupMode\('supplier'\)[\s\S]*?setExpandedOrders\(new Set\(\)\)[\s\S]*?setCurrentPage\(1\)/);
-  assert.match(progressSource, /每页 20 个下单汇总组/);
+  assert.match(progressSource, /className=\{groupMode === 'supplier' \? 'active' : ''\}[\s\S]*?setGroupMode\('supplier'\)[\s\S]*?resetProgressGroupExpansion\(\)[\s\S]*?setCurrentPage\(1\)/);
+  assert.match(progressSource, /每页 20 个\{groupMode === 'supplier' \? '供应商汇总组' : '下单汇总组'\}/);
   assert.match(styleSource, /\.progress-scheme-bar button\.active\s*\{[\s\S]*?color: #246bdb/);
   assert.match(styleSource, /\.progress-scheme-heading\s*\{[\s\S]*?flex-direction: column/);
 });
@@ -340,10 +342,10 @@ test('生产跟进汇总按新月份、原月份或供应商排序且简称可�
     appSource.indexOf('function ProgressPage('),
     appSource.indexOf('function DifferenceAllocationPage(')
   );
-  assert.match(progressSource, /const monthCompare = \(left, right\)/);
+  assert.match(appSource, /function compareProgressMonths\(left, right\)/);
   assert.match(progressSource, /groupMode === 'originalMonth'[\s\S]*?group\.originalOrderMonth[\s\S]*?group\.currentOrderMonth/);
   assert.match(progressSource, /groupMode === 'supplier'[\s\S]*?left\.supplierShortName\.localeCompare\(right\.supplierShortName/);
-  assert.match(progressSource, /monthCompare\(left\.currentOrderMonth, right\.currentOrderMonth\)/);
+  assert.match(progressSource, /compareProgressMonths\(left\.currentOrderMonth, right\.currentOrderMonth\)/);
   assert.match(progressSource, /className="progress-order-toggle"[\s\S]*?role="button"[\s\S]*?tabIndex=\{0\}/);
   assert.match(progressSource, /className="supplier-filter-link"[\s\S]*?event\.stopPropagation\(\)[\s\S]*?supplier: uniqueSupplierShortNames\(group\.rows\.map\(\(row\) => progressSupplierName\(row\)\)\)/);
   assert.match(styleSource, /\.supplier-filter-link\s*\{[\s\S]*?color: #2563eb/);
@@ -409,7 +411,7 @@ test('生产跟进不再展示任何柱形图', () => {
   assert.match(operationSource, /<ProgressStackedChart/);
 });
 
-test('差异分配合并到生产跟进内部并复用生产跟进权限', () => {
+test('差异分配作为采购跟单入口并复用生产跟进权限', () => {
   const progressSource = appSource.slice(
     appSource.indexOf('function ProgressPage('),
     appSource.indexOf('function DifferenceAllocationPage(')
@@ -417,18 +419,18 @@ test('差异分配合并到生产跟进内部并复用生产跟进权限', () =>
   const navigationSource = appSource.slice(0, appSource.indexOf('const DIMENSION_SLOTS'));
   const appRenderSource = appSource.slice(appSource.indexOf('function App()'));
 
-  assert.match(progressSource, /const \[showDifferenceAllocation, setShowDifferenceAllocation\] = useState\(false\)/);
-  assert.match(progressSource, /setDifferenceAllocationView\(true\)[\s\S]*?>差异分配<[\s\S]*?清除跟单数据/);
-  assert.match(progressSource, /<DifferenceAllocationPage token=\{token\}[\s\S]*?currentAppliedAt=\{currentAppliedAt\}/);
-  assert.match(progressSource, /setDifferenceAllocationView\(false\)[\s\S]*?返回生产跟进/);
-  assert.doesNotMatch(navigationSource, /pages: \[[^\]]*'differenceAllocation'/);
-  assert.doesNotMatch(appRenderSource, /shouldMount\('differenceAllocation'\)/);
+  assert.match(navigationSource, /'progressRefresh',[\s\S]*?'differenceAllocation'/);
+  assert.match(navigationSource, /differenceAllocation: '差异分配'/);
+  assert.match(navigationSource, /const PROGRESS_RELATED_PAGES = new Set\(\['differenceAllocation', 'operationLogs'\]\)/);
+  assert.match(navigationSource, /PROGRESS_RELATED_PAGES\.has\(page\)[\s\S]*?canViewProgress/);
+  assert.match(appRenderSource, /shouldMount\('differenceAllocation'\)[\s\S]*?<DifferenceAllocationPage token=\{token\}[\s\S]*?currentAppliedAt=\{demandMeta\.currentAppliedAt\}/);
+  assert.doesNotMatch(progressSource, /showDifferenceAllocation|setDifferenceAllocationView|>差异分配<\/button>/);
   assert.doesNotMatch(serverSource, /requirePage\('differenceAllocation'\)/);
   assert.match(serverSource, /requestPath\.startsWith\('\/api\/difference'\)\) return \{ key: 'progressRefresh', label: PAGE_LABELS\.progressRefresh \}/);
   assert.match(serverSource, /app\.get\('\/api\/difference-allocations\/latest', requireAuth, requirePage\('progressRefresh'\)/);
 });
 
-test('操作记录作为生产跟进独立页面入口且只展示生产跟进操作', () => {
+test('操作记录作为采购跟单入口且只展示生产跟进操作', () => {
   const progressSource = appSource.slice(
     appSource.indexOf('function ProgressPage('),
     appSource.indexOf('function DifferenceAllocationPage(')
@@ -438,10 +440,13 @@ test('操作记录作为生产跟进独立页面入口且只展示生产跟进�
     appSource.indexOf('function PermissionsPage(')
   );
 
-  assert.match(progressSource, /const \[showOperationLogs, setShowOperationLogs\] = useState\(false\)/);
-  assert.match(progressSource, />差异分配<\/button>[\s\S]*?>操作记录<\/button>/);
-  assert.match(progressSource, /if \(showOperationLogs && !onlyIssues\)[\s\S]*?<OperationLogsPage[\s\S]*?title="生产跟进 \/ 操作记录"[\s\S]*?fixedPageKey="progressRefresh"/);
-  assert.match(progressSource, /onBack=\{\(\) => setOperationLogsView\(false\)\}/);
+  const navigationSource = appSource.slice(0, appSource.indexOf('const DIMENSION_SLOTS'));
+  const appRenderSource = appSource.slice(appSource.indexOf('function App()'));
+
+  assert.match(navigationSource, /'differenceAllocation',[\s\S]*?'operationLogs',[\s\S]*?'trace'/);
+  assert.doesNotMatch(navigationSource, /title: '系统操作', pages: \[[^\]]*'operationLogs'/);
+  assert.match(appRenderSource, /shouldMount\('operationLogs'\)[\s\S]*?<OperationLogsPage[\s\S]*?title="生产跟进 \/ 操作记录"[\s\S]*?fixedPageKey="progressRefresh"/);
+  assert.doesNotMatch(progressSource, /showOperationLogs|setOperationLogsView|>操作记录<\/button>/);
   assert.match(operationLogSource, /<SelectField label="登录人"/);
   assert.match(operationLogSource, /if \(fixedPageKey\) query\.set\('pageKey', fixedPageKey\)/);
   assert.match(operationLogSource, /!fixedPageKey && \(options\.pages \|\| \[\]\)\.length > 0/);
@@ -462,7 +467,7 @@ test('生产跟进使用固定默认显示列并按用户持久保存', () => {
   );
   const exportSource = progressSource.slice(
     progressSource.indexOf('async function handleExport()'),
-    progressSource.indexOf('if (showDifferenceAllocation')
+    progressSource.indexOf('const progressTableColumns')
   );
 
   const defaultColumnsMatch = columnSource.match(/const PROGRESS_DEFAULT_COLUMNS = \[([\s\S]*?)\];/);
@@ -573,16 +578,13 @@ test('生产跟进保留金蝶内部工具栏并使用独立全屏容器', () =>
     appSource.indexOf('function DifferenceAllocationPage(')
   );
   assert.match(progressSource, /className="compact-button progress-toolbar-entry progress-columns-button"[\s\S]*?修改显示列/);
-  assert.match(progressSource, /className="progress-command"[\s\S]*?>差异分配<\/button>/);
-  assert.match(progressSource, /className="progress-command"[\s\S]*?>操作记录<\/button>/);
+  assert.doesNotMatch(progressSource, />差异分配<\/button>/);
+  assert.doesNotMatch(progressSource, />操作记录<\/button>/);
   assert.match(progressSource, /className="progress-command primary"[\s\S]*?>刷新<\/button>/);
   assert.match(progressSource, /className="progress-scheme-bar"[\s\S]*?>按新下单月份<\/button>[\s\S]*?>按原下单月份<\/button>[\s\S]*?>按供应商<\/button>/);
   assert.doesNotMatch(progressSource, />待人工调整<\/button>/);
   assert.match(progressSource, /<details className="progress-logic-note"/);
-  assert.match(progressSource, /function setDifferenceAllocationView\(open\)[\s\S]*?content\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\)[\s\S]*?window\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\)/);
-  assert.match(progressSource, /function setOperationLogsView\(open\)[\s\S]*?content\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\)[\s\S]*?window\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\)/);
-  assert.match(progressSource, /setDifferenceAllocationView\(true\)/);
-  assert.match(progressSource, /setDifferenceAllocationView\(false\)/);
+  assert.doesNotMatch(progressSource, /setDifferenceAllocationView|setOperationLogsView/);
   assert.match(appSource, /className=\{progressStandalone \? 'progress-standalone-shell' : 'app-shell'\}/);
   assert.match(styleSource, /\.progress-standalone-shell\s*\{[\s\S]*?min-height: 100vh/);
   assert.doesNotMatch(appSource, /className=\{`app-shell\$\{activeTab === 'progressRefresh'/);

@@ -324,6 +324,8 @@ function saveProductionOrderFollowup({
 }) {
   const key = normalize(trackingKey);
   const existing = get('SELECT * FROM production_order_followups WHERE tracking_key = ?', [key]) || {};
+  const followupPreviouslyThisWeek = normalize(existing.followed_role) === ROLE_USER
+    && isFollowedThisWeek(existing.followed_at);
   const followupMarkedBySubmission = normalize(user?.role) === ROLE_USER;
   const followedUserId = followupMarkedBySubmission ? normalize(user?.id) : normalize(existing.followed_user_id);
   const followedRole = followupMarkedBySubmission ? ROLE_USER : normalize(existing.followed_role);
@@ -352,6 +354,7 @@ function saveProductionOrderFollowup({
   );
   return {
     followupMarkedBySubmission,
+    followupPreviouslyThisWeek,
     ...productionFollowupPayload(key)
   };
 }
@@ -533,6 +536,7 @@ function progressSavePayload(saveRequest, values = {}, replayed = false) {
     orderNo: normalize(source.order_no || source.orderNo),
     savedAt: normalize(source.saved_at || source.savedAt),
     followupMarkedBySubmission: Boolean(values.followupMarkedBySubmission),
+    followupPreviouslyThisWeek: Boolean(values.followupPreviouslyThisWeek),
     followupStatus: normalize(values.followupStatus) || '未跟进',
     replayed
   };

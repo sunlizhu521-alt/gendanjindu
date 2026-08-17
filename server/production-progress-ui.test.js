@@ -587,12 +587,16 @@ test('生产跟进按采购订单保存跟单备注并筛选本周人工跟进�
   assert.match(editorSource, /\['remark', <input className="progress-remark-input" value=\{values\.remark\} readOnly title="原备注仅供查看，不能修改" \/>\]/);
   assert.match(editorSource, /trackingKey: row\.followupKey \|\| row\.rowKey \|\| row\.demandKey/);
   assert.match(editorSource, /提交成功：已标记为本周已跟进/);
+  assert.match(editorSource, /再次提交成功：本周跟进内容已更新/);
   assert.match(editorSource, /管理员提交不改变本周跟进状态/);
   assert.match(editorSource, /提交失败：/);
   assert.match(filterSource, /followupStatus: \['未跟进'\]/);
   assert.match(filterSource, /followupStatuses: \['未跟进', '本周已跟进'\]/);
   assert.match(filterSource, /matchesSelected\(filters\.followupStatus, row\.followupStatus \|\| '未跟进'\)/);
   assert.match(filterSource, /label="是否本周已跟进" allLabel="全部跟进状态"/);
+  assert.match(filterSource, /function singleFollowupStatusSelection\(values\)/);
+  assert.match(filterSource, /followupStatus: singleFollowupStatusSelection\(value\)/);
+  assert.match(filterSource, /selected\.length > 1 \? \[selected\.at\(-1\)\] : selected/);
 });
 
 test('生产跟进保存支持幂等重试且不再返回全量数据', () => {

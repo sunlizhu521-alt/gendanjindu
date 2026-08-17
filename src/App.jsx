@@ -3656,6 +3656,11 @@ function defaultProgressFilters() {
   return { keyword: '', supplier: [], purchaseOrg: [], businessUnit: [], productLine: [], series: [], purchaseOwner: [], productType: [], orderType: [], followupStatus: ['未跟进'] };
 }
 
+function singleFollowupStatusSelection(values) {
+  const selected = Array.isArray(values) ? values.filter(Boolean) : [];
+  return selected.length > 1 ? [selected.at(-1)] : selected;
+}
+
 function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
   const [filters, setFilters] = useSessionFilters(cacheKey, defaultProgressFilters());
   const selectedValues = (value) => Array.isArray(value) ? value : (normalize(value) ? [normalize(value)] : []);
@@ -3725,7 +3730,7 @@ function FilterBar({ filters, setFilters, options, onSearch, onClear, onSubmit }
     <div className="toolbar filters-row">
       <MultiSelectFilter label="成品/配件" allLabel="全部类型" value={filters.productType} options={options.productTypes} onChange={(value) => setFilters({ ...filters, productType: value })} />
       <MultiSelectFilter label="订单类型" allLabel="全部订单类型" value={filters.orderType} options={options.orderTypes} onChange={(value) => setFilters({ ...filters, orderType: value })} />
-      <MultiSelectFilter label="是否本周已跟进" allLabel="全部跟进状态" value={filters.followupStatus} options={options.followupStatuses} onChange={(value) => setFilters({ ...filters, followupStatus: value })} />
+      <MultiSelectFilter label="是否本周已跟进" allLabel="全部跟进状态" value={filters.followupStatus} options={options.followupStatuses} onChange={(value) => setFilters({ ...filters, followupStatus: singleFollowupStatusSelection(value) })} />
       <MultiSelectFilter label="采购组织" allLabel="全部采购组织" value={filters.purchaseOrg} options={options.purchaseOrgs} onChange={(value) => setFilters({ ...filters, purchaseOrg: value })} />
       <MultiSelectFilter label="供应商简称" allLabel="全部供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
       <MultiSelectFilter label="事业部" allLabel="全部事业部" value={filters.businessUnit} options={options.businessUnits} onChange={(value) => setFilters({ ...filters, businessUnit: value })} />
@@ -6092,7 +6097,9 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
         })
       });
       const successMessage = result.followupMarkedBySubmission
-        ? '提交成功：已标记为本周已跟进，默认列表不再显示该订单。'
+        ? result.followupPreviouslyThisWeek
+          ? '再次提交成功：本周跟进内容已更新，订单继续保留在“本周已跟进”列表。'
+          : '提交成功：已标记为本周已跟进，默认列表不再显示该订单。'
         : `提交成功：管理员提交不改变本周跟进状态；当前状态：${result.followupStatus || '未跟进'}。`;
       setMessage(result.replayed
         ? `提交成功：服务器已确认此前请求，未重复写入；当前状态：${result.followupStatus || '未跟进'}。`
@@ -6631,6 +6638,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
     const succeededKeys = [];
     const failures = [];
     let followedCount = 0;
+    let updatedFollowedCount = 0;
     let preservedCount = 0;
     for (const { row, payload } of submissions) {
       const requestId = clientRequestId('progress-bulk');
@@ -6649,7 +6657,10 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
             orderNo: row.orderNo || ''
           })
         });
-        if (result.followupMarkedBySubmission) followedCount += 1;
+        if (result.followupMarkedBySubmission) {
+          followedCount += 1;
+          if (result.followupPreviouslyThisWeek) updatedFollowedCount += 1;
+        }
         else preservedCount += 1;
         succeededKeys.push(row.rowKey || row.demandKey);
       } catch (error) {
@@ -6671,6 +6682,8 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
       setMessage(`批量提交成功 ${succeededKeys.length} 条；列表刷新失败：${reloadError}`);
     } else if (preservedCount && !followedCount) {
       setMessage(`批量提交成功 ${succeededKeys.length} 条；管理员提交不改变本周跟进状态。`);
+    } else if (updatedFollowedCount) {
+      setMessage(`批量提交成功 ${succeededKeys.length} 条；其中 ${updatedFollowedCount} 条本周已跟进订单已更新。`);
     } else {
       setMessage(`批量提交成功 ${succeededKeys.length} 条，已标记 ${followedCount} 条为本周已跟进。`);
     }

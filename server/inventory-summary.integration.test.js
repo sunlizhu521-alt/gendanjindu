@@ -3098,6 +3098,42 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(followedOrder?.followupUpdatedBy, '当前采购员');
     assert.equal(followedOrder?.fulfillmentRemark, '普通用户本周跟进');
 
+    const ordinaryResubmitRequestId = 'progress-ordinary-test-002';
+    const ordinaryResubmitResponse = await fetch(progressEndpoint, {
+      method: 'PATCH',
+      headers: {
+        Authorization: 'Bearer purchase-owner-token',
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': ordinaryResubmitRequestId
+      },
+      body: JSON.stringify({
+        ...progressIdentity,
+        requestId: ordinaryResubmitRequestId,
+        preparedNotStartedQty: 120,
+        inProductionQty: 480,
+        finishedQty: 410,
+        productionDeliveryDate: '2026.9.11',
+        unproducedEstimatedDeliveryDate: '2026年8月21日',
+        fulfillmentStatus: '否',
+        unfulfilledReason: '供应商延期',
+        reasonDetail: '原料延期后再次确认',
+        fulfillmentRemark: '普通用户本周再次跟进'
+      })
+    });
+    assert.equal(ordinaryResubmitResponse.status, 200);
+    const ordinaryResubmitPayload = await ordinaryResubmitResponse.json();
+    assert.equal(ordinaryResubmitPayload.followupMarkedBySubmission, true);
+    assert.equal(ordinaryResubmitPayload.followupPreviouslyThisWeek, true);
+    assert.equal(ordinaryResubmitPayload.followupStatus, '本周已跟进');
+    const resubmittedRowsResponse = await fetch(`http://127.0.0.1:${port}/api/progress/demands`, {
+      headers: { Authorization: 'Bearer admin-token' }
+    });
+    const resubmittedOrder = (await resubmittedRowsResponse.json()).rows.find((row) => row.followupKey === m1Demand.followupKey);
+    assert.equal(resubmittedOrder?.followupStatus, '本周已跟进');
+    assert.equal(resubmittedOrder?.fulfillmentRemark, '普通用户本周再次跟进');
+    assert.equal(resubmittedOrder?.productionDeliveryDate, '2026-09-11');
+    assert.equal(resubmittedOrder?.unproducedEstimatedDeliveryDate, '2026-08-21');
+
     const adminPreserveRequestId = 'progress-admin-preserve-001';
     const adminPreserveResponse = await fetch(progressEndpoint, {
       method: 'PATCH',
@@ -3191,6 +3227,36 @@ test('inventory summary and domestic board use complete source models and enforc
     const manualOrdinaryPayload = await manualOrdinaryResponse.json();
     assert.equal(manualOrdinaryPayload.followupMarkedBySubmission, true);
     assert.equal(manualOrdinaryPayload.followupStatus, '本周已跟进');
+
+    const manualOrdinaryResubmitRequestId = 'manual-progress-ordinary-002';
+    const manualOrdinaryResubmitResponse = await fetch(
+      `http://127.0.0.1:${port}/api/progress/${encodeURIComponent('manual:manual-unmatched-row')}`,
+      {
+      method: 'PATCH',
+      headers: {
+        Authorization: 'Bearer manual-owner-token',
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': manualOrdinaryResubmitRequestId
+      },
+      body: JSON.stringify({
+        requestId: manualOrdinaryResubmitRequestId,
+        trackingKey: 'manual:manual-unmatched-row:MANUAL-001',
+        orderNo: 'MANUAL-001',
+        unpreparedQty: 5,
+        preparedNotStartedQty: 0,
+        inProductionQty: 0,
+        finishedQty: 0,
+        productionDeliveryDate: '10/1/26',
+        unproducedEstimatedDeliveryDate: '2026/10/15 00:00:00',
+        fulfillmentStatus: '是',
+        fulfillmentRemark: '手工订单普通用户再次跟进'
+      })
+    });
+    assert.equal(manualOrdinaryResubmitResponse.status, 200);
+    const manualOrdinaryResubmitPayload = await manualOrdinaryResubmitResponse.json();
+    assert.equal(manualOrdinaryResubmitPayload.followupMarkedBySubmission, true);
+    assert.equal(manualOrdinaryResubmitPayload.followupPreviouslyThisWeek, true);
+    assert.equal(manualOrdinaryResubmitPayload.followupStatus, '本周已跟进');
 
     const sessionApplyResponse = await fetch(`http://127.0.0.1:${port}/api/difference-allocations/session-consistency/apply`, {
       method: 'POST',

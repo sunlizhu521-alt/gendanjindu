@@ -6423,7 +6423,7 @@ app.post('/api/progress/manual-import/unmatched/delete-all', requireAuth, requir
     if (!batch) return res.status(404).json({ error: '当前没有已应用的手工登记表' });
     const currentCount = numberValue(get(
       `SELECT COUNT(*) AS count FROM manual_progress_rows
-       WHERE batch_id = ? AND active = 1 AND stale = 0 AND deleted_at = '' AND data_status = '手工待匹配'`,
+       WHERE batch_id = ? AND deleted_at = '' AND data_status = '手工待匹配'`,
       [batch.id]
     )?.count);
     const expectedCount = Math.max(0, Math.floor(numberValue(req.body.expectedCount)));
@@ -6441,7 +6441,7 @@ app.post('/api/progress/manual-import/unmatched/delete-all', requireAuth, requir
         `UPDATE manual_progress_rows
          SET deleted_by = ?, deleted_at = ?, delete_reason = ?, data_status = '已删除',
              validation_status = 'deleted', demand_key = '', updated_by = ?, updated_at = ?
-         WHERE batch_id = ? AND active = 1 AND stale = 0 AND deleted_at = '' AND data_status = '手工待匹配'`,
+         WHERE batch_id = ? AND deleted_at = '' AND data_status = '手工待匹配'`,
         [req.user.name, now, reason, req.user.name, now, batch.id]
       );
       run(
@@ -6456,7 +6456,7 @@ app.post('/api/progress/manual-import/unmatched/delete-all', requireAuth, requir
     });
     const remainingCount = numberValue(get(
       `SELECT COUNT(*) AS count FROM manual_progress_rows
-       WHERE batch_id = ? AND active = 1 AND stale = 0 AND deleted_at = '' AND data_status = '手工待匹配'`,
+       WHERE batch_id = ? AND deleted_at = '' AND data_status = '手工待匹配'`,
       [batch.id]
     )?.count);
     const summary = refreshManualProgressBatchSummary(batch.id);

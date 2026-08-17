@@ -7700,6 +7700,11 @@ th {
   padding-left: 60px;
 }
 
+.kingdee-progress-page .progress-supplier-detail-header > th:first-child,
+.kingdee-progress-page .progress-supplier-detail-row > td:first-child {
+  padding-left: 86px !important;
+}
+
 .kingdee-progress-page .progress-supplier-parent-toggle b,
 .kingdee-progress-page .progress-supplier-month-toggle b {
   display: grid;

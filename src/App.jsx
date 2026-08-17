@@ -5877,7 +5877,7 @@ function ManualProgressImportPanel({ token, reloadDemands, setMessage }) {
   );
 }
 
-function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKeys, stickyOffsets, selected = false, onSelect, onDraftChange }) {
+function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKeys, stickyOffsets, supplierNested = false, selected = false, onSelect, onDraftChange }) {
   const displayQty = (value) => (numberValue(value) ? String(numberValue(value)) : '');
   const [values, setValues] = useState({
     unpreparedQty: displayQty(row.unpreparedQty),
@@ -6099,7 +6099,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
 
   return (
     <>
-      <tr className={`progress-order-detail-row${row.progressAdjustmentRequired || invalidQty || row.validationStatus === 'error' ? ' progress-row-adjustment' : ''}`}>
+      <tr className={`progress-order-detail-row${supplierNested ? ' progress-supplier-detail-row' : ''}${row.progressAdjustmentRequired || invalidQty || row.validationStatus === 'error' ? ' progress-row-adjustment' : ''}`}>
         <td {...progressStickyCellProps('__select', stickyOffsets)}><input type="checkbox" checked={selected} disabled={!row.canEdit} onChange={(event) => onSelect?.(row.demandKey, event.target.checked)} /></td>
         {cells.filter(([key]) => visible.has(key)).map(([key, cell]) => <td key={key} {...progressStickyCellProps(key, stickyOffsets)}>{cell}</td>)}
       </tr>
@@ -6732,7 +6732,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
           </td>
         </tr>
         {expanded && (
-          <tr className="progress-order-detail-header">
+          <tr className={`progress-order-detail-header${supplierNested ? ' progress-supplier-detail-header' : ''}`}>
             {progressTableColumns.map(({ key, label }) => (
               <th key={key} {...progressStickyCellProps(key, stickyOffsets)}>{label}</th>
             ))}
@@ -6747,6 +6747,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
             setMessage={setMessage}
             visibleColumnKeys={visibleColumnKeys}
             stickyOffsets={stickyOffsets}
+            supplierNested={supplierNested}
             selected={selectedKeys.includes(row.rowKey || row.demandKey)}
             onSelect={toggleProgressRow}
             onDraftChange={(demandKey, payload) => setDrafts((current) => ({ ...current, [demandKey]: payload }))}

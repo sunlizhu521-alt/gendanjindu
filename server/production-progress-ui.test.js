@@ -533,7 +533,7 @@ test('生产跟进按采购订单保存跟单备注并筛选本周人工跟进�
   assert.match(filterSource, /label="是否本周已跟进" allLabel="全部跟进状态"/);
 });
 
-test('生产跟进按供应商展示有缩进的三级订单层级', () => {
+test('生产跟进按供应商展示有缩进的四级订单层级', () => {
   const progressSource = appSource.slice(
     appSource.indexOf('function ProgressPage('),
     appSource.indexOf('function DifferenceAllocationPage(')
@@ -542,6 +542,8 @@ test('生产跟进按供应商展示有缩进的三级订单层级', () => {
   const nestedEnd = progressSource.indexOf(') : (', nestedStart);
   assert.match(progressSource, /function renderPurchaseOrderGroup\(group, showSupplier = true, supplierNested = false\)/);
   assert.match(progressSource, /renderPurchaseOrderGroup\(orderGroup, false, true\)/);
+  assert.match(progressSource, /className=\{`progress-order-detail-header\$\{supplierNested \? ' progress-supplier-detail-header' : ''\}`\}/);
+  assert.match(progressSource, /supplierNested=\{supplierNested\}/);
   assert.match(progressSource, /className="progress-supplier-parent-toggle"/);
   assert.match(progressSource, /className="progress-supplier-month-toggle"/);
   assert.ok(nestedStart >= 0 && nestedEnd > nestedStart);
@@ -550,6 +552,7 @@ test('生产跟进按供应商展示有缩进的三级订单层级', () => {
   assert.doesNotMatch(nestedSource, /订单状态：/);
   assert.match(styleSource, /\.progress-supplier-month-toggle\s*\{\s*padding-left: 34px;/);
   assert.match(styleSource, /\.progress-order-toggle\.progress-supplier-order-toggle\s*\{\s*padding-left: 60px;/);
+  assert.match(styleSource, /\.progress-supplier-detail-header > th:first-child,[\s\S]*?\.progress-supplier-detail-row > td:first-child\s*\{\s*padding-left: 86px !important;/);
 });
 
 test('生产跟进展开明细列按内容自适应且不换行', () => {

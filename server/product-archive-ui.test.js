@@ -53,3 +53,10 @@ test('产品档案包含研发项目页签并优先读取产品项目文件槽�
   assert.match(pageSource, /weeklyMeetingTitle/);
   assert.match(pageSource, /weeklyMeetingNote/);
 });
+
+test('研发项目看板按销售产品线分类并按指定顺序提供多选筛选和明细列', () => {
+  assert.match(pageSource, /销售产品线分类/);
+  assert.match(pageSource, /label="状态"[\s\S]*label="当前阶段"[\s\S]*label="责任部门"[\s\S]*label="销售产品线"[\s\S]*label="项目负责人"[\s\S]*label="创新类型"[\s\S]*product-archive-search/);
+  assert.match(pageSource, /<th>状态<\/th><th>当前阶段<\/th><th>责任部门<\/th><th>销售产品线<\/th><th>项目负责人<\/th><th>创新类型<\/th><th>优先级<\/th><th>项目名称<\/th><th>技术对接人<\/th><th>供应链对接人<\/th><th>生产商（已重新盘点）<\/th><th>项目类型<\/th><th>1-需求立项<\/th><th>\{latestMeetingTitle\}<\/th><th>在售产品关联<\/th><th>修改时间<\/th>/);
+  assert.match(pageSource, /dateText\(row\.sourceModifiedAt\)/);
+});

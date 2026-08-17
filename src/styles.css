@@ -3983,10 +3983,15 @@ h3 {
 
 .product-archive-filters {
   display: grid;
-  grid-template-columns: repeat(5, minmax(130px, 1fr)) minmax(220px, 1.5fr) auto;
+  grid-template-columns: repeat(6, minmax(150px, 1fr)) minmax(220px, 1.5fr) auto;
   gap: 10px;
   align-items: end;
   margin-bottom: 16px;
+}
+
+.product-archive-filters .multi-filter {
+  width: 100%;
+  min-width: 0;
 }
 
 .product-archive-search input {

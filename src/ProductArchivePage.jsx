@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { PRODUCT_ARCHIVE_PAGE_SIZE, filterProductArchiveRows, flattenProductArchive, productArchiveFilterOptions, productArchiveMetrics } from './product-archive.js';
-import { EMPTY_PROJECT_FILTERS, PRODUCT_PROJECT_PAGE_SIZE, filterProductProjectRows, mappingSuggestions, productProjectFilterOptions, summarizeProductProjectRows } from './product-projects.js';
+import { PRODUCT_PROJECT_PAGE_SIZE, createEmptyProjectFilters, filterProductProjectRows, mappingSuggestions, productProjectFilterOptions, salesProductLine, summarizeProductProjectRows } from './product-projects.js';
 
 const API = import.meta.env.DEV ? 'http://localhost:4003' : '';
 const EMPTY_FILTERS = Object.freeze({ businessUnit: '', productLine: '', productSeries: '', productLifecycle: '', productPositioning: '', keyword: '' });
@@ -33,6 +34,66 @@ function priceText(value) { const number = Number(value); return value === '' ||
 
 function FilterSelect({ label, value, options, onChange }) {
   return <label className="filter-control"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}><option value="">全部</option>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>;
+}
+
+function MultiSelectFilter({ label, allLabel, value = [], options = [], onChange }) {
+  const [open, setOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState(null);
+  const rootRef = useRef(null);
+  const buttonRef = useRef(null);
+  const menuRef = useRef(null);
+  const availableOptions = useMemo(() => [...new Set(options.filter(Boolean))], [options]);
+  const selected = (Array.isArray(value) ? value : []).filter((item) => availableOptions.includes(item));
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (rootRef.current && !rootRef.current.contains(event.target) && !menuRef.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !buttonRef.current) {
+      setMenuPosition(null);
+      return undefined;
+    }
+    const updateMenuPosition = () => {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const width = Math.max(250, rect.width);
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+      setMenuPosition({ left, top: rect.bottom + 4, width });
+    };
+    updateMenuPosition();
+    window.addEventListener('resize', updateMenuPosition);
+    window.addEventListener('scroll', updateMenuPosition, true);
+    return () => {
+      window.removeEventListener('resize', updateMenuPosition);
+      window.removeEventListener('scroll', updateMenuPosition, true);
+    };
+  }, [open]);
+
+  const buttonLabel = selected.length === 0
+    ? allLabel
+    : selected.length <= 2
+      ? selected.join('、')
+      : `已选${selected.length}项`;
+  const toggle = (option) => onChange(selected.includes(option)
+    ? selected.filter((item) => item !== option)
+    : [...selected, option]);
+
+  return <div className="multi-filter" ref={rootRef}>
+    <span className="multi-filter-label">{label}</span>
+    <button ref={buttonRef} type="button" className="multi-filter-button" aria-expanded={open} onClick={() => setOpen((current) => !current)}>
+      <span>{buttonLabel}</span><b aria-hidden="true">⌄</b>
+    </button>
+    {open && menuPosition && createPortal(<div ref={menuRef} className="multi-filter-menu" style={{ position: 'fixed', zIndex: 10000, ...menuPosition }}>
+      <label className="multi-filter-option"><input type="checkbox" checked={selected.length === 0} onChange={() => onChange([])} /><span>{allLabel}</span></label>
+      {availableOptions.map((option) => <label key={option} className="multi-filter-option"><input type="checkbox" checked={selected.includes(option)} onChange={() => toggle(option)} /><span>{option}</span></label>)}
+    </div>, document.body)}
+  </div>;
 }
 function Metric({ label, value, tone = '' }) { return <article className={`metric-card ${tone}`}><span>{label}</span><strong>{Number(value || 0).toLocaleString('zh-CN')}</strong></article>; }
 function Pagination({ page, totalPages, pageSize, onChange }) { return <nav className="table-pagination"><button type="button" className="ghost compact-button" disabled={page === 1} onClick={() => onChange(1)}>首页</button><button type="button" className="ghost compact-button" disabled={page === 1} onClick={() => onChange(page - 1)}>上一页</button><span className="section-count">第 {page} / {totalPages} 页，每页 {pageSize} 条</span><button type="button" className="ghost compact-button" disabled={page === totalPages} onClick={() => onChange(page + 1)}>下一页</button><button type="button" className="ghost compact-button" disabled={page === totalPages} onClick={() => onChange(totalPages)}>末页</button></nav>; }
@@ -79,7 +140,7 @@ function AdminSettings({ token, source, onSynced }) {
 }
 
 function ProjectsTab({ payload, focusProductId, onOpenProduct }) {
-  const [filters, setFilters] = useState(EMPTY_PROJECT_FILTERS);
+  const [filters, setFilters] = useState(createEmptyProjectFilters);
   const [page, setPage] = useState(1);
   const options = useMemo(() => productProjectFilterOptions(payload.rows), [payload.rows]);
   const filteredRows = useMemo(() => filterProductProjectRows(focusProductId ? payload.rows.filter((row) => row.linkedProductId === focusProductId) : payload.rows, filters), [payload.rows, filters, focusProductId]);
@@ -108,30 +169,30 @@ function ProjectsTab({ payload, focusProductId, onOpenProduct }) {
       <Metric label="研发项目" value={metrics.totalProjects} />
       <Metric label="涉及责任部门" value={metrics.businessUnitCount} />
       <Metric label="项目阶段" value={metrics.stageCount} />
-      <Metric label="已填写需求立项日期" value={metrics.launchMonths.reduce((sum, row) => sum + row.value, 0)} />
+      <Metric label="销售产品线" value={metrics.salesProductLineCount} />
     </section>
     <section className="product-project-charts">
-      <MiniBars title="责任部门项目分布" rows={metrics.businessUnits} />
+      <MiniBars title="责任部门项目分布" rows={metrics.responsibilityDepartments} />
       <MiniBars title="项目阶段分布" rows={metrics.stages} />
-      <MiniBars title="需求立项月份" rows={metrics.launchMonths} />
+      <MiniBars title="销售产品线分类" rows={metrics.salesProductLines} />
     </section>
     <section className="panel product-archive-panel">
       {focusProductId && <p className="message">正在查看所选在售产品关联的研发项目，点击上方“研发项目看板”可清除。</p>}
       <div className="product-archive-filters">
-        <FilterSelect label="责任部门" value={filters.businessUnit} options={options.businessUnits} onChange={(v) => change('businessUnit', v)} />
-        <FilterSelect label="当前阶段" value={filters.projectStage} options={options.stages} onChange={(v) => change('projectStage', v)} />
-        <FilterSelect label="状态" value={filters.projectStatus} options={options.statuses} onChange={(v) => change('projectStatus', v)} />
-        <FilterSelect label="创新类型" value={filters.productPositioning} options={options.positions} onChange={(v) => change('productPositioning', v)} />
-        <FilterSelect label="项目负责人" value={filters.owner} options={options.owners} onChange={(v) => change('owner', v)} />
-        <FilterSelect label="立项月份" value={filters.launchMonth} options={options.launchMonths} onChange={(v) => change('launchMonth', v)} />
+        <MultiSelectFilter label="状态" allLabel="全部状态" value={filters.projectStatus} options={options.statuses} onChange={(v) => change('projectStatus', v)} />
+        <MultiSelectFilter label="当前阶段" allLabel="全部阶段" value={filters.projectStage} options={options.stages} onChange={(v) => change('projectStage', v)} />
+        <MultiSelectFilter label="责任部门" allLabel="全部责任部门" value={filters.responsibilityDepartment} options={options.responsibilityDepartments} onChange={(v) => change('responsibilityDepartment', v)} />
+        <MultiSelectFilter label="销售产品线" allLabel="全部销售产品线" value={filters.salesProductLine} options={options.salesProductLines} onChange={(v) => change('salesProductLine', v)} />
+        <MultiSelectFilter label="项目负责人" allLabel="全部项目负责人" value={filters.owner} options={options.owners} onChange={(v) => change('owner', v)} />
+        <MultiSelectFilter label="创新类型" allLabel="全部创新类型" value={filters.innovationType} options={options.innovationTypes} onChange={(v) => change('innovationType', v)} />
         <label className="filter-control product-archive-search"><span>搜索</span><input value={filters.keyword} placeholder="项目、部门、负责人、对接人、生产商、周会纪要" onChange={(event) => change('keyword', event.target.value)} /></label>
-        <button type="button" className="ghost compact-button" onClick={() => { setFilters(EMPTY_PROJECT_FILTERS); setPage(1); }}>清空筛选</button>
+        <button type="button" className="ghost compact-button" onClick={() => { setFilters(createEmptyProjectFilters()); setPage(1); }}>清空筛选</button>
       </div>
       <div className="section-heading-row"><h3>研发项目明细</h3><span className="section-count">当前显示 {filteredRows.length.toLocaleString('zh-CN')} 条</span></div>
       <div className="table-wrap product-archive-table-wrap">
         <table>
-          <thead><tr><th>项目名称</th><th>优先级</th><th>创新类型</th><th>当前阶段</th><th>责任部门</th><th>项目负责人</th><th>技术对接人</th><th>供应链对接人</th><th>生产商（已重新盘点）</th><th>项目类型</th><th>产品线</th><th>1-需求立项</th><th>{latestMeetingTitle}</th><th>在售产品关联</th><th>修改时间</th></tr></thead>
-          <tbody>{!rows.length ? <tr><td className="empty" colSpan="15">暂无研发项目数据</td></tr> : rows.map((row) => <tr key={row.sourceRecordId}><td><strong>{row.projectName}</strong></td><td>{row.priority || '-'}</td><td>{row.innovationType || row.productPositioning || '-'}</td><td>{row.projectStage || '-'}</td><td>{row.responsibilityDepartment || row.businessUnit || '-'}</td><td>{row.owner || '-'}</td><td>{row.technicalContact || '-'}</td><td>{row.supplyChainContact || '-'}</td><td>{row.manufacturer || '-'}</td><td>{row.projectType || '-'}</td><td>{row.productLine || '-'}</td><td>{dateText(row.demandInitiationDate)}</td><td>{row.weeklyMeetingNote || '-'}</td><td>{row.linkedProductId ? <button type="button" className="link-button" onClick={() => onOpenProduct(row.linkedProductId)}>已关联，查看</button> : <><span className={row.linkStatus === '关联冲突' ? 'status-pending' : ''}>{row.linkStatus}</span><small>{row.linkMessage}</small></>}</td><td>{dateTimeText(row.sourceModifiedAt)}</td></tr>)}</tbody>
+          <thead><tr><th>状态</th><th>当前阶段</th><th>责任部门</th><th>销售产品线</th><th>项目负责人</th><th>创新类型</th><th>优先级</th><th>项目名称</th><th>技术对接人</th><th>供应链对接人</th><th>生产商（已重新盘点）</th><th>项目类型</th><th>1-需求立项</th><th>{latestMeetingTitle}</th><th>在售产品关联</th><th>修改时间</th></tr></thead>
+          <tbody>{!rows.length ? <tr><td className="empty" colSpan="16">暂无研发项目数据</td></tr> : rows.map((row) => <tr key={row.sourceRecordId}><td>{row.projectStatus || '-'}</td><td>{row.projectStage || '-'}</td><td>{row.responsibilityDepartment || row.businessUnit || '-'}</td><td>{salesProductLine(row.productLine)}</td><td>{row.owner || '-'}</td><td>{row.innovationType || row.productPositioning || '-'}</td><td>{row.priority || '-'}</td><td><strong>{row.projectName}</strong></td><td>{row.technicalContact || '-'}</td><td>{row.supplyChainContact || '-'}</td><td>{row.manufacturer || '-'}</td><td>{row.projectType || '-'}</td><td>{dateText(row.demandInitiationDate)}</td><td>{row.weeklyMeetingNote || '-'}</td><td>{row.linkedProductId ? <button type="button" className="link-button" onClick={() => onOpenProduct(row.linkedProductId)}>已关联，查看</button> : <><span className={row.linkStatus === '关联冲突' ? 'status-pending' : ''}>{row.linkStatus}</span><small>{row.linkMessage}</small></>}</td><td>{dateText(row.sourceModifiedAt)}</td></tr>)}</tbody>
         </table>
       </div>
       <Pagination page={currentPage} totalPages={totalPages} pageSize={PRODUCT_PROJECT_PAGE_SIZE} onChange={setPage} />

@@ -1,8 +1,26 @@
 export const PRODUCT_PROJECT_PAGE_SIZE = 50;
 
 export const EMPTY_PROJECT_FILTERS = Object.freeze({
-  businessUnit: '', projectStage: '', projectStatus: '', productPositioning: '', owner: '', launchMonth: '', keyword: ''
+  projectStatus: [],
+  projectStage: [],
+  responsibilityDepartment: [],
+  salesProductLine: [],
+  owner: [],
+  innovationType: [],
+  keyword: ''
 });
+
+export function createEmptyProjectFilters() {
+  return {
+    projectStatus: [],
+    projectStage: [],
+    responsibilityDepartment: [],
+    salesProductLine: [],
+    owner: [],
+    innovationType: [],
+    keyword: ''
+  };
+}
 
 function text(value) {
   return String(value ?? '').trim();
@@ -12,30 +30,47 @@ function unique(values) {
   return [...new Set(values.map(text).filter(Boolean))].sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
 }
 
+function selectedValues(value) {
+  if (Array.isArray(value)) return value.map(text).filter(Boolean);
+  return text(value) ? [text(value)] : [];
+}
+
+function matchesSelected(selected, value) {
+  const values = selectedValues(selected);
+  return values.length === 0 || values.includes(text(value));
+}
+
+export function salesProductLine(value) {
+  const source = text(value);
+  if (!source || source === '-') return '-';
+  return text(source.split(/[（(]/, 1)[0]) || '-';
+}
+
 export function productProjectFilterOptions(rows = []) {
   return {
-    businessUnits: unique(rows.map((row) => row.businessUnit)),
-    stages: unique(rows.map((row) => row.projectStage)),
     statuses: unique(rows.map((row) => row.projectStatus)),
-    positions: unique(rows.map((row) => row.productPositioning)),
+    stages: unique(rows.map((row) => row.projectStage)),
+    responsibilityDepartments: unique(rows.map((row) => row.responsibilityDepartment || row.businessUnit)),
+    salesProductLines: unique(rows.map((row) => salesProductLine(row.productLine))),
     owners: unique(rows.map((row) => row.owner)),
-    launchMonths: unique(rows.map((row) => text(row.demandInitiationDate).slice(0, 7)))
+    innovationTypes: unique(rows.map((row) => row.innovationType || row.productPositioning))
   };
 }
 
 export function filterProductProjectRows(rows = [], filters = EMPTY_PROJECT_FILTERS) {
   const keyword = text(filters.keyword).toLocaleLowerCase('zh-CN');
   return rows.filter((row) => (
-    (!filters.businessUnit || row.businessUnit === filters.businessUnit)
-    && (!filters.projectStage || row.projectStage === filters.projectStage)
-    && (!filters.projectStatus || row.projectStatus === filters.projectStatus)
-    && (!filters.productPositioning || row.productPositioning === filters.productPositioning)
-    && (!filters.owner || row.owner === filters.owner)
-    && (!filters.launchMonth || text(row.demandInitiationDate).startsWith(filters.launchMonth))
+    matchesSelected(filters.projectStatus, row.projectStatus)
+    && matchesSelected(filters.projectStage, row.projectStage)
+    && matchesSelected(filters.responsibilityDepartment, row.responsibilityDepartment || row.businessUnit)
+    && matchesSelected(filters.salesProductLine, salesProductLine(row.productLine))
+    && matchesSelected(filters.owner, row.owner)
+    && matchesSelected(filters.innovationType, row.innovationType || row.productPositioning)
     && (!keyword || [row.projectName, row.businessUnit, row.projectStage, row.projectStatus, row.owner, row.productPositioning,
       row.materialCode, row.sku, row.remark, row.priority, row.innovationType, row.responsibilityDepartment,
       row.technicalContact, row.supplyChainContact, row.manufacturer, row.projectType, row.productLine,
-      row.weeklyMeetingTitle, row.weeklyMeetingNote].some((value) => text(value).toLocaleLowerCase('zh-CN').includes(keyword)))
+      salesProductLine(row.productLine), row.weeklyMeetingTitle, row.weeklyMeetingNote]
+      .some((value) => text(value).toLocaleLowerCase('zh-CN').includes(keyword)))
   ));
 }
 
@@ -72,21 +107,23 @@ export function mappingSuggestions(fields = []) {
 }
 
 export function summarizeProductProjectRows(rows = [], now = new Date()) {
-  const grouped = (key) => [...rows.reduce((map, row) => {
-    const label = text(row[key]) || '未填写';
+  const grouped = (valueForRow) => [...rows.reduce((map, row) => {
+    const label = text(valueForRow(row)) || '未填写';
     map.set(label, (map.get(label) || 0) + 1);
     return map;
   }, new Map())].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, 'zh-Hans-CN'));
   const start = new Date(now); start.setHours(0, 0, 0, 0);
   const end = new Date(start); end.setDate(end.getDate() + 90);
-  const months = new Map();
-  rows.forEach((row) => { const month = text(row.demandInitiationDate).slice(0, 7); if (month) months.set(month, (months.get(month) || 0) + 1); });
+  const salesProductLines = grouped((row) => salesProductLine(row.productLine));
   return {
     totalProjects: rows.length,
-    businessUnitCount: new Set(rows.map((row) => text(row.businessUnit)).filter(Boolean)).size,
+    businessUnitCount: new Set(rows.map((row) => text(row.responsibilityDepartment || row.businessUnit)).filter(Boolean)).size,
     stageCount: new Set(rows.map((row) => text(row.projectStage)).filter(Boolean)).size,
+    salesProductLineCount: salesProductLines.length,
     launchWithin90Days: rows.filter((row) => { const time = Date.parse(row.demandInitiationDate || ''); return Number.isFinite(time) && time >= start.getTime() && time < end.getTime(); }).length,
-    businessUnits: grouped('businessUnit'), stages: grouped('projectStage'),
-    launchMonths: [...months].sort(([a], [b]) => a.localeCompare(b)).map(([label, value]) => ({ label, value }))
+    responsibilityDepartments: grouped((row) => row.responsibilityDepartment || row.businessUnit),
+    businessUnits: grouped((row) => row.responsibilityDepartment || row.businessUnit),
+    stages: grouped((row) => row.projectStage),
+    salesProductLines
   };
 }

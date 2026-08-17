@@ -15,6 +15,12 @@ function text(value) {
   return String(value).trim();
 }
 
+function salesProductLine(value) {
+  const source = text(value);
+  if (!source || source === '-') return '-';
+  return text(source.split(/[（(]/, 1)[0]) || '-';
+}
+
 export function normalizeProjectIdentifier(value) {
   return text(value)
     .replace(/\u3000/g, ' ')
@@ -176,27 +182,24 @@ export function buildProjectMetrics(rows = [], now = new Date()) {
   start.setHours(0, 0, 0, 0);
   const end = new Date(start);
   end.setDate(end.getDate() + 90);
-  const counts = (key) => [...rows.reduce((map, row) => {
-    const label = text(row[key]) || '未填写';
+  const counts = (valueForRow) => [...rows.reduce((map, row) => {
+    const label = text(valueForRow(row)) || '未填写';
     map.set(label, (map.get(label) || 0) + 1);
     return map;
   }, new Map())].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, 'zh-Hans-CN'));
-  const launchMonthMap = new Map();
-  rows.forEach((row) => {
-    const month = text(row.demandInitiationDate).slice(0, 7);
-    if (month) launchMonthMap.set(month, (launchMonthMap.get(month) || 0) + 1);
-  });
+  const salesProductLines = counts((row) => salesProductLine(row.productLine));
   return {
     totalProjects: rows.length,
-    businessUnitCount: new Set(rows.map((row) => text(row.businessUnit)).filter(Boolean)).size,
+    businessUnitCount: new Set(rows.map((row) => text(row.responsibilityDepartment || row.businessUnit)).filter(Boolean)).size,
     stageCount: new Set(rows.map((row) => text(row.projectStage)).filter(Boolean)).size,
+    salesProductLineCount: salesProductLines.length,
     launchWithin90Days: rows.filter((row) => {
       const time = Date.parse(row.demandInitiationDate || '');
       return Number.isFinite(time) && time >= start.getTime() && time < end.getTime();
     }).length,
-    businessUnits: counts('businessUnit'),
-    stages: counts('projectStage'),
-    launchMonths: [...launchMonthMap].sort(([left], [right]) => left.localeCompare(right)).map(([label, value]) => ({ label, value }))
+    businessUnits: counts((row) => row.responsibilityDepartment || row.businessUnit),
+    stages: counts((row) => row.projectStage),
+    salesProductLines
   };
 }
 

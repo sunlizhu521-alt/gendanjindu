@@ -70,11 +70,12 @@ test('linkProjectsToProducts prioritizes material and detects conflicts', () => 
 
 test('buildProjectMetrics counts 90-day launches', () => {
   const metrics = buildProjectMetrics([
-    { businessUnit: '国内', projectStage: '立项', demandInitiationDate: '2026-08-20' },
-    { businessUnit: '海外', projectStage: '测试', demandInitiationDate: '2027-01-20' }
+    { businessUnit: '国内', responsibilityDepartment: '产品一部', projectStage: '立项', productLine: '护理床（国内）', demandInitiationDate: '2026-08-20' },
+    { businessUnit: '海外', responsibilityDepartment: '产品二部', projectStage: '测试', productLine: '-', demandInitiationDate: '2027-01-20' }
   ], new Date('2026-08-14T00:00:00+08:00'));
   assert.equal(metrics.totalProjects, 2);
   assert.equal(metrics.businessUnitCount, 2);
+  assert.deepEqual(metrics.salesProductLines, [{ label: '-', value: 1 }, { label: '护理床', value: 1 }]);
   assert.equal(metrics.launchWithin90Days, 1);
 });
 

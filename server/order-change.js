@@ -12,8 +12,10 @@ const INTERNAL_TRANSACTION_SUPPLIERS = [
   'MATESIDE GLOBAL US INC.',
   '杭州奇邦医疗器械有限公司'
 ];
-const MATESIDE_SUPPLIER = '浙江迈德斯特医疗器械科技有限公司';
-const INTERNAL_TRANSACTION_EXCLUDED_SHORT_NAME = '电控生产部';
+const INTERNAL_TRANSACTION_EXCLUSIONS = [
+  ['浙江迈德斯特医疗器械科技有限公司', '电控生产部'],
+  ['河北瑞朗德医疗器械科技集团有限公司', '瑞朗德']
+];
 
 function text(value) {
   return String(value ?? '').trim();
@@ -24,7 +26,9 @@ function keyPart(value) {
 }
 
 const INTERNAL_TRANSACTION_SUPPLIER_KEYS = new Set(INTERNAL_TRANSACTION_SUPPLIERS.map(keyPart));
-const MATESIDE_SUPPLIER_KEY = keyPart(MATESIDE_SUPPLIER);
+const INTERNAL_TRANSACTION_EXCLUSION_MAP = new Map(INTERNAL_TRANSACTION_EXCLUSIONS.map(([supplier, shortName]) => (
+  [keyPart(supplier), keyPart(shortName)]
+)));
 
 function supplierShortNames(value) {
   return text(value).split(/[&+、,，;；]/).map(keyPart).filter(Boolean);
@@ -32,8 +36,8 @@ function supplierShortNames(value) {
 
 export function isInternalTransactionSupplier(value, supplierShortName = '') {
   const supplierKey = keyPart(value);
-  if (supplierKey === MATESIDE_SUPPLIER_KEY
-    && supplierShortNames(supplierShortName).includes(keyPart(INTERNAL_TRANSACTION_EXCLUDED_SHORT_NAME))) {
+  const excludedShortName = INTERNAL_TRANSACTION_EXCLUSION_MAP.get(supplierKey);
+  if (excludedShortName && supplierShortNames(supplierShortName).includes(excludedShortName)) {
     return false;
   }
   return INTERNAL_TRANSACTION_SUPPLIER_KEYS.has(supplierKey);

@@ -54,6 +54,16 @@ test('迈德斯特匹配采购分工简称电控生产部时不属于内部交�
   assert.equal(orderTypeForSupplier('杭州国源养老科技有限公司', '正常订单', '电控生产部'), '内部交易订单');
 });
 
+test('瑞朗德匹配采购分工简称瑞朗德时不属于内部交易', () => {
+  const supplier = '河北瑞朗德医疗器械科技集团有限公司';
+  assert.equal(isInternalTransactionSupplier(supplier, '瑞朗德'), false);
+  assert.equal(isInternalTransactionSupplier(supplier, '瑞朗德、其他简称'), false);
+  assert.equal(orderTypeForSupplier(supplier, '正常订单', '瑞朗德'), '正常订单');
+  assert.equal(orderTypeForSupplier(supplier, '订单变更', '瑞朗德'), '订单变更');
+  assert.equal(orderTypeForSupplier(supplier, '正常订单', '其他简称'), '内部交易订单');
+  assert.equal(orderTypeForSupplier('杭州奇邦医疗器械有限公司', '正常订单', '瑞朗德'), '内部交易订单');
+});
+
 test('迈德斯特电控生产部订单保留变更类型', () => {
   const supplier = '浙江迈德斯特医疗器械科技有限公司';
   const originalRows = [orderRow({ order_no: 'CGDD010000', supplier, quantity: 100, purchase_date: '2026-03-12', manual_close: '是' })];

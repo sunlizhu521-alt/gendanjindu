@@ -41,6 +41,7 @@ test('生产跟进四阶段、履约字段和导出状态完整呈现', () => {
   assert.match(progressSource, /生产中交付时间/);
   assert.match(progressSource, /未生产预计交付时间/);
   assert.match(progressSource, /是否正常履约/);
+  assert.match(progressSource, /履约备注/);
   assert.match(progressSource, /正常履约金额/);
   assert.match(progressSource, /非正常履约金额/);
   assert.match(progressSource, /未履约原因/);
@@ -478,7 +479,7 @@ test('生产跟进使用固定默认显示列并按用户持久保存', () => {
       'documentStatus', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
       'operationStockQty', 'remainingInboundQty', 'shippedQty', 'unpreparedQty', 'preparedNotStartedQty',
       'inProductionQty', 'finishedQty', 'contractDeliveryDates', 'productionDeliveryDate',
-      'unproducedEstimatedDeliveryDate', 'fulfillmentStatus', 'oaFlowNo', 'action'
+      'unproducedEstimatedDeliveryDate', 'fulfillmentStatus', 'fulfillmentRemark', 'oaFlowNo', 'action'
     ]
   );
   assert.match(columnSource, /\['changeValidationStatus', '变更校验'\]/);
@@ -499,6 +500,34 @@ test('生产跟进使用固定默认显示列并按用户持久保存', () => {
   assert.match(exportSource, /const headers = \[[\s\S]*?'状态校验'/);
   assert.match(exportSource, /\.\.\.displayRows\.map/);
   assert.doesNotMatch(exportSource, /visibleColumnKeys/);
+});
+
+test('生产跟进按采购订单保存履约备注并筛选本周人工跟进状态', () => {
+  const filterSource = appSource.slice(
+    appSource.indexOf('function useFilteredDemands('),
+    appSource.indexOf('function Login(')
+  );
+  const editorSource = appSource.slice(
+    appSource.indexOf('function ProgressEditor('),
+    appSource.indexOf('function ProgressPage(')
+  );
+  assert.match(databaseSource, /CREATE TABLE IF NOT EXISTS production_order_followups/);
+  assert.match(databaseSource, /fulfillment_remark TEXT NOT NULL DEFAULT ''/);
+  assert.match(databaseSource, /followed_by TEXT NOT NULL DEFAULT ''/);
+  assert.match(databaseSource, /followed_at TEXT NOT NULL DEFAULT ''/);
+  assert.match(serverSource, /function chinaWeekStartText\(now = new Date\(\)\)/);
+  assert.match(serverSource, /timeZone: 'Asia\/Shanghai'/);
+  assert.match(serverSource, /function isFollowedThisWeek\(followedAt, now = new Date\(\)\)/);
+  assert.match(serverSource, /function saveProductionOrderFollowup/);
+  assert.match(appSource, /trackingKey: row\.rowKey \|\| row\.demandKey/);
+  assert.match(serverSource, /fulfillmentRemark: req\.body\.fulfillmentRemark/);
+  assert.match(serverSource, /DELETE FROM production_order_followups WHERE demand_key/);
+  assert.match(editorSource, /\['fulfillmentRemark', textInput\('fulfillmentRemark', '履约备注'\)\]/);
+  assert.match(editorSource, /trackingKey: row\.rowKey \|\| row\.demandKey/);
+  assert.match(filterSource, /followupStatus: \['未跟进'\]/);
+  assert.match(filterSource, /followupStatuses: \['未跟进', '本周已跟进'\]/);
+  assert.match(filterSource, /matchesSelected\(filters\.followupStatus, row\.followupStatus \|\| '未跟进'\)/);
+  assert.match(filterSource, /label="是否本周已跟进" allLabel="全部跟进状态"/);
 });
 
 test('生产跟进展开明细列按内容自适应且不换行', () => {

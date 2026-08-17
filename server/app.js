@@ -244,6 +244,80 @@ function nowText() {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
+function chinaDateTimeParts(now = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(now).reduce((result, part) => ({ ...result, [part.type]: part.value }), {});
+}
+
+function chinaNowText(now = new Date()) {
+  const parts = chinaDateTimeParts(now);
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
+function chinaWeekStartText(now = new Date()) {
+  const parts = chinaDateTimeParts(now);
+  const year = Number(parts.year);
+  const month = Number(parts.month);
+  const day = Number(parts.day);
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  const mondayOffset = weekday === 0 ? 6 : weekday - 1;
+  const monday = new Date(Date.UTC(year, month - 1, day - mondayOffset));
+  const p = (value) => String(value).padStart(2, '0');
+  return `${monday.getUTCFullYear()}-${p(monday.getUTCMonth() + 1)}-${p(monday.getUTCDate())} 00:00:00`;
+}
+
+function isFollowedThisWeek(followedAt, now = new Date()) {
+  const value = normalize(followedAt);
+  if (!value) return false;
+  const current = chinaNowText(now);
+  return value >= chinaWeekStartText(now) && value <= current;
+}
+
+function progressFollowupTrackingKey(demandKeyValue, orderNo = '') {
+  return normalize(orderNo)
+    ? kingdeeOrderIdentity(demandKeyValue, orderNo)
+    : normalize(demandKeyValue);
+}
+
+function progressFollowupPayload(followupMap, trackingKey, now = new Date()) {
+  const followup = followupMap.get(normalize(trackingKey)) || {};
+  const followedAt = normalize(followup.followed_at);
+  const followedThisWeek = isFollowedThisWeek(followedAt, now);
+  return {
+    fulfillmentRemark: normalize(followup.fulfillment_remark),
+    followupUpdatedBy: normalize(followup.followed_by),
+    followupUpdatedAt: followedAt,
+    followedThisWeek,
+    followupStatus: followedThisWeek ? '本周已跟进' : '未跟进'
+  };
+}
+
+function saveProductionOrderFollowup({ trackingKey, demandKey, orderNo = '', fulfillmentRemark = '', userName, followedAt = chinaNowText() }) {
+  run(
+    `INSERT INTO production_order_followups (
+       tracking_key, demand_key, order_no, fulfillment_remark, followed_by, followed_at
+     ) VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(tracking_key) DO UPDATE SET
+       demand_key = excluded.demand_key,
+       order_no = excluded.order_no,
+       fulfillment_remark = excluded.fulfillment_remark,
+       followed_by = excluded.followed_by,
+       followed_at = excluded.followed_at`,
+    [
+      normalize(trackingKey), normalize(demandKey), normalize(orderNo), normalize(fulfillmentRemark),
+      normalize(userName) || '未知用户', normalize(followedAt)
+    ]
+  );
+}
+
 function normalize(value) {
   return String(value ?? '').trim();
 }
@@ -2880,6 +2954,7 @@ function defaultProgress(demandKeyValue) {
 function demandLoadContext(demands) {
   const lookups = dimensionLookups();
   const progressMap = new Map(all('SELECT * FROM supplier_progress').map((row) => [row.demand_key, row]));
+  const followupMap = new Map(all('SELECT * FROM production_order_followups').map((row) => [row.tracking_key, row]));
   const inventoryMap = new Map(all('SELECT * FROM inventory').map((row) => [row.stock_key, row]));
   const batchIds = [...new Set(demands.map((row) => normalize(row.source_batch_id)).filter(Boolean))];
   const demandKeys = new Set(demands.map((row) => normalize(row.demand_key)));
@@ -2914,6 +2989,7 @@ function demandLoadContext(demands) {
   return {
     lookups,
     progressMap,
+    followupMap,
     inventoryMap,
     orderRowsByDemand,
     allOrderRowsByDemand,
@@ -3750,7 +3826,7 @@ function distributedManualProgressAllocations(row) {
   }));
 }
 
-function manualProgressDisplayRows(systemRows, user = null) {
+function manualProgressDisplayRows(systemRows, user = null, followupMap = new Map()) {
   const manualBatch = latestAppliedManualProgressBatch();
   const batchId = normalize(manualBatch?.id);
   const manualSourceFile = normalize(manualBatch?.file_name);
@@ -3899,9 +3975,11 @@ function manualProgressDisplayRows(systemRows, user = null) {
     const normalFulfillmentAmount = rows.reduce((sum, row) => sum + row.sourceNormalAmount, 0);
     const abnormalFulfillmentAmount = rows.reduce((sum, row) => sum + row.sourceAbnormalAmount, 0);
     const validationMessages = [...new Set(rows.map((row) => row.validationMessage).filter(Boolean))];
+    const trackingKey = `manual:${first.id}:${encodeURIComponent(first.orderNo || first.groupKey)}`;
     return {
       ...(system || {}),
-      demandKey: `manual:${first.id}:${encodeURIComponent(first.orderNo || first.groupKey)}`,
+      ...progressFollowupPayload(followupMap, trackingKey),
+      demandKey: trackingKey,
       underlyingDemandKey: first.demandKey || '',
       manualGroupId: first.id,
       manualBatchId: first.batchId,
@@ -4185,9 +4263,14 @@ function demandRows(includeInactive = false, user = null, options = {}) {
       rowKey: row.demandKey,
       operationOrderLevel: false,
       operationOrderRows: [],
-      dataSource: '手工录入'
+      dataSource: '手工录入',
+      ...progressFollowupPayload(context.followupMap, progressFollowupTrackingKey(row.demandKey))
     };
-    return operationOrderBreakdown(row, allOrderRows, context.orderChangeIndex).map((orderRow) => ({ ...row, ...orderRow }));
+    return operationOrderBreakdown(row, allOrderRows, context.orderChangeIndex).map((orderRow) => ({
+      ...row,
+      ...orderRow,
+      ...progressFollowupPayload(context.followupMap, orderRow.rowKey)
+    }));
   }).flat();
   const displayRows = includeInactive
     ? rows
@@ -4200,7 +4283,7 @@ function demandRows(includeInactive = false, user = null, options = {}) {
           dataStatus: '采购订单数据',
           manualSourceRows: []
         }))
-      : manualProgressDisplayRows(rows, user);
+      : manualProgressDisplayRows(rows, user, context.followupMap);
   return displayRows;
 }
 
@@ -6224,6 +6307,7 @@ app.post('/api/progress/clear', requireAuth, requirePage('progressRefresh'), req
     transaction(() => {
       runMany('DELETE FROM supplier_progress WHERE demand_key = ?', demandKeys.map((key) => [key]));
       runMany('DELETE FROM supplier_progress_snapshots WHERE demand_key = ?', demandKeys.map((key) => [key]));
+      runMany('DELETE FROM production_order_followups WHERE demand_key = ?', demandKeys.map((key) => [key]));
     });
     req.auditTarget = `${preview.matchedDemands} 条需求`;
     req.auditDetails = `筛选条件：${JSON.stringify(filters)}；清除当前跟单 ${preview.currentProgressCount} 条；清除历史快照 ${preview.snapshotCount} 条`;
@@ -6309,6 +6393,10 @@ function updateManualProgressGroup(req, res, manualRowId) {
     remark: normalize(req.body.remark)
   };
   const now = nowText();
+  const trackingKey = `manual:${first.id}:${encodeURIComponent(first.orderNo || first.groupKey)}`;
+  if (normalize(req.body.trackingKey) && normalize(req.body.trackingKey) !== trackingKey) {
+    return res.status(400).json({ error: '手工跟进订单标识不匹配' });
+  }
   transaction(() => {
     run(
       `UPDATE manual_progress_rows
@@ -6333,6 +6421,13 @@ function updateManualProgressGroup(req, res, manualRowId) {
       [req.user.name, now, first.batchId, first.groupKey, first.id]
     );
     reconcileActiveManualProgress(req.user.name, now);
+    saveProductionOrderFollowup({
+      trackingKey,
+      demandKey: first.demandKey,
+      orderNo: first.orderNo,
+      fulfillmentRemark: req.body.fulfillmentRemark,
+      userName: req.user.name
+    });
   });
   req.auditTarget = first.orderNo || first.oaFlowNo || `源行 ${first.sourceRowNo}`;
   req.auditDetails = `更新手工生产跟进组 ${first.groupKey}`;
@@ -6345,6 +6440,20 @@ app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'
   }
   const demand = get('SELECT * FROM order_demands WHERE demand_key = ?', [req.params.demandKey]);
   if (!demand) return res.status(404).json({ error: '需求不存在' });
+  const orderNo = normalize(req.body.orderNo);
+  const trackingKey = progressFollowupTrackingKey(demand.demand_key, orderNo);
+  if (normalize(req.body.trackingKey) !== trackingKey) {
+    return res.status(400).json({ error: '采购订单跟进标识不匹配' });
+  }
+  if (orderNo && !get(
+    `SELECT 1 AS found
+     FROM kingdee_orders
+     WHERE batch_id = ? AND demand_key = ? AND order_no = ?
+     LIMIT 1`,
+    [demand.source_batch_id, demand.demand_key, orderNo]
+  )) {
+    return res.status(400).json({ error: '当前采购订单不存在，无法提交跟进' });
+  }
   const progress = progressForDemand(demand.demand_key);
   const orderCreator = oldCreatorsForDemand(demand.demand_key);
   const enriched = enrichDemandFields(demand.supplier, demand.material_code, orderCreator);
@@ -6427,6 +6536,13 @@ app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'
         values.unfulfilledReason, values.reasonDetail, values.remark, req.user.name, now
       ]
     );
+    saveProductionOrderFollowup({
+      trackingKey,
+      demandKey: demand.demand_key,
+      orderNo,
+      fulfillmentRemark: req.body.fulfillmentRemark,
+      userName: req.user.name
+    });
   });
   res.json({ rows: demandRows(false, req.user) });
 });

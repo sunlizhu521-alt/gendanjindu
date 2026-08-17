@@ -283,6 +283,18 @@ function migrate() {
       updated_by TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS production_order_followups (
+      tracking_key TEXT PRIMARY KEY,
+      demand_key TEXT NOT NULL DEFAULT '',
+      order_no TEXT NOT NULL DEFAULT '',
+      fulfillment_remark TEXT NOT NULL DEFAULT '',
+      followed_by TEXT NOT NULL DEFAULT '',
+      followed_at TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_production_order_followups_demand_key
+      ON production_order_followups(demand_key);
+    CREATE INDEX IF NOT EXISTS idx_production_order_followups_followed_at
+      ON production_order_followups(followed_at);
     CREATE TABLE IF NOT EXISTS demand_snapshot_diffs (
       id TEXT PRIMARY KEY,
       batch_id TEXT NOT NULL,

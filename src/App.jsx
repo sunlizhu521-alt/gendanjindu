@@ -3602,7 +3602,7 @@ function clearInvalidFilterValues(filters, optionMap) {
 }
 
 function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
-  const [filters, setFilters] = useSessionFilters(cacheKey, { keyword: '', month: [], originalMonth: [], supplier: [], purchaseOrg: [], businessUnit: [], productLine: [], series: [], purchaseOwner: [], productType: [], orderType: [] });
+  const [filters, setFilters] = useSessionFilters(cacheKey, { keyword: '', month: [], originalMonth: [], supplier: [], purchaseOrg: [], businessUnit: [], productLine: [], series: [], purchaseOwner: [], productType: [], orderType: [], followupStatus: ['未跟进'] });
   const selectedValues = (value) => Array.isArray(value) ? value : (normalize(value) ? [normalize(value)] : []);
   const matchesSelected = (value, candidate) => {
     const selected = selectedValues(value);
@@ -3624,6 +3624,7 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
       && (omit === 'series' || matchesSelected(filters.series, row.productSeries))
       && (omit === 'productType' || matchesSelected(filters.productType, (row.productLine === '其他/配件' ? '配件' : '成品')))
       && (omit === 'orderType' || matchesSelected(filters.orderType, row.orderType || '正常订单'))
+      && (omit === 'followupStatus' || matchesSelected(filters.followupStatus, row.followupStatus || '未跟进'))
       && (omit === 'purchaseOwner' || matchesSelected(filters.purchaseOwner, row.purchaseOwner));
   };
   const options = useMemo(() => {
@@ -3638,6 +3639,7 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
       series: uniqueProgressValues(rowsFor('series').map((row) => row.productSeries)),
       purchaseOwners: uniqueProgressValues(rowsFor('purchaseOwner').map((row) => row.purchaseOwner)),
       productTypes: ['成品', '配件'],
+      followupStatuses: ['未跟进', '本周已跟进'],
       orderTypes: ['正常订单', '订单变更', '变更待核验']
         .filter((value) => rowsFor('orderType').some((row) => (row.orderType || '正常订单') === value))
     };
@@ -3653,6 +3655,7 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
       series: options.series,
       purchaseOwner: options.purchaseOwners,
       productType: options.productTypes,
+      followupStatus: options.followupStatuses,
       orderType: options.orderTypes
     });
     if (next) setFilters(next);
@@ -3662,11 +3665,12 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
 }
 
 function FilterBar({ filters, setFilters, options, onSubmit }) {
-  const clear = () => setFilters({ keyword: '', month: [], originalMonth: [], supplier: [], purchaseOrg: [], businessUnit: [], productLine: [], series: [], purchaseOwner: [], productType: [], orderType: [] });
+  const clear = () => setFilters({ keyword: '', month: [], originalMonth: [], supplier: [], purchaseOrg: [], businessUnit: [], productLine: [], series: [], purchaseOwner: [], productType: [], orderType: [], followupStatus: ['未跟进'] });
   return (
     <div className="toolbar filters-row">
       <MultiSelectFilter label="成品/配件" allLabel="全部类型" value={filters.productType} options={options.productTypes} onChange={(value) => setFilters({ ...filters, productType: value })} />
       <MultiSelectFilter label="订单类型" allLabel="全部订单类型" value={filters.orderType} options={options.orderTypes} onChange={(value) => setFilters({ ...filters, orderType: value })} />
+      <MultiSelectFilter label="是否本周已跟进" allLabel="全部跟进状态" value={filters.followupStatus} options={options.followupStatuses} onChange={(value) => setFilters({ ...filters, followupStatus: value })} />
       <MultiSelectFilter label="采购组织" allLabel="全部采购组织" value={filters.purchaseOrg} options={options.purchaseOrgs} onChange={(value) => setFilters({ ...filters, purchaseOrg: value })} />
       <MonthCalendarFilter label="新下单月份" value={filters.month} options={options.months} onChange={(value) => setFilters({ ...filters, month: value })} />
       <MonthCalendarFilter label="原下单月份" value={filters.originalMonth} options={options.originalMonths} showWhenEmpty onChange={(value) => setFilters({ ...filters, originalMonth: value })} />
@@ -5465,7 +5469,7 @@ const PROGRESS_COLUMNS = [
   ['shippedQty', '已发货数量'], ['unpreparedQty', '未备料未生产'], ['preparedNotStartedQty', '已备料未生产'],
   ['inProductionQty', '生产中产品'], ['finishedQty', '完工未发产品'], ['contractDeliveryDates', '合同约定交期'],
   ['productionDeliveryDate', '生产中交付时间'], ['unproducedEstimatedDeliveryDate', '未生产预计交付时间'],
-  ['fulfillmentStatus', '是否正常履约'], ['pretaxPrice', '不含税采购价'], ['normalFulfillmentQty', '正常履约数量'],
+  ['fulfillmentStatus', '是否正常履约'], ['fulfillmentRemark', '履约备注'], ['pretaxPrice', '不含税采购价'], ['normalFulfillmentQty', '正常履约数量'],
   ['normalFulfillmentAmount', '正常履约金额'], ['abnormalFulfillmentQty', '非正常履约数量'],
   ['abnormalFulfillmentAmount', '非正常履约金额'], ['unfulfilledReason', '未履约原因'], ['reasonDetail', '原因详情'],
   ['remark', '备注'], ['oaFlowNo', 'OA备货流程号'], ['sourceRows', '源行明细'], ['validationStatus', '状态校验'], ['action', '操作']
@@ -5475,7 +5479,7 @@ const PROGRESS_DEFAULT_COLUMNS = [
   'documentStatus', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
   'operationStockQty', 'remainingInboundQty', 'shippedQty', 'unpreparedQty', 'preparedNotStartedQty',
   'inProductionQty', 'finishedQty', 'contractDeliveryDates', 'productionDeliveryDate',
-  'unproducedEstimatedDeliveryDate', 'fulfillmentStatus', 'oaFlowNo', 'action'
+  'unproducedEstimatedDeliveryDate', 'fulfillmentStatus', 'fulfillmentRemark', 'oaFlowNo', 'action'
 ];
 
 const PROGRESS_STICKY_COLUMN_KEYS = new Set([
@@ -5883,6 +5887,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
     productionDeliveryDate: row.productionDeliveryDate || '',
     unproducedEstimatedDeliveryDate: row.unproducedEstimatedDeliveryDate || '',
     fulfillmentStatus: row.fulfillmentStatus || '',
+    fulfillmentRemark: row.fulfillmentRemark || '',
     unfulfilledReason: row.unfulfilledReason || '',
     reasonDetail: row.reasonDetail || '',
     remark: row.remark || ''
@@ -5924,6 +5929,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
       productionDeliveryDate: nextValues.productionDeliveryDate || '',
       unproducedEstimatedDeliveryDate: nextValues.unproducedEstimatedDeliveryDate || '',
       fulfillmentStatus: nextValues.fulfillmentStatus || '',
+      fulfillmentRemark: nextValues.fulfillmentRemark || '',
       unfulfilledReason: nextValues.unfulfilledReason || '',
       reasonDetail: nextValues.reasonDetail || '',
       remark: nextValues.remark || ''
@@ -5939,6 +5945,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
       productionDeliveryDate: row.productionDeliveryDate || '',
       unproducedEstimatedDeliveryDate: row.unproducedEstimatedDeliveryDate || '',
       fulfillmentStatus: row.fulfillmentStatus || '',
+      fulfillmentRemark: row.fulfillmentRemark || '',
       unfulfilledReason: row.unfulfilledReason || '',
       reasonDetail: row.reasonDetail || '',
       remark: row.remark || ''
@@ -5948,7 +5955,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
     onDraftChange?.(row.rowKey || row.demandKey, toPayload(nextValues, row.progressAdjustmentRequired));
   }, [
     row.rowKey, row.demandKey, row.unpreparedQty, row.preparedNotStartedQty, row.inProductionQty, row.finishedQty,
-    row.productionDeliveryDate, row.unproducedEstimatedDeliveryDate, row.fulfillmentStatus,
+    row.productionDeliveryDate, row.unproducedEstimatedDeliveryDate, row.fulfillmentStatus, row.fulfillmentRemark,
     row.unfulfilledReason, row.reasonDetail, row.remark
   ]);
 
@@ -5984,7 +5991,11 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
       await request(`/api/progress/${encodeURIComponent(row.demandKey)}`, {
         token,
         method: 'PATCH',
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          ...payload,
+          trackingKey: row.rowKey || row.demandKey,
+          orderNo: row.orderNo || ''
+        })
       });
       setMessage('生产进度已保存。');
       await reloadDemands();
@@ -6058,6 +6069,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
       <option value="是">是</option>
       <option value="否">否</option>
     </select>],
+    ['fulfillmentRemark', textInput('fulfillmentRemark', '履约备注')],
     ['pretaxPrice', <span className={row.pretaxPriceMaintained ? '' : 'progress-price-missing'}>{formatProgressPurchasePrice(pretaxPrice, row.pretaxPriceMaintained)}</span>],
     ['normalFulfillmentQty', normalFulfillmentQty], ['normalFulfillmentAmount', numberValue(row.normalFulfillmentAmount)],
     ['abnormalFulfillmentQty', abnormalFulfillmentQty], ['abnormalFulfillmentAmount', numberValue(row.abnormalFulfillmentAmount)],
@@ -6526,7 +6538,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
         '运营备货数量', '未交付数量', '已发货数量',
         '未备料未生产', '已备料未生产', '生产中产品', '完工未发产品',
         '合同约定交期', '生产中交付时间', '未生产预计交付时间',
-        '是否正常履约', '不含税采购价', '正常履约数量', '正常履约金额',
+        '是否正常履约', '履约备注', '不含税采购价', '正常履约数量', '正常履约金额',
         '非正常履约数量', '非正常履约金额', '未履约原因', '原因详情', '备注',
         'OA备货流程号', '状态校验'
       ];
@@ -6585,6 +6597,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
             draft.productionDeliveryDate ?? row.productionDeliveryDate,
             draft.unproducedEstimatedDeliveryDate ?? row.unproducedEstimatedDeliveryDate,
             fulfillmentStatus || '待维护',
+            draft.fulfillmentRemark ?? row.fulfillmentRemark ?? '',
             exportProgressPurchasePrice(row.pretaxPrice, row.pretaxPriceMaintained),
             normalQty,
             numberValue(row.normalFulfillmentAmount),

@@ -33,6 +33,7 @@ import { buildInventoryRiskWorkbook } from './inventory-risk-export.js';
 import { groupCurrentKingdeeOrderRows, isEffectivePurchaseOrder, kingdeeOrderIdentity } from './kingdee-order-visibility.js';
 import { buildOrderChangeIndex, classifyOrderChange, NORMAL_ORDER_TYPE, orderTypeForSupplier } from './order-change.js';
 import { buildStyledExcelBuffer } from '../shared/excel-export.js';
+import { normalizeProgressDateValue } from '../shared/progress-date.js';
 import { buildProductArchive } from './product-archive.js';
 import {
   buildProjectMetrics,
@@ -604,19 +605,11 @@ function dateSortValue(value) {
 function progressDateValue(value, label) {
   const text = normalize(value);
   if (!text) return '';
-  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) {
-    const error = new Error(`${label}必须使用 YYYY-MM-DD 格式`);
-    error.status = 400;
-    throw error;
-  }
-  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-  if (date.getFullYear() !== Number(match[1]) || date.getMonth() !== Number(match[2]) - 1 || date.getDate() !== Number(match[3])) {
-    const error = new Error(`${label}不是有效日期`);
-    error.status = 400;
-    throw error;
-  }
-  return text;
+  const normalized = normalizeProgressDateValue(text);
+  if (normalized) return normalized;
+  const error = new Error(`${label}不是有效日期，请选择日期后再提交`);
+  error.status = 400;
+  throw error;
 }
 
 function progressQuantityValue(value, fallback, label) {
@@ -8326,6 +8319,8 @@ app.use((err, req, res, next) => {
     error = '文件过大，请压缩到100MB以内再上传';
   } else if (err.publicMessage) {
     error = String(err.publicMessage);
+  } else if (status >= 400 && status < 500 && normalize(err?.message)) {
+    error = normalize(err.message);
   } else if (['inventorySummaryFile15', 'inventorySummaryFile16'].includes(inventoryLibraryBaseSlotId(normalize(req.params?.slotId)))) {
     error = `${DIMENSION_SLOTS[req.params.slotId]}解析或保存失败，请重新选择工作表后上传`;
   } else if (isKingdeeMemoryError) {

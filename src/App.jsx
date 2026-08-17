@@ -2,6 +2,7 @@ import React, { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState 
 import { createPortal } from 'react-dom';
 import { purchaseTrackingBusinessUnit } from './business-unit.js';
 import { writeStyledExcelFile } from '../shared/excel-export.js';
+import { normalizeProgressDateValue } from '../shared/progress-date.js';
 import { getLoadingProgress, installGlobalFetchProgress, subscribeLoadingProgress } from './loading-progress.js';
 import { groupOperationBoardRowsByMaterial } from './operation-board-grouping.js';
 
@@ -5971,8 +5972,8 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
     preparedNotStartedQty: displayQty(row.preparedNotStartedQty),
     inProductionQty: displayQty(row.inProductionQty),
     finishedQty: displayQty(row.finishedQty),
-    productionDeliveryDate: row.productionDeliveryDate || '',
-    unproducedEstimatedDeliveryDate: row.unproducedEstimatedDeliveryDate || '',
+    productionDeliveryDate: normalizeProgressDateValue(row.productionDeliveryDate),
+    unproducedEstimatedDeliveryDate: normalizeProgressDateValue(row.unproducedEstimatedDeliveryDate),
     fulfillmentStatus: row.fulfillmentStatus || '',
     fulfillmentRemark: row.fulfillmentRemark || '',
     unfulfilledReason: row.unfulfilledReason || '',
@@ -6013,8 +6014,8 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
       preparedNotStartedQty: numberValue(nextValues.preparedNotStartedQty),
       inProductionQty: numberValue(nextValues.inProductionQty),
       finishedQty: numberValue(nextValues.finishedQty),
-      productionDeliveryDate: nextValues.productionDeliveryDate || '',
-      unproducedEstimatedDeliveryDate: nextValues.unproducedEstimatedDeliveryDate || '',
+      productionDeliveryDate: normalizeProgressDateValue(nextValues.productionDeliveryDate),
+      unproducedEstimatedDeliveryDate: normalizeProgressDateValue(nextValues.unproducedEstimatedDeliveryDate),
       fulfillmentStatus: nextValues.fulfillmentStatus || '',
       fulfillmentRemark: nextValues.fulfillmentRemark || '',
       unfulfilledReason: nextValues.unfulfilledReason || '',
@@ -6029,8 +6030,8 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
       preparedNotStartedQty: displayQty(row.preparedNotStartedQty),
       inProductionQty: displayQty(row.inProductionQty),
       finishedQty: displayQty(row.finishedQty),
-      productionDeliveryDate: row.productionDeliveryDate || '',
-      unproducedEstimatedDeliveryDate: row.unproducedEstimatedDeliveryDate || '',
+      productionDeliveryDate: normalizeProgressDateValue(row.productionDeliveryDate),
+      unproducedEstimatedDeliveryDate: normalizeProgressDateValue(row.unproducedEstimatedDeliveryDate),
       fulfillmentStatus: row.fulfillmentStatus || '',
       fulfillmentRemark: row.fulfillmentRemark || '',
       unfulfilledReason: row.unfulfilledReason || '',
@@ -6584,8 +6585,8 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
       preparedNotStartedQty,
       inProductionQty,
       finishedQty: numberValue(row.finishedQty),
-      productionDeliveryDate: row.productionDeliveryDate || '',
-      unproducedEstimatedDeliveryDate: row.unproducedEstimatedDeliveryDate || '',
+      productionDeliveryDate: normalizeProgressDateValue(row.productionDeliveryDate),
+      unproducedEstimatedDeliveryDate: normalizeProgressDateValue(row.unproducedEstimatedDeliveryDate),
       fulfillmentStatus: row.fulfillmentStatus || '',
       fulfillmentRemark: row.fulfillmentRemark || '',
       unfulfilledReason: row.unfulfilledReason || '',

@@ -588,6 +588,8 @@ test('生产跟进按采购订单保存跟单备注并筛选本周人工跟进�
   assert.match(editorSource, /trackingKey: row\.followupKey \|\| row\.rowKey \|\| row\.demandKey/);
   assert.match(editorSource, /提交成功：已标记为本周已跟进/);
   assert.match(editorSource, /再次提交成功：本周跟进内容已更新/);
+  assert.match(editorSource, /页面未自动刷新/);
+  assert.doesNotMatch(editorSource, /await reloadDemands\(\)/);
   assert.match(editorSource, /管理员提交不改变本周跟进状态/);
   assert.match(editorSource, /提交失败：/);
   assert.match(filterSource, /followupStatus: \['未跟进'\]/);
@@ -597,6 +599,30 @@ test('生产跟进按采购订单保存跟单备注并筛选本周人工跟进�
   assert.match(filterSource, /function singleFollowupStatusSelection\(values\)/);
   assert.match(filterSource, /followupStatus: singleFollowupStatusSelection\(value\)/);
   assert.match(filterSource, /selected\.length > 1 \? \[selected\.at\(-1\)\] : selected/);
+});
+
+test('生产跟进单条和批量提交成功后不自动重新加载全量数据', () => {
+  const editorSource = appSource.slice(
+    appSource.indexOf('function ProgressEditor('),
+    appSource.indexOf('function ProgressPage(')
+  );
+  const progressSource = appSource.slice(
+    appSource.indexOf('function ProgressPage('),
+    appSource.indexOf('function DifferenceAllocationPage(')
+  );
+  const bulkSubmitSource = progressSource.slice(
+    progressSource.indexOf('async function submitProgressRows('),
+    progressSource.indexOf('function toggleOrderGroup(')
+  );
+  const editorRenderSource = progressSource.slice(
+    progressSource.indexOf('{expanded && group.rows.map('),
+    progressSource.indexOf('function renderSupplierGroup(')
+  );
+  assert.doesNotMatch(editorSource, /reloadDemands/);
+  assert.doesNotMatch(bulkSubmitSource, /reloadDemands/);
+  assert.match(editorSource, /如需更新筛选结果请点击“刷新”/);
+  assert.match(bulkSubmitSource, /页面未自动刷新/);
+  assert.doesNotMatch(editorRenderSource, /reloadDemands=\{reloadDemands\}/);
 });
 
 test('生产跟进保存支持幂等重试且不再返回全量数据', () => {

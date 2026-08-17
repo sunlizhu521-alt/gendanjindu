@@ -5970,7 +5970,7 @@ function focusNextProgressEditable(event, columnKey) {
   if (typeof next.select === 'function') next.select();
 }
 
-function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKeys, stickyOffsets, supplierNested = false, selected = false, onSelect, onDraftChange }) {
+function ProgressEditor({ row, token, setMessage, visibleColumnKeys, stickyOffsets, supplierNested = false, selected = false, onSelect, onDraftChange }) {
   const displayQty = (value) => (numberValue(value) ? String(numberValue(value)) : '');
   const [values, setValues] = useState({
     unpreparedQty: displayQty(row.unpreparedQty),
@@ -6098,17 +6098,12 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
       });
       const successMessage = result.followupMarkedBySubmission
         ? result.followupPreviouslyThisWeek
-          ? '再次提交成功：本周跟进内容已更新，订单继续保留在“本周已跟进”列表。'
-          : '提交成功：已标记为本周已跟进，默认列表不再显示该订单。'
-        : `提交成功：管理员提交不改变本周跟进状态；当前状态：${result.followupStatus || '未跟进'}。`;
+          ? '再次提交成功：本周跟进内容已更新；页面未自动刷新。'
+          : '提交成功：已标记为本周已跟进；页面未自动刷新，如需更新筛选结果请点击“刷新”。'
+        : `提交成功：管理员提交不改变本周跟进状态；当前状态：${result.followupStatus || '未跟进'}；页面未自动刷新。`;
       setMessage(result.replayed
-        ? `提交成功：服务器已确认此前请求，未重复写入；当前状态：${result.followupStatus || '未跟进'}。`
+        ? `提交成功：服务器已确认此前请求，未重复写入；当前状态：${result.followupStatus || '未跟进'}；页面未自动刷新。`
         : successMessage);
-      try {
-        await reloadDemands();
-      } catch (reloadError) {
-        setMessage(`${successMessage}列表刷新失败：${reloadError.message}`);
-      }
     } catch (err) {
       setMessage('提交失败：' + err.message);
     } finally {
@@ -6668,24 +6663,14 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
       }
     }
     setSelectedKeys((current) => current.filter((key) => !succeededKeys.includes(key)));
-    let reloadError = '';
-    if (succeededKeys.length) {
-      try {
-        await reloadDemands();
-      } catch (error) {
-        reloadError = error.message;
-      }
-    }
     if (failures.length) {
-      setMessage(`批量提交完成：成功 ${succeededKeys.length} 条，失败 ${failures.length} 条。${failures.slice(0, 3).join('；')}`);
-    } else if (reloadError) {
-      setMessage(`批量提交成功 ${succeededKeys.length} 条；列表刷新失败：${reloadError}`);
+      setMessage(`批量提交完成：成功 ${succeededKeys.length} 条，失败 ${failures.length} 条。${failures.slice(0, 3).join('；')}${succeededKeys.length ? '；页面未自动刷新。' : ''}`);
     } else if (preservedCount && !followedCount) {
-      setMessage(`批量提交成功 ${succeededKeys.length} 条；管理员提交不改变本周跟进状态。`);
+      setMessage(`批量提交成功 ${succeededKeys.length} 条；管理员提交不改变本周跟进状态；页面未自动刷新。`);
     } else if (updatedFollowedCount) {
-      setMessage(`批量提交成功 ${succeededKeys.length} 条；其中 ${updatedFollowedCount} 条本周已跟进订单已更新。`);
+      setMessage(`批量提交成功 ${succeededKeys.length} 条；其中 ${updatedFollowedCount} 条本周已跟进订单已更新；页面未自动刷新。`);
     } else {
-      setMessage(`批量提交成功 ${succeededKeys.length} 条，已标记 ${followedCount} 条为本周已跟进。`);
+      setMessage(`批量提交成功 ${succeededKeys.length} 条，已标记 ${followedCount} 条为本周已跟进；页面未自动刷新。`);
     }
     setBulkSaving(false);
   }
@@ -7023,7 +7008,6 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
             key={row.rowKey || row.demandKey}
             row={row}
             token={token}
-            reloadDemands={reloadDemands}
             setMessage={setMessage}
             visibleColumnKeys={visibleColumnKeys}
             stickyOffsets={stickyOffsets}

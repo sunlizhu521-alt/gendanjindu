@@ -5393,7 +5393,6 @@ function applyKingdeeSnapshot({
       now
     ]);
   });
-  run('UPDATE order_demands SET active = 0');
   runMany(
     `INSERT INTO order_demands (
        demand_key, month, business_unit, supplier, material_code,
@@ -5413,6 +5412,12 @@ function applyKingdeeSnapshot({
        source_batch_id = excluded.source_batch_id,
        updated_at = excluded.updated_at`,
     demandParams
+  );
+  run(
+    `UPDATE order_demands
+     SET active = 0
+     WHERE COALESCE(source_batch_id, '') <> ?`,
+    [batchId]
   );
   runMany(
     `INSERT INTO supplier_progress (
@@ -5933,8 +5938,8 @@ app.get('/api/imports/kingdee/current-status', requireAuth, requirePage('kingdee
 });
 
 function clearKingdeeCache(req, res) {
-  if (normalize(req.user.name) !== '孙立柱') {
-    return res.status(403).json({ error: '仅孙立柱可以清除采购订单缓存' });
+  if (normalize(req.user.name) !== normalize(ADMIN_NAME)) {
+    return res.status(403).json({ error: `仅${ADMIN_NAME}可以清除采购订单缓存` });
   }
   const preserved = {
     dimensionFiles: numberValue(get('SELECT COUNT(*) AS count FROM dimension_files')?.count),

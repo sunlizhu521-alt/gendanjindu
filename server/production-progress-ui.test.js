@@ -41,7 +41,7 @@ test('生产跟进四阶段、履约字段和导出状态完整呈现', () => {
   assert.match(progressSource, /生产中交付时间/);
   assert.match(progressSource, /未生产预计交付时间/);
   assert.match(progressSource, /是否正常履约/);
-  assert.match(progressSource, /履约备注/);
+  assert.match(progressSource, /跟单备注/);
   assert.match(progressSource, /正常履约金额/);
   assert.match(progressSource, /非正常履约金额/);
   assert.match(progressSource, /未履约原因/);
@@ -347,7 +347,7 @@ test('生产跟进汇总按新月份、原月份或供应商排序且简称可�
   assert.match(progressSource, /groupMode === 'originalMonth'[\s\S]*?group\.originalOrderMonth[\s\S]*?group\.currentOrderMonth/);
   assert.match(progressSource, /groupMode === 'supplier'[\s\S]*?left\.supplierShortName\.localeCompare\(right\.supplierShortName/);
   assert.match(progressSource, /compareProgressMonths\(left\.currentOrderMonth, right\.currentOrderMonth\)/);
-  assert.match(progressSource, /className="progress-order-toggle"[\s\S]*?role="button"[\s\S]*?tabIndex=\{0\}/);
+  assert.match(progressSource, /className=\{`progress-order-toggle\$\{supplierNested \? ' progress-supplier-order-toggle' : ''\}`\}[\s\S]*?role="button"[\s\S]*?tabIndex=\{0\}/);
   assert.match(progressSource, /className="supplier-filter-link"[\s\S]*?event\.stopPropagation\(\)[\s\S]*?supplier: uniqueSupplierShortNames\(group\.rows\.map\(\(row\) => progressSupplierName\(row\)\)\)/);
   assert.match(styleSource, /\.supplier-filter-link\s*\{[\s\S]*?color: #2563eb/);
   assert.doesNotMatch(progressSource, /<button[^>]*className="progress-order-toggle"[\s\S]*?<button[^>]*className="supplier-filter-link"/);
@@ -479,7 +479,7 @@ test('生产跟进使用固定默认显示列并按用户持久保存', () => {
       'documentStatus', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
       'operationStockQty', 'remainingInboundQty', 'shippedQty', 'unpreparedQty', 'preparedNotStartedQty',
       'inProductionQty', 'finishedQty', 'contractDeliveryDates', 'productionDeliveryDate',
-      'unproducedEstimatedDeliveryDate', 'fulfillmentStatus', 'fulfillmentRemark', 'oaFlowNo', 'action'
+      'unproducedEstimatedDeliveryDate', 'fulfillmentStatus', 'fulfillmentRemark', 'remark', 'oaFlowNo', 'action'
     ]
   );
   assert.match(columnSource, /\['changeValidationStatus', '变更校验'\]/);
@@ -502,7 +502,7 @@ test('生产跟进使用固定默认显示列并按用户持久保存', () => {
   assert.doesNotMatch(exportSource, /visibleColumnKeys/);
 });
 
-test('生产跟进按采购订单保存履约备注并筛选本周人工跟进状态', () => {
+test('生产跟进按采购订单保存跟单备注并筛选本周人工跟进状态', () => {
   const filterSource = appSource.slice(
     appSource.indexOf('function useFilteredDemands('),
     appSource.indexOf('function Login(')
@@ -522,12 +522,34 @@ test('生产跟进按采购订单保存履约备注并筛选本周人工跟进�
   assert.match(appSource, /trackingKey: row\.rowKey \|\| row\.demandKey/);
   assert.match(serverSource, /fulfillmentRemark: req\.body\.fulfillmentRemark/);
   assert.match(serverSource, /DELETE FROM production_order_followups WHERE demand_key/);
-  assert.match(editorSource, /\['fulfillmentRemark', textInput\('fulfillmentRemark', '履约备注'\)\]/);
+  assert.match(editorSource, /\['fulfillmentRemark', textInput\('fulfillmentRemark', '添加跟单备注'\)\]/);
+  assert.match(editorSource, /\['remark', <input className="progress-remark-input" value=\{values\.remark\} readOnly title="原备注仅供查看，不能修改" \/>\]/);
   assert.match(editorSource, /trackingKey: row\.rowKey \|\| row\.demandKey/);
+  assert.match(editorSource, /提交成功：已标记为本周已跟进/);
+  assert.match(editorSource, /提交失败：/);
   assert.match(filterSource, /followupStatus: \['未跟进'\]/);
   assert.match(filterSource, /followupStatuses: \['未跟进', '本周已跟进'\]/);
   assert.match(filterSource, /matchesSelected\(filters\.followupStatus, row\.followupStatus \|\| '未跟进'\)/);
   assert.match(filterSource, /label="是否本周已跟进" allLabel="全部跟进状态"/);
+});
+
+test('生产跟进按供应商展示有缩进的三级订单层级', () => {
+  const progressSource = appSource.slice(
+    appSource.indexOf('function ProgressPage('),
+    appSource.indexOf('function DifferenceAllocationPage(')
+  );
+  const nestedStart = progressSource.indexOf('{supplierNested ? (');
+  const nestedEnd = progressSource.indexOf(') : (', nestedStart);
+  assert.match(progressSource, /function renderPurchaseOrderGroup\(group, showSupplier = true, supplierNested = false\)/);
+  assert.match(progressSource, /renderPurchaseOrderGroup\(orderGroup, false, true\)/);
+  assert.match(progressSource, /className="progress-supplier-parent-toggle"/);
+  assert.match(progressSource, /className="progress-supplier-month-toggle"/);
+  assert.ok(nestedStart >= 0 && nestedEnd > nestedStart);
+  const nestedSource = progressSource.slice(nestedStart, nestedEnd);
+  assert.match(nestedSource, /当前采购月份：[\s\S]*?当前采购订单号：[\s\S]*?原采购月份：[\s\S]*?原采购订单号：[\s\S]*?产品线：[\s\S]*?系列：[\s\S]*?采购数量：[\s\S]*?未交付数量：/);
+  assert.doesNotMatch(nestedSource, /订单状态：/);
+  assert.match(styleSource, /\.progress-supplier-month-toggle\s*\{\s*padding-left: 34px;/);
+  assert.match(styleSource, /\.progress-order-toggle\.progress-supplier-order-toggle\s*\{\s*padding-left: 60px;/);
 });
 
 test('生产跟进展开明细列按内容自适应且不换行', () => {

@@ -5469,7 +5469,7 @@ const PROGRESS_COLUMNS = [
   ['shippedQty', '已发货数量'], ['unpreparedQty', '未备料未生产'], ['preparedNotStartedQty', '已备料未生产'],
   ['inProductionQty', '生产中产品'], ['finishedQty', '完工未发产品'], ['contractDeliveryDates', '合同约定交期'],
   ['productionDeliveryDate', '生产中交付时间'], ['unproducedEstimatedDeliveryDate', '未生产预计交付时间'],
-  ['fulfillmentStatus', '是否正常履约'], ['fulfillmentRemark', '履约备注'], ['pretaxPrice', '不含税采购价'], ['normalFulfillmentQty', '正常履约数量'],
+  ['fulfillmentStatus', '是否正常履约'], ['fulfillmentRemark', '跟单备注'], ['pretaxPrice', '不含税采购价'], ['normalFulfillmentQty', '正常履约数量'],
   ['normalFulfillmentAmount', '正常履约金额'], ['abnormalFulfillmentQty', '非正常履约数量'],
   ['abnormalFulfillmentAmount', '非正常履约金额'], ['unfulfilledReason', '未履约原因'], ['reasonDetail', '原因详情'],
   ['remark', '备注'], ['oaFlowNo', 'OA备货流程号'], ['sourceRows', '源行明细'], ['validationStatus', '状态校验'], ['action', '操作']
@@ -5479,7 +5479,7 @@ const PROGRESS_DEFAULT_COLUMNS = [
   'documentStatus', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
   'operationStockQty', 'remainingInboundQty', 'shippedQty', 'unpreparedQty', 'preparedNotStartedQty',
   'inProductionQty', 'finishedQty', 'contractDeliveryDates', 'productionDeliveryDate',
-  'unproducedEstimatedDeliveryDate', 'fulfillmentStatus', 'fulfillmentRemark', 'oaFlowNo', 'action'
+  'unproducedEstimatedDeliveryDate', 'fulfillmentStatus', 'fulfillmentRemark', 'remark', 'oaFlowNo', 'action'
 ];
 
 const PROGRESS_STICKY_COLUMN_KEYS = new Set([
@@ -5997,10 +5997,14 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
           orderNo: row.orderNo || ''
         })
       });
-      setMessage('生产进度已保存。');
-      await reloadDemands();
+      setMessage('提交成功：已标记为本周已跟进，默认列表不再显示该订单。');
+      try {
+        await reloadDemands();
+      } catch (reloadError) {
+        setMessage(`提交成功：已标记为本周已跟进；列表刷新失败：${reloadError.message}`);
+      }
     } catch (err) {
-      setMessage('生产进度保存失败：' + err.message);
+      setMessage('提交失败：' + err.message);
     } finally {
       setSaving(false);
     }
@@ -6069,13 +6073,13 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
       <option value="是">是</option>
       <option value="否">否</option>
     </select>],
-    ['fulfillmentRemark', textInput('fulfillmentRemark', '履约备注')],
+    ['fulfillmentRemark', textInput('fulfillmentRemark', '添加跟单备注')],
     ['pretaxPrice', <span className={row.pretaxPriceMaintained ? '' : 'progress-price-missing'}>{formatProgressPurchasePrice(pretaxPrice, row.pretaxPriceMaintained)}</span>],
     ['normalFulfillmentQty', normalFulfillmentQty], ['normalFulfillmentAmount', numberValue(row.normalFulfillmentAmount)],
     ['abnormalFulfillmentQty', abnormalFulfillmentQty], ['abnormalFulfillmentAmount', numberValue(row.abnormalFulfillmentAmount)],
     ['unfulfilledReason', textInput('unfulfilledReason', values.fulfillmentStatus === '否' ? '必填' : '未履约原因')],
     ['reasonDetail', textInput('reasonDetail', '原因详情')],
-    ['remark', <input className="progress-remark-input" value={values.remark} placeholder="添加备注" disabled={!row.canEdit} onChange={(event) => handleTextChange('remark', event.target.value)} />],
+    ['remark', <input className="progress-remark-input" value={values.remark} readOnly title="原备注仅供查看，不能修改" />],
     ['oaFlowNo', row.oaFlowNo],
     ['sourceRows', row.manualSourceRows?.length
       ? <button type="button" className="ghost compact-button" onClick={() => setShowSources((value) => !value)}>{showSources ? '收起' : `查看${row.manualSourceRows.length}行`}</button>
@@ -6538,7 +6542,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
         '运营备货数量', '未交付数量', '已发货数量',
         '未备料未生产', '已备料未生产', '生产中产品', '完工未发产品',
         '合同约定交期', '生产中交付时间', '未生产预计交付时间',
-        '是否正常履约', '履约备注', '不含税采购价', '正常履约数量', '正常履约金额',
+        '是否正常履约', '跟单备注', '不含税采购价', '正常履约数量', '正常履约金额',
         '非正常履约数量', '非正常履约金额', '未履约原因', '原因详情', '备注',
         'OA备货流程号', '状态校验'
       ];
@@ -6644,7 +6648,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
     </label>
   ) }, ...visibleProgressColumns.map(([key, label]) => ({ key, label }))];
 
-  function renderPurchaseOrderGroup(group, showSupplier = true) {
+  function renderPurchaseOrderGroup(group, showSupplier = true, supplierNested = false) {
     const expanded = expandedOrders.has(group.key);
     const supplierLabel = group.supplierShortName;
     const currentOrderNoLabel = [...group.orderNos].join('、') || '无采购订单';
@@ -6666,7 +6670,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
         <tr className="progress-order-parent-row">
           <td colSpan={visibleProgressColumns.length + 1}>
             <div
-              className="progress-order-toggle"
+              className={`progress-order-toggle${supplierNested ? ' progress-supplier-order-toggle' : ''}`}
               role="button"
               tabIndex={0}
               onClick={() => toggleOrderGroup(group.key)}
@@ -6698,17 +6702,32 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
                   </button>
                 </strong>
               )}
-              <span className={`progress-order-type type-${pendingOnly ? 'pending' : 'valid'}`}>订单状态：{orderTypeLabel}</span>
-              <span>原采购月份：{originalOrderMonthLabel}</span>
-              <span>原采购订单号：{originalOrderNoLabel}</span>
-              <span>新采购月份：{currentOrderMonthLabel}</span>
-              <span>当前采购订单号：{currentOrderNoLabel}</span>
-              <span>产品线：{productLineLabel}</span>
-              <span>系列：{productSeriesLabel}</span>
-              <span>原订单采购数量：{originalPurchaseQtyLabel}</span>
-              <span>订单数：{group.orderNos.size}</span>
-              <span>未交付数量：{group.remainingInboundQty.toLocaleString('zh-CN')}</span>
-              <span>{pendingOnly ? '下单数量：不计入汇总' : `下单数量：${group.reportingPurchaseQty.toLocaleString('zh-CN')}`}</span>
+              {supplierNested ? (
+                <>
+                  <span>当前采购月份：{currentOrderMonthLabel}</span>
+                  <span>当前采购订单号：{currentOrderNoLabel}</span>
+                  <span>原采购月份：{originalOrderMonthLabel}</span>
+                  <span>原采购订单号：{originalOrderNoLabel}</span>
+                  <span>产品线：{productLineLabel}</span>
+                  <span>系列：{productSeriesLabel}</span>
+                  <span>{pendingOnly ? '采购数量：不计入汇总' : `采购数量：${group.reportingPurchaseQty.toLocaleString('zh-CN')}`}</span>
+                  <span>未交付数量：{group.remainingInboundQty.toLocaleString('zh-CN')}</span>
+                </>
+              ) : (
+                <>
+                  <span className={`progress-order-type type-${pendingOnly ? 'pending' : 'valid'}`}>订单状态：{orderTypeLabel}</span>
+                  <span>原采购月份：{originalOrderMonthLabel}</span>
+                  <span>原采购订单号：{originalOrderNoLabel}</span>
+                  <span>新采购月份：{currentOrderMonthLabel}</span>
+                  <span>当前采购订单号：{currentOrderNoLabel}</span>
+                  <span>产品线：{productLineLabel}</span>
+                  <span>系列：{productSeriesLabel}</span>
+                  <span>原订单采购数量：{originalPurchaseQtyLabel}</span>
+                  <span>订单数：{group.orderNos.size}</span>
+                  <span>未交付数量：{group.remainingInboundQty.toLocaleString('zh-CN')}</span>
+                  <span>{pendingOnly ? '下单数量：不计入汇总' : `下单数量：${group.reportingPurchaseQty.toLocaleString('zh-CN')}`}</span>
+                </>
+              )}
             </div>
           </td>
         </tr>
@@ -6807,7 +6826,7 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
                   </div>
                 </td>
               </tr>
-              {monthExpanded && monthGroup.orderGroups.map((orderGroup) => renderPurchaseOrderGroup(orderGroup, false))}
+              {monthExpanded && monthGroup.orderGroups.map((orderGroup) => renderPurchaseOrderGroup(orderGroup, false, true))}
             </Fragment>
           );
         })}

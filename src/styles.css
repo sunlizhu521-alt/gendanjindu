@@ -7696,6 +7696,10 @@ th {
   padding-left: 34px;
 }
 
+.kingdee-progress-page .progress-order-toggle.progress-supplier-order-toggle {
+  padding-left: 60px;
+}
+
 .kingdee-progress-page .progress-supplier-parent-toggle b,
 .kingdee-progress-page .progress-supplier-month-toggle b {
   display: grid;

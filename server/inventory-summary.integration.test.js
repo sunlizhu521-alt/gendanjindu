@@ -2108,6 +2108,10 @@ test('inventory summary and domestic board use complete source models and enforc
   );
   database.run(
     'INSERT INTO users (id, name, password_hash, role, page_access, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ['manual-owner-id', '李奇', 'unused', '普通用户', JSON.stringify(['progressRefresh']), now, now]
+  );
+  database.run(
+    'INSERT INTO users (id, name, password_hash, role, page_access, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     ['bulk-user-1', 'Bulk User One', 'unused', '普通用户', '[]', now, now]
   );
   database.run(
@@ -2118,6 +2122,7 @@ test('inventory summary and domestic board use complete source models and enforc
   database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['system-owner-token', 'system-owner-id', now]);
   database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['limited-token', 'limited-id', now]);
   database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['purchase-owner-token', 'purchase-owner-id', now]);
+  database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['manual-owner-token', 'manual-owner-id', now]);
   database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['bulk-token-1', 'bulk-user-1', now]);
   database.run('INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)', ['bulk-token-2', 'bulk-user-2', now]);
   database.run('INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)', ['expired-token', 'admin-id', now, '2020-01-01 00:00:00']);
@@ -2381,6 +2386,19 @@ test('inventory summary and domestic board use complete source models and enforc
     ]
   );
   database.run(
+    `INSERT INTO manual_progress_rows
+      (id, batch_id, source_row_no, source_key, group_key, row_type, data_status, demand_key, order_no,
+       month, business_unit, supplier_short_name, purchase_owner, material_code, manual_remaining_qty,
+       unprepared_qty, validation_status, raw_json, candidate_json, active, stale, updated_by, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      'manual-unmatched-row', 'manual-current-fields-batch', 4, 'manual-unmatched-source',
+      'order|manual001|manual-material', 'purchase_order', '本次手工表未出现', '', 'MANUAL-001',
+      '2026-08', '海外事业一部', '手工供应商', '李奇', 'MANUAL-MATERIAL', 5, 5, 'valid', '{}', '[]',
+      1, 1, 'Test Admin', now
+    ]
+  );
+  database.run(
     `INSERT INTO manual_progress_allocations
       (id, batch_id, source_row_id, source_row_no, order_no, material_code, demand_key, match_status,
        remaining_qty, allocated_unprepared_qty, active, created_at, updated_at)
@@ -2502,6 +2520,22 @@ test('inventory summary and domestic board use complete source models and enforc
        delta_qty, automatic, created_by, created_at)
      VALUES (?, ?, ?, ?, '新增订单', 100, '测试', 1200, 1300, 100, 1, ?, ?)`,
     ['session-allocation', 'session-consistency', 'session-row', 'active-june', 'Test Admin', now]
+  );
+  const currentFollowupAt = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+  }).format(new Date());
+  database.run(
+    `INSERT INTO production_order_followups
+      (tracking_key, demand_key, order_no, fulfillment_remark, followed_by, followed_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    ['active-june|CGDD011560', 'active-june', 'CGDD011560', '管理员保存的最新跟单备注', 'Test Admin', currentFollowupAt]
+  );
+  database.run(
+    `INSERT INTO production_progress_save_requests
+      (request_id, user_id, tracking_key, demand_key, order_no, saved_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    ['legacy-ordinary-followup-001', 'purchase-owner-id', 'active-june|CGDD011560', 'active-june', 'CGDD011560', currentFollowupAt]
   );
   database.run('UPDATE order_demands SET current_order_qty = 9999 WHERE demand_key = ?', ['active-june']);
   database.saveDatabase();
@@ -2755,6 +2789,33 @@ test('inventory summary and domestic board use complete source models and enforc
     const m1DemandRows = demandRows.filter((row) => row.demandKey === m1Demand?.demandKey && row.materialCode === 'M1');
     assert.equal(m1DemandRows.length, 3);
     assert.deepEqual(m1DemandRows.map((row) => row.orderNo).sort(), ['CGDD011482', 'CGDD011560', 'CGDD011590']);
+    const migratedFollowup = m1DemandRows.find((row) => row.orderNo === 'CGDD011560');
+    assert.equal(migratedFollowup?.followupKey, 'order:CGDD011560:M1');
+    assert.equal(migratedFollowup?.followupStatus, '本周已跟进');
+    assert.equal(migratedFollowup?.followupUpdatedBy, '当前采购员');
+    assert.equal(migratedFollowup?.fulfillmentRemark, '管理员保存的最新跟单备注');
+    assert.equal(m1Demand?.followupStatus, '未跟进');
+    const migratedReplayResponse = await fetch(
+      `http://127.0.0.1:${port}/api/progress/${encodeURIComponent('active-june')}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: 'Bearer purchase-owner-token',
+          'Content-Type': 'application/json',
+          'X-Idempotency-Key': 'legacy-ordinary-followup-001'
+        },
+        body: JSON.stringify({
+          requestId: 'legacy-ordinary-followup-001',
+          trackingKey: 'active-june|CGDD011560',
+          orderNo: 'CGDD011560'
+        })
+      }
+    );
+    assert.equal(migratedReplayResponse.status, 200);
+    const migratedReplayPayload = await migratedReplayResponse.json();
+    assert.equal(migratedReplayPayload.replayed, true);
+    assert.equal(migratedReplayPayload.followupMarkedBySubmission, true);
+    assert.equal(migratedReplayPayload.followupStatus, '本周已跟进');
     assert.equal(m1Demand?.operatorName, '薛文乐');
     assert.equal(m1Demand?.purchaseOwner, '当前采购员');
     assert.equal(m1Demand?.supplierShortName, '供应商甲&供应商乙');
@@ -2905,7 +2966,7 @@ test('inventory summary and domestic board use complete source models and enforc
       const payload = await response.json();
       return payload.tables.find((table) => table.name === 'supplier_progress_snapshots')?.rowCount || 0;
     };
-    const progressIdentity = { trackingKey: m1Demand.rowKey, orderNo: m1Demand.orderNo };
+    const progressIdentity = { trackingKey: m1Demand.followupKey, orderNo: m1Demand.orderNo };
     const clientShippedOverrideResponse = await fetch(progressEndpoint, {
       method: 'PATCH',
       headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
@@ -2914,6 +2975,8 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(clientShippedOverrideResponse.status, 200);
     const clientShippedOverridePayload = await clientShippedOverrideResponse.json();
     assert.equal(clientShippedOverridePayload.ok, true);
+    assert.equal(clientShippedOverridePayload.followupMarkedBySubmission, false);
+    assert.equal(clientShippedOverridePayload.followupStatus, '未跟进');
     assert.equal(Object.hasOwn(clientShippedOverridePayload, 'rows'), false);
     const clientShippedOverrideRow = await readSavedProgress();
     assert.equal(clientShippedOverrideRow?.shippedQty, 200);
@@ -2964,11 +3027,15 @@ test('inventory summary and domestic board use complete source models and enforc
       requestId: currentProgressRequestId,
       replayed: false
     });
+    assert.equal(currentProgressPayload.followupMarkedBySubmission, false);
+    assert.equal(currentProgressPayload.followupStatus, '未跟进');
     assert.equal(Object.hasOwn(currentProgressPayload, 'rows'), false);
     const replayedProgressResponse = await fetch(progressEndpoint, currentProgressRequest);
     assert.equal(replayedProgressResponse.status, 200);
     const replayedProgressPayload = await replayedProgressResponse.json();
     assert.equal(replayedProgressPayload.replayed, true);
+    assert.equal(replayedProgressPayload.followupMarkedBySubmission, false);
+    assert.equal(replayedProgressPayload.followupStatus, '未跟进');
     assert.equal(await progressSnapshotCount(), snapshotsBeforeIdempotentSave + 1);
     const savedProgress = await readSavedProgress();
     assert.deepEqual({
@@ -2999,6 +3066,69 @@ test('inventory summary and domestic board use complete source models and enforc
       reasonDetail: '原料延期'
     });
 
+    const ordinaryProgressRequestId = 'progress-ordinary-test-001';
+    const ordinaryProgressResponse = await fetch(progressEndpoint, {
+      method: 'PATCH',
+      headers: {
+        Authorization: 'Bearer purchase-owner-token',
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': ordinaryProgressRequestId
+      },
+      body: JSON.stringify({
+        ...progressIdentity,
+        requestId: ordinaryProgressRequestId,
+        preparedNotStartedQty: 100,
+        inProductionQty: 500,
+        finishedQty: 400,
+        fulfillmentStatus: '否',
+        unfulfilledReason: '供应商延期',
+        reasonDetail: '原料延期',
+        fulfillmentRemark: '普通用户本周跟进'
+      })
+    });
+    assert.equal(ordinaryProgressResponse.status, 200);
+    const ordinaryProgressPayload = await ordinaryProgressResponse.json();
+    assert.equal(ordinaryProgressPayload.followupMarkedBySubmission, true);
+    assert.equal(ordinaryProgressPayload.followupStatus, '本周已跟进');
+    const followedRowsResponse = await fetch(`http://127.0.0.1:${port}/api/progress/demands`, {
+      headers: { Authorization: 'Bearer admin-token' }
+    });
+    const followedOrder = (await followedRowsResponse.json()).rows.find((row) => row.followupKey === m1Demand.followupKey);
+    assert.equal(followedOrder?.followupStatus, '本周已跟进');
+    assert.equal(followedOrder?.followupUpdatedBy, '当前采购员');
+    assert.equal(followedOrder?.fulfillmentRemark, '普通用户本周跟进');
+
+    const adminPreserveRequestId = 'progress-admin-preserve-001';
+    const adminPreserveResponse = await fetch(progressEndpoint, {
+      method: 'PATCH',
+      headers: {
+        Authorization: 'Bearer admin-token',
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': adminPreserveRequestId
+      },
+      body: JSON.stringify({
+        ...progressIdentity,
+        requestId: adminPreserveRequestId,
+        preparedNotStartedQty: 100,
+        inProductionQty: 500,
+        finishedQty: 400,
+        fulfillmentStatus: '否',
+        unfulfilledReason: '供应商延期',
+        reasonDetail: '原料延期',
+        fulfillmentRemark: '管理员更新跟单备注'
+      })
+    });
+    assert.equal(adminPreserveResponse.status, 200);
+    const adminPreservePayload = await adminPreserveResponse.json();
+    assert.equal(adminPreservePayload.followupMarkedBySubmission, false);
+    assert.equal(adminPreservePayload.followupStatus, '本周已跟进');
+    const preservedRowsResponse = await fetch(`http://127.0.0.1:${port}/api/progress/demands`, {
+      headers: { Authorization: 'Bearer admin-token' }
+    });
+    const preservedOrder = (await preservedRowsResponse.json()).rows.find((row) => row.followupKey === m1Demand.followupKey);
+    assert.equal(preservedOrder?.followupUpdatedBy, '当前采购员');
+    assert.equal(preservedOrder?.fulfillmentRemark, '管理员更新跟单备注');
+
     const manualProgressEndpoint = `http://127.0.0.1:${port}/api/progress/${encodeURIComponent('manual:manual-short-name-row')}`;
     const manualProgressRequestId = 'manual-progress-test-001';
     const manualProgressRequest = {
@@ -3028,10 +3158,39 @@ test('inventory summary and domestic board use complete source models and enforc
       requestId: manualProgressRequestId,
       replayed: false
     });
+    assert.equal(manualProgressPayload.followupMarkedBySubmission, false);
+    assert.equal(manualProgressPayload.followupStatus, '未跟进');
     assert.equal(Object.hasOwn(manualProgressPayload, 'rows'), false);
     const replayedManualProgressResponse = await fetch(manualProgressEndpoint, manualProgressRequest);
     assert.equal(replayedManualProgressResponse.status, 200);
     assert.equal((await replayedManualProgressResponse.json()).replayed, true);
+
+    const manualOrdinaryRequestId = 'manual-progress-ordinary-001';
+    const manualOrdinaryResponse = await fetch(
+      `http://127.0.0.1:${port}/api/progress/${encodeURIComponent('manual:manual-unmatched-row')}`,
+      {
+      method: 'PATCH',
+      headers: {
+        Authorization: 'Bearer manual-owner-token',
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': manualOrdinaryRequestId
+      },
+      body: JSON.stringify({
+        requestId: manualOrdinaryRequestId,
+        trackingKey: 'manual:manual-unmatched-row:MANUAL-001',
+        orderNo: 'MANUAL-001',
+        unpreparedQty: 5,
+        preparedNotStartedQty: 0,
+        inProductionQty: 0,
+        finishedQty: 0,
+        fulfillmentStatus: '是',
+        fulfillmentRemark: '手工订单普通用户跟进'
+      })
+    });
+    assert.equal(manualOrdinaryResponse.status, 200);
+    const manualOrdinaryPayload = await manualOrdinaryResponse.json();
+    assert.equal(manualOrdinaryPayload.followupMarkedBySubmission, true);
+    assert.equal(manualOrdinaryPayload.followupStatus, '本周已跟进');
 
     const sessionApplyResponse = await fetch(`http://127.0.0.1:${port}/api/difference-allocations/session-consistency/apply`, {
       method: 'POST',
@@ -3053,6 +3212,11 @@ test('inventory summary and domestic board use complete source models and enforc
     });
     const demandsAfterIncreaseRows = (await demandsAfterIncreaseResponse.json()).rows;
     const increasedM1 = aggregateDemandRows(demandsAfterIncreaseRows, m1Demand.demandKey);
+    const followedM1AfterReapply = demandsAfterIncreaseRows.find((row) => (
+      row.materialCode === m1Demand.materialCode && row.orderNo === 'PO-SESSION'
+    ));
+    assert.equal(followedM1AfterReapply?.followupKey, 'order:PO-SESSION:M1');
+    assert.equal(followedM1AfterReapply?.followupStatus, '未跟进');
     assert.deepEqual({
       unpreparedQty: increasedM1?.unpreparedQty,
       preparedNotStartedQty: increasedM1?.preparedNotStartedQty,
@@ -3077,8 +3241,8 @@ test('inventory summary and domestic board use complete source models and enforc
       method: 'PATCH',
       headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        trackingKey: demandsAfterIncreaseRows.find((row) => row.demandKey === m1Demand.demandKey)?.rowKey,
-        orderNo: demandsAfterIncreaseRows.find((row) => row.demandKey === m1Demand.demandKey)?.orderNo,
+        trackingKey: followedM1AfterReapply?.followupKey,
+        orderNo: followedM1AfterReapply?.orderNo,
         preparedNotStartedQty: 100,
         inProductionQty: 500,
         finishedQty: 400,
@@ -3092,6 +3256,8 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(normalProgressResponse.status, 200);
     const normalProgressPayload = await normalProgressResponse.json();
     assert.equal(normalProgressPayload.ok, true);
+    assert.equal(normalProgressPayload.followupMarkedBySubmission, false);
+    assert.equal(normalProgressPayload.followupStatus, '未跟进');
     assert.equal(Object.hasOwn(normalProgressPayload, 'rows'), false);
     const normalM1 = await readSavedProgress();
     assert.deepEqual({
@@ -3182,7 +3348,8 @@ test('inventory summary and domestic board use complete source models and enforc
     const demandsAfterProgressClear = await fetch(`http://127.0.0.1:${port}/api/demands`, {
       headers: { Authorization: 'Bearer admin-token' }
     });
-    const clearedM1 = aggregateDemandRows((await demandsAfterProgressClear.json()).rows, m1Demand.demandKey);
+    const rowsAfterProgressClear = (await demandsAfterProgressClear.json()).rows;
+    const clearedM1 = aggregateDemandRows(rowsAfterProgressClear, m1Demand.demandKey);
     assert.equal(clearedM1?.inProductionQty, 0);
     assert.equal(clearedM1?.finishedQty, 0);
     assert.equal(clearedM1?.unpreparedQty, 0);
@@ -3191,6 +3358,7 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(clearedM1?.unfulfilledReason, '');
     assert.equal(clearedM1?.remark, '');
     assert.equal(clearedM1?.progressUpdatedAt, '');
+    assert.equal(rowsAfterProgressClear.find((row) => row.followupKey === followedM1AfterReapply.followupKey)?.followupStatus, '未跟进');
 
     const inventoryWorkbook = xlsx.utils.book_new();
     xlsx.utils.book_append_sheet(inventoryWorkbook, xlsx.utils.json_to_sheet([

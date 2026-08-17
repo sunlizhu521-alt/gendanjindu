@@ -3652,7 +3652,7 @@ function clearInvalidFilterValues(filters, optionMap) {
 }
 
 function defaultProgressFilters() {
-  return { keyword: '', supplier: [], purchaseOrg: [], businessUnit: [], productLine: [], series: [], purchaseOwner: [], productType: [], followupStatus: ['未跟进'] };
+  return { keyword: '', supplier: [], purchaseOrg: [], businessUnit: [], productLine: [], series: [], purchaseOwner: [], productType: [], orderType: [], followupStatus: ['未跟进'] };
 }
 
 function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
@@ -3673,6 +3673,7 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
       && (omit === 'productLine' || matchesSelected(filters.productLine, row.productLine))
       && (omit === 'series' || matchesSelected(filters.series, row.productSeries))
       && (omit === 'productType' || matchesSelected(filters.productType, (row.productLine === '其他/配件' ? '配件' : '成品')))
+      && (omit === 'orderType' || matchesSelected(filters.orderType, row.orderType || '正常订单'))
       && (omit === 'followupStatus' || matchesSelected(filters.followupStatus, row.followupStatus || '未跟进'))
       && (omit === 'purchaseOwner' || matchesSelected(filters.purchaseOwner, row.purchaseOwner));
   };
@@ -3686,6 +3687,8 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
       series: uniqueProgressValues(rowsFor('series').map((row) => row.productSeries)),
       purchaseOwners: uniqueProgressValues(rowsFor('purchaseOwner').map((row) => row.purchaseOwner)),
       productTypes: ['成品', '配件'],
+      orderTypes: ['正常订单', '内部交易订单', '订单变更', '变更待核验']
+        .filter((value) => rowsFor('orderType').some((row) => (row.orderType || '正常订单') === value)),
       followupStatuses: ['未跟进', '本周已跟进']
     };
   }, [rows, filters]);
@@ -3699,6 +3702,7 @@ function useFilteredDemands(rows, cacheKey = 'progressRefresh') {
       series: options.series,
       purchaseOwner: options.purchaseOwners,
       productType: options.productTypes,
+      orderType: options.orderTypes,
       followupStatus: options.followupStatuses
     });
     if (next) setFilters(next);
@@ -3719,6 +3723,7 @@ function FilterBar({ filters, setFilters, options, onSearch, onClear, onSubmit }
   return (
     <div className="toolbar filters-row">
       <MultiSelectFilter label="成品/配件" allLabel="全部类型" value={filters.productType} options={options.productTypes} onChange={(value) => setFilters({ ...filters, productType: value })} />
+      <MultiSelectFilter label="订单类型" allLabel="全部订单类型" value={filters.orderType} options={options.orderTypes} onChange={(value) => setFilters({ ...filters, orderType: value })} />
       <MultiSelectFilter label="是否本周已跟进" allLabel="全部跟进状态" value={filters.followupStatus} options={options.followupStatuses} onChange={(value) => setFilters({ ...filters, followupStatus: value })} />
       <MultiSelectFilter label="采购组织" allLabel="全部采购组织" value={filters.purchaseOrg} options={options.purchaseOrgs} onChange={(value) => setFilters({ ...filters, purchaseOrg: value })} />
       <MultiSelectFilter label="供应商简称" allLabel="全部供应商简称" value={filters.supplier} options={options.suppliers} onChange={(value) => setFilters({ ...filters, supplier: value })} />
@@ -6081,17 +6086,20 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
         body: JSON.stringify({
           ...payload,
           requestId,
-          trackingKey: row.rowKey || row.demandKey,
+          trackingKey: row.followupKey || row.rowKey || row.demandKey,
           orderNo: row.orderNo || ''
         })
       });
+      const successMessage = result.followupMarkedBySubmission
+        ? '提交成功：已标记为本周已跟进，默认列表不再显示该订单。'
+        : `提交成功：管理员提交不改变本周跟进状态；当前状态：${result.followupStatus || '未跟进'}。`;
       setMessage(result.replayed
-        ? '提交成功：服务器已确认此前请求，未重复写入。'
-        : '提交成功：已标记为本周已跟进，默认列表不再显示该订单。');
+        ? `提交成功：服务器已确认此前请求，未重复写入；当前状态：${result.followupStatus || '未跟进'}。`
+        : successMessage);
       try {
         await reloadDemands();
       } catch (reloadError) {
-        setMessage(`提交成功：已标记为本周已跟进；列表刷新失败：${reloadError.message}`);
+        setMessage(`${successMessage}列表刷新失败：${reloadError.message}`);
       }
     } catch (err) {
       setMessage('提交失败：' + err.message);
@@ -6338,8 +6346,9 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
       }
       if (row.changeValidationStatus === 'pending') group.pendingRows += 1;
       else {
-        const quantityOrderNo = row.orderType === '订单变更' ? row.originalOrderNo : row.orderNo;
-        const quantityKey = `${row.orderType === '订单变更' ? 'original' : 'current'}:${quantityOrderNo}|${normalize(row.supplier)}|${normalize(row.materialCode)}`;
+        const usesOriginalOrder = row.changeValidationStatus === 'valid' && Boolean(row.originalOrderNo);
+        const quantityOrderNo = usesOriginalOrder ? row.originalOrderNo : row.orderNo;
+        const quantityKey = `${usesOriginalOrder ? 'original' : 'current'}:${quantityOrderNo}|${normalize(row.supplier)}|${normalize(row.materialCode)}`;
         if (!group.quantityKeys.has(quantityKey)) {
           group.quantityKeys.add(quantityKey);
           const reportingPurchaseQty = numberValue(row.reportingPurchaseQty);
@@ -6620,10 +6629,12 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
     setBulkSaving(true);
     const succeededKeys = [];
     const failures = [];
+    let followedCount = 0;
+    let preservedCount = 0;
     for (const { row, payload } of submissions) {
       const requestId = clientRequestId('progress-bulk');
       try {
-        await request(`/api/progress/${encodeURIComponent(row.demandKey)}`, {
+        const result = await request(`/api/progress/${encodeURIComponent(row.demandKey)}`, {
           token,
           method: 'PATCH',
           networkRetries: 2,
@@ -6633,10 +6644,12 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
           body: JSON.stringify({
             ...payload,
             requestId,
-            trackingKey: row.rowKey || row.demandKey,
+            trackingKey: row.followupKey || row.rowKey || row.demandKey,
             orderNo: row.orderNo || ''
           })
         });
+        if (result.followupMarkedBySubmission) followedCount += 1;
+        else preservedCount += 1;
         succeededKeys.push(row.rowKey || row.demandKey);
       } catch (error) {
         failures.push(`${row.orderNo || row.materialCode || row.demandKey}：${error.message}`);
@@ -6655,8 +6668,10 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
       setMessage(`批量提交完成：成功 ${succeededKeys.length} 条，失败 ${failures.length} 条。${failures.slice(0, 3).join('；')}`);
     } else if (reloadError) {
       setMessage(`批量提交成功 ${succeededKeys.length} 条；列表刷新失败：${reloadError}`);
+    } else if (preservedCount && !followedCount) {
+      setMessage(`批量提交成功 ${succeededKeys.length} 条；管理员提交不改变本周跟进状态。`);
     } else {
-      setMessage(`批量提交成功 ${succeededKeys.length} 条，已标记为本周已跟进。`);
+      setMessage(`批量提交成功 ${succeededKeys.length} 条，已标记 ${followedCount} 条为本周已跟进。`);
     }
     setBulkSaving(false);
   }

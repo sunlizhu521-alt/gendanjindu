@@ -143,7 +143,8 @@ test('production progress filters support linked multi-select options', () => {
     appSource.indexOf('function Login(')
   );
   assert.match(filterSource, /supplier: \[\], purchaseOrg: \[\], businessUnit: \[\]/);
-  assert.doesNotMatch(filterSource, /month: \[\]|originalMonth: \[\]|orderType: \[\]/);
+  assert.doesNotMatch(filterSource, /month: \[\]|originalMonth: \[\]/);
+  assert.match(filterSource, /orderType: \[\]/);
   assert.match(filterSource, /const rowsFor = \(field\) => rows\.filter\(\(row\) => matchesFilters\(row, field\)\)/);
   assert.match(filterSource, /suppliers: uniqueSupplierShortNames\(rowsFor\('supplier'\)/);
   assert.match(filterSource, /purchaseOwners: uniqueProgressValues\(rowsFor\('purchaseOwner'\)/);
@@ -176,7 +177,7 @@ test('生产跟进支持成品和配件联动筛选', () => {
   );
 });
 
-test('生产跟进去掉订单类型及新旧下单月份筛选但保留订单变更字段', () => {
+test('生产跟进恢复订单类型筛选并继续去掉新旧下单月份筛选', () => {
   const filterSource = appSource.slice(
     appSource.indexOf('function useFilteredDemands('),
     appSource.indexOf('function Login(')
@@ -185,9 +186,16 @@ test('生产跟进去掉订单类型及新旧下单月份筛选但保留订单�
     appSource.indexOf('const PROGRESS_COLUMNS'),
     appSource.indexOf('function DifferenceAllocationPage(')
   );
-  assert.doesNotMatch(filterSource, /filters\.(?:month|originalMonth|orderType)/);
-  assert.doesNotMatch(filterSource, /options\.(?:months|originalMonths|orderTypes)/);
-  assert.doesNotMatch(filterSource, /label="(?:订单类型|新下单月份|原下单月份)"/);
+  assert.doesNotMatch(filterSource, /filters\.(?:month|originalMonth)/);
+  assert.doesNotMatch(filterSource, /options\.(?:months|originalMonths)/);
+  assert.doesNotMatch(filterSource, /label="(?:新下单月份|原下单月份)"/);
+  assert.match(filterSource, /matchesSelected\(filters\.orderType, row\.orderType \|\| '正常订单'\)/);
+  assert.match(filterSource, /orderTypes: \['正常订单', '内部交易订单', '订单变更', '变更待核验'\]/);
+  assert.match(filterSource, /label="订单类型" allLabel="全部订单类型"/);
+  assert.ok(
+    filterSource.indexOf('label="成品/配件"') < filterSource.indexOf('label="订单类型"'),
+    '订单类型筛选器应紧跟在成品/配件筛选器后面'
+  );
   assert.match(appSource, /function MonthCalendarFilter\([\s\S]*?showWhenEmpty = false[\s\S]*?availableOptions\.length === 0 && !showWhenEmpty/);
   assert.match(filterSource, /row\.originalOrderNo/);
   ['订单类型', '下单月份', '当前订单采购数量', '原采购订单号', '原订单创建日期', '原订单采购数量', '变更校验'].forEach((label) => {
@@ -560,19 +568,26 @@ test('生产跟进按采购订单保存跟单备注并筛选本周人工跟进�
   );
   assert.match(databaseSource, /CREATE TABLE IF NOT EXISTS production_order_followups/);
   assert.match(databaseSource, /fulfillment_remark TEXT NOT NULL DEFAULT ''/);
+  assert.match(databaseSource, /material_code TEXT NOT NULL DEFAULT ''/);
+  assert.match(databaseSource, /followed_user_id TEXT NOT NULL DEFAULT ''/);
+  assert.match(databaseSource, /followed_role TEXT NOT NULL DEFAULT ''/);
   assert.match(databaseSource, /followed_by TEXT NOT NULL DEFAULT ''/);
   assert.match(databaseSource, /followed_at TEXT NOT NULL DEFAULT ''/);
   assert.match(serverSource, /function chinaWeekStartText\(now = new Date\(\)\)/);
   assert.match(serverSource, /timeZone: 'Asia\/Shanghai'/);
   assert.match(serverSource, /function isFollowedThisWeek\(followedAt, now = new Date\(\)\)/);
   assert.match(serverSource, /function saveProductionOrderFollowup/);
-  assert.match(appSource, /trackingKey: row\.rowKey \|\| row\.demandKey/);
+  assert.match(serverSource, /`order:\$\{encodeURIComponent\(normalizedOrderNo\)\}:\$\{encodeURIComponent\(normalizedMaterialCode\)\}`/);
+  assert.match(serverSource, /normalize\(followup\.followed_role\) === ROLE_USER/);
+  assert.match(serverSource, /function migrateProductionOrderFollowups\(\)/);
+  assert.match(appSource, /trackingKey: row\.followupKey \|\| row\.rowKey \|\| row\.demandKey/);
   assert.match(serverSource, /fulfillmentRemark: req\.body\.fulfillmentRemark/);
-  assert.match(serverSource, /DELETE FROM production_order_followups WHERE demand_key/);
+  assert.match(serverSource, /DELETE FROM production_order_followups WHERE tracking_key/);
   assert.match(editorSource, /\['fulfillmentRemark', textInput\('fulfillmentRemark', '添加跟单备注'\)\]/);
   assert.match(editorSource, /\['remark', <input className="progress-remark-input" value=\{values\.remark\} readOnly title="原备注仅供查看，不能修改" \/>\]/);
-  assert.match(editorSource, /trackingKey: row\.rowKey \|\| row\.demandKey/);
+  assert.match(editorSource, /trackingKey: row\.followupKey \|\| row\.rowKey \|\| row\.demandKey/);
   assert.match(editorSource, /提交成功：已标记为本周已跟进/);
+  assert.match(editorSource, /管理员提交不改变本周跟进状态/);
   assert.match(editorSource, /提交失败：/);
   assert.match(filterSource, /followupStatus: \['未跟进'\]/);
   assert.match(filterSource, /followupStatuses: \['未跟进', '本周已跟进'\]/);
@@ -592,8 +607,9 @@ test('生产跟进保存支持幂等重试且不再返回全量数据', () => {
   assert.match(databaseSource, /CREATE TABLE IF NOT EXISTS production_progress_save_requests/);
   assert.match(serverSource, /function progressSaveRequest\(req\)/);
   assert.match(serverSource, /function saveProgressRequest\(/);
-  assert.match(saveRouteSource, /if \(saveRequest\.existing\)[\s\S]*?progressSavePayload\(saveRequest, \{\}, true\)/);
+  assert.match(saveRouteSource, /if \(saveRequest\.existing\)[\s\S]*?const replayTrackingKey[\s\S]*?productionFollowupPayload\(replayTrackingKey\)[\s\S]*?true\)\)/);
   assert.match(saveRouteSource, /saveProgressRequest\([\s\S]*?progressSavePayload/);
+  assert.match(saveRouteSource, /followupMarkedBySubmission/);
   assert.doesNotMatch(saveRouteSource, /res\.json\(\{ rows: demandRows/);
   assert.match(editorSource, /const requestId = clientRequestId\('progress'\)/);
   assert.match(editorSource, /networkRetries: 2/);

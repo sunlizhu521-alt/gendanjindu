@@ -3,6 +3,17 @@ const ORDER_CHANGE_PATTERN = /^(CGDD[0-9A-Z_-]+)/i;
 export const NORMAL_ORDER_TYPE = '正常订单';
 export const CHANGED_ORDER_TYPE = '订单变更';
 export const PENDING_CHANGE_ORDER_TYPE = '变更待核验';
+export const INTERNAL_TRANSACTION_ORDER_TYPE = '内部交易订单';
+
+const INTERNAL_TRANSACTION_SUPPLIERS = [
+  '浙江迈德斯特医疗器械科技有限公司',
+  '杭州国源养老科技有限公司',
+  '河北瑞朗德医疗器械科技集团有限公司',
+  'MATESIDE GLOBAL US INC.',
+  '杭州奇邦医疗器械有限公司'
+];
+const MATESIDE_SUPPLIER = '浙江迈德斯特医疗器械科技有限公司';
+const INTERNAL_TRANSACTION_EXCLUDED_SHORT_NAME = '电控生产部';
 
 function text(value) {
   return String(value ?? '').trim();
@@ -10,6 +21,30 @@ function text(value) {
 
 function keyPart(value) {
   return text(value).normalize('NFKC').toUpperCase();
+}
+
+const INTERNAL_TRANSACTION_SUPPLIER_KEYS = new Set(INTERNAL_TRANSACTION_SUPPLIERS.map(keyPart));
+const MATESIDE_SUPPLIER_KEY = keyPart(MATESIDE_SUPPLIER);
+
+function supplierShortNames(value) {
+  return text(value).split(/[&+、,，;；]/).map(keyPart).filter(Boolean);
+}
+
+export function isInternalTransactionSupplier(value, supplierShortName = '') {
+  const supplierKey = keyPart(value);
+  if (supplierKey === MATESIDE_SUPPLIER_KEY
+    && supplierShortNames(supplierShortName).includes(keyPart(INTERNAL_TRANSACTION_EXCLUDED_SHORT_NAME))) {
+    return false;
+  }
+  return INTERNAL_TRANSACTION_SUPPLIER_KEYS.has(supplierKey);
+}
+
+export function orderTypeForSupplier(supplier, fallbackType = NORMAL_ORDER_TYPE, supplierShortName = '') {
+  return isInternalTransactionSupplier(supplier, supplierShortName) ? INTERNAL_TRANSACTION_ORDER_TYPE : fallbackType;
+}
+
+function supplierOrderTypeResult(result, supplier, supplierShortName = '') {
+  return { ...result, orderType: orderTypeForSupplier(supplier, result.orderType, supplierShortName) };
 }
 
 function numericValue(value) {
@@ -105,13 +140,21 @@ function pendingResult(base, originalOrderNo, message, originalRows = []) {
   };
 }
 
-export function classifyOrderChange({ currentRows = [], batchId = '', supplier = '', materialCode = '', fallbackMonth = '', index }) {
+export function classifyOrderChange({
+  currentRows = [],
+  batchId = '',
+  supplier = '',
+  supplierShortName = '',
+  materialCode = '',
+  fallbackMonth = '',
+  index
+}) {
   const base = currentOrderFields(currentRows, fallbackMonth);
   const orderRemarks = uniqueValues(currentRows.map((row) => row.orderRemark ?? row.order_remark));
   const originalOrderNos = uniqueValues(orderRemarks.map(originalOrderNoFromRemark));
   const orderRemark = orderRemarks.join('、');
   if (!originalOrderNos.length) {
-    return {
+    return supplierOrderTypeResult({
       ...base,
       orderType: NORMAL_ORDER_TYPE,
       orderRemark,
@@ -122,18 +165,18 @@ export function classifyOrderChange({ currentRows = [], batchId = '', supplier =
       originalManualClose: '',
       changeValidationStatus: 'normal',
       changeValidationMessage: '备注未引用原采购订单，按正常订单统计'
-    };
+    }, supplier, supplierShortName);
   }
   if (originalOrderNos.length > 1) {
-    return {
+    return supplierOrderTypeResult({
       ...pendingResult(base, originalOrderNos.join('、'), '同一采购订单明细引用了多个原采购订单号'),
       orderRemark
-    };
+    }, supplier, supplierShortName);
   }
   const originalOrderNo = originalOrderNos[0];
   const currentOrderNos = uniqueValues(currentRows.map((row) => row.orderNo ?? row.order_no)).map(keyPart);
   if (currentOrderNos.includes(keyPart(originalOrderNo))) {
-    return { ...pendingResult(base, originalOrderNo, '原采购订单号不能与当前采购订单号相同'), orderRemark };
+    return supplierOrderTypeResult({ ...pendingResult(base, originalOrderNo, '原采购订单号不能与当前采购订单号相同'), orderRemark }, supplier, supplierShortName);
   }
   const originalRows = index?.byExact?.get(exactKey(batchId, originalOrderNo, supplier, materialCode)) || [];
   if (!originalRows.length) {
@@ -141,26 +184,26 @@ export function classifyOrderChange({ currentRows = [], batchId = '', supplier =
     const message = sameOrderRows.length
       ? '原采购订单存在，但供应商或物料编码与当前订单不一致'
       : '当前应用采购订单表中找不到原采购订单';
-    return { ...pendingResult(base, originalOrderNo, message), orderRemark };
+    return supplierOrderTypeResult({ ...pendingResult(base, originalOrderNo, message), orderRemark }, supplier, supplierShortName);
   }
   const manualCloseValues = uniqueValues(originalRows.map((row) => row.manualClose ?? row.manual_close));
   if (manualCloseValues.length !== 1 || manualCloseValues[0] !== '是') {
-    return {
+    return supplierOrderTypeResult({
       ...pendingResult(base, originalOrderNo, `原采购订单“手工关闭”必须为“是”，当前为“${manualCloseValues.join('、') || '空'}”`, originalRows),
       orderRemark
-    };
+    }, supplier, supplierShortName);
   }
   const originalDates = uniqueValues(originalRows.map((row) => normalizedDate(
     row.purchaseDate ?? row.purchase_date ?? row.createDate ?? row.create_date
   ))).sort();
   if (originalDates.length !== 1 || !monthFromDate(originalDates[0])) {
-    return {
+    return supplierOrderTypeResult({
       ...pendingResult(base, originalOrderNo, originalDates.length > 1 ? '原采购订单存在多个创建日期' : '原采购订单创建日期缺失或无法解析', originalRows),
       orderRemark
-    };
+    }, supplier, supplierShortName);
   }
   const originalPurchaseQty = originalRows.reduce((sum, row) => sum + numericValue(row.quantity), 0);
-  return {
+  return supplierOrderTypeResult({
     ...base,
     orderType: CHANGED_ORDER_TYPE,
     orderRemark,
@@ -173,5 +216,5 @@ export function classifyOrderChange({ currentRows = [], batchId = '', supplier =
     reportingPurchaseQty: originalPurchaseQty,
     changeValidationStatus: 'valid',
     changeValidationMessage: '原采购订单匹配成功，按原订单月份和采购数量统计'
-  };
+  }, supplier, supplierShortName);
 }

@@ -31,7 +31,7 @@ import {
 } from './inventory-risk.js';
 import { buildInventoryRiskWorkbook } from './inventory-risk-export.js';
 import { groupCurrentKingdeeOrderRows, isEffectivePurchaseOrder, kingdeeOrderIdentity } from './kingdee-order-visibility.js';
-import { buildOrderChangeIndex, classifyOrderChange, NORMAL_ORDER_TYPE } from './order-change.js';
+import { buildOrderChangeIndex, classifyOrderChange, NORMAL_ORDER_TYPE, orderTypeForSupplier } from './order-change.js';
 import { buildStyledExcelBuffer } from '../shared/excel-export.js';
 import { buildProductArchive } from './product-archive.js';
 import {
@@ -281,41 +281,205 @@ function isFollowedThisWeek(followedAt, now = new Date()) {
   return value >= chinaWeekStartText(now) && value <= current;
 }
 
-function progressFollowupTrackingKey(demandKeyValue, orderNo = '') {
-  return normalize(orderNo)
+function progressFollowupTrackingKey(demandKeyValue, orderNo = '', materialCode = '') {
+  const normalizedOrderNo = normalizeMatchPart(orderNo);
+  const normalizedMaterialCode = normalizeMatchPart(materialCode);
+  if (normalizedOrderNo && normalizedMaterialCode) {
+    return `order:${encodeURIComponent(normalizedOrderNo)}:${encodeURIComponent(normalizedMaterialCode)}`;
+  }
+  return normalizedOrderNo
     ? kingdeeOrderIdentity(demandKeyValue, orderNo)
     : normalize(demandKeyValue);
 }
 
 function progressFollowupPayload(followupMap, trackingKey, now = new Date()) {
   const followup = followupMap.get(normalize(trackingKey)) || {};
-  const followedAt = normalize(followup.followed_at);
+  const isOrdinaryUserFollowup = normalize(followup.followed_role) === ROLE_USER;
+  const followedAt = isOrdinaryUserFollowup ? normalize(followup.followed_at) : '';
   const followedThisWeek = isFollowedThisWeek(followedAt, now);
   return {
     fulfillmentRemark: normalize(followup.fulfillment_remark),
-    followupUpdatedBy: normalize(followup.followed_by),
+    followupUpdatedBy: isOrdinaryUserFollowup ? normalize(followup.followed_by) : '',
     followupUpdatedAt: followedAt,
     followedThisWeek,
     followupStatus: followedThisWeek ? '本周已跟进' : '未跟进'
   };
 }
 
-function saveProductionOrderFollowup({ trackingKey, demandKey, orderNo = '', fulfillmentRemark = '', userName, followedAt = chinaNowText() }) {
+function productionFollowupPayload(trackingKey, now = new Date()) {
+  const key = normalize(trackingKey);
+  const row = get('SELECT * FROM production_order_followups WHERE tracking_key = ?', [key]);
+  return progressFollowupPayload(new Map(row ? [[key, row]] : []), key, now);
+}
+
+function saveProductionOrderFollowup({
+  trackingKey,
+  demandKey,
+  orderNo = '',
+  materialCode = '',
+  fulfillmentRemark = '',
+  user,
+  followedAt = chinaNowText()
+}) {
+  const key = normalize(trackingKey);
+  const existing = get('SELECT * FROM production_order_followups WHERE tracking_key = ?', [key]) || {};
+  const followupMarkedBySubmission = normalize(user?.role) === ROLE_USER;
+  const followedUserId = followupMarkedBySubmission ? normalize(user?.id) : normalize(existing.followed_user_id);
+  const followedRole = followupMarkedBySubmission ? ROLE_USER : normalize(existing.followed_role);
+  const followedBy = followupMarkedBySubmission
+    ? (normalize(user?.name) || '未知用户')
+    : normalize(existing.followed_by);
+  const effectiveFollowedAt = followupMarkedBySubmission ? normalize(followedAt) : normalize(existing.followed_at);
   run(
     `INSERT INTO production_order_followups (
-       tracking_key, demand_key, order_no, fulfillment_remark, followed_by, followed_at
-     ) VALUES (?, ?, ?, ?, ?, ?)
+       tracking_key, demand_key, order_no, material_code, fulfillment_remark,
+       followed_user_id, followed_role, followed_by, followed_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(tracking_key) DO UPDATE SET
        demand_key = excluded.demand_key,
        order_no = excluded.order_no,
+       material_code = excluded.material_code,
        fulfillment_remark = excluded.fulfillment_remark,
+       followed_user_id = excluded.followed_user_id,
+       followed_role = excluded.followed_role,
        followed_by = excluded.followed_by,
        followed_at = excluded.followed_at`,
     [
-      normalize(trackingKey), normalize(demandKey), normalize(orderNo), normalize(fulfillmentRemark),
-      normalize(userName) || '未知用户', normalize(followedAt)
+      key, normalize(demandKey), normalize(orderNo), normalize(materialCode), normalize(fulfillmentRemark),
+      followedUserId, followedRole, followedBy, effectiveFollowedAt
     ]
   );
+  return {
+    followupMarkedBySubmission,
+    ...productionFollowupPayload(key)
+  };
+}
+
+function productionFollowupMaterialCode(row) {
+  const stored = normalize(row.material_code);
+  if (stored) return stored;
+  const demandKeyValue = normalize(row.demand_key);
+  const orderNo = normalize(row.order_no);
+  if (demandKeyValue && orderNo) {
+    const order = get(
+      `SELECT material_code FROM kingdee_orders
+       WHERE demand_key = ? AND order_no = ? AND material_code <> ''
+       ORDER BY rowid DESC LIMIT 1`,
+      [demandKeyValue, orderNo]
+    );
+    if (normalize(order?.material_code)) return normalize(order.material_code);
+  }
+  if (demandKeyValue) {
+    const demand = get('SELECT material_code FROM order_demands WHERE demand_key = ?', [demandKeyValue]);
+    if (normalize(demand?.material_code)) return normalize(demand.material_code);
+    const parts = demandKeyValue.split('|');
+    if (parts.length >= 5 && normalize(parts.at(-1))) return normalize(parts.at(-1));
+  }
+  if (orderNo) {
+    const materials = all(
+      `SELECT DISTINCT material_code FROM kingdee_orders
+       WHERE order_no = ? AND material_code <> ''`,
+      [orderNo]
+    ).map((item) => normalize(item.material_code)).filter(Boolean);
+    if (materials.length === 1) return materials[0];
+  }
+  return '';
+}
+
+function productionFollowupUser(userMapById, userMapByName, row) {
+  const byId = userMapById.get(normalize(row.followed_user_id || row.user_id));
+  if (byId) return byId;
+  return userMapByName.get(normalize(row.followed_by)) || null;
+}
+
+function migrateProductionOrderFollowups() {
+  const migrationKey = 'production-followup-stable-key-v1';
+  if (get('SELECT 1 AS found FROM import_mappings WHERE kind = ?', [migrationKey])) return;
+  const users = all('SELECT id, name, role FROM users');
+  const userMapById = new Map(users.map((user) => [normalize(user.id), user]));
+  const userMapByName = new Map(users.map((user) => [normalize(user.name), user]));
+  const rows = all('SELECT * FROM production_order_followups');
+  const groups = new Map();
+  rows.forEach((row, index) => {
+    const manual = normalize(row.tracking_key).startsWith('manual:');
+    const materialCode = manual ? normalize(row.material_code) : productionFollowupMaterialCode(row);
+    const trackingKey = manual
+      ? normalize(row.tracking_key)
+      : progressFollowupTrackingKey(row.demand_key, row.order_no, materialCode);
+    if (!trackingKey) return;
+    const group = groups.get(trackingKey) || { rows: [], ordinaryCandidates: [] };
+    const user = productionFollowupUser(userMapById, userMapByName, row);
+    const followedRole = normalize(row.followed_role) || normalize(user?.role);
+    const normalizedRow = {
+      ...row,
+      tracking_key: trackingKey,
+      material_code: materialCode,
+      followed_user_id: normalize(row.followed_user_id) || normalize(user?.id),
+      followed_role: followedRole,
+      source_index: index
+    };
+    group.rows.push(normalizedRow);
+    if (followedRole === ROLE_USER && normalize(row.followed_at)) {
+      group.ordinaryCandidates.push(normalizedRow);
+    }
+    groups.set(trackingKey, group);
+  });
+  const requestRows = all(
+    `SELECT r.*, u.name AS followed_by, u.role AS followed_role
+     FROM production_progress_save_requests r
+     LEFT JOIN users u ON u.id = r.user_id
+     WHERE u.role = ?`,
+    [ROLE_USER]
+  );
+  requestRows.forEach((request, index) => {
+    const manual = normalize(request.tracking_key).startsWith('manual:');
+    const materialCode = manual ? '' : productionFollowupMaterialCode(request);
+    const trackingKey = manual
+      ? normalize(request.tracking_key)
+      : progressFollowupTrackingKey(request.demand_key, request.order_no, materialCode);
+    const group = groups.get(trackingKey);
+    if (!group || !normalize(request.saved_at)) return;
+    group.ordinaryCandidates.push({
+      followed_user_id: normalize(request.user_id),
+      followed_role: ROLE_USER,
+      followed_by: normalize(request.followed_by),
+      followed_at: normalize(request.saved_at),
+      source_index: rows.length + index
+    });
+  });
+  const newest = (items, dateField) => [...items].sort((left, right) => (
+    normalize(right[dateField]).localeCompare(normalize(left[dateField]))
+      || numberValue(right.source_index) - numberValue(left.source_index)
+  ))[0] || {};
+  transaction(() => {
+    run('DELETE FROM production_order_followups');
+    groups.forEach((group, trackingKey) => {
+      const latestRow = newest(group.rows, 'followed_at');
+      const latestRemarkRow = newest(group.rows.filter((row) => normalize(row.fulfillment_remark)), 'followed_at');
+      const latestOrdinary = newest(group.ordinaryCandidates, 'followed_at');
+      run(
+        `INSERT INTO production_order_followups (
+           tracking_key, demand_key, order_no, material_code, fulfillment_remark,
+           followed_user_id, followed_role, followed_by, followed_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          trackingKey, normalize(latestRow.demand_key), normalize(latestRow.order_no), normalize(latestRow.material_code),
+          normalize(latestRemarkRow.fulfillment_remark), normalize(latestOrdinary.followed_user_id),
+          normalize(latestOrdinary.followed_role), normalize(latestOrdinary.followed_by), normalize(latestOrdinary.followed_at)
+        ]
+      );
+    });
+    run(
+      `INSERT INTO import_mappings (kind, mapping_json, updated_by, updated_at)
+       VALUES (?, ?, '系统迁移', ?)
+       ON CONFLICT(kind) DO UPDATE SET mapping_json = excluded.mapping_json,
+         updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
+      [migrationKey, JSON.stringify({ migratedRows: rows.length, stableRows: groups.size }), nowText()]
+    );
+  });
+  if (rows.length) {
+    console.info(`[Production followup migration] ${rows.length} legacy rows -> ${groups.size} stable rows`);
+  }
 }
 
 function progressSaveRequest(req) {
@@ -333,7 +497,12 @@ function progressSaveRequest(req) {
     throw error;
   }
   const requestedTrackingKey = normalize(req.body?.trackingKey);
-  if (existing && requestedTrackingKey && normalize(existing.tracking_key) !== requestedTrackingKey) {
+  const existingTrackingKeys = existing ? new Set([
+    normalize(existing.tracking_key),
+    progressFollowupTrackingKey(existing.demand_key, existing.order_no),
+    progressFollowupTrackingKey(existing.demand_key, existing.order_no, productionFollowupMaterialCode(existing))
+  ].filter(Boolean)) : new Set();
+  if (existing && requestedTrackingKey && !existingTrackingKeys.has(requestedTrackingKey)) {
     const error = new Error('提交请求标识与采购订单不匹配');
     error.status = 409;
     throw error;
@@ -362,6 +531,8 @@ function progressSavePayload(saveRequest, values = {}, replayed = false) {
     demandKey: normalize(source.demand_key || source.demandKey),
     orderNo: normalize(source.order_no || source.orderNo),
     savedAt: normalize(source.saved_at || source.savedAt),
+    followupMarkedBySubmission: Boolean(values.followupMarkedBySubmission),
+    followupStatus: normalize(values.followupStatus) || '未跟进',
     replayed
   };
 }
@@ -4027,6 +4198,7 @@ function manualProgressDisplayRows(systemRows, user = null, followupMap = new Ma
     return {
       ...(system || {}),
       ...progressFollowupPayload(followupMap, trackingKey),
+      followupKey: trackingKey,
       demandKey: trackingKey,
       underlyingDemandKey: first.demandKey || '',
       manualGroupId: first.id,
@@ -4059,7 +4231,7 @@ function manualProgressDisplayRows(systemRows, user = null, followupMap = new Ma
       contractDeliveryDates: joinedManualField(rows, 'sourceContractDeliveryDate'),
       oaFlowNo: first.oaFlowNo || system?.oaFlowNo || '',
       orderCreator: orderDetails?.orderCreator || candidate?.orderCreator || system?.orderCreator || '',
-      orderType: NORMAL_ORDER_TYPE,
+      orderType: orderTypeForSupplier(currentSupplier, NORMAL_ORDER_TYPE, currentSupplierShortName),
       orderRemark: '',
       reportingMonth: system?.reportingMonth || system?.month || first.month,
       reportingPurchaseQty: orderQty?.orderQty ?? numberValue(system?.currentOrderQty),
@@ -4130,6 +4302,7 @@ function operationOrderBreakdown(baseRow, sourceRows, orderChangeIndex) {
       currentRows: rows,
       batchId: rows[0]?.batch_id,
       supplier: baseRow.supplier,
+      supplierShortName: baseRow.orderSupplierShortName,
       materialCode: baseRow.materialCode,
       fallbackMonth: baseRow.month,
       index: orderChangeIndex
@@ -4265,7 +4438,7 @@ function demandRows(includeInactive = false, user = null, options = {}) {
       contractDeliveryDates,
       oaFlowNo,
       orderCreator,
-      orderType: NORMAL_ORDER_TYPE,
+      orderType: orderTypeForSupplier(demand.supplier, NORMAL_ORDER_TYPE, matchedSupplierShortName),
       orderRemark: '',
       reportingMonth: demand.month,
       reportingPurchaseQty: numberValue(demand.current_order_qty),
@@ -4309,16 +4482,21 @@ function demandRows(includeInactive = false, user = null, options = {}) {
     if (!allOrderRows.length) return {
       ...row,
       rowKey: row.demandKey,
+      followupKey: progressFollowupTrackingKey(row.demandKey),
       operationOrderLevel: false,
       operationOrderRows: [],
       dataSource: '手工录入',
       ...progressFollowupPayload(context.followupMap, progressFollowupTrackingKey(row.demandKey))
     };
-    return operationOrderBreakdown(row, allOrderRows, context.orderChangeIndex).map((orderRow) => ({
-      ...row,
-      ...orderRow,
-      ...progressFollowupPayload(context.followupMap, orderRow.rowKey)
-    }));
+    return operationOrderBreakdown(row, allOrderRows, context.orderChangeIndex).map((orderRow) => {
+      const followupKey = progressFollowupTrackingKey(row.demandKey, orderRow.orderNo, row.materialCode);
+      return {
+        ...row,
+        ...orderRow,
+        followupKey,
+        ...progressFollowupPayload(context.followupMap, followupKey)
+      };
+    });
   }).flat();
   const displayRows = includeInactive
     ? rows
@@ -6365,10 +6543,13 @@ app.post('/api/progress/clear', requireAuth, requirePage('progressRefresh'), req
       || expectedSnapshotCount !== preview.snapshotCount) {
       return res.status(409).json({ error: '清除范围已变化，请重新预览后再确认' });
     }
-    const demandKeys = progressClearSelection(req.user, filters).map((row) => row.demandKey);
+    const selectedRows = progressClearSelection(req.user, filters);
+    const demandKeys = [...new Set(selectedRows.map((row) => normalize(row.underlyingDemandKey || row.demandKey)).filter(Boolean))];
+    const followupKeys = [...new Set(selectedRows.map((row) => normalize(row.followupKey)).filter(Boolean))];
     transaction(() => {
       runMany('DELETE FROM supplier_progress WHERE demand_key = ?', demandKeys.map((key) => [key]));
       runMany('DELETE FROM supplier_progress_snapshots WHERE demand_key = ?', demandKeys.map((key) => [key]));
+      runMany('DELETE FROM production_order_followups WHERE tracking_key = ?', followupKeys.map((key) => [key]));
       runMany('DELETE FROM production_order_followups WHERE demand_key = ?', demandKeys.map((key) => [key]));
     });
     req.auditTarget = `${preview.matchedDemands} 条需求`;
@@ -6459,6 +6640,7 @@ function updateManualProgressGroup(req, res, manualRowId, saveRequest) {
   if (normalize(req.body.trackingKey) && normalize(req.body.trackingKey) !== trackingKey) {
     return res.status(400).json({ error: '手工跟进订单标识不匹配' });
   }
+  let followupResult;
   transaction(() => {
     run(
       `UPDATE manual_progress_rows
@@ -6483,12 +6665,13 @@ function updateManualProgressGroup(req, res, manualRowId, saveRequest) {
       [req.user.name, now, first.batchId, first.groupKey, first.id]
     );
     reconcileActiveManualProgress(req.user.name, now);
-    saveProductionOrderFollowup({
+    followupResult = saveProductionOrderFollowup({
       trackingKey,
       demandKey: first.demandKey,
       orderNo: first.orderNo,
+      materialCode: first.materialCode,
       fulfillmentRemark: req.body.fulfillmentRemark,
-      userName: req.user.name
+      user: req.user
     });
     saveProgressRequest({
       requestId: saveRequest.requestId,
@@ -6505,7 +6688,8 @@ function updateManualProgressGroup(req, res, manualRowId, saveRequest) {
     trackingKey,
     demandKey: first.demandKey,
     orderNo: first.orderNo,
-    savedAt: now
+    savedAt: now,
+    ...followupResult
   }));
 }
 
@@ -6519,7 +6703,18 @@ app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'
   if (saveRequest.existing) {
     req.auditTarget = saveRequest.existing.order_no || saveRequest.existing.demand_key;
     req.auditDetails = `服务器已确认该请求，未重复写入；请求 ${saveRequest.requestId}`;
-    return res.json(progressSavePayload(saveRequest, {}, true));
+    const submittingUser = get('SELECT role FROM users WHERE id = ?', [saveRequest.existing.user_id]);
+    const replayTrackingKey = normalize(saveRequest.existing.tracking_key).startsWith('manual:')
+      ? normalize(saveRequest.existing.tracking_key)
+      : progressFollowupTrackingKey(
+        saveRequest.existing.demand_key,
+        saveRequest.existing.order_no,
+        productionFollowupMaterialCode(saveRequest.existing)
+      );
+    return res.json(progressSavePayload(saveRequest, {
+      followupMarkedBySubmission: normalize(submittingUser?.role) === ROLE_USER,
+      ...productionFollowupPayload(replayTrackingKey)
+    }, true));
   }
   if (String(req.params.demandKey).startsWith('manual:')) {
     return updateManualProgressGroup(req, res, String(req.params.demandKey).slice('manual:'.length).split(':')[0], saveRequest);
@@ -6527,8 +6722,9 @@ app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'
   const demand = get('SELECT * FROM order_demands WHERE demand_key = ?', [req.params.demandKey]);
   if (!demand) return res.status(404).json({ error: '需求不存在' });
   const orderNo = normalize(req.body.orderNo);
-  const trackingKey = progressFollowupTrackingKey(demand.demand_key, orderNo);
-  if (normalize(req.body.trackingKey) !== trackingKey) {
+  const trackingKey = progressFollowupTrackingKey(demand.demand_key, orderNo, demand.material_code);
+  const legacyTrackingKey = progressFollowupTrackingKey(demand.demand_key, orderNo);
+  if (![trackingKey, legacyTrackingKey].includes(normalize(req.body.trackingKey))) {
     return res.status(400).json({ error: '采购订单跟进标识不匹配' });
   }
   if (orderNo && !get(
@@ -6583,6 +6779,7 @@ app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'
     remark: normalize(req.body.remark ?? progress.remark)
   };
   const now = nowText();
+  let followupResult;
   transaction(() => {
     run(
       `INSERT INTO supplier_progress (
@@ -6622,12 +6819,13 @@ app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'
         values.unfulfilledReason, values.reasonDetail, values.remark, req.user.name, now
       ]
     );
-    saveProductionOrderFollowup({
+    followupResult = saveProductionOrderFollowup({
       trackingKey,
       demandKey: demand.demand_key,
       orderNo,
+      materialCode: demand.material_code,
       fulfillmentRemark: req.body.fulfillmentRemark,
-      userName: req.user.name
+      user: req.user
     });
     saveProgressRequest({
       requestId: saveRequest.requestId,
@@ -6644,7 +6842,8 @@ app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'
     trackingKey,
     demandKey: demand.demand_key,
     orderNo,
-    savedAt: now
+    savedAt: now,
+    ...followupResult
   }));
 });
 
@@ -8158,6 +8357,11 @@ const sessionCleanupTimer = setInterval(() => {
 sessionCleanupTimer.unref?.();
 
 await ensureAdmin();
+try {
+  migrateProductionOrderFollowups();
+} catch (error) {
+  console.error('[Production followup migration] startup migration failed:', error);
+}
 async function checkScheduledProductProjectSync() {
   try {
     if (currentProductProjectFileData()) return;

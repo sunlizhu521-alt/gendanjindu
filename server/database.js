@@ -287,7 +287,10 @@ function migrate() {
       tracking_key TEXT PRIMARY KEY,
       demand_key TEXT NOT NULL DEFAULT '',
       order_no TEXT NOT NULL DEFAULT '',
+      material_code TEXT NOT NULL DEFAULT '',
       fulfillment_remark TEXT NOT NULL DEFAULT '',
+      followed_user_id TEXT NOT NULL DEFAULT '',
+      followed_role TEXT NOT NULL DEFAULT '',
       followed_by TEXT NOT NULL DEFAULT '',
       followed_at TEXT NOT NULL DEFAULT ''
     );
@@ -680,6 +683,17 @@ function migrate() {
     ['reason_detail', "TEXT NOT NULL DEFAULT ''"]
   ].forEach(([column, definition]) => {
     if (!progressSnapshotColumns.includes(column)) run(`ALTER TABLE supplier_progress_snapshots ADD COLUMN ${column} ${definition}`);
+  });
+
+  const productionFollowupColumns = all('PRAGMA table_info(production_order_followups)').map((row) => row.name);
+  [
+    ['material_code', "TEXT NOT NULL DEFAULT ''"],
+    ['followed_user_id', "TEXT NOT NULL DEFAULT ''"],
+    ['followed_role', "TEXT NOT NULL DEFAULT ''"]
+  ].forEach(([column, definition]) => {
+    if (!productionFollowupColumns.includes(column)) {
+      run(`ALTER TABLE production_order_followups ADD COLUMN ${column} ${definition}`);
+    }
   });
 
   const compareSessionColumns = all('PRAGMA table_info(difference_compare_sessions)').map((row) => row.name);

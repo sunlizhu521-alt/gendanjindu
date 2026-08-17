@@ -569,8 +569,8 @@ function requireAdmin(req, res, next) {
 }
 
 function requireSystemOwner(req, res, next) {
-  if (normalize(req.user?.name) === normalize(ADMIN_NAME)) return next();
-  return res.status(403).json({ error: `仅${ADMIN_NAME}可以清除跟单数据` });
+  if (req.user?.role === ROLE_ADMIN && normalize(req.user?.name) === normalize(ADMIN_NAME)) return next();
+  return res.status(403).json({ error: `仅管理员${ADMIN_NAME}可操作` });
 }
 
 function safeFilename(file) {
@@ -6023,7 +6023,7 @@ function manualProgressPreviewRows(batchId, limit = 80) {
   }));
 }
 
-app.post('/api/progress/manual-import/preview', requireAuth, requirePage('progressRefresh'), requireAdmin, upload.single('file'), (req, res) => {
+app.post('/api/progress/manual-import/preview', requireAuth, requirePage('progressRefresh'), requireSystemOwner, upload.single('file'), (req, res) => {
   try {
     if (!req.file?.buffer?.length) return res.status(400).json({ error: '请选择手工登记表文件' });
     const parsedWorkbook = workbookRows(req.file, null, { includePreviews: true });
@@ -6103,7 +6103,7 @@ app.post('/api/progress/manual-import/preview', requireAuth, requirePage('progre
   }
 });
 
-app.post('/api/progress/manual-import/:batchId/apply', requireAuth, requirePage('progressRefresh'), requireAdmin, (req, res) => {
+app.post('/api/progress/manual-import/:batchId/apply', requireAuth, requirePage('progressRefresh'), requireSystemOwner, (req, res) => {
   try {
     const batch = get('SELECT * FROM manual_progress_import_batches WHERE id = ?', [req.params.batchId]);
     if (!batch) return res.status(404).json({ error: '导入预览不存在，请重新上传文件' });
@@ -6160,7 +6160,7 @@ app.post('/api/progress/manual-import/:batchId/apply', requireAuth, requirePage(
   }
 });
 
-app.post('/api/progress/manual-import/reconcile', requireAuth, requirePage('progressRefresh'), requireAdmin, (req, res) => {
+app.post('/api/progress/manual-import/reconcile', requireAuth, requirePage('progressRefresh'), requireSystemOwner, (req, res) => {
   try {
     const startedAt = Date.now();
     const now = nowText();
@@ -6176,7 +6176,7 @@ app.post('/api/progress/manual-import/reconcile', requireAuth, requirePage('prog
   }
 });
 
-app.post('/api/progress/manual-import/rows/:rowId/confirm', requireAuth, requirePage('progressRefresh'), requireAdmin, (req, res) => {
+app.post('/api/progress/manual-import/rows/:rowId/confirm', requireAuth, requirePage('progressRefresh'), requireSystemOwner, (req, res) => {
   try {
     const dbRow = get(
       `SELECT * FROM manual_progress_rows
@@ -6216,7 +6216,7 @@ app.post('/api/progress/manual-import/rows/:rowId/confirm', requireAuth, require
   }
 });
 
-app.post('/api/progress/manual-import/rows/:rowId/delete', requireAuth, requirePage('progressRefresh'), requireAdmin, (req, res) => {
+app.post('/api/progress/manual-import/rows/:rowId/delete', requireAuth, requirePage('progressRefresh'), requireSystemOwner, (req, res) => {
   try {
     if (normalize(req.user.name) !== normalize(ADMIN_NAME)) {
       return res.status(403).json({ error: `仅${ADMIN_NAME}可以删除无采购订单号手工记录` });
@@ -6251,7 +6251,7 @@ app.post('/api/progress/manual-import/rows/:rowId/delete', requireAuth, requireP
   }
 });
 
-app.get('/api/progress/manual-import/history', requireAuth, requirePage('progressRefresh'), requireAdmin, (req, res) => {
+app.get('/api/progress/manual-import/history', requireAuth, requirePage('progressRefresh'), requireSystemOwner, (req, res) => {
   const rows = all(
     `SELECT id, file_name, sheet_name, row_count, status, summary_json, imported_by, imported_at, applied_at
      FROM manual_progress_import_batches ORDER BY imported_at DESC LIMIT 30`
@@ -6269,7 +6269,7 @@ app.get('/api/progress/manual-import/history', requireAuth, requirePage('progres
   res.json({ rows });
 });
 
-app.get('/api/progress/manual-import/latest', requireAuth, requirePage('progressRefresh'), (req, res) => {
+app.get('/api/progress/manual-import/latest', requireAuth, requirePage('progressRefresh'), requireSystemOwner, (req, res) => {
   const batch = latestAppliedManualProgressBatch();
   if (!batch) return res.json({ batch: null });
   res.json({
@@ -6285,13 +6285,13 @@ app.get('/api/progress/manual-import/latest', requireAuth, requirePage('progress
   });
 });
 
-app.get('/api/progress/manual-import/:batchId/rows', requireAuth, requirePage('progressRefresh'), requireAdmin, (req, res) => {
+app.get('/api/progress/manual-import/:batchId/rows', requireAuth, requirePage('progressRefresh'), requireSystemOwner, (req, res) => {
   const batch = get('SELECT id, status FROM manual_progress_import_batches WHERE id = ?', [req.params.batchId]);
   if (!batch) return res.status(404).json({ error: '导入批次不存在' });
   res.json({ batchId: batch.id, status: batch.status, rows: manualProgressPreviewRows(batch.id, 500) });
 });
 
-app.get('/api/progress/manual-import/:batchId/export', requireAuth, requirePage('progressRefresh'), requireAdmin, async (req, res) => {
+app.get('/api/progress/manual-import/:batchId/export', requireAuth, requirePage('progressRefresh'), requireSystemOwner, async (req, res) => {
   const batch = get('SELECT * FROM manual_progress_import_batches WHERE id = ?', [req.params.batchId]);
   if (!batch) return res.status(404).json({ error: '导入批次不存在' });
   const rows = all('SELECT * FROM manual_progress_rows WHERE batch_id = ? ORDER BY source_row_no', [batch.id]);

@@ -2591,14 +2591,14 @@ test('inventory summary and domestic board use complete source models and enforc
       headers: { Authorization: 'Bearer purchase-owner-token' }
     });
     assert.equal(nonAdminManualImportResponse.status, 403);
-    assert.deepEqual(await nonAdminManualImportResponse.json(), { error: '仅管理员可操作' });
+    assert.deepEqual(await nonAdminManualImportResponse.json(), { error: '仅管理员孙立柱可操作' });
 
-    const adminManualImportResponse = await fetch(`http://127.0.0.1:${port}/api/progress/manual-import/preview`, {
+    const systemOwnerManualImportResponse = await fetch(`http://127.0.0.1:${port}/api/progress/manual-import/preview`, {
       method: 'POST',
-      headers: { Authorization: 'Bearer admin-token' }
+      headers: { Authorization: 'Bearer system-owner-token' }
     });
-    assert.equal(adminManualImportResponse.status, 400);
-    assert.deepEqual(await adminManualImportResponse.json(), { error: '请选择手工登记表文件' });
+    assert.equal(systemOwnerManualImportResponse.status, 400);
+    assert.deepEqual(await systemOwnerManualImportResponse.json(), { error: '请选择手工登记表文件' });
 
     const usersResponse = await fetch(`http://127.0.0.1:${port}/api/users`, {
       headers: { Authorization: 'Bearer admin-token' }
@@ -3123,7 +3123,7 @@ test('inventory summary and domestic board use complete source models and enforc
       body: JSON.stringify({ suppliers: [m1Demand.supplier] })
     });
     assert.equal(otherAdminProgressClearPreview.status, 403);
-    assert.deepEqual(await otherAdminProgressClearPreview.json(), { error: '仅孙立柱可以清除跟单数据' });
+    assert.deepEqual(await otherAdminProgressClearPreview.json(), { error: '仅管理员孙立柱可操作' });
 
     const fullSupplierClearPreview = await fetch(`http://127.0.0.1:${port}/api/progress/clear-preview`, {
       method: 'POST',

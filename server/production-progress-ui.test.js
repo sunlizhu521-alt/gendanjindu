@@ -139,10 +139,11 @@ test('生产跟进删除供应家数、分配状态和数据状态筛选器', ()
 
 test('production progress filters support linked multi-select options', () => {
   const filterSource = appSource.slice(
-    appSource.indexOf('function useFilteredDemands('),
+    appSource.indexOf('function defaultProgressFilters('),
     appSource.indexOf('function Login(')
   );
-  assert.match(filterSource, /month: \[\], originalMonth: \[\], supplier: \[\], purchaseOrg: \[\]/);
+  assert.match(filterSource, /supplier: \[\], purchaseOrg: \[\], businessUnit: \[\]/);
+  assert.doesNotMatch(filterSource, /month: \[\]|originalMonth: \[\]|orderType: \[\]/);
   assert.match(filterSource, /const rowsFor = \(field\) => rows\.filter\(\(row\) => matchesFilters\(row, field\)\)/);
   assert.match(filterSource, /suppliers: uniqueSupplierShortNames\(rowsFor\('supplier'\)/);
   assert.match(filterSource, /purchaseOwners: uniqueProgressValues\(rowsFor\('purchaseOwner'\)/);
@@ -155,7 +156,7 @@ test('production progress filters support linked multi-select options', () => {
 
 test('生产跟进支持成品和配件联动筛选', () => {
   const filterSource = appSource.slice(
-    appSource.indexOf('function useFilteredDemands('),
+    appSource.indexOf('function defaultProgressFilters('),
     appSource.indexOf('function Login(')
   );
   const filterBarSource = appSource.slice(
@@ -168,14 +169,14 @@ test('生产跟进支持成品和配件联动筛选', () => {
   assert.doesNotMatch(filterSource, /productTypes: \['成品', '配件'\]\.filter/);
   assert.match(filterSource, /productType: options\.productTypes/);
   assert.match(filterSource, /label="成品\/配件" allLabel="全部类型"[\s\S]*?value=\{filters\.productType\}[\s\S]*?options=\{options\.productTypes\}/);
-  assert.match(filterSource, /const clear = \(\) => setFilters\([\s\S]*?productType: \[\]/);
+  assert.match(filterSource, /function defaultProgressFilters\(\)[\s\S]*?productType: \[\]/);
   assert.ok(
     filterBarSource.indexOf('label="成品/配件"') < filterBarSource.indexOf('label="采购组织"'),
     '成品/配件筛选器应位于生产跟进筛选栏最前面'
   );
 });
 
-test('生产跟进支持订单类型并拆分新旧下单月份筛选口径', () => {
+test('生产跟进去掉订单类型及新旧下单月份筛选但保留订单变更字段', () => {
   const filterSource = appSource.slice(
     appSource.indexOf('function useFilteredDemands('),
     appSource.indexOf('function Login(')
@@ -184,23 +185,42 @@ test('生产跟进支持订单类型并拆分新旧下单月份筛选口径', ()
     appSource.indexOf('const PROGRESS_COLUMNS'),
     appSource.indexOf('function DifferenceAllocationPage(')
   );
-  assert.match(filterSource, /orderType: \[\]/);
-  assert.match(filterSource, /const currentOrderMonth = normalize\(row\.month\) \|\| normalize\(row\.currentOrderDate\)\.slice\(0, 7\)/);
-  assert.match(filterSource, /const originalOrderMonth = normalize\(row\.originalOrderMonth \|\| \(row\.originalOrderNo \? row\.reportingMonth : ''\)\)/);
-  assert.match(filterSource, /matchesSelected\(filters\.month, currentOrderMonth\)/);
-  assert.match(filterSource, /matchesSelected\(filters\.originalMonth, originalOrderMonth\)/);
-  assert.match(filterSource, /originalMonths: uniqueProgressValues/);
-  assert.match(filterSource, /originalMonth: options\.originalMonths/);
-  assert.match(filterSource, /matchesSelected\(filters\.orderType, row\.orderType \|\| '正常订单'\)/);
-  assert.match(filterSource, /orderTypes: \['正常订单', '订单变更', '变更待核验'\]/);
-  assert.match(filterSource, /label="订单类型" allLabel="全部订单类型"/);
-  assert.match(filterSource, /label="新下单月份"/);
-  assert.match(filterSource, /label="原下单月份"[\s\S]*?showWhenEmpty/);
+  assert.doesNotMatch(filterSource, /filters\.(?:month|originalMonth|orderType)/);
+  assert.doesNotMatch(filterSource, /options\.(?:months|originalMonths|orderTypes)/);
+  assert.doesNotMatch(filterSource, /label="(?:订单类型|新下单月份|原下单月份)"/);
   assert.match(appSource, /function MonthCalendarFilter\([\s\S]*?showWhenEmpty = false[\s\S]*?availableOptions\.length === 0 && !showWhenEmpty/);
   assert.match(filterSource, /row\.originalOrderNo/);
   ['订单类型', '下单月份', '当前订单采购数量', '原采购订单号', '原订单创建日期', '原订单采购数量', '变更校验'].forEach((label) => {
     assert.match(progressSource, new RegExp(label));
   });
+});
+
+test('生产跟进筛选、方案和页码刷新后保留且搜索由按钮触发', () => {
+  const filterSource = appSource.slice(
+    appSource.indexOf('function defaultProgressFilters('),
+    appSource.indexOf('function Login(')
+  );
+  const progressSource = appSource.slice(
+    appSource.indexOf('function ProgressPage('),
+    appSource.indexOf('function DifferenceAllocationPage(')
+  );
+  const searchButtonIndex = filterSource.indexOf('>搜索</button>');
+  const clearButtonIndex = filterSource.indexOf('>清空筛选</button>');
+
+  assert.match(appSource, /function useSessionFilters\(cacheKey, initialFilters\)[\s\S]*?window\.sessionStorage\.getItem\(storageKey\)[\s\S]*?window\.sessionStorage\.setItem\(storageKey/);
+  assert.match(filterSource, /if \(!rows\.length\) return;/);
+  assert.match(filterSource, /const \[keywordDraft, setKeywordDraft\] = useState\(filters\.keyword \|\| ''\)/);
+  assert.match(filterSource, /value=\{keywordDraft\}[\s\S]*?onChange=\{\(event\) => setKeywordDraft\(event\.target\.value\)\}/);
+  assert.doesNotMatch(filterSource, /onChange=\{\(event\) => setFilters\(\{ \.\.\.filters, keyword:/);
+  assert.ok(searchButtonIndex >= 0 && searchButtonIndex < clearButtonIndex, '搜索按钮应在清空筛选前面');
+  assert.match(filterSource, /onClick=\{\(\) => onSearch\?\.\(keywordDraft\)\}/);
+  assert.match(filterSource, /function readProgressViewState\(storageKey\)/);
+  assert.match(progressSource, /gendanjindu:progress-view:v1:\$\{filterCacheKey\}:\$\{user\?\.id \|\| user\?\.name \|\| 'user'\}/);
+  assert.match(progressSource, /window\.sessionStorage\.setItem\(progressViewStorageKey, JSON\.stringify\(\{ currentPage, groupMode \}\)\)/);
+  assert.match(progressSource, /if \(!filterEffectReady\.current\)[\s\S]*?return;/);
+  assert.match(progressSource, /function applyProgressSearch\(keyword\)[\s\S]*?searchOriginPage\.current = currentPage/);
+  assert.match(progressSource, /requestedFilterPage\.current = currentKeyword && !nextKeyword \? searchOriginPage\.current : 1/);
+  assert.match(progressSource, /onSearch=\{applyProgressSearch\}[\s\S]*?onClear=\{clearProgressFilters\}/);
 });
 
 test('生产跟进数量口径说明包含订单变更完整规则', () => {
@@ -305,7 +325,7 @@ test('生产跟进支持新月份、原月份与供应商三级汇总并切换�
     appSource.indexOf('function ProgressPage('),
     appSource.indexOf('function DifferenceAllocationPage(')
   );
-  assert.match(progressSource, /const \[groupMode, setGroupMode\] = useState\('supplier'\)/);
+  assert.match(progressSource, /const \[groupMode, setGroupMode\] = useState\(initialProgressView\.groupMode\)/);
   assert.match(progressSource, /const summaryGroups = useMemo\(\(\) => \{[\s\S]*?const key = row\.orderNo[\s\S]*?`order:\$\{row\.orderNo\}`[\s\S]*?`manual:/);
   assert.match(progressSource, /supplierShortNames: new Set\(\)[\s\S]*?reportingMonths: new Set\(\)[\s\S]*?materialCodes: new Set\(\)/);
   assert.match(progressSource, /group\.materialCode = \[\.\.\.group\.materialCodes\]\.join\('、'\)/);
@@ -391,9 +411,10 @@ test('清除跟单数据仅孙立柱可见且后端接口同步限制账号', ()
     appSource.indexOf('function DifferenceAllocationPage(')
   );
 
-  assert.match(progressSource, /normalize\(user\?\.name\) === '孙立柱'[\s\S]*?清除跟单数据/);
-  assert.match(progressSource, /clearPanelOpen && normalize\(user\?\.name\) === '孙立柱'/);
-  assert.match(serverSource, /function requireSystemOwner\(req, res, next\)[\s\S]*?normalize\(req\.user\?\.name\) === normalize\(ADMIN_NAME\)/);
+  assert.match(progressSource, /const isSystemOwner = user\?\.role === '管理员' && normalize\(user\?\.name\) === '孙立柱'/);
+  assert.match(progressSource, /!onlyIssues && isSystemOwner && \([\s\S]*?清除跟单数据/);
+  assert.match(progressSource, /clearPanelOpen && isSystemOwner/);
+  assert.match(serverSource, /function requireSystemOwner\(req, res, next\)[\s\S]*?req\.user\?\.role === ROLE_ADMIN[\s\S]*?normalize\(req\.user\?\.name\) === normalize\(ADMIN_NAME\)/);
   assert.match(serverSource, /app\.post\('\/api\/progress\/clear-preview', requireAuth, requirePage\('progressRefresh'\), requireSystemOwner/);
   assert.match(serverSource, /app\.post\('\/api\/progress\/clear', requireAuth, requirePage\('progressRefresh'\), requireSystemOwner/);
 });
@@ -476,7 +497,7 @@ test('生产跟进使用固定默认显示列并按用户持久保存', () => {
   assert.deepEqual(
     [...defaultColumnsMatch[1].matchAll(/'([^']+)'/g)].map((match) => match[1]),
     [
-      'documentStatus', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku',
+      'documentStatus', 'supplierShortName', 'businessUnit', 'operatorName', 'productLine', 'materialCode', 'sku',
       'operationStockQty', 'remainingInboundQty', 'shippedQty', 'unpreparedQty', 'preparedNotStartedQty',
       'inProductionQty', 'finishedQty', 'contractDeliveryDates', 'productionDeliveryDate',
       'unproducedEstimatedDeliveryDate', 'fulfillmentStatus', 'fulfillmentRemark', 'remark', 'oaFlowNo', 'action'
@@ -502,9 +523,35 @@ test('生产跟进使用固定默认显示列并按用户持久保存', () => {
   assert.doesNotMatch(exportSource, /visibleColumnKeys/);
 });
 
+test('生产跟进默认展示采购订单运营并放在事业部之后', () => {
+  const columnSource = appSource.slice(
+    appSource.indexOf('const PROGRESS_COLUMNS'),
+    appSource.indexOf('function ProgressEditor(')
+  );
+  const editorSource = appSource.slice(
+    appSource.indexOf('function ProgressEditor('),
+    appSource.indexOf('function ProgressPage(')
+  );
+  const progressSource = appSource.slice(
+    appSource.indexOf('function ProgressPage('),
+    appSource.indexOf('function DifferenceAllocationPage(')
+  );
+  const exportSource = progressSource.slice(
+    progressSource.indexOf('async function handleExport()'),
+    progressSource.indexOf('const progressTableColumns')
+  );
+
+  assert.match(columnSource, /\['businessUnit', '事业部'\], \['operatorName', '运营'\], \['productLine', '产品线'\]/);
+  assert.match(columnSource, /PROGRESS_DEFAULT_COLUMNS[\s\S]*?'businessUnit', 'operatorName', 'productLine'/);
+  assert.match(columnSource, /PROGRESS_STICKY_COLUMN_KEYS[\s\S]*?'businessUnit', 'operatorName', 'productLine'/);
+  assert.match(editorSource, /\['businessUnit', row\.businessUnit\], \['operatorName', row\.operatorName \|\| '未填写'\],\s*\['productLine'/);
+  assert.match(exportSource, /'事业部', '运营', '产品线'/);
+  assert.match(exportSource, /row\.businessUnit,\s*row\.operatorName \|\| '',\s*row\.productLine/);
+});
+
 test('生产跟进按采购订单保存跟单备注并筛选本周人工跟进状态', () => {
   const filterSource = appSource.slice(
-    appSource.indexOf('function useFilteredDemands('),
+    appSource.indexOf('function defaultProgressFilters('),
     appSource.indexOf('function Login(')
   );
   const editorSource = appSource.slice(
@@ -645,7 +692,7 @@ test('生产跟进展开明细冻结关键识别与数量列', () => {
     appSource.indexOf('function ProgressPage('),
     appSource.indexOf('function DifferenceAllocationPage(')
   );
-  ['documentStatus', 'supplierShortName', 'businessUnit', 'productLine', 'materialCode', 'sku', 'operationStockQty', 'remainingInboundQty', 'shippedQty'].forEach((key) => {
+  ['documentStatus', 'supplierShortName', 'businessUnit', 'operatorName', 'productLine', 'materialCode', 'sku', 'operationStockQty', 'remainingInboundQty', 'shippedQty'].forEach((key) => {
     assert.match(columnSource, new RegExp(`PROGRESS_STICKY_COLUMN_KEYS[\\s\\S]*?'${key}'`));
   });
   assert.match(progressSource, /useLayoutEffect\(\(\) => \{[\s\S]*?getBoundingClientRect\(\)\.width/);
@@ -681,15 +728,21 @@ test('生产跟进支持手工登记表预览和采购订单折叠', () => {
   assert.doesNotMatch(progressSource, /label="采购组"/);
   assert.match(progressSource, /function ManualProgressImportPanel/);
   assert.match(progressSource, /导入手工登记表/);
-  assert.match(progressSource, /user\?\.role === '管理员' && <ManualProgressImportPanel/);
+  assert.match(progressSource, /!onlyIssues && isSystemOwner && <ManualProgressImportPanel/);
   assert.match(progressSource, /progress-order-parent-row/);
   assert.match(progressSource, /showHeader=\{false\}/);
   assert.match(progressSource, /expanded && \([\s\S]*?progress-order-detail-header[\s\S]*?progressTableColumns\.map/);
   assert.match(progressSource, /group\.rows\.map/);
   assert.match(serverSource, /\/api\/progress\/manual-import\/preview/);
   assert.match(serverSource, /\/api\/progress\/manual-import\/:batchId\/apply/);
-  assert.match(serverSource, /app\.post\('\/api\/progress\/manual-import\/preview', requireAuth, requirePage\('progressRefresh'\), requireAdmin/);
-  assert.match(serverSource, /app\.post\('\/api\/progress\/manual-import\/:batchId\/apply', requireAuth, requirePage\('progressRefresh'\), requireAdmin/);
+  assert.match(serverSource, /app\.post\('\/api\/progress\/manual-import\/preview', requireAuth, requirePage\('progressRefresh'\), requireSystemOwner/);
+  assert.match(serverSource, /app\.post\('\/api\/progress\/manual-import\/:batchId\/apply', requireAuth, requirePage\('progressRefresh'\), requireSystemOwner/);
+  assert.match(serverSource, /app\.post\('\/api\/progress\/manual-import\/reconcile', requireAuth, requirePage\('progressRefresh'\), requireSystemOwner/);
+  assert.match(serverSource, /app\.get\('\/api\/progress\/manual-import\/history', requireAuth, requirePage\('progressRefresh'\), requireSystemOwner/);
+  assert.match(serverSource, /app\.get\('\/api\/progress\/manual-import\/latest', requireAuth, requirePage\('progressRefresh'\), requireSystemOwner/);
+  assert.match(serverSource, /app\.get\('\/api\/progress\/manual-import\/:batchId\/rows', requireAuth, requirePage\('progressRefresh'\), requireSystemOwner/);
+  assert.match(serverSource, /app\.get\('\/api\/progress\/manual-import\/:batchId\/export', requireAuth, requirePage\('progressRefresh'\), requireSystemOwner/);
+  assert.doesNotMatch(serverSource, /app\.(?:get|post)\('\/api\/progress\/manual-import[^\n]*requireAdmin/);
   assert.match(serverSource, /本次手工表未出现/);
   assert.match(serverSource, /function latestAppliedManualProgressBatch\(\)/);
   assert.match(serverSource, /WHERE batch_id = \? AND active = 1 AND stale = 0 AND deleted_at = ''/);

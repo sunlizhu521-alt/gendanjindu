@@ -53,7 +53,9 @@ test('生产跟进四阶段、履约字段和导出状态完整呈现', () => {
   assert.match(progressSource, /来自金蝶采购订单累计入库数量，不能手动修改/);
   assert.doesNotMatch(progressSource, /shippedQty: numberValue\(nextValues\.shippedQty\)/);
   assert.doesNotMatch(progressSource, /quantityInput\('shippedQty'/);
-  assert.match(serverSource, /const purchaseOrderInboundQty = numberValue\(demand\.tracking_inbound_qty\)/);
+  assert.match(serverSource, /const orderQty = orderNo \? systemOrderQuantities\(demand\.demand_key, orderNo, demand\.material_code\) : null/);
+  assert.match(serverSource, /const purchaseOrderInboundQty = orderQty[\s\S]*?numberValue\(orderQty\.inboundQty\)[\s\S]*?numberValue\(demand\.tracking_inbound_qty\)/);
+  assert.match(serverSource, /const remainingInboundQty = orderQty[\s\S]*?numberValue\(orderQty\.remainingQty\)[\s\S]*?numberValue\(demand\.tracking_remaining_qty\)/);
   assert.match(serverSource, /shipped: purchaseOrderInboundQty/);
   assert.doesNotMatch(serverSource, /numberValue\(req\.body\.shippedQty\)/);
   assert.match(serverSource, /function contractDateOnly\(value\)/);

@@ -6740,8 +6740,13 @@ app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'
   if (!canEditDemand(req.user, { ...demand, order_creator: orderCreator, purchase_owner: enriched.purchaseOwner })) {
     return res.status(403).json({ error: '没有该供应商物料的刷新权限' });
   }
-  const purchaseOrderInboundQty = numberValue(demand.tracking_inbound_qty);
-  const remainingInboundQty = Math.max(numberValue(demand.tracking_remaining_qty), 0);
+  const orderQty = orderNo ? systemOrderQuantities(demand.demand_key, orderNo, demand.material_code) : null;
+  const purchaseOrderInboundQty = orderQty
+    ? numberValue(orderQty.inboundQty)
+    : numberValue(demand.tracking_inbound_qty);
+  const remainingInboundQty = orderQty
+    ? Math.max(numberValue(orderQty.remainingQty), 0)
+    : Math.max(numberValue(demand.tracking_remaining_qty), 0);
   const requestedUnprepared = progressQuantityValue(req.body.unpreparedQty, progress.unprepared_qty, '未备料未生产');
   const preparedNotStarted = progressQuantityValue(req.body.preparedNotStartedQty, progress.prepared_not_started_qty, '已备料未生产');
   const inProduction = progressQuantityValue(req.body.inProductionQty, progress.in_production_qty, '生产中产品');

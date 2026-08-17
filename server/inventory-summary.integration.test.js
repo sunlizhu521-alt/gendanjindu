@@ -2785,7 +2785,7 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.ok(Array.isArray(dimensionMissing.inventorySummaryTasks));
     assert.equal(typeof dimensionMissing.inventorySummaryQuality, 'object');
     const demandRows = (await demandsResponse.json()).rows;
-    const m1Demand = demandRows.find((row) => row.materialCode === 'M1' && row.orderNo === 'CGDD011482');
+    const m1Demand = demandRows.find((row) => row.materialCode === 'M1' && row.orderNo === 'CGDD011590');
     const m1DemandRows = demandRows.filter((row) => row.demandKey === m1Demand?.demandKey && row.materialCode === 'M1');
     assert.equal(m1DemandRows.length, 3);
     assert.deepEqual(m1DemandRows.map((row) => row.orderNo).sort(), ['CGDD011482', 'CGDD011560', 'CGDD011590']);
@@ -2970,7 +2970,7 @@ test('inventory summary and domestic board use complete source models and enforc
     const clientShippedOverrideResponse = await fetch(progressEndpoint, {
       method: 'PATCH',
       headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...progressIdentity, inProductionQty: 600, finishedQty: 400, shippedQty: 199, remark: 'stale' })
+      body: JSON.stringify({ ...progressIdentity, inProductionQty: 400, finishedQty: 200, shippedQty: 199, remark: 'stale' })
     });
     assert.equal(clientShippedOverrideResponse.status, 200);
     const clientShippedOverridePayload = await clientShippedOverrideResponse.json();
@@ -2991,7 +2991,7 @@ test('inventory summary and domestic board use complete source models and enforc
     const missingReasonResponse = await fetch(progressEndpoint, {
       method: 'PATCH',
       headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...progressIdentity, preparedNotStartedQty: 100, inProductionQty: 500, finishedQty: 400, shippedQty: 200, fulfillmentStatus: '否' })
+      body: JSON.stringify({ ...progressIdentity, preparedNotStartedQty: 100, inProductionQty: 300, finishedQty: 200, shippedQty: 200, fulfillmentStatus: '否' })
     });
     assert.equal(missingReasonResponse.status, 400);
 
@@ -3009,8 +3009,8 @@ test('inventory summary and domestic board use complete source models and enforc
         requestId: currentProgressRequestId,
         unpreparedQty: 0,
         preparedNotStartedQty: 100,
-        inProductionQty: 500,
-        finishedQty: 400,
+        inProductionQty: 300,
+        finishedQty: 200,
         shippedQty: 200,
         productionDeliveryDate: '9/10/26',
         unproducedEstimatedDeliveryDate: '8/20/26',
@@ -3055,9 +3055,9 @@ test('inventory summary and domestic board use complete source models and enforc
     }, {
       unpreparedQty: 0,
       preparedNotStartedQty: 100,
-      inProductionQty: 500,
-      finishedQty: 400,
-      progressTotal: 1000,
+      inProductionQty: 300,
+      finishedQty: 200,
+      progressTotal: 600,
       fulfillmentStatus: '否',
       abnormalFulfillmentQty: 1100,
       abnormalFulfillmentAmount: 0,
@@ -3079,8 +3079,8 @@ test('inventory summary and domestic board use complete source models and enforc
         ...progressIdentity,
         requestId: ordinaryProgressRequestId,
         preparedNotStartedQty: 100,
-        inProductionQty: 500,
-        finishedQty: 400,
+        inProductionQty: 300,
+        finishedQty: 200,
         fulfillmentStatus: '否',
         unfulfilledReason: '供应商延期',
         reasonDetail: '原料延期',
@@ -3112,8 +3112,8 @@ test('inventory summary and domestic board use complete source models and enforc
         requestId: ordinaryResubmitRequestId,
         unpreparedQty: 0,
         preparedNotStartedQty: 120,
-        inProductionQty: 480,
-        finishedQty: 400,
+        inProductionQty: 280,
+        finishedQty: 200,
         productionDeliveryDate: '2026.9.11',
         unproducedEstimatedDeliveryDate: '2026年8月21日',
         fulfillmentStatus: '否',
@@ -3148,8 +3148,8 @@ test('inventory summary and domestic board use complete source models and enforc
         ...progressIdentity,
         requestId: adminPreserveRequestId,
         preparedNotStartedQty: 100,
-        inProductionQty: 500,
-        finishedQty: 400,
+        inProductionQty: 300,
+        finishedQty: 200,
         fulfillmentStatus: '否',
         unfulfilledReason: '供应商延期',
         reasonDetail: '原料延期',
@@ -3297,9 +3297,9 @@ test('inventory summary and domestic board use complete source models and enforc
     }, {
       unpreparedQty: 0,
       preparedNotStartedQty: 100,
-      inProductionQty: 500,
-      finishedQty: 400,
-      progressTotal: 1000,
+      inProductionQty: 300,
+      finishedQty: 200,
+      progressTotal: 600,
       progressAdjustmentRequired: true,
       fulfillmentStatus: '否',
       unfulfilledReason: '供应商延期'

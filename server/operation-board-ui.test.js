@@ -134,7 +134,7 @@ test('运营看板和生产跟进均排除关闭状态不是未关闭的订单',
   const demandRows = server.slice(server.indexOf('function demandRows('), server.indexOf('function uniqueOrderNos('));
 
   assert.match(loadContext, /if \(normalize\(row\.close_status\) && normalize\(row\.close_status\) !== TRACKING_CLOSE_STATUS\) return;/);
-  assert.match(demandRows, /const context = demandLoadContext\(demands\);/);
+  assert.match(demandRows, /const context = demandLoadContext\(demands, \{ includeInventory: options\.includeInventory !== false \}\);/);
   assert.doesNotMatch(server, /includeClosedOrders/);
 });
 

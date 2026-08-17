@@ -318,6 +318,54 @@ function saveProductionOrderFollowup({ trackingKey, demandKey, orderNo = '', ful
   );
 }
 
+function progressSaveRequest(req) {
+  const suppliedRequestId = normalize(req.headers['x-idempotency-key'] || req.body?.requestId);
+  const requestId = suppliedRequestId || randomUUID();
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(requestId)) {
+    const error = new Error('提交请求标识无效');
+    error.status = 400;
+    throw error;
+  }
+  const existing = get('SELECT * FROM production_progress_save_requests WHERE request_id = ?', [requestId]);
+  if (existing && normalize(existing.user_id) !== normalize(req.user?.id)) {
+    const error = new Error('提交请求标识已被其他用户使用');
+    error.status = 409;
+    throw error;
+  }
+  const requestedTrackingKey = normalize(req.body?.trackingKey);
+  if (existing && requestedTrackingKey && normalize(existing.tracking_key) !== requestedTrackingKey) {
+    const error = new Error('提交请求标识与采购订单不匹配');
+    error.status = 409;
+    throw error;
+  }
+  return { requestId, existing };
+}
+
+function saveProgressRequest({ requestId, userId, trackingKey, demandKey, orderNo = '', savedAt }) {
+  run(
+    `INSERT INTO production_progress_save_requests (
+       request_id, user_id, tracking_key, demand_key, order_no, saved_at
+     ) VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      normalize(requestId), normalize(userId), normalize(trackingKey), normalize(demandKey),
+      normalize(orderNo), normalize(savedAt)
+    ]
+  );
+}
+
+function progressSavePayload(saveRequest, values = {}, replayed = false) {
+  const source = saveRequest.existing || values;
+  return {
+    ok: true,
+    requestId: saveRequest.requestId,
+    trackingKey: normalize(source.tracking_key || source.trackingKey),
+    demandKey: normalize(source.demand_key || source.demandKey),
+    orderNo: normalize(source.order_no || source.orderNo),
+    savedAt: normalize(source.saved_at || source.savedAt),
+    replayed
+  };
+}
+
 function normalize(value) {
   return String(value ?? '').trim();
 }
@@ -2951,11 +2999,11 @@ function defaultProgress(demandKeyValue) {
   };
 }
 
-function demandLoadContext(demands) {
+function demandLoadContext(demands, { includeInventory = true } = {}) {
   const lookups = dimensionLookups();
   const progressMap = new Map(all('SELECT * FROM supplier_progress').map((row) => [row.demand_key, row]));
   const followupMap = new Map(all('SELECT * FROM production_order_followups').map((row) => [row.tracking_key, row]));
-  const inventoryMap = new Map(all('SELECT * FROM inventory').map((row) => [row.stock_key, row]));
+  const inventoryMap = new Map((includeInventory ? all('SELECT * FROM inventory') : []).map((row) => [row.stock_key, row]));
   const batchIds = [...new Set(demands.map((row) => normalize(row.source_batch_id)).filter(Boolean))];
   const demandKeys = new Set(demands.map((row) => normalize(row.demand_key)));
   const orderRowsByDemand = new Map();
@@ -4149,7 +4197,7 @@ function operationOrderBreakdown(baseRow, sourceRows, orderChangeIndex) {
 function demandRows(includeInactive = false, user = null, options = {}) {
   const where = includeInactive ? '' : 'WHERE active = 1';
   const demands = all(`SELECT * FROM order_demands ${where} ORDER BY month DESC, business_unit, supplier, material_code`);
-  const context = demandLoadContext(demands);
+  const context = demandLoadContext(demands, { includeInventory: options.includeInventory !== false });
   const rows = demands.map((demand) => {
     const progress = context.progressMap.get(demand.demand_key) || defaultProgress(demand.demand_key);
     const stock = context.inventoryMap.get(stockKey(demand.business_unit, demand.supplier, demand.material_code)) || { stock_qty: 0 };
@@ -5851,6 +5899,20 @@ app.get('/api/demands', requireAuth, (req, res) => {
   });
 });
 
+app.get('/api/progress/demands', requireAuth, requirePage('progressRefresh'), (req, res) => {
+  const startedAt = Date.now();
+  const rows = demandRows(false, req.user, { includeInventory: false });
+  const durationMs = Date.now() - startedAt;
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Server-Timing', `progress-demands;dur=${durationMs}`);
+  res.json({
+    rows,
+    currentAppliedAt: currentAppliedAt(),
+    dataScope: 'progress',
+    durationMs
+  });
+});
+
 app.get('/api/operation-board/demands', requireAuth, requirePage('operationBoard'), (req, res) => {
   res.json({
     rows: demandRows(false, null, { includeOperationOrders: true, currentKingdeeOnly: true }),
@@ -6321,7 +6383,7 @@ app.post('/api/progress/clear', requireAuth, requirePage('progressRefresh'), req
   }
 });
 
-function updateManualProgressGroup(req, res, manualRowId) {
+function updateManualProgressGroup(req, res, manualRowId, saveRequest) {
   const firstDbRow = get('SELECT * FROM manual_progress_rows WHERE id = ? AND active = 1', [manualRowId]);
   if (!firstDbRow) return res.status(404).json({ error: '手工跟单明细不存在或已被新快照替换' });
   const first = manualProgressDbModel(firstDbRow);
@@ -6428,15 +6490,39 @@ function updateManualProgressGroup(req, res, manualRowId) {
       fulfillmentRemark: req.body.fulfillmentRemark,
       userName: req.user.name
     });
+    saveProgressRequest({
+      requestId: saveRequest.requestId,
+      userId: req.user.id,
+      trackingKey,
+      demandKey: first.demandKey,
+      orderNo: first.orderNo,
+      savedAt: now
+    });
   });
   req.auditTarget = first.orderNo || first.oaFlowNo || `源行 ${first.sourceRowNo}`;
-  req.auditDetails = `更新手工生产跟进组 ${first.groupKey}`;
-  return res.json({ rows: demandRows(false, req.user) });
+  req.auditDetails = `更新手工生产跟进组 ${first.groupKey}；请求 ${saveRequest.requestId}`;
+  return res.json(progressSavePayload(saveRequest, {
+    trackingKey,
+    demandKey: first.demandKey,
+    orderNo: first.orderNo,
+    savedAt: now
+  }));
 }
 
 app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'), (req, res) => {
+  let saveRequest;
+  try {
+    saveRequest = progressSaveRequest(req);
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.message || '提交请求标识无效' });
+  }
+  if (saveRequest.existing) {
+    req.auditTarget = saveRequest.existing.order_no || saveRequest.existing.demand_key;
+    req.auditDetails = `服务器已确认该请求，未重复写入；请求 ${saveRequest.requestId}`;
+    return res.json(progressSavePayload(saveRequest, {}, true));
+  }
   if (String(req.params.demandKey).startsWith('manual:')) {
-    return updateManualProgressGroup(req, res, String(req.params.demandKey).slice('manual:'.length).split(':')[0]);
+    return updateManualProgressGroup(req, res, String(req.params.demandKey).slice('manual:'.length).split(':')[0], saveRequest);
   }
   const demand = get('SELECT * FROM order_demands WHERE demand_key = ?', [req.params.demandKey]);
   if (!demand) return res.status(404).json({ error: '需求不存在' });
@@ -6543,8 +6629,23 @@ app.patch('/api/progress/:demandKey', requireAuth, requirePage('progressRefresh'
       fulfillmentRemark: req.body.fulfillmentRemark,
       userName: req.user.name
     });
+    saveProgressRequest({
+      requestId: saveRequest.requestId,
+      userId: req.user.id,
+      trackingKey,
+      demandKey: demand.demand_key,
+      orderNo,
+      savedAt: now
+    });
   });
-  res.json({ rows: demandRows(false, req.user) });
+  req.auditTarget = orderNo || demand.demand_key;
+  req.auditDetails = `提交生产跟进；请求 ${saveRequest.requestId}`;
+  res.json(progressSavePayload(saveRequest, {
+    trackingKey,
+    demandKey: demand.demand_key,
+    orderNo,
+    savedAt: now
+  }));
 });
 
 app.get('/api/diffs', requireAuth, requirePage('progressRefresh'), (req, res) => {

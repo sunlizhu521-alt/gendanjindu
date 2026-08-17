@@ -305,7 +305,7 @@ test('生产跟进支持新月份、原月份与供应商三级汇总并切换�
     appSource.indexOf('function ProgressPage('),
     appSource.indexOf('function DifferenceAllocationPage(')
   );
-  assert.match(progressSource, /const \[groupMode, setGroupMode\] = useState\('currentMonth'\)/);
+  assert.match(progressSource, /const \[groupMode, setGroupMode\] = useState\('supplier'\)/);
   assert.match(progressSource, /const summaryGroups = useMemo\(\(\) => \{[\s\S]*?const key = row\.orderNo[\s\S]*?`order:\$\{row\.orderNo\}`[\s\S]*?`manual:/);
   assert.match(progressSource, /supplierShortNames: new Set\(\)[\s\S]*?reportingMonths: new Set\(\)[\s\S]*?materialCodes: new Set\(\)/);
   assert.match(progressSource, /group\.materialCode = \[\.\.\.group\.materialCodes\]\.join\('、'\)/);
@@ -533,6 +533,43 @@ test('生产跟进按采购订单保存跟单备注并筛选本周人工跟进�
   assert.match(filterSource, /label="是否本周已跟进" allLabel="全部跟进状态"/);
 });
 
+test('生产跟进保存支持幂等重试且不再返回全量数据', () => {
+  const editorSource = appSource.slice(
+    appSource.indexOf('function ProgressEditor('),
+    appSource.indexOf('function ProgressPage(')
+  );
+  const saveRouteSource = serverSource.slice(
+    serverSource.indexOf("app.patch('/api/progress/:demandKey'"),
+    serverSource.indexOf("app.get('/api/diffs'")
+  );
+  assert.match(databaseSource, /CREATE TABLE IF NOT EXISTS production_progress_save_requests/);
+  assert.match(serverSource, /function progressSaveRequest\(req\)/);
+  assert.match(serverSource, /function saveProgressRequest\(/);
+  assert.match(saveRouteSource, /if \(saveRequest\.existing\)[\s\S]*?progressSavePayload\(saveRequest, \{\}, true\)/);
+  assert.match(saveRouteSource, /saveProgressRequest\([\s\S]*?progressSavePayload/);
+  assert.doesNotMatch(saveRouteSource, /res\.json\(\{ rows: demandRows/);
+  assert.match(editorSource, /const requestId = clientRequestId\('progress'\)/);
+  assert.match(editorSource, /networkRetries: 2/);
+  assert.match(editorSource, /timeoutMs: 30000/);
+  assert.match(editorSource, /'X-Idempotency-Key': requestId/);
+  assert.match(editorSource, /result\.replayed/);
+  assert.match(appSource, /\u7f51\u7edc\u8fde\u63a5\u5931\u8d25\$\{retried\}/);
+});
+
+test('生产跟进使用独立轻量数据接口并按页面升级加载范围', () => {
+  const appRenderSource = appSource.slice(appSource.indexOf('function App()'));
+  assert.match(serverSource, /function demandLoadContext\(demands, \{ includeInventory = true \} = \{\}\)/);
+  assert.match(serverSource, /includeInventory \? all\('SELECT \* FROM inventory'\) : \[\]/);
+  assert.match(serverSource, /app\.get\('\/api\/progress\/demands', requireAuth, requirePage\('progressRefresh'\)/);
+  assert.match(serverSource, /demandRows\(false, req\.user, \{ includeInventory: false \}\)/);
+  assert.match(serverSource, /dataScope: 'progress'/);
+  assert.match(appSource, /function demandDataScopeForPage\(page\)[\s\S]*?page === 'progressRefresh'[\s\S]*?return 'progress'/);
+  assert.match(appSource, /function demandDataScopeSatisfies\(loadedScope, requiredScope\)[\s\S]*?loadedScope === 'full'/);
+  assert.match(appRenderSource, /scope === 'progress' \? '\/api\/progress\/demands' : '\/api\/demands'/);
+  assert.match(appRenderSource, /demandRequestSequence\.current/);
+  assert.match(appRenderSource, /demandDataScopeSatisfies\(demandsScope, requiredScope\)/);
+});
+
 test('生产跟进按供应商展示有缩进的四级订单层级', () => {
   const progressSource = appSource.slice(
     appSource.indexOf('function ProgressPage('),
@@ -553,6 +590,39 @@ test('生产跟进按供应商展示有缩进的四级订单层级', () => {
   assert.match(styleSource, /\.progress-supplier-month-toggle\s*\{\s*padding-left: 34px;/);
   assert.match(styleSource, /\.progress-order-toggle\.progress-supplier-order-toggle\s*\{\s*padding-left: 60px;/);
   assert.match(styleSource, /\.progress-supplier-detail-header > th:first-child,[\s\S]*?\.progress-supplier-detail-row > td:first-child\s*\{\s*padding-left: 86px !important;/);
+});
+
+test('生产跟进回车移到下一行同列并全选内容', () => {
+  const editorSource = appSource.slice(
+    appSource.indexOf('function focusNextProgressEditable('),
+    appSource.indexOf('function ProgressPage(')
+  );
+  assert.match(editorSource, /event\.key !== 'Enter'/);
+  assert.match(editorSource, /querySelectorAll\(`\[data-progress-edit-column="\$\{columnKey\}"\]:not\(\[disabled\]\):not\(\[readonly\]\)`\)/);
+  assert.match(editorSource, /const next = controls\[currentIndex \+ 1\]/);
+  assert.match(editorSource, /next\.focus\(\)[\s\S]*?next\.select\(\)/);
+  assert.match(editorSource, /data-progress-edit-column=\{readOnly \? undefined : key\}/);
+  assert.match(editorSource, /data-progress-edit-column="fulfillmentStatus"/);
+});
+
+test('生产跟进全选后在供应商订单层显示批量提交', () => {
+  const editorSource = appSource.slice(
+    appSource.indexOf('function ProgressEditor('),
+    appSource.indexOf('function ProgressPage(')
+  );
+  const progressSource = appSource.slice(
+    appSource.indexOf('function ProgressPage('),
+    appSource.indexOf('function DifferenceAllocationPage(')
+  );
+  const nestedStart = progressSource.indexOf('{supplierNested ? (');
+  const nestedEnd = progressSource.indexOf('<span>当前采购月份：', nestedStart);
+  const nestedPrefix = progressSource.slice(nestedStart, nestedEnd);
+  assert.match(progressSource, /const showBulkSubmit = supplierNested[\s\S]*?allVisibleEditableSelected[\s\S]*?groupEditableKeys\.every/);
+  assert.match(progressSource, /async function submitProgressRows\(targetRows\)/);
+  assert.match(progressSource, /networkRetries: 2[\s\S]*?X-Idempotency-Key/);
+  assert.match(nestedPrefix, /progress-inline-bulk-submit[\s\S]*?批量提交/);
+  assert.match(editorSource, /onSelect\?\.\(row\.rowKey \|\| row\.demandKey/);
+  assert.match(styleSource, /\.progress-inline-bulk-submit\s*\{/);
 });
 
 test('生产跟进展开明细列按内容自适应且不换行', () => {

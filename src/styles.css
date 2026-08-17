@@ -7761,6 +7761,19 @@ th {
   font-size: 12px;
 }
 
+.kingdee-progress-page .progress-inline-bulk-submit {
+  flex: 0 0 auto;
+  border-color: #2f78f6;
+  background: #2f78f6;
+  color: #fff;
+  font-weight: 700;
+}
+
+.kingdee-progress-page .progress-inline-bulk-submit:hover:not(:disabled) {
+  border-color: #1d4ed8;
+  background: #1d4ed8;
+}
+
 .progress-record-link,
 .kingdee-progress-page .supplier-filter-link {
   color: #216ef4;

@@ -2564,6 +2564,20 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.ok(purchaseOwnerDemandRows.some((row) => !String(row.purchaseOwner).split(/[+、]/).includes('当前采购员')));
     assert.ok(purchaseOwnerDemandRows.some((row) => row.canEdit === true));
     assert.ok(purchaseOwnerDemandRows.some((row) => row.canEdit === false));
+    const progressDemandsResponse = await fetch(`http://127.0.0.1:${port}/api/progress/demands`, {
+      headers: { Authorization: 'Bearer purchase-owner-token' }
+    });
+    assert.equal(progressDemandsResponse.status, 200);
+    assert.equal(progressDemandsResponse.headers.get('cache-control'), 'no-store');
+    assert.match(progressDemandsResponse.headers.get('server-timing') || '', /^progress-demands;dur=\d+$/);
+    const progressDemandPayload = await progressDemandsResponse.json();
+    assert.equal(progressDemandPayload.dataScope, 'progress');
+    assert.ok(progressDemandPayload.rows.length > 0);
+    assert.ok(progressDemandPayload.rows.every((row) => row.stockQty === 0));
+    const deniedProgressDemandsResponse = await fetch(`http://127.0.0.1:${port}/api/progress/demands`, {
+      headers: { Authorization: 'Bearer limited-token' }
+    });
+    assert.equal(deniedProgressDemandsResponse.status, 403);
     const unrelatedDemandsResponse = await fetch(`http://127.0.0.1:${port}/api/demands`, {
       headers: { Authorization: 'Bearer limited-token' }
     });
@@ -2876,33 +2890,60 @@ test('inventory summary and domestic board use complete source models and enforc
     assert.equal(allocationRow?.orderCreator, '陈晨');
 
     const progressEndpoint = `http://127.0.0.1:${port}/api/progress/${encodeURIComponent(m1Demand.demandKey)}`;
+    const readSavedProgress = async () => {
+      const response = await fetch(`http://127.0.0.1:${port}/api/progress/demands`, {
+        headers: { Authorization: 'Bearer admin-token' }
+      });
+      assert.equal(response.status, 200);
+      return aggregateDemandRows((await response.json()).rows, m1Demand.demandKey);
+    };
+    const progressSnapshotCount = async () => {
+      const response = await fetch(`http://127.0.0.1:${port}/api/table-relationships`, {
+        headers: { Authorization: 'Bearer admin-token' }
+      });
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      return payload.tables.find((table) => table.name === 'supplier_progress_snapshots')?.rowCount || 0;
+    };
+    const progressIdentity = { trackingKey: m1Demand.rowKey, orderNo: m1Demand.orderNo };
     const clientShippedOverrideResponse = await fetch(progressEndpoint, {
       method: 'PATCH',
       headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ inProductionQty: 600, finishedQty: 400, shippedQty: 199, remark: 'stale' })
+      body: JSON.stringify({ ...progressIdentity, inProductionQty: 600, finishedQty: 400, shippedQty: 199, remark: 'stale' })
     });
     assert.equal(clientShippedOverrideResponse.status, 200);
-    const clientShippedOverrideRow = aggregateDemandRows((await clientShippedOverrideResponse.json()).rows, m1Demand.demandKey);
+    const clientShippedOverridePayload = await clientShippedOverrideResponse.json();
+    assert.equal(clientShippedOverridePayload.ok, true);
+    assert.equal(Object.hasOwn(clientShippedOverridePayload, 'rows'), false);
+    const clientShippedOverrideRow = await readSavedProgress();
     assert.equal(clientShippedOverrideRow?.shippedQty, 200);
 
     const invalidProgressResponse = await fetch(progressEndpoint, {
       method: 'PATCH',
       headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ preparedNotStartedQty: 500, inProductionQty: 600, finishedQty: 1, shippedQty: 200 })
+      body: JSON.stringify({ ...progressIdentity, preparedNotStartedQty: 500, inProductionQty: 600, finishedQty: 1, shippedQty: 200 })
     });
     assert.equal(invalidProgressResponse.status, 400);
 
     const missingReasonResponse = await fetch(progressEndpoint, {
       method: 'PATCH',
       headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ preparedNotStartedQty: 100, inProductionQty: 500, finishedQty: 400, shippedQty: 200, fulfillmentStatus: '否' })
+      body: JSON.stringify({ ...progressIdentity, preparedNotStartedQty: 100, inProductionQty: 500, finishedQty: 400, shippedQty: 200, fulfillmentStatus: '否' })
     });
     assert.equal(missingReasonResponse.status, 400);
 
-    const currentProgressResponse = await fetch(progressEndpoint, {
+    const snapshotsBeforeIdempotentSave = await progressSnapshotCount();
+    const currentProgressRequestId = 'progress-current-test-001';
+    const currentProgressRequest = {
       method: 'PATCH',
-      headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: 'Bearer admin-token',
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': currentProgressRequestId
+      },
       body: JSON.stringify({
+        ...progressIdentity,
+        requestId: currentProgressRequestId,
         preparedNotStartedQty: 100,
         inProductionQty: 500,
         finishedQty: 400,
@@ -2914,9 +2955,22 @@ test('inventory summary and domestic board use complete source models and enforc
         reasonDetail: '原料延期',
         remark: 'current'
       })
-    });
+    };
+    const currentProgressResponse = await fetch(progressEndpoint, currentProgressRequest);
     assert.equal(currentProgressResponse.status, 200);
-    const savedProgress = aggregateDemandRows((await currentProgressResponse.json()).rows, m1Demand.demandKey);
+    const currentProgressPayload = await currentProgressResponse.json();
+    assert.deepEqual({ ok: currentProgressPayload.ok, requestId: currentProgressPayload.requestId, replayed: currentProgressPayload.replayed }, {
+      ok: true,
+      requestId: currentProgressRequestId,
+      replayed: false
+    });
+    assert.equal(Object.hasOwn(currentProgressPayload, 'rows'), false);
+    const replayedProgressResponse = await fetch(progressEndpoint, currentProgressRequest);
+    assert.equal(replayedProgressResponse.status, 200);
+    const replayedProgressPayload = await replayedProgressResponse.json();
+    assert.equal(replayedProgressPayload.replayed, true);
+    assert.equal(await progressSnapshotCount(), snapshotsBeforeIdempotentSave + 1);
+    const savedProgress = await readSavedProgress();
     assert.deepEqual({
       unpreparedQty: savedProgress?.unpreparedQty,
       preparedNotStartedQty: savedProgress?.preparedNotStartedQty,
@@ -2945,6 +2999,40 @@ test('inventory summary and domestic board use complete source models and enforc
       reasonDetail: '原料延期'
     });
 
+    const manualProgressEndpoint = `http://127.0.0.1:${port}/api/progress/${encodeURIComponent('manual:manual-short-name-row')}`;
+    const manualProgressRequestId = 'manual-progress-test-001';
+    const manualProgressRequest = {
+      method: 'PATCH',
+      headers: {
+        Authorization: 'Bearer admin-token',
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': manualProgressRequestId
+      },
+      body: JSON.stringify({
+        requestId: manualProgressRequestId,
+        trackingKey: 'manual:manual-short-name-row:CGDD012997',
+        orderNo: 'CGDD012997',
+        unpreparedQty: 10,
+        preparedNotStartedQty: 0,
+        inProductionQty: 0,
+        finishedQty: 0,
+        fulfillmentStatus: '是',
+        fulfillmentRemark: '手工订单幂等测试'
+      })
+    };
+    const manualProgressResponse = await fetch(manualProgressEndpoint, manualProgressRequest);
+    assert.equal(manualProgressResponse.status, 200);
+    const manualProgressPayload = await manualProgressResponse.json();
+    assert.deepEqual({ ok: manualProgressPayload.ok, requestId: manualProgressPayload.requestId, replayed: manualProgressPayload.replayed }, {
+      ok: true,
+      requestId: manualProgressRequestId,
+      replayed: false
+    });
+    assert.equal(Object.hasOwn(manualProgressPayload, 'rows'), false);
+    const replayedManualProgressResponse = await fetch(manualProgressEndpoint, manualProgressRequest);
+    assert.equal(replayedManualProgressResponse.status, 200);
+    assert.equal((await replayedManualProgressResponse.json()).replayed, true);
+
     const sessionApplyResponse = await fetch(`http://127.0.0.1:${port}/api/difference-allocations/session-consistency/apply`, {
       method: 'POST',
       headers: { Authorization: 'Bearer admin-token' }
@@ -2963,7 +3051,8 @@ test('inventory summary and domestic board use complete source models and enforc
     const demandsAfterIncreaseResponse = await fetch(`http://127.0.0.1:${port}/api/demands`, {
       headers: { Authorization: 'Bearer admin-token' }
     });
-    const increasedM1 = aggregateDemandRows((await demandsAfterIncreaseResponse.json()).rows, m1Demand.demandKey);
+    const demandsAfterIncreaseRows = (await demandsAfterIncreaseResponse.json()).rows;
+    const increasedM1 = aggregateDemandRows(demandsAfterIncreaseRows, m1Demand.demandKey);
     assert.deepEqual({
       unpreparedQty: increasedM1?.unpreparedQty,
       preparedNotStartedQty: increasedM1?.preparedNotStartedQty,
@@ -2988,6 +3077,8 @@ test('inventory summary and domestic board use complete source models and enforc
       method: 'PATCH',
       headers: { Authorization: 'Bearer admin-token', 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        trackingKey: demandsAfterIncreaseRows.find((row) => row.demandKey === m1Demand.demandKey)?.rowKey,
+        orderNo: demandsAfterIncreaseRows.find((row) => row.demandKey === m1Demand.demandKey)?.orderNo,
         preparedNotStartedQty: 100,
         inProductionQty: 500,
         finishedQty: 400,
@@ -2999,7 +3090,10 @@ test('inventory summary and domestic board use complete source models and enforc
       })
     });
     assert.equal(normalProgressResponse.status, 200);
-    const normalM1 = aggregateDemandRows((await normalProgressResponse.json()).rows, m1Demand.demandKey);
+    const normalProgressPayload = await normalProgressResponse.json();
+    assert.equal(normalProgressPayload.ok, true);
+    assert.equal(Object.hasOwn(normalProgressPayload, 'rows'), false);
+    const normalM1 = await readSavedProgress();
     assert.deepEqual({
       unpreparedQty: normalM1?.unpreparedQty,
       progressTotal: normalM1?.progressTotal,

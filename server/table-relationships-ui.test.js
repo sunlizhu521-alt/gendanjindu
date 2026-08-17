@@ -11,7 +11,8 @@ test('数据关系图注册到系统操作导航并按权限挂载', () => {
   assert.match(appSource, /import React, \{ Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState \} from 'react'/);
   assert.match(appSource, /'operationLogs',\s*'tableRelationships'/);
   assert.match(appSource, /tableRelationships: '数据关系图'/);
-  assert.match(appSource, /title: '系统操作', pages: \['permissions', 'operationLogs', 'tableRelationships'\]/);
+  assert.match(appSource, /title: '采购跟单', pages: \[[^\]]*'operationLogs'/);
+  assert.match(appSource, /title: '系统操作', pages: \['permissions', 'tableRelationships'\]/);
   assert.match(appSource, /shouldMount\('tableRelationships'\)[\s\S]*?<DataRelationshipsPage token=\{token\} \/>/);
 });
 

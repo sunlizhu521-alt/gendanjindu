@@ -86,6 +86,16 @@ const NAV_GROUPS = [
 const DEMAND_DATA_PAGES = new Set(['inventoryPurchase', 'purchaseBoard', 'progressRefresh']);
 const PROGRESS_RELATED_PAGES = new Set(['differenceAllocation', 'operationLogs']);
 
+function demandDataScopeForPage(page) {
+  if (page === 'progressRefresh') return 'progress';
+  if (DEMAND_DATA_PAGES.has(page)) return 'full';
+  return '';
+}
+
+function demandDataScopeSatisfies(loadedScope, requiredScope) {
+  return loadedScope === 'full' || loadedScope === requiredScope;
+}
+
 function visiblePagesForUser(user) {
   const directPages = PAGE_ORDER.filter((page) => user?.role === '管理员' || user?.pageAccess?.includes(page));
   const canViewProgress = directPages.includes('progressRefresh');
@@ -558,25 +568,65 @@ function authHeaders(token) {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-async function request(path, { token, ...options } = {}) {
+async function request(path, {
+  token,
+  networkRetries = 0,
+  retryDelayMs = 600,
+  timeoutMs = 0,
+  ...options
+} = {}) {
   const headers = {
     ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...authHeaders(token),
     ...(options.headers || {})
   };
-  const res = await fetch(`${API}${path}`, { ...options, headers });
-  const text = await res.text();
-  let payload = {};
-  try {
-    payload = text ? JSON.parse(text) : {};
-  } catch {
-    payload = {};
+  const retries = Math.max(0, Math.floor(numberValue(networkRetries)));
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const timeoutController = timeoutMs > 0 && !options.signal ? new AbortController() : null;
+    const timeoutId = timeoutController
+      ? globalThis.setTimeout(() => timeoutController.abort(), timeoutMs)
+      : null;
+    let res;
+    let text = '';
+    try {
+      res = await fetch(`${API}${path}`, {
+        ...options,
+        headers,
+        signal: options.signal || timeoutController?.signal
+      });
+      text = await res.text();
+    } catch (error) {
+      if (timeoutId) globalThis.clearTimeout(timeoutId);
+      if (options.signal?.aborted) throw error;
+      if (attempt < retries) {
+        await new Promise((resolve) => globalThis.setTimeout(resolve, retryDelayMs * (attempt + 1)));
+        continue;
+      }
+      const retried = retries ? `（已自动重试${retries}次）` : '';
+      if (timeoutController?.signal.aborted) {
+        throw new Error(`请求超时${retried}，请稍后重试`);
+      }
+      throw new Error(`网络连接失败${retried}，请检查网络后重试`);
+    }
+    if (timeoutId) globalThis.clearTimeout(timeoutId);
+    let payload = {};
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch {
+      payload = {};
+    }
+    if (!res.ok) {
+      const plainText = text && !text.trim().startsWith('<') ? text.slice(0, 200) : '';
+      throw new Error(payload.error || plainText || `请求失败（${res.status}）`);
+    }
+    return payload;
   }
-  if (!res.ok) {
-    const plainText = text && !text.trim().startsWith('<') ? text.slice(0, 200) : '';
-    throw new Error(payload.error || plainText || `请求失败（${res.status}）`);
-  }
-  return payload;
+  throw new Error('请求失败');
+}
+
+function clientRequestId(prefix = 'request') {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 function MetricCard({ label, value, tone = '' }) {
@@ -5877,6 +5927,26 @@ function ManualProgressImportPanel({ token, reloadDemands, setMessage }) {
   );
 }
 
+function focusNextProgressEditable(event, columnKey) {
+  if (
+    event.key !== 'Enter'
+    || event.nativeEvent?.isComposing
+    || event.shiftKey
+    || event.altKey
+    || event.ctrlKey
+    || event.metaKey
+  ) return;
+  const current = event.currentTarget;
+  const container = current.closest('.kingdee-progress-page') || document;
+  const controls = [...container.querySelectorAll(`[data-progress-edit-column="${columnKey}"]:not([disabled]):not([readonly])`)];
+  const currentIndex = controls.indexOf(current);
+  const next = controls[currentIndex + 1];
+  if (!next) return;
+  event.preventDefault();
+  next.focus();
+  if (typeof next.select === 'function') next.select();
+}
+
 function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKeys, stickyOffsets, supplierNested = false, selected = false, onSelect, onDraftChange }) {
   const displayQty = (value) => (numberValue(value) ? String(numberValue(value)) : '');
   const [values, setValues] = useState({
@@ -5986,18 +6056,26 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
       return;
     }
     const payload = toPayload(values);
+    const requestId = clientRequestId('progress');
     setSaving(true);
     try {
-      await request(`/api/progress/${encodeURIComponent(row.demandKey)}`, {
+      const result = await request(`/api/progress/${encodeURIComponent(row.demandKey)}`, {
         token,
         method: 'PATCH',
+        networkRetries: 2,
+        retryDelayMs: 700,
+        timeoutMs: 30000,
+        headers: { 'X-Idempotency-Key': requestId },
         body: JSON.stringify({
           ...payload,
+          requestId,
           trackingKey: row.rowKey || row.demandKey,
           orderNo: row.orderNo || ''
         })
       });
-      setMessage('提交成功：已标记为本周已跟进，默认列表不再显示该订单。');
+      setMessage(result.replayed
+        ? '提交成功：服务器已确认此前请求，未重复写入。'
+        : '提交成功：已标记为本周已跟进，默认列表不再显示该订单。');
       try {
         await reloadDemands();
       } catch (reloadError) {
@@ -6019,6 +6097,8 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
       readOnly={readOnly}
       disabled={!row.canEdit && !readOnly}
       title={readOnly ? '系统自动计算，只读' : ''}
+      data-progress-edit-column={readOnly ? undefined : key}
+      onKeyDown={readOnly ? undefined : (event) => focusNextProgressEditable(event, key)}
       onChange={(event) => handleQtyChange(key, event.target.value)}
     />
   );
@@ -6029,6 +6109,8 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
       type="date"
       value={values[key]}
       disabled={!row.canEdit}
+      data-progress-edit-column={key}
+      onKeyDown={(event) => focusNextProgressEditable(event, key)}
       onChange={(event) => handleTextChange(key, event.target.value)}
     />
   );
@@ -6039,6 +6121,8 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
       value={values[key]}
       placeholder={placeholder}
       disabled={!row.canEdit}
+      data-progress-edit-column={key}
+      onKeyDown={(event) => focusNextProgressEditable(event, key)}
       onChange={(event) => handleTextChange(key, event.target.value)}
     />
   );
@@ -6068,7 +6152,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
     ['contractDeliveryDates', <span className="progress-contract-date" title={row.contractDeliveryDates ? `来自手工登记表：${row.contractDeliveryDates}` : '暂无'}>{row.contractDeliveryDates || '暂无'}</span>],
     ['productionDeliveryDate', dateInput('productionDeliveryDate')],
     ['unproducedEstimatedDeliveryDate', dateInput('unproducedEstimatedDeliveryDate')],
-    ['fulfillmentStatus', <select value={values.fulfillmentStatus} disabled={!row.canEdit} onChange={(event) => handleTextChange('fulfillmentStatus', event.target.value)}>
+    ['fulfillmentStatus', <select value={values.fulfillmentStatus} disabled={!row.canEdit} data-progress-edit-column="fulfillmentStatus" onKeyDown={(event) => focusNextProgressEditable(event, 'fulfillmentStatus')} onChange={(event) => handleTextChange('fulfillmentStatus', event.target.value)}>
       <option value="">待维护</option>
       <option value="是">是</option>
       <option value="否">否</option>
@@ -6100,7 +6184,7 @@ function ProgressEditor({ row, token, reloadDemands, setMessage, visibleColumnKe
   return (
     <>
       <tr className={`progress-order-detail-row${supplierNested ? ' progress-supplier-detail-row' : ''}${row.progressAdjustmentRequired || invalidQty || row.validationStatus === 'error' ? ' progress-row-adjustment' : ''}`}>
-        <td {...progressStickyCellProps('__select', stickyOffsets)}><input type="checkbox" checked={selected} disabled={!row.canEdit} onChange={(event) => onSelect?.(row.demandKey, event.target.checked)} /></td>
+        <td {...progressStickyCellProps('__select', stickyOffsets)}><input type="checkbox" checked={selected} disabled={!row.canEdit} onChange={(event) => onSelect?.(row.rowKey || row.demandKey, event.target.checked)} /></td>
         {cells.filter(([key]) => visible.has(key)).map(([key, cell]) => <td key={key} {...progressStickyCellProps(key, stickyOffsets)}>{cell}</td>)}
       </tr>
       {showSources && row.manualSourceRows?.length > 0 && (
@@ -6149,7 +6233,8 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
   const [expandedOrders, setExpandedOrders] = useState(() => new Set());
   const [expandedSupplierGroups, setExpandedSupplierGroups] = useState(() => new Set());
   const [expandedSupplierMonths, setExpandedSupplierMonths] = useState(() => new Set());
-  const [groupMode, setGroupMode] = useState('currentMonth');
+  const [groupMode, setGroupMode] = useState('supplier');
+  const [bulkSaving, setBulkSaving] = useState(false);
   const progressTableWrapRef = useRef(null);
   const [stickyOffsets, setStickyOffsets] = useState({});
   const columnStorageKey = `gendanjindu:progress-columns:v3:${user?.id || user?.name || 'user'}`;
@@ -6417,15 +6502,116 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
   }
 
   function toggleProgressRow(demandKey, checked) {
-    setSelectedKeys(checked ? [...new Set([...selectedKeys, demandKey])] : selectedKeys.filter((key) => key !== demandKey));
+    setSelectedKeys((current) => (
+      checked ? [...new Set([...current, demandKey])] : current.filter((key) => key !== demandKey)
+    ));
   }
 
   function toggleAllVisibleEditableRows(checked) {
     if (checked) {
-      setSelectedKeys([...new Set([...selectedKeys, ...editableKeys])]);
+      setSelectedKeys((current) => [...new Set([...current, ...editableKeys])]);
       return;
     }
-    setSelectedKeys(selectedKeys.filter((key) => !editableKeys.includes(key)));
+    setSelectedKeys((current) => current.filter((key) => !editableKeys.includes(key)));
+  }
+
+  function bulkProgressPayload(row) {
+    const rowKey = row.rowKey || row.demandKey;
+    if (drafts[rowKey]) return drafts[rowKey];
+    const remainingQty = numberValue(row.remainingInboundQty);
+    const preparedNotStartedQty = numberValue(row.preparedNotStartedQty);
+    const inProductionQty = numberValue(row.inProductionQty);
+    const assignedQty = preparedNotStartedQty + inProductionQty;
+    const requestedUnpreparedQty = numberValue(row.unpreparedQty);
+    return {
+      unpreparedQty: requestedUnpreparedQty + assignedQty <= 0.000001 ? 0 : Math.max(remainingQty - assignedQty, 0),
+      preparedNotStartedQty,
+      inProductionQty,
+      finishedQty: numberValue(row.finishedQty),
+      productionDeliveryDate: row.productionDeliveryDate || '',
+      unproducedEstimatedDeliveryDate: row.unproducedEstimatedDeliveryDate || '',
+      fulfillmentStatus: row.fulfillmentStatus || '',
+      fulfillmentRemark: row.fulfillmentRemark || '',
+      unfulfilledReason: row.unfulfilledReason || '',
+      reasonDetail: row.reasonDetail || '',
+      remark: row.remark || ''
+    };
+  }
+
+  function validateBulkProgressRow(row, payload) {
+    const orderLabel = row.orderNo || row.materialCode || row.demandKey;
+    const remainingQty = numberValue(row.remainingInboundQty);
+    if (numberValue(payload.preparedNotStartedQty) + numberValue(payload.inProductionQty) - remainingQty > 0.000001) {
+      return `${orderLabel}：生产中产品、已备料未生产合计不能超过未交付数量`;
+    }
+    if (numberValue(payload.finishedQty) - remainingQty > 0.000001) {
+      return `${orderLabel}：完工未发产品不能大于未交付数量`;
+    }
+    if (payload.fulfillmentStatus === '否' && !normalize(payload.unfulfilledReason)) {
+      return `${orderLabel}：非正常履约必须填写未履约原因`;
+    }
+    return '';
+  }
+
+  async function submitProgressRows(targetRows) {
+    if (bulkSaving) return;
+    const rowsToSubmit = targetRows.filter((row) => (
+      row.canEdit && selectedKeys.includes(row.rowKey || row.demandKey)
+    ));
+    if (!rowsToSubmit.length) {
+      setMessage('请先全选要批量提交的订单明细。');
+      return;
+    }
+    const submissions = rowsToSubmit.map((row) => ({ row, payload: bulkProgressPayload(row) }));
+    const validationErrors = submissions
+      .map(({ row, payload }) => validateBulkProgressRow(row, payload))
+      .filter(Boolean);
+    if (validationErrors.length) {
+      setMessage(`批量提交失败：${validationErrors.slice(0, 3).join('；')}`);
+      return;
+    }
+    setBulkSaving(true);
+    const succeededKeys = [];
+    const failures = [];
+    for (const { row, payload } of submissions) {
+      const requestId = clientRequestId('progress-bulk');
+      try {
+        await request(`/api/progress/${encodeURIComponent(row.demandKey)}`, {
+          token,
+          method: 'PATCH',
+          networkRetries: 2,
+          retryDelayMs: 700,
+          timeoutMs: 30000,
+          headers: { 'X-Idempotency-Key': requestId },
+          body: JSON.stringify({
+            ...payload,
+            requestId,
+            trackingKey: row.rowKey || row.demandKey,
+            orderNo: row.orderNo || ''
+          })
+        });
+        succeededKeys.push(row.rowKey || row.demandKey);
+      } catch (error) {
+        failures.push(`${row.orderNo || row.materialCode || row.demandKey}：${error.message}`);
+      }
+    }
+    setSelectedKeys((current) => current.filter((key) => !succeededKeys.includes(key)));
+    let reloadError = '';
+    if (succeededKeys.length) {
+      try {
+        await reloadDemands();
+      } catch (error) {
+        reloadError = error.message;
+      }
+    }
+    if (failures.length) {
+      setMessage(`批量提交完成：成功 ${succeededKeys.length} 条，失败 ${failures.length} 条。${failures.slice(0, 3).join('；')}`);
+    } else if (reloadError) {
+      setMessage(`批量提交成功 ${succeededKeys.length} 条；列表刷新失败：${reloadError}`);
+    } else {
+      setMessage(`批量提交成功 ${succeededKeys.length} 条，已标记为本周已跟进。`);
+    }
+    setBulkSaving(false);
   }
 
   function toggleOrderGroup(key) {
@@ -6665,6 +6851,11 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
       ? group.originalPurchaseQty.toLocaleString('zh-CN')
       : (group.originalOrderNos.size ? '待核验' : '-');
     const pendingOnly = group.pendingRows === group.rows.length;
+    const groupEditableKeys = group.rows.filter((row) => row.canEdit).map((row) => row.rowKey || row.demandKey);
+    const showBulkSubmit = supplierNested
+      && allVisibleEditableSelected
+      && groupEditableKeys.length > 0
+      && groupEditableKeys.every((key) => selectedKeys.includes(key));
     return (
       <Fragment key={group.key}>
         <tr className="progress-order-parent-row">
@@ -6704,6 +6895,18 @@ function ProgressPage({ rows, token, user, reloadDemands, setMessage, onExit, on
               )}
               {supplierNested ? (
                 <>
+                  {showBulkSubmit && (
+                    <button
+                      type="button"
+                      className="compact-button progress-inline-bulk-submit"
+                      disabled={bulkSaving}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        submitProgressRows(group.rows);
+                      }}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >{bulkSaving ? '批量提交中...' : '批量提交'}</button>
+                  )}
                   <span>当前采购月份：{currentOrderMonthLabel}</span>
                   <span>当前采购订单号：{currentOrderNoLabel}</span>
                   <span>原采购月份：{originalOrderMonthLabel}</span>
@@ -8750,6 +8953,8 @@ function App() {
   const [demandMeta, setDemandMeta] = useState({ currentAppliedAt: '' });
   const [demandsLoaded, setDemandsLoaded] = useState(false);
   const [demandsLoading, setDemandsLoading] = useState(false);
+  const [demandsScope, setDemandsScope] = useState('');
+  const demandRequestSequence = useRef(0);
   const [message, setMessage] = useState('');
   const [crossBorderVersion, setCrossBorderVersion] = useState(0);
   const [firstMileVersion, setFirstMileVersion] = useState(0);
@@ -8757,16 +8962,26 @@ function App() {
 
   useEffect(() => subscribeLoadingProgress(setGlobalLoading), []);
 
-  async function reloadDemands(currentToken = token) {
+  async function reloadDemands(currentToken = token, requestedScope = '') {
+    const scope = requestedScope || demandDataScopeForPage(activeTab) || 'full';
+    const endpoint = scope === 'progress' ? '/api/progress/demands' : '/api/demands';
+    const requestSequence = demandRequestSequence.current + 1;
+    demandRequestSequence.current = requestSequence;
     setDemandsLoading(true);
     try {
-      const payload = await request('/api/demands', { token: currentToken });
+      const payload = await request(endpoint, { token: currentToken });
+      if (requestSequence !== demandRequestSequence.current) return payload;
       setDemands(payload.rows || []);
-      setDemandMeta({ currentAppliedAt: payload.currentAppliedAt || '' });
+      setDemandMeta({
+        currentAppliedAt: payload.currentAppliedAt || '',
+        dataScope: payload.dataScope || scope,
+        durationMs: numberValue(payload.durationMs)
+      });
+      setDemandsScope(payload.dataScope || scope);
       setDemandsLoaded(true);
       return payload;
     } finally {
-      setDemandsLoading(false);
+      if (requestSequence === demandRequestSequence.current) setDemandsLoading(false);
     }
   }
 
@@ -8789,8 +9004,10 @@ function App() {
 
   function handleLogin(payload) {
     window.localStorage.setItem(TOKEN_KEY, payload.token);
+    demandRequestSequence.current += 1;
     setDemands([]);
     setDemandsLoaded(false);
+    setDemandsScope('');
     setVisitedPages(new Set());
     setToken(payload.token);
     setUser(payload.user);
@@ -8814,17 +9031,21 @@ function App() {
   }, [activeTab, user]);
 
   useEffect(() => {
-    if (!token || !user || !DEMAND_DATA_PAGES.has(activeTab) || demandsLoaded || demandsLoading) return;
-    reloadDemands(token).catch((error) => setMessage(`采购订单数据加载失败：${error.message}`));
-  }, [activeTab, token, user, demandsLoaded]);
+    const requiredScope = demandDataScopeForPage(activeTab);
+    if (!token || !user || !requiredScope || demandsLoading) return;
+    if (demandsLoaded && demandDataScopeSatisfies(demandsScope, requiredScope)) return;
+    reloadDemands(token, requiredScope).catch((error) => setMessage(`采购订单数据加载失败：${error.message}`));
+  }, [activeTab, token, user, demandsLoaded, demandsScope]);
 
   async function logout() {
     await request('/api/auth/logout', { token, method: 'POST' }).catch(() => {});
     window.localStorage.removeItem(TOKEN_KEY);
+    demandRequestSequence.current += 1;
     setToken('');
     setUser(null);
     setDemands([]);
     setDemandsLoaded(false);
+    setDemandsScope('');
     setVisitedPages(new Set());
   }
 

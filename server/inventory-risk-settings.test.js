@@ -71,3 +71,16 @@ test('备货文件导入注册独立页面权限与四个通用文件槽位', ()
   assert.match(appPage, /\{ id: 'beiHuoReviewFile1', title: '国内事业部备货', fields: \[\] \}/);
   assert.match(appPage, /shouldMount\('beiHuoReviewLibrary'\)[\s\S]*?title="备货文件导入"[\s\S]*?gridColumns=\{4\}/);
 });
+
+test('备货工具读取国内备货文件并标记物料需求', () => {
+  assert.match(server, /app\.get\('\/api\/bei-huo-review\/stockup-requirement', requireAuth, requirePage\('beiHuoGongJu'\)/);
+  assert.match(server, /slot_id = 'beiHuoReviewFile1' AND applied = 1/);
+  assert.match(server, /\['物料编码', '品号', '物料编号', '物料代码', 'materialCode'\]/);
+  assert.match(beiHuoPage, /useState\('国内事业部'\)/);
+  assert.match(beiHuoPage, /apiRequest\('\/api\/bei-huo-review\/stockup-requirement', token\)/);
+  assert.match(beiHuoPage, /<th>是否有备货需求<\/th>/);
+  assert.match(beiHuoPage, /materialCodeSet\.has\(String\(row\.materialCode \|\| ''\)\.trim\(\)\)/);
+  assert.doesNotMatch(beiHuoPage, /<RiskMultiSelectFilter label="渠道"/);
+  assert.doesNotMatch(beiHuoPage, /<RiskMultiSelectFilter label="处置动作"/);
+  assert.doesNotMatch(beiHuoPage, /<RiskMultiSelectFilter label="预测销售"/);
+});

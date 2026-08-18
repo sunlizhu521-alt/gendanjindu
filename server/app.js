@@ -772,6 +772,7 @@ function auditPageForRequest(req) {
   if (requestPath.startsWith('/api/product-archive')) return { key: 'productArchive', label: PAGE_LABELS.productArchive };
   if (requestPath.startsWith('/api/inventory-risk')) return { key: 'inventoryRisk', label: PAGE_LABELS.inventoryRisk };
   if (requestPath.startsWith('/api/bei-huo-gong-ju')) return { key: 'beiHuoGongJu', label: PAGE_LABELS.beiHuoGongJu };
+  if (requestPath.startsWith('/api/bei-huo-review')) return { key: 'beiHuoGongJu', label: PAGE_LABELS.beiHuoGongJu };
   if (requestPath.startsWith('/api/inventory-summary')) return { key: 'inventorySummary', label: PAGE_LABELS.inventorySummary };
   if (requestPath.startsWith('/api/operation-logs')) return { key: 'operationLogs', label: PAGE_LABELS.operationLogs };
   if (requestPath.startsWith('/api/progress')) return { key: 'progressRefresh', label: PAGE_LABELS.progressRefresh };
@@ -5817,6 +5818,25 @@ app.post('/api/bei-huo-gong-ju/export', requireAuth, requirePage('beiHuoGongJu')
   } catch (error) {
     return res.status(400).json({ error: error.message || '备货工具参数无效' });
   }
+});
+
+app.get('/api/bei-huo-review/stockup-requirement', requireAuth, requirePage('beiHuoGongJu'), (_req, res) => {
+  const record = get(
+    `SELECT rows_json, file_name, updated_at
+     FROM dimension_files
+     WHERE slot_id = 'beiHuoReviewFile1' AND applied = 1
+     LIMIT 1`
+  );
+  const materialCodes = [...new Set(parseJson(record?.rows_json, [])
+    .map((row) => normalize(pickAny(row, ['物料编码', '品号', '物料编号', '物料代码', 'materialCode'])))
+    .filter(Boolean))];
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json({
+    hasFile: Boolean(record),
+    materialCodes,
+    fileName: record?.file_name || '',
+    updatedAt: record?.updated_at || ''
+  });
 });
 
 app.get('/api/inventory-purchase-summary', requireAuth, requirePage('inventoryPurchase'), (req, res) => {

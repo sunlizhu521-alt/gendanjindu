@@ -76,6 +76,7 @@ const ALL_PAGES = [
   'inventorySummaryLibrary',
   'inventoryManualLibrary',
   'beiHuoGongJu',
+  'beiHuoReviewLibrary',
   'operationBoard',
   'progressRefresh',
   'differenceAllocation',
@@ -100,6 +101,7 @@ const PAGE_LABELS = {
   inventorySummaryLibrary: '底表文件',
   inventoryManualLibrary: '手工表库',
   beiHuoGongJu: '备货工具',
+  beiHuoReviewLibrary: '备货文件导入',
   operationBoard: '运营看板-未交付',
   purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',
@@ -159,7 +161,11 @@ const DIMENSION_SLOTS = {
   firstMileData3: '魏静头程数据',
   firstMileData4: '李紫媛头程数据',
   firstMileData5: '李宛宸头程数据',
-  firstMileSpare: '备用'
+  firstMileSpare: '备用',
+  beiHuoReviewFile1: '国内事业部备货',
+  beiHuoReviewFile2: '备用',
+  beiHuoReviewFile3: '备用',
+  beiHuoReviewFile4: '备用'
 };
 [
   '海外事业一部',
@@ -786,6 +792,7 @@ function auditPageForRequest(req) {
     if (slotId.startsWith('lingxingF')) return { key: 'lingxingInventory', label: PAGE_LABELS.lingxingInventory };
     if (slotId.startsWith('inventorySummaryFile')) return { key: 'inventorySummaryLibrary', label: PAGE_LABELS.inventorySummaryLibrary };
     if (isInventoryManualSlot(slotId)) return { key: 'inventoryManualLibrary', label: PAGE_LABELS.inventoryManualLibrary };
+    if (slotId.startsWith('beiHuoReviewFile')) return { key: 'beiHuoReviewLibrary', label: PAGE_LABELS.beiHuoReviewLibrary };
     return { key: 'dimensionLibrary', label: PAGE_LABELS.dimensionLibrary };
   }
   return { key: 'system', label: '系统操作' };
@@ -7597,7 +7604,7 @@ app.get('/api/product-projects/sync-history', requireAuth, requirePage('productA
   res.json({ rows: productProjectHistory() });
 });
 
-app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase']), (req, res) => {
+app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase', 'beiHuoReviewLibrary']), (req, res) => {
   const rows = all('SELECT slot_id, title, file_name, sheet_name, sheet_names, selected_sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at FROM dimension_files');
   res.json({
     rows: rows.map((row) => {
@@ -7620,7 +7627,7 @@ app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'bus
   });
 });
 
-app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase']), dimensionWorkbookUpload, cleanupKingdeeUpload, serializeInventoryUpload, async (req, res) => {
+app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase', 'beiHuoReviewLibrary']), dimensionWorkbookUpload, cleanupKingdeeUpload, serializeInventoryUpload, async (req, res) => {
   const slotId = req.params.slotId;
   const baseSlotId = inventoryLibraryBaseSlotId(slotId);
   const mapping = parseJson(req.body.mapping, {});
@@ -7907,7 +7914,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   });
 });
 
-app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase']), (req, res) => {
+app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase', 'beiHuoReviewLibrary']), (req, res) => {
   const beforeOrderCounts = orderDataCounts();
   transaction(() => {
     run('UPDATE dimension_files SET applied = 1, updated_at = ? WHERE slot_id = ?', [nowText(), req.params.slotId]);
@@ -7917,7 +7924,7 @@ app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensio
   res.json(isInventoryLibrarySlot(req.params.slotId) ? { applied: true } : { rows: demandRows(false, req.user) });
 });
 
-app.delete('/api/dimensions/:slotId', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase']), (req, res) => {
+app.delete('/api/dimensions/:slotId', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase', 'beiHuoReviewLibrary']), (req, res) => {
   run('DELETE FROM dimension_files WHERE slot_id = ?', [req.params.slotId]);
   saveDatabase();
   res.json({ ok: true });

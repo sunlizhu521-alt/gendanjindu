@@ -32,6 +32,7 @@ const PAGE_ORDER = [
   'inventorySummaryLibrary',
   'inventoryManualLibrary',
   'beiHuoGongJu',
+  'beiHuoReviewLibrary',
   'operationBoard',
   'progressRefresh',
   'differenceAllocation',
@@ -58,6 +59,7 @@ const PAGE_LABELS = {
   inventorySummaryLibrary: '底表文件',
   inventoryManualLibrary: '手工表库',
   beiHuoGongJu: '备货工具',
+  beiHuoReviewLibrary: '备货文件导入',
   operationBoard: '运营看板-未交付',
   purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',
@@ -80,7 +82,7 @@ const NAV_GROUPS = [
   { title: '国内数据', pages: ['domesticBoard', 'wangdianData'] },
   { title: '跨境数据', pages: ['crossBorderInventory', 'lingxingInventory'] },
   { title: '库存数据', pages: ['inventorySummary', 'inventoryRisk', 'supplyPlanBoard', 'inventoryPurchase', 'inventorySummaryLibrary', 'inventoryManualLibrary'] },
-  { title: '备货复核', pages: ['beiHuoGongJu'] },
+  { title: '备货复核', pages: ['beiHuoGongJu', 'beiHuoReviewLibrary'] },
   { title: '产品数据', pages: ['productArchive', 'businessUnitFeedback'] },
   { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'differenceAllocation', 'operationLogs', 'trace', 'purchaseBoard'] },
   { title: '头程数据', pages: ['firstMileBoard', 'firstMileDatabase'] },
@@ -389,6 +391,13 @@ const FIRST_MILE_DATABASE_SLOTS = [
   { id: 'firstMileData4', title: '李紫媛头程数据', fields: [], firstMile: true },
   { id: 'firstMileData5', title: '李宛宸头程数据', fields: [], firstMile: true },
   { id: 'firstMileSpare', title: '备用', fields: [], firstMile: true }
+];
+
+const BEI_HUO_REVIEW_LIBRARY_SLOTS = [
+  { id: 'beiHuoReviewFile1', title: '国内事业部备货', fields: [] },
+  { id: 'beiHuoReviewFile2', title: '备用', fields: [] },
+  { id: 'beiHuoReviewFile3', title: '备用', fields: [] },
+  { id: 'beiHuoReviewFile4', title: '备用', fields: [] }
 ];
 
 function normalize(value) {
@@ -9187,6 +9196,7 @@ function App() {
         {shouldMount('inventorySummary') && <PagePane page="inventorySummary" activeTab={activeTab}><InventorySummary token={token} active={activeTab === 'inventorySummary'} /></PagePane>}
         {shouldMount('inventoryRisk') && <PagePane page="inventoryRisk" activeTab={activeTab}><React.Suspense fallback={<div className="loading-fallback">加载中...</div>}><InventoryRiskPage token={token} active={activeTab === 'inventoryRisk'} /></React.Suspense></PagePane>}
         {shouldMount('beiHuoGongJu') && <PagePane page="beiHuoGongJu" activeTab={activeTab}><React.Suspense fallback={<div className="loading-fallback">加载中...</div>}><BeiHuoGongJuPage token={token} active={activeTab === 'beiHuoGongJu'} /></React.Suspense></PagePane>}
+        {shouldMount('beiHuoReviewLibrary') && <PagePane page="beiHuoReviewLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="备货文件导入" slots={BEI_HUO_REVIEW_LIBRARY_SLOTS} gridColumns={4} /></PagePane>}
         {shouldMount('supplyPlanBoard') && <PagePane page="supplyPlanBoard" activeTab={activeTab}><React.Suspense fallback={<div className="loading-fallback">加载中...</div>}><SupplyPlanBoard token={token} active={activeTab === 'supplyPlanBoard'} /></React.Suspense></PagePane>}
         {shouldMount('productArchive') && <PagePane page="productArchive" activeTab={activeTab}><React.Suspense fallback={<div className="loading-fallback">加载中...</div>}><ProductArchivePage token={token} active={activeTab === 'productArchive'} user={user} /></React.Suspense></PagePane>}
         {shouldMount('businessUnitFeedback') && <PagePane page="businessUnitFeedback" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="产品数据" slots={BUSINESS_UNIT_FEEDBACK_SLOTS} gridColumns={4} /></PagePane>}

@@ -51,7 +51,7 @@ test('备货工具使用独立页面权限、设置键、结果缓存和接口',
 
 test('备货复核导航懒加载完整复制的备货工具页面', () => {
   assert.match(appPage, /React\.lazy\(\(\) => import\('\.\/BeiHuoGongJuPage\.jsx'\)\)/);
-  assert.match(appPage, /\{ title: '备货复核', pages: \['beiHuoGongJu'\] \}/);
+  assert.match(appPage, /\{ title: '备货复核', pages: \['beiHuoGongJu', 'beiHuoReviewLibrary'\] \}/);
   assert.match(appPage, /shouldMount\('beiHuoGongJu'\)/);
   assert.match(beiHuoPage, /export default function BeiHuoGongJuPage/);
   assert.match(beiHuoPage, /apiRequest\('\/api\/bei-huo-gong-ju\/params', token\)/);
@@ -59,4 +59,15 @@ test('备货复核导航懒加载完整复制的备货工具页面', () => {
   assert.match(beiHuoPage, /\/api\/bei-huo-gong-ju\/export/);
   assert.match(beiHuoPage, /备货工具计算逻辑/);
   assert.doesNotMatch(beiHuoPage, /供应计划分析|\/api\/inventory-risk/);
+});
+
+test('备货文件导入注册独立页面权限与四个通用文件槽位', () => {
+  assert.match(server, /'beiHuoReviewLibrary'/);
+  assert.match(server, /beiHuoReviewLibrary: '备货文件导入'/);
+  assert.match(server, /beiHuoReviewFile1: '国内事业部备货'/);
+  assert.match(server, /beiHuoReviewFile4: '备用'/);
+  assert.match(server, /slotId\.startsWith\('beiHuoReviewFile'\)/);
+  assert.match(appPage, /const BEI_HUO_REVIEW_LIBRARY_SLOTS = \[/);
+  assert.match(appPage, /\{ id: 'beiHuoReviewFile1', title: '国内事业部备货', fields: \[\] \}/);
+  assert.match(appPage, /shouldMount\('beiHuoReviewLibrary'\)[\s\S]*?title="备货文件导入"[\s\S]*?gridColumns=\{4\}/);
 });

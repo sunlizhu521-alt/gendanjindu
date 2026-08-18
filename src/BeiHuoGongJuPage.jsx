@@ -39,10 +39,7 @@ const EMPTY_RISK_FILTERS = Object.freeze({
   productLines: [],
   productSeries: [],
   models: [],
-  supplierShortNames: [],
-  channels: [],
-  actions: [],
-  forecastAvailability: []
+  supplierShortNames: []
 });
 
 const BUSINESS_UNIT_FILTER_ORDER = [
@@ -133,22 +130,6 @@ function RiskParameterMatrix({ params, onChannelChange, onRootChange }) {
         <p className="inventory-risk-parameter-note">现货天数 = 在库量可销天数 + 发货到上架 + 海运/运输 + 订舱/预约；全链路天数 = 现货天数 + 平均交期 + 合同签订。</p>
       </fieldset>
 
-      <fieldset className="inventory-risk-matrix-fieldset">
-        <legend>处置规则</legend>
-        <div className="inventory-risk-matrix-wrap">
-          <div className="inventory-risk-parameter-matrix inventory-risk-rule-matrix">
-            <div className="matrix-heading">渠道</div>
-            <div className="matrix-heading">限制采购阈值</div>
-            <div className="matrix-heading">停止采购阈值</div>
-            {RISK_CHANNELS.flatMap(({ key, label }) => [
-              <strong className="matrix-channel" key={`${key}-rule-label`}>{label}</strong>,
-              <input key={`${key}-restrict`} aria-label={`${label}限制采购阈值`} type="number" min="0" step="1" value={params.channels[key].restrictThresholdDays} onChange={(event) => onChannelChange(key, 'restrictThresholdDays', event.target.value)} />,
-              <input key={`${key}-stop`} aria-label={`${label}停止采购阈值`} type="number" min="0" step="1" value={params.channels[key].stopThresholdDays} onChange={(event) => onChannelChange(key, 'stopThresholdDays', event.target.value)} />
-            ])}
-          </div>
-        </div>
-        <p className="inventory-risk-parameter-note">在库+在途周转天数超过限制阈值时限制采购；全链覆盖天数超过停止阈值时停止采购，停止采购优先。</p>
-      </fieldset>
     </section>
   );
 }
@@ -263,19 +244,11 @@ function RiskPagination({ page, pages, onChange }) {
   );
 }
 
-function RiskDataSourceCell({ value }) {
-  const items = String(value || '无仓库数据').split('；').filter(Boolean);
-  return <div className="inventory-risk-source-cell">{items.map((item) => <span key={item}>{item}</span>)}</div>;
-}
-
-function RiskTable({ rows, materialCodes, showDataSources, onToggleDataSources }) {
+function RiskTable({ rows }) {
   const pageSize = 20;
   const [page, setPage] = useState(1);
   const pages = Math.max(1, Math.ceil(rows.length / pageSize));
   const visibleRows = useMemo(() => rows.slice((page - 1) * pageSize, page * pageSize), [page, rows]);
-  const materialCodeSet = useMemo(() => new Set(
-    materialCodes.map((value) => String(value || '').trim()).filter(Boolean)
-  ), [materialCodes]);
 
   useEffect(() => setPage(1), [rows]);
 
@@ -283,41 +256,32 @@ function RiskTable({ rows, materialCodes, showDataSources, onToggleDataSources }
     <section className="inventory-risk-result inventory-risk-result-combined">
       <div className="inventory-risk-section-heading">
         <div>
-          <span className="inventory-risk-section-kicker">处置清单</span>
-          <h3>备货工具处置清单</h3>
+          <span className="inventory-risk-section-kicker">备货清单</span>
+          <h3>备货需求复核</h3>
         </div>
         <div className="inventory-risk-section-actions">
-          <button className="inventory-risk-button secondary" type="button" onClick={onToggleDataSources}>{showDataSources ? '隐藏数据来源' : '显示数据来源'}</button>
           <strong>{numberText(rows.length, 0)} 个物料</strong>
         </div>
       </div>
       <div className="inventory-risk-table-wrap">
-        <table className={`inventory-risk-table${showDataSources ? ' show-data-source' : ''}`}>
+        <table className="inventory-risk-table">
           <thead>
             <tr>
-              {showDataSources && <th>数据来源</th>}
-              <th>渠道</th><th>销售区域</th><th>事业部</th><th>产品线</th><th>物料编码</th><th>SKU</th><th>物料名称</th><th>是否有备货需求</th><th>未交付供应商简称</th>
-              <th>在库数量</th><th>在途数量</th><th>待交付数量</th><th>合计数量</th><th>预测月均销量</th><th>最近N月平均月销量</th>
-              <th>在库在途周转天数</th><th>全链覆盖天数</th><th>预测状态</th><th>处置动作</th>
+              <th>事业部</th><th>产品线</th><th>型号</th><th>物料编码</th><th>SKU</th><th>物料名称</th>
+              <th>在库数量</th><th>在途数量</th><th>待交付数量</th><th>预测月均销量</th><th>近N月平均销量</th>
+              <th>在库在途周转天数</th><th>全链路覆盖天数</th><th>根据预测可销天数</th><th>根据以往销售可销天数</th>
             </tr>
           </thead>
           <tbody>
             {visibleRows.map((row) => (
               <tr key={row.id}>
-                {showDataSources && <td><RiskDataSourceCell value={row.dataSource} /></td>}
-                <td><span className={`inventory-risk-segment inventory-risk-segment-${row.channel === '国内' ? 'domestic' : 'overseas'}`}>{row.channel}</span></td>
-                <td>{row.salesRegion}</td><td>{row.businessUnit}</td><td>{row.productLine}</td><td>{row.materialCode}</td><td>{row.sku}</td><td>{row.materialName}</td>
-                <td>{materialCodeSet.has(String(row.materialCode || '').trim())
-                  ? <strong className="inventory-risk-action inventory-risk-action-normal">是</strong>
-                  : '否'}</td>
-                <td>{row.unfulfilledSupplierShortName || '未匹配'}</td><td>{numberText(row.onHandQty)}</td><td>{numberText(row.inTransitQty)}</td>
-                <td>{numberText(row.undeliveredQty)}</td><td>{numberText(row.totalInventoryQty)}</td><td>{numberText(row.forecastMonthlyAverage)}</td>
-                <td>{numberText(row.historicalMonthlyAverage)}</td><td>{numberText(row.transitTurnoverDays)}</td>
-                <td>{numberText(row.fullChainCoverageDays)}</td><td>{row.forecastStatus}</td>
-                <td><strong className={`inventory-risk-action inventory-risk-action-${row.action === '停止采购' ? 'stopped' : row.action === '限制采购' ? 'restricted' : 'normal'}`}>{row.action}</strong></td>
+                <td>{row.businessUnit}</td><td>{row.productLine}</td><td>{row.model}</td><td>{row.materialCode}</td><td>{row.sku}</td><td>{row.materialName}</td>
+                <td>{numberText(row.onHandQty)}</td><td>{numberText(row.inTransitQty)}</td><td>{numberText(row.undeliveredQty)}</td><td>{numberText(row.forecastMonthlyAverage)}</td>
+                <td>{numberText(row.historicalMonthlyAverage)}</td><td>{numberText(row.transitTurnoverDays)}</td><td>{numberText(row.fullChainCoverageDays)}</td>
+                <td>{numberText(row.forecastSellableDays)}</td><td>{numberText(row.historicalSellableDays)}</td>
               </tr>
             ))}
-            {!visibleRows.length && <tr><td className="inventory-risk-empty" colSpan={showDataSources ? 20 : 19}>当前筛选条件下没有库存、在途或未交付数量大于 0 的物料</td></tr>}
+            {!visibleRows.length && <tr><td className="inventory-risk-empty" colSpan={15}>当前备货文件和筛选条件下没有数量大于 0 的物料</td></tr>}
           </tbody>
         </table>
       </div>
@@ -330,16 +294,16 @@ function InventoryRiskLogic({ onBack }) {
   return (
     <div className="inventory-risk-page inventory-risk-logic-page">
       <header className="inventory-risk-header">
-        <div><span className="inventory-risk-eyebrow">SUPPLY PLANNING</span><h2>备货工具计算逻辑</h2><p>用于核对数据来源、计算公式和处置边界。</p></div>
-        <button className="inventory-risk-button secondary" type="button" onClick={onBack}>返回备货工具</button>
+        <div><span className="inventory-risk-eyebrow">SUPPLY PLANNING</span><h2>备货需求复核计算逻辑</h2><p>用于核对备货范围、聚合口径和可销天数。</p></div>
+        <button className="inventory-risk-button secondary" type="button" onClick={onBack}>返回备货需求复核</button>
       </header>
       <div className="inventory-risk-logic-grid">
-        <section><span>01</span><h3>数据来源</h3><p>库存、在途、待交付、商品分类和历史销售完全复用“库存汇总”的标准化结果；销售预测读取“底表文件”的槽位 15。</p></section>
-        <section><span>02</span><h3>物料与渠道</h3><p>以事业部 + 物料编码为主键，SKU 仅展示。渠道只取商品分类的销售区域：中国为国内，美国为海外-美国，欧洲为海外-欧洲；其他已确认区域按2B排除，缺失或无法区分进入维度表缺失。</p></section>
+        <section><span>01</span><h3>数据来源</h3><p>库存、在途、待交付、商品分类和历史销售复用“库存汇总”结果；销售预测读取底表槽位 15，备货范围读取“国内事业部备货”文件。</p></section>
+        <section><span>02</span><h3>计算模式</h3><p>物料编码模式按事业部 + 物料编码聚合；型号模式按事业部 + 型号聚合，并仅保留备货文件命中的物料或型号。</p></section>
         <section><span>03</span><h3>销售速度</h3><p>预测月均销量取本月起连续 N 个月预测数量合计除以 N；最近 N 月平均月销量独立取销售数据最新月份向前 N 个月。</p></section>
-        <section><span>04</span><h3>在库在途周转</h3><p>在库在途周转天数 =（在库数量 + 在途数量）÷（预测月均销量 ÷ 30）。超过当前渠道的限制采购阈值时限制采购。</p></section>
-        <section><span>05</span><h3>全链覆盖</h3><p>全链覆盖天数 =（在库数量 + 在途数量 + 待交付数量）÷（预测月均销量 ÷ 30）+ 当前渠道平均交期。超过停止采购阈值时停止采购。</p></section>
-        <section><span>06</span><h3>异常和优先级</h3><p>无预测或预测合计为 0 时天数按 999，进入停止采购。停止采购优先于限制采购；处置清单展示合计数量大于 0 的全部物料，包括正常物料。</p></section>
+        <section><span>04</span><h3>在库在途周转</h3><p>在库在途周转天数 =（在库数量 + 在途数量）÷（预测月均销量 ÷ 30）。</p></section>
+        <section><span>05</span><h3>全链路覆盖</h3><p>全链路覆盖天数 =（在库数量 + 在途数量 + 待交付数量）÷（预测月均销量 ÷ 30）+ 当前渠道平均交期。</p></section>
+        <section><span>06</span><h3>可销天数</h3><p>根据预测或以往销售的可销天数 =（在库 + 在途 + 待交付）÷对应日均销量；日均销量为 0 时按 999 天展示。</p></section>
       </div>
     </div>
   );
@@ -358,11 +322,10 @@ export default function BeiHuoGongJuPage({ token, active }) {
   const [showLogic, setShowLogic] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [filters, setFilters] = useState({ ...EMPTY_RISK_FILTERS });
+  const [mode, setMode] = useState('materialCode');
   const [stockupBusinessUnit, setStockupBusinessUnit] = useState('国内事业部');
-  const [stockupRequirement, setStockupRequirement] = useState({ hasFile: false, materialCodes: [] });
   const [exporting, setExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState(null);
-  const [showDataSources, setShowDataSources] = useState(false);
 
   const setRootParam = (field, value) => setParams((current) => ({ ...current, [field]: value }));
   const setChannelParam = (channelKey, field, value) => setParams((current) => ({
@@ -389,14 +352,14 @@ export default function BeiHuoGongJuPage({ token, active }) {
     }
   }
 
-  async function calculate(force = false) {
+  async function calculate(force = false, selectedMode = mode) {
     setLoading(true);
     setError('');
     setErrorDiagnostics(null);
     try {
       const payload = await apiRequest('/api/bei-huo-gong-ju/query', token, {
         method: 'POST',
-        body: JSON.stringify({ ...params, force, saveParams: force })
+        body: JSON.stringify({ ...params, mode: selectedMode, stockupBusinessUnit, force, saveParams: force })
       });
       setResult(payload);
       setParams(payload.params || params);
@@ -417,21 +380,6 @@ export default function BeiHuoGongJuPage({ token, active }) {
     }
   }
 
-  async function loadStockupRequirement() {
-    try {
-      const payload = await apiRequest('/api/bei-huo-review/stockup-requirement', token);
-      setStockupRequirement({
-        hasFile: Boolean(payload.hasFile),
-        materialCodes: Array.isArray(payload.materialCodes) ? payload.materialCodes : [],
-        fileName: payload.fileName || '',
-        updatedAt: payload.updatedAt || ''
-      });
-    } catch (requestError) {
-      setStockupRequirement({ hasFile: false, materialCodes: [] });
-      setError(`读取${stockupBusinessUnit}备货需求失败：${requestError.message}`);
-    }
-  }
-
   useEffect(() => {
     if (active && !paramsReady && !paramsLoading && !paramsLoadAttempted) loadServerParams();
   }, [active, paramsReady, paramsLoading, paramsLoadAttempted]);
@@ -439,10 +387,6 @@ export default function BeiHuoGongJuPage({ token, active }) {
   useEffect(() => {
     if (active && paramsReady && !loaded && !loading) calculate();
   }, [active, paramsReady, loaded, loading]);
-
-  useEffect(() => {
-    if (active && paramsReady) loadStockupRequirement();
-  }, [active, paramsReady, stockupBusinessUnit, token]);
 
   useEffect(() => {
     if (active) return;
@@ -459,7 +403,7 @@ export default function BeiHuoGongJuPage({ token, active }) {
       const response = await fetch(`${API}/api/bei-huo-gong-ju/export`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...params, includeDataSource: showDataSources })
+        body: JSON.stringify({ ...params, mode, stockupBusinessUnit })
       });
       if (!response.ok) {
         const contentType = response.headers.get('content-type') || '';
@@ -508,7 +452,7 @@ export default function BeiHuoGongJuPage({ token, active }) {
   }
 
   const actionRows = useMemo(
-    () => (result?.rows || [...(result?.stopped || []), ...(result?.restricted || []), ...(result?.normal || [])])
+    () => (result?.rows || [])
       .filter((row) => Number(row.totalInventoryQty ?? (Number(row.onHandQty || 0) + Number(row.inTransitQty || 0) + Number(row.undeliveredQty || 0))) > 0),
     [result]
   );
@@ -520,9 +464,6 @@ export default function BeiHuoGongJuPage({ token, active }) {
     && (omit === 'productSeries' || filters.productSeries.length === 0 || filters.productSeries.includes(row.productSeries))
     && (omit === 'models' || filters.models.length === 0 || filters.models.includes(row.model))
     && (omit === 'supplierShortNames' || filters.supplierShortNames.length === 0 || splitSupplierShortNames(row.unfulfilledSupplierShortName).some((name) => filters.supplierShortNames.includes(name)))
-    && (omit === 'channels' || filters.channels.length === 0 || filters.channels.includes(row.channel))
-    && (omit === 'actions' || filters.actions.length === 0 || filters.actions.includes(row.action))
-    && (omit === 'forecastAvailability' || filters.forecastAvailability.length === 0 || filters.forecastAvailability.includes(row.forecastAvailability))
   );
   const filterOptions = useMemo(() => {
     const valuesFor = (key, valueKey) => [...new Set(actionRows
@@ -550,11 +491,7 @@ export default function BeiHuoGongJuPage({ token, active }) {
       models: valuesFor('models', 'model').sort((a, b) => a.localeCompare(b, 'zh-CN', { numeric: true })),
       supplierShortNames: [...supplierTotals.keys()].sort((left, right) => (
         supplierTotals.get(right) - supplierTotals.get(left) || left.localeCompare(right, 'zh-CN')
-      )),
-      channels: RISK_CHANNELS.map((channel) => channel.label).filter((channel) => valuesFor('channels', 'channel').includes(channel)),
-      actions: ['正常', '限制采购', '停止采购'].filter((action) => valuesFor('actions', 'action').includes(action)),
-      forecastAvailability: ['有预测销售', '无预测销售']
-        .filter((status) => valuesFor('forecastAvailability', 'forecastAvailability').includes(status))
+      ))
     };
   }, [actionRows, filters]);
   const filteredRows = useMemo(() => actionRows
@@ -565,11 +502,6 @@ export default function BeiHuoGongJuPage({ token, active }) {
     const inTransitQty = filteredRows.reduce((sum, row) => sum + Number(row.inTransitQty || 0), 0);
     const undeliveredQty = filteredRows.reduce((sum, row) => sum + Number(row.undeliveredQty || 0), 0);
     return {
-      restrictedCount: filteredRows.filter((row) => row.action === '限制采购').length,
-      stoppedCount: filteredRows.filter((row) => row.action === '停止采购').length,
-      normalCount: filteredRows.filter((row) => row.action === '正常').length,
-      forecastedCount: filteredRows.filter((row) => row.forecastAvailability === '有预测销售').length,
-      unforecastedCount: filteredRows.filter((row) => row.forecastAvailability === '无预测销售').length,
       onHandQty,
       inTransitQty,
       undeliveredQty,
@@ -580,12 +512,13 @@ export default function BeiHuoGongJuPage({ token, active }) {
 
   if (showLogic) return <InventoryRiskLogic onBack={() => setShowLogic(false)} />;
 
-  const summary = result?.summary || {};
   return (
     <div className="inventory-risk-page">
       <header className="inventory-risk-header">
-        <div><span className="inventory-risk-eyebrow">SUPPLY PLANNING</span><h2>备货工具</h2><p>按海外-美国、海外-欧洲和国内三个渠道识别限制采购与停止采购物料。</p></div>
+        <div><span className="inventory-risk-eyebrow">SUPPLY PLANNING</span><h2>备货需求复核</h2><p>仅复核备货文件中有需求的物料，支持按物料编码或型号聚合。</p></div>
         <div className="inventory-risk-actions">
+          <label className="multi-filter"><span className="multi-filter-label">计算模式</span><select className="multi-filter-button" value={mode} disabled={!paramsReady || loading} onChange={(event) => { const value = event.target.value; setMode(value); calculate(false, value); }}><option value="materialCode">物料编码</option><option value="model">型号</option></select></label>
+          <label className="multi-filter"><span className="multi-filter-label">备货事业部</span><select className="multi-filter-button" value={stockupBusinessUnit} onChange={(event) => setStockupBusinessUnit(event.target.value)}><option value="国内事业部">国内事业部</option></select></label>
           <button className="inventory-risk-button secondary" type="button" onClick={() => setShowLogic(true)}>计算逻辑</button>
           <button className="inventory-risk-button secondary" type="button" disabled={!result || loading || exporting} onClick={exportResult}>{exporting ? '导出中...' : '导出 Excel'}</button>
           <button className="inventory-risk-button primary" type="button" disabled={loading || exporting} onClick={() => calculate(true)}>{loading ? '计算中...' : '重新计算'}</button>
@@ -631,13 +564,7 @@ export default function BeiHuoGongJuPage({ token, active }) {
 
       {result && (
         <>
-          <section className="inventory-risk-filters" aria-label="备货工具筛选器">
-            <label className="multi-filter">
-              <span className="multi-filter-label">备货事业部</span>
-              <select className="multi-filter-button" aria-label="备货事业部" value={stockupBusinessUnit} onChange={(event) => setStockupBusinessUnit(event.target.value)}>
-                <option value="国内事业部">国内事业部</option>
-              </select>
-            </label>
+          <section className="inventory-risk-filters" aria-label="备货需求复核筛选器">
             <RiskMultiSelectFilter label="事业部" allLabel="全部事业部" value={filters.businessUnits} options={filterOptions.businessUnits} onChange={(value) => setFilters((current) => ({ ...current, businessUnits: value }))} />
             <RiskMultiSelectFilter label="仓位位置" allLabel="全部仓位位置" value={filters.warehouseLocations} options={filterOptions.warehouseLocations} onChange={(value) => setFilters((current) => ({ ...current, warehouseLocations: value }))} />
             <RiskMultiSelectFilter label="站点" allLabel="全部站点" value={filters.sites} options={filterOptions.sites} onChange={(value) => setFilters((current) => ({ ...current, sites: value }))} />
@@ -658,24 +585,17 @@ export default function BeiHuoGongJuPage({ token, active }) {
                 <span>未交付<b>{numberText(filteredSummary.undeliveredQty)}</b></span>
               </div>
             </article>
-            <article className="forecasted"><span>有销售预测的物料编码数量</span><strong>{numberText(filteredSummary.forecastedCount, 0)}</strong><small>按事业部 + 物料编码独立计数</small></article>
-            <article className="unforecasted"><span>无销售预测的物料编码数量</span><strong>{numberText(filteredSummary.unforecastedCount, 0)}</strong><small>按事业部 + 物料编码独立计数</small></article>
-            <article className="restricted"><span>限制采购</span><strong>{numberText(filteredSummary.restrictedCount, 0)}</strong><small>事业部 + 物料编码数量</small></article>
-            <article className="stopped"><span>停止采购</span><strong>{numberText(filteredSummary.stoppedCount, 0)}</strong><small>事业部 + 物料编码数量</small></article>
-            <article><span>正常</span><strong>{numberText(filteredSummary.normalCount, 0)}</strong><small>事业部 + 物料编码数量</small></article>
           </section>
           <div className="inventory-risk-periods">
-            <span>{stockupBusinessUnit}备货文件：{stockupRequirement.hasFile
-              ? `已上传（共 ${numberText(stockupRequirement.materialCodes.length, 0)} 个物料编码）`
+            <span>{stockupBusinessUnit}备货文件：{result.stockupInfo?.hasFile
+              ? `已上传（共 ${numberText(result.stockupInfo.materialCodeCount, 0)} 个物料编码）`
               : '未上传'}</span>
-            <span>预测区间：{result.periods.forecastStartMonth} 至 {result.periods.forecastEndMonth}</span>
-            <span>历史销量区间：{result.periods.historicalStartMonth || '暂无'} 至 {result.periods.historicalEndMonth || '暂无'}</span>
+            <span>预测区间：{result.periods?.forecastStartMonth || '暂无'} 至 {result.periods?.forecastEndMonth || '暂无'}</span>
+            <span>历史销量区间：{result.periods?.historicalStartMonth || '暂无'} 至 {result.periods?.historicalEndMonth || '暂无'}</span>
             <span>生成时间：{new Date(result.generatedAt).toLocaleString('zh-CN')}</span>
-            <span>2B渠道排除：{numberText(summary.b2bExcludedCount, 0)} 条</span>
-            <span>销售区域待维护：{numberText(summary.channelMissingCount, 0)} 条</span>
           </div>
-          <RiskTable rows={filteredRows} materialCodes={stockupRequirement.materialCodes} showDataSources={showDataSources} onToggleDataSources={() => setShowDataSources((current) => !current)} />
-          {(result.diagnostics.mappingIssues.length > 0 || result.diagnostics.forecastIssues.length > 0) && (
+          <RiskTable rows={filteredRows} />
+          {((result.diagnostics?.mappingIssues?.length || 0) > 0 || (result.diagnostics?.forecastIssues?.length || 0) > 0) && (
             <details className="inventory-risk-diagnostics">
               <summary>数据诊断：映射问题 {result.diagnostics.mappingIssues.length} 条，预测问题 {result.diagnostics.forecastIssues.length} 条</summary>
               <div className="inventory-risk-diagnostic-grid">

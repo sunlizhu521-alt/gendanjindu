@@ -485,6 +485,65 @@ function addAggregate(map, row) {
   return 'included';
 }
 
+function addModelAggregate(map, row) {
+  const businessUnit = normalizedBusinessUnit(row.businessUnit);
+  const model = text(row.model);
+  const key = `${businessUnit}\u001f${model}`;
+  if (!businessUnit || businessUnit === '未匹配' || !model || model === '未匹配') return 'invalid-key';
+  const channel = riskChannel(row.salesRegion);
+  if (channel.status !== 'included') return channel.status;
+  const current = map.get(key) || {
+    businessUnit,
+    inventorySegment: channel.key === 'domestic' ? '国内' : '海外',
+    salesRegion: channel.salesRegion,
+    channelKey: channel.key,
+    channel: channel.label,
+    materialCode: '',
+    sku: '',
+    materialName: '',
+    productLine: row.productLine || '未匹配',
+    productSeries: row.productSeries || '未匹配',
+    model,
+    onHandQty: 0,
+    inTransitQty: 0,
+    undeliveredQty: 0,
+    unfulfilledSupplierShortNames: new Set(),
+    dataSources: new Set(),
+    warehouseLocations: new Set(),
+    sites: new Set(),
+    salesByMonth: new Map()
+  };
+  current.onHandQty += numberValue(row.inventoryQty);
+  current.inTransitQty += numberValue(row.transitQty);
+  current.undeliveredQty += numberValue(row.unfulfilledQty);
+  if (numberValue(row.unfulfilledQty) > 0) {
+    const supplierValues = Array.isArray(row.unfulfilledSupplierShortNames)
+      ? row.unfulfilledSupplierShortNames
+      : String(row.unfulfilledSupplierShortName || '').split(/[&+、,，;；]/);
+    supplierValues.map(text).filter((name) => name && name !== '未匹配').forEach((name) => current.unfulfilledSupplierShortNames.add(name));
+  }
+  (row.inventorySourceDetails || []).forEach((item) => {
+    const sourceTable = text(item.sourceTable) || '未知来源';
+    const locations = [];
+    const sourceWarehouse = text(item.sourceWarehouseName);
+    const storeName = text(item.storeName);
+    const receivingWarehouse = text(item.receivingWarehouseName);
+    const mappedWarehouse = text(item.mappedWarehouseName);
+    current.warehouseLocations.add(text(item.warehouseLocation) || '未匹配');
+    current.sites.add(text(item.site) || '未匹配');
+    if (sourceWarehouse) locations.push(sourceWarehouse);
+    else if (storeName) locations.push(`店铺：${storeName}`);
+    if (receivingWarehouse && !locations.includes(receivingWarehouse)) locations.push(`收货：${receivingWarehouse}`);
+    if (mappedWarehouse && !locations.includes(mappedWarehouse)) locations.push(`映射：${mappedWarehouse}`);
+    current.dataSources.add(`${sourceTable}：${locations.join(' → ') || '无仓库字段'}`);
+  });
+  Object.entries(row.salesByMonth || {}).forEach(([month, qty]) => {
+    current.salesByMonth.set(month, (current.salesByMonth.get(month) || 0) + numberValue(qty));
+  });
+  map.set(key, current);
+  return 'included';
+}
+
 export function buildSupplyPlanSummary({ inventoryModel = {}, params: input = {}, now = new Date() } = {}) {
   const params = normalizeSupplyPlanParams(input);
   const aggregate = new Map();
@@ -530,6 +589,234 @@ export function buildSupplyPlanSummary({ inventoryModel = {}, params: input = {}
     ok: true,
     rows,
     generatedAt: new Date(now).toISOString()
+  };
+}
+
+export function buildBeiHuoReviewAnalysis({
+  inventoryModel = {},
+  forecastRows = [],
+  forecastSource = {},
+  params: input = {},
+  now = new Date(),
+  mode = 'materialCode',
+  stockupMaterialCodes = [],
+  sourceVersion = ''
+} = {}) {
+  let params;
+  try {
+    params = normalizeInventoryRiskParams(input);
+  } catch (error) {
+    return { ok: false, status: 'invalid_params', error: error.message };
+  }
+
+  const stockupSet = new Set(stockupMaterialCodes.map(materialCodeValue).filter(Boolean));
+  if (stockupSet.size === 0) {
+    return {
+      ok: true,
+      status: 'empty',
+      rows: [],
+      sourceVersion,
+      generatedAt: new Date(now).toISOString(),
+      params,
+      periods: {},
+      summary: {},
+      stockupInfo: { hasFile: false, materialCodeCount: 0 },
+      diagnostics: {
+        mappingIssues: [],
+        forecastIssues: [],
+        forecastParsing: null
+      }
+    };
+  }
+
+  if (!Array.isArray(forecastRows) || forecastRows.length === 0) {
+    return { ok: false, status: 'missing_data', error: '销售预测文件未上传应用，或已选工作表没有数据' };
+  }
+
+  const summaryRows = Array.isArray(inventoryModel.rows) ? inventoryModel.rows : [];
+  const forecastResult = buildForecastMap(forecastRows, summaryRows, forecastSource, now);
+  if (forecastResult.forecast.size === 0) {
+    return {
+      ok: false,
+      status: 'missing_data',
+      error: '销售预测没有解析出有效的事业部、物料编码和月份数据',
+      diagnostics: {
+        forecastIssues: forecastResult.issues,
+        forecastParsing: forecastResult.parsing,
+        mappingIssues: []
+      }
+    };
+  }
+
+  const aggregate = new Map();
+  const materialToModel = new Map();
+  const modelStockupMaterial = new Map();
+  const materialSummaryByCode = new Map();
+
+  summaryRows.forEach((row) => {
+    const materialCode = materialCodeValue(row.materialCode);
+    if (!materialCode) return;
+    if (!materialSummaryByCode.has(materialCode)) materialSummaryByCode.set(materialCode, row);
+    const model = text(row.model);
+    if (!model || model === '未匹配') return;
+    if (!materialToModel.has(materialCode)) materialToModel.set(materialCode, new Set());
+    materialToModel.get(materialCode).add(model);
+  });
+
+  if (mode === 'model') {
+    summaryRows.forEach((row) => {
+      const materialCode = materialCodeValue(row.materialCode);
+      if (!stockupSet.has(materialCode)) return;
+      for (const model of materialToModel.get(materialCode) || []) {
+        const list = modelStockupMaterial.get(model) || new Set();
+        list.add(materialCode);
+        modelStockupMaterial.set(model, list);
+      }
+    });
+
+    const stockupModels = new Set(modelStockupMaterial.keys());
+    const forecastByModel = new Map();
+
+    for (const [forecastKey, forecastRow] of forecastResult.forecast.entries()) {
+      const [businessUnit, materialCode] = forecastKey.split('\u001f');
+      const models = materialToModel.get(materialCode);
+      if (!models?.size) continue;
+      for (const model of models) {
+        const targetKey = businessUnitMaterialKey(businessUnit, model);
+        const target = forecastByModel.get(targetKey) || { months: new Map(), hasRecord: false };
+        target.hasRecord = true;
+        for (const [month, qty] of forecastRow.months.entries()) {
+          target.months.set(month, (target.months.get(month) || 0) + numberValue(qty));
+        }
+        forecastByModel.set(targetKey, target);
+      }
+    }
+
+    forecastResult.modelForecast = forecastByModel;
+
+    summaryRows.forEach((row) => {
+      const normalizedModel = text(row.model);
+      if (!stockupModels.has(normalizedModel)) return;
+      const status = addModelAggregate(aggregate, row);
+      if (status !== 'included') return;
+      const current = aggregate.get(businessUnitMaterialKey(normalizedBusinessUnit(row.businessUnit), normalizedModel));
+      if (current) {
+        const materialList = [...(modelStockupMaterial.get(normalizedModel) || new Set())]
+          .sort((left, right) => text(left).localeCompare(text(right), 'zh-Hans-CN', { numeric: true }));
+        current.stockupMaterialCodes = materialList;
+        const representative = materialList[0] || '';
+        const referenceRow = materialSummaryByCode.get(representative);
+        current.materialCode = materialList.join('+') || row.materialCode || '未匹配';
+        current.sku = referenceRow?.sku || row.sku || '未匹配';
+        current.materialName = referenceRow?.materialName || row.materialName || '未匹配';
+        current.productLine = referenceRow?.productLine || row.productLine || '未匹配';
+        current.productSeries = referenceRow?.productSeries || row.productSeries || '未匹配';
+      }
+    });
+  } else {
+    summaryRows.forEach((row) => {
+      const materialCode = materialCodeValue(row.materialCode);
+      if (stockupSet.has(materialCode)) addAggregate(aggregate, row);
+    });
+  }
+
+  const allSalesMonths = [...new Set([...aggregate.values()].flatMap((row) => [...row.salesByMonth.keys()]))].sort();
+  const historicalEndMonth = allSalesMonths.at(-1) || '';
+  const historicalMonths = historicalEndMonth
+    ? monthRange(monthFromIndex(monthIndex(historicalEndMonth) - params.historicalMonths + 1), params.historicalMonths)
+    : [];
+  const forecastStartMonth = currentChinaMonth(now);
+  const forecastMonths = monthRange(forecastStartMonth, params.forecastMonths);
+
+  const rows = [...aggregate.values()].flatMap((row) => {
+    if (!(row.onHandQty > 0 || row.inTransitQty > 0 || row.undeliveredQty > 0)) return [];
+    const channelSettings = params.channels[row.channelKey];
+    if (!channelSettings) return [];
+
+    const forecastRowsByMode = mode === 'model' ? (forecastResult.modelForecast || new Map()) : forecastResult.forecast;
+    const forecastKey = businessUnitMaterialKey(row.businessUnit, mode === 'model' ? row.model : row.materialCode);
+    const forecast = forecastRowsByMode.get(forecastKey);
+
+    const forecastTotal = forecastMonths.reduce((sum, month) => sum + numberValue(forecast?.months?.get(month)), 0);
+    const forecastMonthlyAverage = forecastTotal / params.forecastMonths;
+    const historicalTotal = historicalMonths.reduce((sum, month) => sum + numberValue(row.salesByMonth.get(month)), 0);
+    const historicalMonthlyAverage = historicalTotal / params.historicalMonths;
+    const dailyForecast = forecastMonthlyAverage / 30;
+    const dailyHistorical = historicalMonthlyAverage / 30;
+    const transitTurnoverDays = dailyForecast > 0 ? (row.onHandQty + row.inTransitQty) / dailyForecast : 999;
+    const fullChainCoverageDays = dailyForecast > 0
+      ? (row.onHandQty + row.inTransitQty + row.undeliveredQty) / dailyForecast + channelSettings.averageLeadTimeDays
+      : 999;
+    const forecastSellableDays = dailyForecast > 0
+      ? (row.onHandQty + row.inTransitQty + row.undeliveredQty) / dailyForecast
+      : 999;
+    const historicalSellableDays = dailyHistorical > 0
+      ? (row.onHandQty + row.inTransitQty + row.undeliveredQty) / dailyHistorical
+      : 999;
+
+    const warehouseLocations = [...row.warehouseLocations];
+    const sites = [...row.sites];
+    return [{
+      id: forecastKey,
+      businessUnit: row.businessUnit,
+      productLine: row.productLine,
+      productSeries: row.productSeries,
+      model: row.model,
+      materialCode: mode === 'model' ? (row.materialCode || '未匹配') : row.materialCode,
+      sku: row.sku || '未匹配',
+      materialName: row.materialName || '未匹配',
+      onHandQty: row.onHandQty,
+      inTransitQty: row.inTransitQty,
+      undeliveredQty: row.undeliveredQty,
+      forecastMonthlyAverage,
+      historicalMonthlyAverage,
+      transitTurnoverDays,
+      fullChainCoverageDays,
+      forecastSellableDays,
+      historicalSellableDays,
+      channelKey: row.channelKey,
+      channel: row.channel,
+      warehouseLocations: warehouseLocations.length ? warehouseLocations : ['未匹配'],
+      warehouseLocation: warehouseLocations.join('、') || '未匹配',
+      sites: sites.length ? sites : ['未匹配'],
+      site: sites.join('、') || '未匹配',
+      unfulfilledSupplierShortName: [...row.unfulfilledSupplierShortNames].join('&') || '未匹配'
+    }];
+  }).sort((left, right) => {
+    if (left.businessUnit !== right.businessUnit) {
+      return left.businessUnit.localeCompare(right.businessUnit, 'zh-Hans-CN');
+    }
+    if (mode === 'model') {
+      return text(left.model).localeCompare(text(right.model), 'zh-Hans-CN', { numeric: true });
+    }
+    return text(left.materialCode).localeCompare(text(right.materialCode), 'zh-Hans-CN', { numeric: true });
+  });
+
+  return {
+    ok: true,
+    status: 'ready',
+    sourceVersion,
+    generatedAt: new Date(now).toISOString(),
+    params,
+    periods: {
+      forecastStartMonth,
+      forecastEndMonth: forecastMonths.at(-1) || '',
+      forecastMonths,
+      historicalStartMonth: historicalMonths[0] || '',
+      historicalEndMonth,
+      historicalMonths
+    },
+    summary: {},
+    rows,
+    stockupInfo: {
+      hasFile: true,
+      materialCodeCount: stockupSet.size
+    },
+    diagnostics: {
+      mappingIssues: [],
+      forecastIssues: forecastResult.issues,
+      forecastParsing: forecastResult.parsing
+    }
   };
 }
 

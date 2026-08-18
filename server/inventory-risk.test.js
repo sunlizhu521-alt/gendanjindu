@@ -4,6 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
+  buildBeiHuoReviewAnalysis,
   buildInventoryRiskAnalysis,
   forecastMonth,
   normalizeInventoryRiskParams
@@ -344,6 +345,72 @@ test('销售预测文件缺失时阻止计算', () => {
   });
   assert.equal(payload.ok, false);
   assert.equal(payload.status, 'missing_data');
+});
+
+test('备货复核物料编码模式只保留备货文件命中物料', () => {
+  const payload = buildBeiHuoReviewAnalysis({
+    now: NOW,
+    mode: 'materialCode',
+    stockupMaterialCodes: ['1001'],
+    inventoryModel: {
+      rows: [
+        summaryRow({ inventoryQty: 60, transitQty: 30, unfulfilledQty: 10 }),
+        summaryRow({ materialCode: '1002', sku: 'SKU-1002', inventoryQty: 500 })
+      ]
+    },
+    forecastRows: [wideForecast(), wideForecast({ 物料编码: '1002' })]
+  });
+  assert.equal(payload.ok, true);
+  assert.equal(payload.status, 'ready');
+  assert.equal(payload.rows.length, 1);
+  assert.equal(payload.rows[0].materialCode, '1001');
+  assert.equal(payload.rows[0].forecastMonthlyAverage, 100);
+  assert.equal(payload.rows[0].transitTurnoverDays, 27);
+  assert.equal(payload.rows[0].fullChainCoverageDays, 40);
+  assert.equal(payload.rows[0].forecastSellableDays, 30);
+  assert.equal(Math.round(payload.rows[0].historicalSellableDays * 100) / 100, 85.71);
+  assert.deepEqual(payload.stockupInfo, { hasFile: true, materialCodeCount: 1 });
+});
+
+test('备货复核型号模式汇总同型号全部物料但只展示备货物料编码', () => {
+  const payload = buildBeiHuoReviewAnalysis({
+    now: NOW,
+    mode: 'model',
+    stockupMaterialCodes: ['1001'],
+    inventoryModel: {
+      rows: [
+        summaryRow({ inventoryQty: 100, transitQty: 20, unfulfilledQty: 10 }),
+        summaryRow({ materialCode: '1002', sku: 'SKU-1002', materialName: '同型号产品2', inventoryQty: 50, transitQty: 5, unfulfilledQty: 15 }),
+        summaryRow({ materialCode: '1003', sku: 'SKU-1003', model: '其他型号', inventoryQty: 999 })
+      ]
+    },
+    forecastRows: [
+      wideForecast(),
+      wideForecast({ 物料编码: '1002' }),
+      wideForecast({ 物料编码: '1003' })
+    ]
+  });
+  assert.equal(payload.ok, true);
+  assert.equal(payload.rows.length, 1);
+  assert.equal(payload.rows[0].model, '测试型号');
+  assert.equal(payload.rows[0].materialCode, '1001');
+  assert.equal(payload.rows[0].onHandQty, 150);
+  assert.equal(payload.rows[0].inTransitQty, 25);
+  assert.equal(payload.rows[0].undeliveredQty, 25);
+  assert.equal(payload.rows[0].forecastMonthlyAverage, 200);
+});
+
+test('备货文件无有效物料时返回空结果且不要求销售预测', () => {
+  const payload = buildBeiHuoReviewAnalysis({
+    now: NOW,
+    inventoryModel: { rows: [summaryRow()] },
+    forecastRows: [],
+    stockupMaterialCodes: []
+  });
+  assert.equal(payload.ok, true);
+  assert.equal(payload.status, 'empty');
+  assert.deepEqual(payload.rows, []);
+  assert.deepEqual(payload.stockupInfo, { hasFile: false, materialCodeCount: 0 });
 });
 
 test('参数归一化计算渠道周期并阻止负数', () => {

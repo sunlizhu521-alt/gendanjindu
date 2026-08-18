@@ -23,6 +23,7 @@ import {
   parseInventorySummaryWorkbook
 } from './inventory-summary.js';
 import {
+  buildBeiHuoReviewAnalysis,
   buildInventoryRiskAnalysis,
   buildSupplyPlanSummary,
   inventoryRiskCacheKey,
@@ -3093,8 +3094,16 @@ function inventoryRiskData(input = {}, { force = false } = {}) {
 
 function beiHuoGongJuData(input = {}, { force = false } = {}) {
   const params = normalizeInventoryRiskParams(input);
+  const mode = input.mode === 'model' ? 'model' : 'materialCode';
   const sourceVersion = inventoryRiskSourceVersion();
-  const key = inventoryRiskCacheKey(sourceVersion, params);
+  const stockupRecord = get(
+    'SELECT rows_json, file_name, updated_at FROM dimension_files WHERE slot_id = ? AND applied = 1',
+    ['beiHuoReviewFile1']
+  );
+  const stockupMaterialCodes = [...new Set(parseJson(stockupRecord?.rows_json, [])
+    .map((row) => normalize(pickAny(row, ['物料编码', '品号', '物料编号', '物料代码', 'materialCode'])).replace(/\.0$/, ''))
+    .filter(Boolean))].sort((left, right) => left.localeCompare(right, 'zh-Hans-CN', { numeric: true }));
+  const key = `${inventoryRiskCacheKey(sourceVersion, params)}|${mode}|${stockupMaterialCodes.join(',')}`;
   if (!force && beiHuoGongJuResultCache.key === key && beiHuoGongJuResultCache.payload) {
     return beiHuoGongJuResultCache.payload;
   }
@@ -3102,7 +3111,7 @@ function beiHuoGongJuData(input = {}, { force = false } = {}) {
     'SELECT file_name, rows_json, updated_at FROM dimension_files WHERE slot_id = ? AND applied = 1',
     ['inventorySummaryFile15']
   );
-  const payload = buildInventoryRiskAnalysis({
+  const payload = buildBeiHuoReviewAnalysis({
     inventoryModel: inventorySummaryData(),
     forecastRows: parseJson(forecastRecord?.rows_json, []),
     forecastSource: {
@@ -3110,6 +3119,8 @@ function beiHuoGongJuData(input = {}, { force = false } = {}) {
       updatedAt: forecastRecord?.updated_at || ''
     },
     params,
+    mode,
+    stockupMaterialCodes,
     sourceVersion
   });
   if (payload.ok) beiHuoGongJuResultCache = { key, payload };
@@ -5818,25 +5829,6 @@ app.post('/api/bei-huo-gong-ju/export', requireAuth, requirePage('beiHuoGongJu')
   } catch (error) {
     return res.status(400).json({ error: error.message || '备货工具参数无效' });
   }
-});
-
-app.get('/api/bei-huo-review/stockup-requirement', requireAuth, requirePage('beiHuoGongJu'), (_req, res) => {
-  const record = get(
-    `SELECT rows_json, file_name, updated_at
-     FROM dimension_files
-     WHERE slot_id = 'beiHuoReviewFile1' AND applied = 1
-     LIMIT 1`
-  );
-  const materialCodes = [...new Set(parseJson(record?.rows_json, [])
-    .map((row) => normalize(pickAny(row, ['物料编码', '品号', '物料编号', '物料代码', 'materialCode'])))
-    .filter(Boolean))];
-  res.setHeader('Cache-Control', 'no-store');
-  return res.json({
-    hasFile: Boolean(record),
-    materialCodes,
-    fileName: record?.file_name || '',
-    updatedAt: record?.updated_at || ''
-  });
 });
 
 app.get('/api/inventory-purchase-summary', requireAuth, requirePage('inventoryPurchase'), (req, res) => {

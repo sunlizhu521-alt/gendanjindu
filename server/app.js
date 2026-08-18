@@ -75,6 +75,7 @@ const ALL_PAGES = [
   'inventoryPurchase',
   'inventorySummaryLibrary',
   'inventoryManualLibrary',
+  'beiHuoGongJu',
   'operationBoard',
   'progressRefresh',
   'differenceAllocation',
@@ -98,6 +99,7 @@ const PAGE_LABELS = {
   inventoryPurchase: '采购未交付',
   inventorySummaryLibrary: '底表文件',
   inventoryManualLibrary: '手工表库',
+  beiHuoGongJu: '备货工具',
   operationBoard: '运营看板-未交付',
   purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',
@@ -763,6 +765,7 @@ function auditPageForRequest(req) {
   if (requestPath.startsWith('/api/product-projects')) return { key: 'productArchive', label: PAGE_LABELS.productArchive };
   if (requestPath.startsWith('/api/product-archive')) return { key: 'productArchive', label: PAGE_LABELS.productArchive };
   if (requestPath.startsWith('/api/inventory-risk')) return { key: 'inventoryRisk', label: PAGE_LABELS.inventoryRisk };
+  if (requestPath.startsWith('/api/bei-huo-gong-ju')) return { key: 'beiHuoGongJu', label: PAGE_LABELS.beiHuoGongJu };
   if (requestPath.startsWith('/api/inventory-summary')) return { key: 'inventorySummary', label: PAGE_LABELS.inventorySummary };
   if (requestPath.startsWith('/api/operation-logs')) return { key: 'operationLogs', label: PAGE_LABELS.operationLogs };
   if (requestPath.startsWith('/api/progress')) return { key: 'progressRefresh', label: PAGE_LABELS.progressRefresh };
@@ -2921,6 +2924,8 @@ function inventorySummaryData({ manualCategory = '' } = {}) {
 
 let inventoryRiskResultCache = { key: '', payload: null };
 const INVENTORY_RISK_SETTING_KEY = 'global';
+const BEI_HUO_GONG_JU_SETTING_KEY = 'beiHuoGongJu';
+let beiHuoGongJuResultCache = { key: '', payload: null };
 
 function currentInventoryRiskSettings() {
   const saved = get(
@@ -2960,6 +2965,49 @@ function saveInventoryRiskSettings(input, userName) {
          (id, setting_key, params_json, updated_by, updated_at)
        VALUES (?, ?, ?, ?, ?)`,
       [randomUUID(), INVENTORY_RISK_SETTING_KEY, paramsJson, updatedBy, updatedAt]
+    );
+  });
+  return { params, updatedBy, updatedAt };
+}
+
+function currentBeiHuoGongJuSettings() {
+  const saved = get(
+    'SELECT params_json, updated_by, updated_at FROM inventory_risk_settings WHERE setting_key = ?',
+    [BEI_HUO_GONG_JU_SETTING_KEY]
+  );
+  let params;
+  try {
+    params = normalizeInventoryRiskParams(saved ? JSON.parse(saved.params_json) : {});
+  } catch {
+    params = normalizeInventoryRiskParams({});
+  }
+  return {
+    params,
+    updatedBy: saved?.updated_by || '',
+    updatedAt: saved?.updated_at || ''
+  };
+}
+
+function saveBeiHuoGongJuSettings(input, userName) {
+  const params = normalizeInventoryRiskParams(input);
+  const paramsJson = JSON.stringify(params);
+  const updatedAt = nowText();
+  const updatedBy = normalize(userName) || '未知用户';
+  transaction(() => {
+    run(
+      `INSERT INTO inventory_risk_settings (setting_key, params_json, updated_by, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(setting_key) DO UPDATE SET
+         params_json = excluded.params_json,
+         updated_by = excluded.updated_by,
+         updated_at = excluded.updated_at`,
+      [BEI_HUO_GONG_JU_SETTING_KEY, paramsJson, updatedBy, updatedAt]
+    );
+    run(
+      `INSERT INTO inventory_risk_setting_history
+         (id, setting_key, params_json, updated_by, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      [randomUUID(), BEI_HUO_GONG_JU_SETTING_KEY, paramsJson, updatedBy, updatedAt]
     );
   });
   return { params, updatedBy, updatedAt };
@@ -3032,6 +3080,31 @@ function inventoryRiskData(input = {}, { force = false } = {}) {
     sourceVersion
   });
   if (payload.ok) inventoryRiskResultCache = { key, payload };
+  return payload;
+}
+
+function beiHuoGongJuData(input = {}, { force = false } = {}) {
+  const params = normalizeInventoryRiskParams(input);
+  const sourceVersion = inventoryRiskSourceVersion();
+  const key = inventoryRiskCacheKey(sourceVersion, params);
+  if (!force && beiHuoGongJuResultCache.key === key && beiHuoGongJuResultCache.payload) {
+    return beiHuoGongJuResultCache.payload;
+  }
+  const forecastRecord = get(
+    'SELECT file_name, rows_json, updated_at FROM dimension_files WHERE slot_id = ? AND applied = 1',
+    ['inventorySummaryFile15']
+  );
+  const payload = buildInventoryRiskAnalysis({
+    inventoryModel: inventorySummaryData(),
+    forecastRows: parseJson(forecastRecord?.rows_json, []),
+    forecastSource: {
+      fileName: forecastRecord?.file_name || '',
+      updatedAt: forecastRecord?.updated_at || ''
+    },
+    params,
+    sourceVersion
+  });
+  if (payload.ok) beiHuoGongJuResultCache = { key, payload };
   return payload;
 }
 
@@ -5695,6 +5768,47 @@ app.post('/api/inventory-risk/export', requireAuth, requirePage('inventoryRisk')
     return res.send(buffer);
   } catch (error) {
     return res.status(400).json({ error: error.message || '供应计划分析参数无效' });
+  }
+});
+
+app.get('/api/bei-huo-gong-ju/params', requireAuth, requirePage('beiHuoGongJu'), (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  return res.json(currentBeiHuoGongJuSettings());
+});
+
+app.post('/api/bei-huo-gong-ju/query', requireAuth, requirePage('beiHuoGongJu'), (req, res) => {
+  try {
+    const payload = beiHuoGongJuData(req.body, { force: Boolean(req.body?.force) });
+    res.setHeader('Cache-Control', 'no-store');
+    if (!payload.ok) {
+      return res.status(payload.status === 'invalid_params' ? 400 : 422).json(payload);
+    }
+    const parameterSettings = req.body?.saveParams
+      ? saveBeiHuoGongJuSettings(payload.params || req.body, req.user.name)
+      : currentBeiHuoGongJuSettings();
+    return res.json({ ...payload, parameterSettings });
+  } catch (error) {
+    return res.status(400).json({ error: error.message || '备货工具参数无效' });
+  }
+});
+
+app.post('/api/bei-huo-gong-ju/export', requireAuth, requirePage('beiHuoGongJu'), async (req, res) => {
+  try {
+    const payload = beiHuoGongJuData(req.body);
+    if (!payload.ok) {
+      return res.status(payload.status === 'invalid_params' ? 400 : 422).json(payload);
+    }
+    const workbook = buildInventoryRiskWorkbook({
+      ...payload,
+      includeDataSource: Boolean(req.body?.includeDataSource)
+    });
+    const buffer = Buffer.from(await buildStyledExcelBuffer(xlsx, workbook));
+    const fileName = `备货工具_${nowText().slice(0, 10).replaceAll('-', '')}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="bei-huo-gong-ju.xlsx"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+    return res.send(buffer);
+  } catch (error) {
+    return res.status(400).json({ error: error.message || '备货工具参数无效' });
   }
 });
 

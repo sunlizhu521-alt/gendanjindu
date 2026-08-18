@@ -10,6 +10,7 @@ const InventoryCalculationGuide = React.lazy(() => import('./InventoryCalculatio
 const InventoryRiskPage = React.lazy(() => import('./InventoryRiskPage.jsx'));
 const SupplyPlanBoard = React.lazy(() => import('./SupplyPlanBoard.jsx'));
 const ProductArchivePage = React.lazy(() => import('./ProductArchivePage.jsx'));
+const BeiHuoGongJuPage = React.lazy(() => import('./BeiHuoGongJuPage.jsx'));
 
 installGlobalFetchProgress();
 
@@ -30,6 +31,7 @@ const PAGE_ORDER = [
   'inventoryPurchase',
   'inventorySummaryLibrary',
   'inventoryManualLibrary',
+  'beiHuoGongJu',
   'operationBoard',
   'progressRefresh',
   'differenceAllocation',
@@ -55,6 +57,7 @@ const PAGE_LABELS = {
   inventoryPurchase: '采购未交付',
   inventorySummaryLibrary: '底表文件',
   inventoryManualLibrary: '手工表库',
+  beiHuoGongJu: '备货工具',
   operationBoard: '运营看板-未交付',
   purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',
@@ -77,6 +80,7 @@ const NAV_GROUPS = [
   { title: '国内数据', pages: ['domesticBoard', 'wangdianData'] },
   { title: '跨境数据', pages: ['crossBorderInventory', 'lingxingInventory'] },
   { title: '库存数据', pages: ['inventorySummary', 'inventoryRisk', 'supplyPlanBoard', 'inventoryPurchase', 'inventorySummaryLibrary', 'inventoryManualLibrary'] },
+  { title: '备货复核', pages: ['beiHuoGongJu'] },
   { title: '产品数据', pages: ['productArchive', 'businessUnitFeedback'] },
   { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'differenceAllocation', 'operationLogs', 'trace', 'purchaseBoard'] },
   { title: '头程数据', pages: ['firstMileBoard', 'firstMileDatabase'] },
@@ -9182,6 +9186,7 @@ function App() {
         {shouldMount('domesticBoard') && <PagePane page="domesticBoard" activeTab={activeTab}><DomesticBoard token={token} setMessage={setMessage} /></PagePane>}
         {shouldMount('inventorySummary') && <PagePane page="inventorySummary" activeTab={activeTab}><InventorySummary token={token} active={activeTab === 'inventorySummary'} /></PagePane>}
         {shouldMount('inventoryRisk') && <PagePane page="inventoryRisk" activeTab={activeTab}><React.Suspense fallback={<div className="loading-fallback">加载中...</div>}><InventoryRiskPage token={token} active={activeTab === 'inventoryRisk'} /></React.Suspense></PagePane>}
+        {shouldMount('beiHuoGongJu') && <PagePane page="beiHuoGongJu" activeTab={activeTab}><React.Suspense fallback={<div className="loading-fallback">加载中...</div>}><BeiHuoGongJuPage token={token} active={activeTab === 'beiHuoGongJu'} /></React.Suspense></PagePane>}
         {shouldMount('supplyPlanBoard') && <PagePane page="supplyPlanBoard" activeTab={activeTab}><React.Suspense fallback={<div className="loading-fallback">加载中...</div>}><SupplyPlanBoard token={token} active={activeTab === 'supplyPlanBoard'} /></React.Suspense></PagePane>}
         {shouldMount('productArchive') && <PagePane page="productArchive" activeTab={activeTab}><React.Suspense fallback={<div className="loading-fallback">加载中...</div>}><ProductArchivePage token={token} active={activeTab === 'productArchive'} user={user} /></React.Suspense></PagePane>}
         {shouldMount('businessUnitFeedback') && <PagePane page="businessUnitFeedback" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="产品数据" slots={BUSINESS_UNIT_FEEDBACK_SLOTS} gridColumns={4} /></PagePane>}

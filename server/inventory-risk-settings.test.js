@@ -8,6 +8,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const database = fs.readFileSync(path.join(root, 'server', 'database.js'), 'utf8');
 const server = fs.readFileSync(path.join(root, 'server', 'app.js'), 'utf8');
 const page = fs.readFileSync(path.join(root, 'src', 'InventoryRiskPage.jsx'), 'utf8');
+const beiHuoPage = fs.readFileSync(path.join(root, 'src', 'BeiHuoGongJuPage.jsx'), 'utf8');
+const appPage = fs.readFileSync(path.join(root, 'src', 'App.jsx'), 'utf8');
 
 test('供应计划参数保存在腾讯云数据库并保留修改历史', () => {
   assert.match(database, /CREATE TABLE IF NOT EXISTS inventory_risk_settings/);
@@ -29,4 +31,32 @@ test('页面先读取腾讯云最后参数且只有重新计算才保存', () =>
   assert.match(page, /if \(active\) return;[\s\S]*?setParamsReady\(false\)[\s\S]*?setParamsLoadAttempted\(false\)/);
   assert.match(page, /\{paramsReady && \([\s\S]*?<RiskParameterMatrix/);
   assert.doesNotMatch(page, /localStorage|inventory-risk-params/);
+});
+
+test('备货工具使用独立页面权限、设置键、结果缓存和接口', () => {
+  assert.match(server, /'beiHuoGongJu'/);
+  assert.match(server, /beiHuoGongJu: '备货工具'/);
+  assert.match(server, /BEI_HUO_GONG_JU_SETTING_KEY = 'beiHuoGongJu'/);
+  assert.match(server, /let beiHuoGongJuResultCache = \{ key: '', payload: null \}/);
+  assert.match(server, /function currentBeiHuoGongJuSettings\(\)/);
+  assert.match(server, /function saveBeiHuoGongJuSettings\(input, userName\)/);
+  assert.match(server, /function beiHuoGongJuData\(input = \{\}, \{ force = false \} = \{\}\)/);
+  assert.match(server, /\[randomUUID\(\), BEI_HUO_GONG_JU_SETTING_KEY, paramsJson, updatedBy, updatedAt\]/);
+  assert.match(server, /app\.get\('\/api\/bei-huo-gong-ju\/params', requireAuth, requirePage\('beiHuoGongJu'\)/);
+  assert.match(server, /app\.post\('\/api\/bei-huo-gong-ju\/query', requireAuth, requirePage\('beiHuoGongJu'\)/);
+  assert.match(server, /app\.post\('\/api\/bei-huo-gong-ju\/export', requireAuth, requirePage\('beiHuoGongJu'\)/);
+  assert.match(server, /requestPath\.startsWith\('\/api\/bei-huo-gong-ju'\)/);
+  assert.doesNotMatch(server, /function beiHuoGongJuData[\s\S]*?inventoryRiskResultCache/);
+});
+
+test('备货复核导航懒加载完整复制的备货工具页面', () => {
+  assert.match(appPage, /React\.lazy\(\(\) => import\('\.\/BeiHuoGongJuPage\.jsx'\)\)/);
+  assert.match(appPage, /\{ title: '备货复核', pages: \['beiHuoGongJu'\] \}/);
+  assert.match(appPage, /shouldMount\('beiHuoGongJu'\)/);
+  assert.match(beiHuoPage, /export default function BeiHuoGongJuPage/);
+  assert.match(beiHuoPage, /apiRequest\('\/api\/bei-huo-gong-ju\/params', token\)/);
+  assert.match(beiHuoPage, /apiRequest\('\/api\/bei-huo-gong-ju\/query', token/);
+  assert.match(beiHuoPage, /\/api\/bei-huo-gong-ju\/export/);
+  assert.match(beiHuoPage, /备货工具计算逻辑/);
+  assert.doesNotMatch(beiHuoPage, /供应计划分析|\/api\/inventory-risk/);
 });

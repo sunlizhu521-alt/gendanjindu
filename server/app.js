@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import xlsx from 'xlsx';
 import { all, get, initDatabase, run, runMany, saveDatabase, transaction } from './database.js';
 import { dedupeFirstMileRows, firstMileOwner, inspectFirstMileWorkbook, isFirstMileSlot, parseFirstMileWorkbook } from './first-mile.js';
+import { FULL_INVENTORY_SHEETS, buildFullInventorySummary, parseFullInventoryWorkbook } from './full-inventory.js';
 import {
   buildInventoryDimensionDiagnostics,
   buildInventorySummaryModel,
@@ -78,6 +79,8 @@ const ALL_PAGES = [
   'inventoryManualLibrary',
   'beiHuoGongJu',
   'beiHuoReviewLibrary',
+  'fullInventorySummary',
+  'fullInventoryLibrary',
   'operationBoard',
   'progressRefresh',
   'differenceAllocation',
@@ -103,6 +106,8 @@ const PAGE_LABELS = {
   inventoryManualLibrary: '手工表库',
   beiHuoGongJu: '备货工具',
   beiHuoReviewLibrary: '备货文件导入',
+  fullInventorySummary: '全量库存汇总',
+  fullInventoryLibrary: '全量库存底表',
   operationBoard: '运营看板-未交付',
   purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',
@@ -166,7 +171,8 @@ const DIMENSION_SLOTS = {
   beiHuoReviewFile1: '国内事业部备货',
   beiHuoReviewFile2: '备用',
   beiHuoReviewFile3: '备用',
-  beiHuoReviewFile4: '备用'
+  beiHuoReviewFile4: '备用',
+  fullInventoryFile1: '全量库存底表'
 };
 [
   '海外事业一部',
@@ -775,6 +781,7 @@ function auditPageForRequest(req) {
   if (requestPath.startsWith('/api/bei-huo-gong-ju')) return { key: 'beiHuoGongJu', label: PAGE_LABELS.beiHuoGongJu };
   if (requestPath.startsWith('/api/bei-huo-review')) return { key: 'beiHuoGongJu', label: PAGE_LABELS.beiHuoGongJu };
   if (requestPath.startsWith('/api/inventory-summary')) return { key: 'inventorySummary', label: PAGE_LABELS.inventorySummary };
+  if (requestPath.startsWith('/api/full-inventory-summary')) return { key: 'fullInventorySummary', label: PAGE_LABELS.fullInventorySummary };
   if (requestPath.startsWith('/api/operation-logs')) return { key: 'operationLogs', label: PAGE_LABELS.operationLogs };
   if (requestPath.startsWith('/api/progress')) return { key: 'progressRefresh', label: PAGE_LABELS.progressRefresh };
   if (requestPath.startsWith('/api/difference')) return { key: 'progressRefresh', label: PAGE_LABELS.progressRefresh };
@@ -795,6 +802,7 @@ function auditPageForRequest(req) {
     if (slotId.startsWith('inventorySummaryFile')) return { key: 'inventorySummaryLibrary', label: PAGE_LABELS.inventorySummaryLibrary };
     if (isInventoryManualSlot(slotId)) return { key: 'inventoryManualLibrary', label: PAGE_LABELS.inventoryManualLibrary };
     if (slotId.startsWith('beiHuoReviewFile')) return { key: 'beiHuoReviewLibrary', label: PAGE_LABELS.beiHuoReviewLibrary };
+    if (slotId.startsWith('fullInventoryFile')) return { key: 'fullInventoryLibrary', label: PAGE_LABELS.fullInventoryLibrary };
     return { key: 'dimensionLibrary', label: PAGE_LABELS.dimensionLibrary };
   }
   return { key: 'system', label: '系统操作' };
@@ -2929,6 +2937,37 @@ function inventorySummaryData({ manualCategory = '' } = {}) {
   }
   inventorySummaryResultCache.main = payload;
   return payload;
+}
+
+function fullInventorySummaryData() {
+  const inventoryRecord = get(
+    `SELECT rows_json, updated_at
+     FROM dimension_files
+     WHERE slot_id = 'fullInventoryFile1' AND applied = 1`
+  );
+  const salesRecord = get(
+    `SELECT rows_json
+     FROM dimension_files
+     WHERE slot_id = 'inventorySummaryFile8' AND applied = 1`
+  );
+  const undeliveredRows = all(
+    `SELECT d.business_unit AS business_unit,
+            k.material_code AS material_code,
+            SUM(COALESCE(k.remaining_inbound_qty, 0)) AS undelivered_qty
+     FROM order_demands d
+     JOIN kingdee_orders k
+       ON k.demand_key = d.demand_key
+      AND k.batch_id = d.source_batch_id
+     WHERE d.active = 1
+     GROUP BY d.business_unit, k.material_code`
+  );
+  return buildFullInventorySummary({
+    inventoryRows: parseJson(inventoryRecord?.rows_json, []),
+    productRows: getDimensionRows('productCategory'),
+    salesRows: parseJson(salesRecord?.rows_json, []),
+    undeliveredRows,
+    updatedAt: inventoryRecord?.updated_at || ''
+  });
 }
 
 let inventoryRiskResultCache = { key: '', payload: null };
@@ -5592,6 +5631,11 @@ app.get('/api/inventory-summary', requireAuth, requirePage('inventorySummary'), 
   res.json(inventorySummaryData());
 });
 
+app.get('/api/full-inventory-summary', requireAuth, requirePage('fullInventorySummary'), (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(fullInventorySummaryData());
+});
+
 const INVENTORY_MANUAL_RECONCILIATION_CATEGORIES = ['全部', '成品+配件', '成品', '配件', '不可售'];
 
 function inventoryManualReconciliationNoteKey(category, businessUnit, materialCode) {
@@ -7616,7 +7660,7 @@ app.get('/api/product-projects/sync-history', requireAuth, requirePage('productA
   res.json({ rows: productProjectHistory() });
 });
 
-app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase', 'beiHuoReviewLibrary']), (req, res) => {
+app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase', 'beiHuoReviewLibrary', 'fullInventoryLibrary']), (req, res) => {
   const rows = all('SELECT slot_id, title, file_name, sheet_name, sheet_names, selected_sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at FROM dimension_files');
   res.json({
     rows: rows.map((row) => {
@@ -7639,7 +7683,7 @@ app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'bus
   });
 });
 
-app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase', 'beiHuoReviewLibrary']), dimensionWorkbookUpload, cleanupKingdeeUpload, serializeInventoryUpload, async (req, res) => {
+app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase', 'beiHuoReviewLibrary', 'fullInventoryLibrary']), dimensionWorkbookUpload, cleanupKingdeeUpload, serializeInventoryUpload, async (req, res) => {
   const slotId = req.params.slotId;
   const baseSlotId = inventoryLibraryBaseSlotId(slotId);
   const mapping = parseJson(req.body.mapping, {});
@@ -7684,6 +7728,9 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   const productProjectParsed = slotId === PRODUCT_PROJECT_SLOT_ID
     ? parseProductProjectWorkbook(req.file)
     : null;
+  const fullInventoryParsed = slotId === 'fullInventoryFile1'
+    ? parseFullInventoryWorkbook(req.file)
+    : null;
   const inventorySummaryFile = (isInventorySummarySlot(baseSlotId) || isInventoryManualSlot(slotId)) && !req.file?.buffer
     ? { ...req.file, buffer: await fs.promises.readFile(req.file.path) }
     : req.file;
@@ -7694,7 +7741,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
     ? parseInventorySummaryWorkbook(inventorySummaryFile, baseSlotId, mapping)
     : null;
   const inventoryParsed = inventoryManualParsed || inventorySummaryParsed;
-  const parsed = firstMileParsed || inventoryParsed || productProjectParsed || (
+  const parsed = firstMileParsed || inventoryParsed || productProjectParsed || fullInventoryParsed || (
     ['inventorySummaryFile15', 'inventorySummaryFile16'].includes(baseSlotId)
       ? await streamingKingdeeWorkbookRows(
         req.file,
@@ -7706,7 +7753,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   const rowMapping = slotId === 'spare1' && parsed.columns?.[7]
     ? { ...mapping, level2WarehouseCategory: parsed.columns[7] }
     : mapping;
-  const parsedRows = firstMileParsed || inventoryParsed || productProjectParsed ? parsed.rows : parsed.rows.map((row) => {
+  const parsedRows = firstMileParsed || inventoryParsed || productProjectParsed || fullInventoryParsed ? parsed.rows : parsed.rows.map((row) => {
     if (['inventorySummaryFile4', 'inventorySummaryFile5'].includes(slotId)) {
       return {
         storeName: pick(row, mapping.storeName) || pickAny(row, ['店铺', '店铺名称', '账号', '账号名称']),
@@ -7893,7 +7940,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   const rows = isInventoryLibrarySlot(slotId)
     ? rowsWithSheetSource.map(({ raw: _raw, ...row }) => row)
     : rowsWithSheetSource;
-  if ((isInventoryManualSlot(slotId) || ['inventorySummaryFile15', 'inventorySummaryFile16'].includes(baseSlotId)) && !rows.length) {
+  if ((isInventoryManualSlot(slotId) || ['inventorySummaryFile15', 'inventorySummaryFile16'].includes(baseSlotId) || slotId === 'fullInventoryFile1') && !rows.length) {
     const error = new Error(`${DIMENSION_SLOTS[slotId]}选中的工作表没有可保存的数据，已保留当前应用文件`);
     error.status = 400;
     error.publicMessage = error.message;
@@ -7901,7 +7948,7 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
   }
   const storedMapping = firstMileParsed
     ? { ...mapping, __firstMileSummary: firstMileParsed.summary }
-    : productProjectParsed?.mapping || inventoryParsed?.mapping || rowMapping;
+    : productProjectParsed?.mapping || inventoryParsed?.mapping || fullInventoryParsed?.mapping || rowMapping;
   const now = nowText();
   const beforeOrderCounts = orderDataCounts();
   transaction(() => {
@@ -7909,34 +7956,34 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
       `INSERT INTO dimension_files (slot_id, title, file_name, sheet_name, sheet_names, selected_sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
       ON CONFLICT(slot_id) DO UPDATE SET title = excluded.title, file_name = excluded.file_name, sheet_name = excluded.sheet_name, sheet_names = excluded.sheet_names, selected_sheet_names = excluded.selected_sheet_names, mapping_json = excluded.mapping_json, rows_json = excluded.rows_json, applied = 1, uploaded_by = excluded.uploaded_by, updated_at = excluded.updated_at`,
-      [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), firstMileParsed ? '' : productProjectParsed?.sheetName || inventoryParsed?.sheetName || sheetName, JSON.stringify(parsed.sheetNames), JSON.stringify(!isInventoryManualSlot(slotId) && baseSlotId === 'inventorySummaryFile16' ? selectedSheetNames : []), JSON.stringify(storedMapping), JSON.stringify(rows), req.user.name, now]
+      [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), firstMileParsed || fullInventoryParsed ? '' : productProjectParsed?.sheetName || inventoryParsed?.sheetName || sheetName, JSON.stringify(parsed.sheetNames), JSON.stringify(fullInventoryParsed ? FULL_INVENTORY_SHEETS : !isInventoryManualSlot(slotId) && baseSlotId === 'inventorySummaryFile16' ? selectedSheetNames : []), JSON.stringify(storedMapping), JSON.stringify(rows), req.user.name, now]
     );
     if (slotId === 'productCategory' || slotId === 'purchaseAssignment') applyDimensionEnrichment();
     assertOrderDataUnchanged(beforeOrderCounts);
   });
   res.json({
     rowCount: rows.length,
-    sheetName: firstMileParsed ? '' : productProjectParsed?.sheetName || inventoryParsed?.sheetName || sheetName,
+    sheetName: firstMileParsed || fullInventoryParsed ? '' : productProjectParsed?.sheetName || inventoryParsed?.sheetName || sheetName,
     sheetNames: parsed.sheetNames,
-    selectedSheetNames: !isInventoryManualSlot(slotId) && baseSlotId === 'inventorySummaryFile16' ? selectedSheetNames : [],
+    selectedSheetNames: fullInventoryParsed ? FULL_INVENTORY_SHEETS : !isInventoryManualSlot(slotId) && baseSlotId === 'inventorySummaryFile16' ? selectedSheetNames : [],
     applied: true,
     diagnostics: dimensionDiagnostics(slotId, rows),
     parseSummary: firstMileParsed?.summary || productProjectParsed?.summary || inventoryParsed?.mapping?.__inventorySummary || inventoryParsed?.mapping?.__inventoryManual || null,
-    ...(isInventoryLibrarySlot(slotId) ? {} : { rows: demandRows(false, req.user) })
+    ...(isInventoryLibrarySlot(slotId) || slotId === 'fullInventoryFile1' ? {} : { rows: demandRows(false, req.user) })
   });
 });
 
-app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase', 'beiHuoReviewLibrary']), (req, res) => {
+app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase', 'beiHuoReviewLibrary', 'fullInventoryLibrary']), (req, res) => {
   const beforeOrderCounts = orderDataCounts();
   transaction(() => {
     run('UPDATE dimension_files SET applied = 1, updated_at = ? WHERE slot_id = ?', [nowText(), req.params.slotId]);
     if (req.params.slotId === 'productCategory' || req.params.slotId === 'purchaseAssignment') applyDimensionEnrichment();
     assertOrderDataUnchanged(beforeOrderCounts);
   });
-  res.json(isInventoryLibrarySlot(req.params.slotId) ? { applied: true } : { rows: demandRows(false, req.user) });
+  res.json(isInventoryLibrarySlot(req.params.slotId) || req.params.slotId === 'fullInventoryFile1' ? { applied: true } : { rows: demandRows(false, req.user) });
 });
 
-app.delete('/api/dimensions/:slotId', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase', 'beiHuoReviewLibrary']), (req, res) => {
+app.delete('/api/dimensions/:slotId', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase', 'beiHuoReviewLibrary', 'fullInventoryLibrary']), (req, res) => {
   run('DELETE FROM dimension_files WHERE slot_id = ?', [req.params.slotId]);
   saveDatabase();
   res.json({ ok: true });

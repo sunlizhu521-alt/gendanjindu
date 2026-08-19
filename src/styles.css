@@ -510,6 +510,90 @@
 
 .inventory-risk-pagination button:disabled { cursor: not-allowed; opacity: .45; }
 
+.full-inventory-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0 0;
+  border-bottom: 1px solid #d9e3ec;
+}
+
+.full-inventory-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 15px;
+  border: 1px solid #d9e3ec;
+  border-bottom: 0;
+  border-radius: 7px 7px 0 0;
+  background: #f6f8fb;
+  color: #526176;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.full-inventory-tabs button span {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #e5ebf2;
+  font-size: .7rem;
+}
+
+.full-inventory-tabs button.active {
+  border-color: #9dcfca;
+  background: #087f76;
+  color: #fff;
+}
+
+.full-inventory-tabs button.active span { background: rgba(255, 255, 255, .18); }
+
+.full-inventory-filter-field {
+  display: grid;
+  gap: 5px;
+  color: #526176;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.full-inventory-filter-field input,
+.full-inventory-filter-field select,
+.full-inventory-pagination select {
+  height: 34px;
+  padding: 6px 9px;
+  border: 1px solid #cfdbe6;
+  border-radius: 6px;
+  background: #fbfcfe;
+  color: #26364b;
+  font: inherit;
+}
+
+.full-inventory-filter-field input { width: 240px; }
+.full-inventory-period-field select { width: 132px; }
+
+.full-inventory-table { min-width: 1120px; }
+.full-inventory-table th,
+.full-inventory-table td { text-align: left; }
+.full-inventory-table th:nth-child(n+6),
+.full-inventory-table td:nth-child(n+6) { text-align: right; }
+.full-inventory-table th:nth-child(1) { width: 130px; }
+.full-inventory-table th:nth-child(2) { width: 130px; }
+.full-inventory-table th:nth-child(3) { width: 140px; }
+.full-inventory-table th:nth-child(4) { width: 130px; }
+.full-inventory-table th:nth-child(5) { width: 120px; }
+.full-inventory-table th:nth-child(n+6) { width: 110px; }
+
+.full-inventory-pagination label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.full-inventory-pagination select {
+  width: 72px;
+  height: 29px;
+  padding: 3px 7px;
+}
+
 .inventory-risk-alert,
 .inventory-risk-loading {
   display: flex;

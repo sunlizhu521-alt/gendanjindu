@@ -239,3 +239,20 @@ export function buildFullInventorySummary({
     groups
   };
 }
+
+export function inspectFullInventoryWorkbook(file) {
+  const parsed = parseFullInventoryWorkbook(file);
+  return {
+    sheetNames: parsed.sheetNames,
+    columns: ['事业部', '物料编码', 'SKU', '在库', '在途'],
+    previewRows: parsed.rows.slice(0, 8),
+    rowCount: parsed.rows.length,
+    totalRowCount: parsed.rows.length,
+    recognizedSheets: FULL_INVENTORY_SHEETS.length,
+    sheetPreviews: parsed.sheets.map((sheet) => ({
+      sheetName: sheet.sheetName,
+      columns: sheet.columns,
+      rowCount: sheet.rows.length
+    }))
+  };
+}

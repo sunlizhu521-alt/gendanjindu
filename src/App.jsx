@@ -11,6 +11,7 @@ const InventoryRiskPage = React.lazy(() => import('./InventoryRiskPage.jsx'));
 const SupplyPlanBoard = React.lazy(() => import('./SupplyPlanBoard.jsx'));
 const ProductArchivePage = React.lazy(() => import('./ProductArchivePage.jsx'));
 const BeiHuoGongJuPage = React.lazy(() => import('./BeiHuoGongJuPage.jsx'));
+const FullInventorySummaryPage = React.lazy(() => import('./FullInventorySummaryPage.jsx'));
 
 installGlobalFetchProgress();
 
@@ -33,6 +34,8 @@ const PAGE_ORDER = [
   'inventoryManualLibrary',
   'beiHuoGongJu',
   'beiHuoReviewLibrary',
+  'fullInventorySummary',
+  'fullInventoryLibrary',
   'operationBoard',
   'progressRefresh',
   'differenceAllocation',
@@ -60,6 +63,8 @@ const PAGE_LABELS = {
   inventoryManualLibrary: '手工表库',
   beiHuoGongJu: '备货工具',
   beiHuoReviewLibrary: '备货文件导入',
+  fullInventorySummary: '全量库存汇总',
+  fullInventoryLibrary: '全量库存底表',
   operationBoard: '运营看板-未交付',
   purchaseBoard: '采购看板',
   kingdeeImport: '采购订单',
@@ -83,6 +88,7 @@ const NAV_GROUPS = [
   { title: '跨境数据', pages: ['crossBorderInventory', 'lingxingInventory'] },
   { title: '库存数据', pages: ['inventorySummary', 'inventoryRisk', 'supplyPlanBoard', 'inventoryPurchase', 'inventorySummaryLibrary', 'inventoryManualLibrary'] },
   { title: '备货复核', pages: ['beiHuoGongJu', 'beiHuoReviewLibrary'] },
+  { title: '全量库存', pages: ['fullInventorySummary', 'fullInventoryLibrary'] },
   { title: '产品数据', pages: ['productArchive', 'businessUnitFeedback'] },
   { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'differenceAllocation', 'operationLogs', 'trace', 'purchaseBoard'] },
   { title: '头程数据', pages: ['firstMileBoard', 'firstMileDatabase'] },
@@ -398,6 +404,10 @@ const BEI_HUO_REVIEW_LIBRARY_SLOTS = [
   { id: 'beiHuoReviewFile2', title: '备用', fields: [] },
   { id: 'beiHuoReviewFile3', title: '备用', fields: [] },
   { id: 'beiHuoReviewFile4', title: '备用', fields: [] }
+];
+
+const FULL_INVENTORY_LIBRARY_SLOTS = [
+  { id: 'fullInventoryFile1', title: '全量库存底表', fields: [], fullInventory: true }
 ];
 
 function normalize(value) {
@@ -8042,7 +8052,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
               : productProjectSummary
               ? `已识别重点工作表“${productProjectSummary.primarySheet}”，共 ${productProjectSummary.validRows || 0} 个产品项目`
               : columns.length
-              ? slot.firstMile
+              ? slot.firstMile || slot.fullInventory
                 ? `解析完成：识别 ${payload.recognizedSheets || payload.sheetNames?.length || 1} 个业务工作表，共 ${inspectRowCount} 行`
                 : `解析完成：识别 ${payload.sheetNames?.length || 1} 个工作表，共 ${inspectRowCount} 行，请检查字段映射`
               : '未识别到表头，请检查前10行是否包含字段名',
@@ -8060,7 +8070,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
       } else {
         setMessage(productProjectSummary
           ? `${slot.title} 已自动识别重点工作表“${productProjectSummary.primarySheet}”，将解析 ${productProjectSummary.validRows || 0} 个产品项目`
-          : slot.firstMile
+          : slot.firstMile || slot.fullInventory
           ? `${slot.title} 解析完成，将自动读取全部业务工作表`
           : `${slot.title} 解析完成，请检查字段映射后上传保存`);
       }
@@ -8334,7 +8344,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
           const record = records.find((item) => item.slot_id === slot.id);
           const state = local[slot.id] || {};
           const busy = Boolean(state.busy);
-          const hasSheets = !slot.firstMile && !slot.productProjectWorkbook && (state.sheetNames?.length || record?.sheetNames?.length || 0) > 1;
+          const hasSheets = !slot.firstMile && !slot.fullInventory && !slot.productProjectWorkbook && (state.sheetNames?.length || record?.sheetNames?.length || 0) > 1;
           const sheetNames = state.sheetNames?.length ? state.sheetNames : (record?.sheetNames || []);
           const currentSheet = state.file ? (state.sheetName || '') : (state.sheetName || record?.sheetName || '');
           const selectedSheetNames = state.file
@@ -9197,6 +9207,8 @@ function App() {
         {shouldMount('inventoryRisk') && <PagePane page="inventoryRisk" activeTab={activeTab}><React.Suspense fallback={<div className="loading-fallback">加载中...</div>}><InventoryRiskPage token={token} active={activeTab === 'inventoryRisk'} /></React.Suspense></PagePane>}
         {shouldMount('beiHuoGongJu') && <PagePane page="beiHuoGongJu" activeTab={activeTab}><React.Suspense fallback={<div className="loading-fallback">加载中...</div>}><BeiHuoGongJuPage token={token} active={activeTab === 'beiHuoGongJu'} /></React.Suspense></PagePane>}
         {shouldMount('beiHuoReviewLibrary') && <PagePane page="beiHuoReviewLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="备货文件导入" slots={BEI_HUO_REVIEW_LIBRARY_SLOTS} gridColumns={4} /></PagePane>}
+        {shouldMount('fullInventorySummary') && <PagePane page="fullInventorySummary" activeTab={activeTab}><React.Suspense fallback={<div className="loading-fallback">加载中...</div>}><FullInventorySummaryPage token={token} active={activeTab === 'fullInventorySummary'} /></React.Suspense></PagePane>}
+        {shouldMount('fullInventoryLibrary') && <PagePane page="fullInventoryLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="全量库存底表" slots={FULL_INVENTORY_LIBRARY_SLOTS} gridColumns={1} /></PagePane>}
         {shouldMount('supplyPlanBoard') && <PagePane page="supplyPlanBoard" activeTab={activeTab}><React.Suspense fallback={<div className="loading-fallback">加载中...</div>}><SupplyPlanBoard token={token} active={activeTab === 'supplyPlanBoard'} /></React.Suspense></PagePane>}
         {shouldMount('productArchive') && <PagePane page="productArchive" activeTab={activeTab}><React.Suspense fallback={<div className="loading-fallback">加载中...</div>}><ProductArchivePage token={token} active={activeTab === 'productArchive'} user={user} /></React.Suspense></PagePane>}
         {shouldMount('businessUnitFeedback') && <PagePane page="businessUnitFeedback" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="产品数据" slots={BUSINESS_UNIT_FEEDBACK_SLOTS} gridColumns={4} /></PagePane>}

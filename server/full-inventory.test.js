@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import xlsx from 'xlsx';
-import { buildFullInventorySummary, parseFullInventoryWorkbook } from './full-inventory.js';
+import { buildFullInventorySummary, inspectFullInventoryWorkbook, parseFullInventoryWorkbook } from './full-inventory.js';
 
 function workbookFile() {
   const workbook = xlsx.utils.book_new();
@@ -48,6 +48,18 @@ test('全量库存底表缺少指定工作表时拒绝应用', () => {
     () => parseFullInventoryWorkbook({ buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) }),
     /缺少工作表：退货和配件/
   );
+});
+
+test('全量库存预览返回两个工作表和固定五列', () => {
+  const inspected = inspectFullInventoryWorkbook(workbookFile());
+  assert.equal(inspected.recognizedSheets, 2);
+  assert.deepEqual(inspected.columns, ['事业部', '物料编码', 'SKU', '在库', '在途']);
+  assert.equal(inspected.rowCount, 3);
+  assert.equal(inspected.totalRowCount, 3);
+  assert.deepEqual(inspected.sheetPreviews.map(({ sheetName, rowCount }) => ({ sheetName, rowCount })), [
+    { sheetName: '成品', rowCount: 2 },
+    { sheetName: '退货和配件', rowCount: 1 }
+  ]);
 });
 
 test('全量库存汇总按工作表及事业部+物料编码聚合', () => {
@@ -100,6 +112,21 @@ test('服务端注册全量库存页面、槽位、权限和汇总接口', () =>
   assert.match(source, /fullInventoryFile1:\s*'全量库存底表'/);
   assert.match(source, /slotId\.startsWith\('fullInventoryFile'\)/);
   assert.match(source, /app\.get\('\/api\/full-inventory-summary', requireAuth, requirePage\('fullInventorySummary'\)/);
+  assert.match(source, /slotId === 'fullInventoryFile1'[\s\S]*inspectFullInventoryWorkbook\(file\)/);
   const permissionMentions = source.match(/'fullInventoryLibrary'/g) || [];
   assert.ok(permissionMentions.length >= 6, '页面全集、审计映射和4个文件接口都应注册权限');
+});
+
+test('前端注册全量库存分组、汇总页和免映射底表页', () => {
+  const appSource = fs.readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  const pageSource = fs.readFileSync(new URL('../src/FullInventorySummaryPage.jsx', import.meta.url), 'utf8');
+  assert.match(appSource, /title: '全量库存', pages: \['fullInventorySummary', 'fullInventoryLibrary'\]/);
+  assert.match(appSource, /fullInventoryFile1', title: '全量库存底表', fields: \[\], fullInventory: true/);
+  assert.match(appSource, /slot\.firstMile \|\| slot\.fullInventory/g);
+  assert.match(appSource, /!slot\.firstMile && !slot\.fullInventory && !slot\.productProjectWorkbook/);
+  assert.match(appSource, /<FullInventorySummaryPage token=\{token\} active=\{activeTab === 'fullInventorySummary'\}/);
+  assert.match(pageSource, /GET|api\/full-inventory-summary/);
+  assert.match(pageSource, /最近\{count\}个月/);
+  assert.match(pageSource, /colSpan=\{9\}/);
+  assert.match(pageSource, /writeStyledExcelFile/);
 });

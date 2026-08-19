@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import xlsx from 'xlsx';
 import { all, get, initDatabase, run, runMany, saveDatabase, transaction } from './database.js';
 import { dedupeFirstMileRows, firstMileOwner, inspectFirstMileWorkbook, isFirstMileSlot, parseFirstMileWorkbook } from './first-mile.js';
-import { FULL_INVENTORY_SHEETS, buildFullInventorySummary, parseFullInventoryWorkbook } from './full-inventory.js';
+import { FULL_INVENTORY_SHEETS, buildFullInventorySummary, inspectFullInventoryWorkbook, parseFullInventoryWorkbook } from './full-inventory.js';
 import {
   buildInventoryDimensionDiagnostics,
   buildInventorySummaryModel,
@@ -6057,6 +6057,10 @@ app.post('/api/workbook/inspect', requireAuth, kingdeeUpload.single('file'), cle
   if (isFirstMileSlot(slotId)) {
     const file = { ...req.file, buffer: await fs.promises.readFile(req.file.path) };
     return res.json(inspectFirstMileWorkbook(file));
+  }
+  if (slotId === 'fullInventoryFile1') {
+    const file = { ...req.file, buffer: await fs.promises.readFile(req.file.path) };
+    return res.json(inspectFullInventoryWorkbook(file));
   }
   if (['inventorySummaryFile15', 'inventorySummaryFile16'].includes(baseSlotId)) {
     return res.json(await workbookChoiceInspect(req.file));

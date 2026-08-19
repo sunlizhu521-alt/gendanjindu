@@ -2544,6 +2544,60 @@ function InventorySummary({ token, active }) {
     }
   }
 
+  async function exportInventorySummary() {
+    if (!filteredRows.length) return;
+    setExporting(true);
+    try {
+      const XLSX = await import('xlsx');
+      const groups = new Map();
+      filteredRows.forEach((row) => {
+        (row.inventorySourceDetails || []).forEach((item) => {
+          const warehouse = normalize(item.sourceWarehouseName)
+            || normalize(item.mappedWarehouseName)
+            || normalize(item.receivingWarehouseName)
+            || '无仓库字段';
+          const inventoryQty = numberValue(item.fbaInventoryQty) + numberValue(item.fbmInventoryQty)
+            - numberValue(item.wfsInventoryQty) + numberValue(item.domesticMainInventoryQty)
+            - numberValue(item.jdInventoryQty);
+          const transitQty = numberValue(item.fbaTransitQty) + numberValue(item.fbmTransitQty)
+            - numberValue(item.wfsTransitQty) + numberValue(item.jdTransitQty);
+          const key = `${normalize(row.businessUnit) || '未匹配'}\u0000${warehouse}`;
+          const target = groups.get(key) || {
+            businessUnit: normalize(row.businessUnit) || '未匹配',
+            warehouse,
+            inventoryQty: 0,
+            transitQty: 0
+          };
+          target.inventoryQty += inventoryQty;
+          target.transitQty += transitQty;
+          groups.set(key, target);
+        });
+      });
+      const summaryRows = [...groups.values()]
+        .map((item) => ({ ...item, totalQty: item.inventoryQty + item.transitQty }))
+        .sort((left, right) => (
+          left.businessUnit.localeCompare(right.businessUnit, 'zh-Hans-CN')
+          || (right.totalQty - left.totalQty)
+        ));
+      const aoa = [
+        ['事业部', '仓库名称', '在库量', '在途量', '库存合计(在库+在途)'],
+        ...summaryRows.map((item) => [
+          item.businessUnit, item.warehouse,
+          item.inventoryQty, item.transitQty, item.totalQty
+        ])
+      ];
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+      worksheet['!cols'] = [
+        { wch: 20 }, { wch: 48 }, { wch: 12 }, { wch: 12 }, { wch: 18 }
+      ];
+      XLSX.utils.book_append_sheet(workbook, worksheet, '库存汇总');
+      await writeStyledExcelFile(XLSX, workbook, `库存汇总_事业部仓库_${todayText()}.xlsx`);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   if (showMethodology) {
     return (
       <React.Suspense fallback={<div className="loading-fallback">加载中...</div>}>
@@ -2655,6 +2709,7 @@ function InventorySummary({ token, active }) {
                   <option value="all">全部月份</option>
                 </select>
               </label>
+              <button type="button" className="ghost compact-button" disabled={exporting || !filteredRows.length} onClick={exportInventorySummary}>{exporting ? '导出中...' : '导出库存汇总'}</button>
               <button type="button" className="ghost compact-button" disabled={exporting || !filteredRows.length} onClick={exportRows}>{exporting ? '导出中...' : '导出Excel'}</button>
               <label className="inventory-page-size">每页
                 <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>

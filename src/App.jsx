@@ -9044,6 +9044,26 @@ function App() {
   const [user, setUser] = useState(null);
   const [pages, setPages] = useState(PAGE_LABELS);
   const [activeTab, setActiveTab] = useState(storedActivePage);
+  const [collapsedGroups, setCollapsedGroups] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem('gendanjinduCollapsedGroups');
+      const parsed = saved ? JSON.parse(saved) : [];
+      return new Set(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      return new Set();
+    }
+  });
+  const toggleGroup = (title) => {
+    setCollapsedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(title)) next.delete(title);
+      else next.add(title);
+      try {
+        window.localStorage.setItem('gendanjinduCollapsedGroups', JSON.stringify([...next]));
+      } catch {}
+      return next;
+    });
+  };
   const [visitedPages, setVisitedPages] = useState(() => {
     const savedPage = storedActivePage();
     return new Set(savedPage ? [savedPage] : []);
@@ -9180,10 +9200,14 @@ function App() {
             {NAV_GROUPS.map((group) => {
               const groupPages = group.pages.filter((page) => visiblePages.includes(page));
               if (!groupPages.length) return null;
+              const collapsed = collapsedGroups.has(group.title);
               return (
-                <div className="sidebar-nav-group" key={group.title}>
-                  <div className="sidebar-nav-title">{group.title}</div>
-                  {groupPages.map((page) => (
+                <div className={`sidebar-nav-group${collapsed ? ' collapsed' : ''}`} key={group.title}>
+                  <button type="button" className="sidebar-nav-title" onClick={() => toggleGroup(group.title)} aria-expanded={!collapsed}>
+                    <span className="sidebar-nav-arrow" aria-hidden="true">{collapsed ? '▸' : '▾'}</span>
+                    {group.title}
+                  </button>
+                  {!collapsed && groupPages.map((page) => (
                     <button key={page} type="button" className={activeTab === page ? 'active' : ''} onClick={() => setActiveTab(page)}>
                       {pages[page] || PAGE_LABELS[page]}
                     </button>

@@ -856,12 +856,35 @@ textarea {
   gap: 4px;
 }
 
-.sidebar-nav-title {
+.sidebar-nav .sidebar-nav-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
   padding: 6px 10px 3px;
+  background: transparent;
+  border: none;
   color: #d45113;
   font-size: 18px;
   font-weight: 800;
   line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.sidebar-nav .sidebar-nav-title:hover {
+  background: transparent;
+  color: #c23f08;
+  box-shadow: none;
+}
+
+.sidebar-nav-arrow {
+  display: inline-block;
+  width: 14px;
+  color: #d45113;
+  font-size: 13px;
+  flex: none;
 }
 
 .sidebar-nav button {

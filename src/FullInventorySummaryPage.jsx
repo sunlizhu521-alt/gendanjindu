@@ -3,7 +3,6 @@ import { writeStyledExcelFile } from '../shared/excel-export.js';
 
 const API = import.meta.env.DEV ? 'http://localhost:4003' : '';
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
-const SALES_MONTH_OPTIONS = [1, 3, 6, 12];
 
 function emptyFilters() {
   return { businessUnits: [], productLines: [], productSeries: [] };
@@ -32,8 +31,7 @@ function todayText() {
 const INVENTORY_COLUMNS = [
   ['businessUnit', '事业部'], ['productLine', '产品线'], ['productSeries', '系列'],
   ['materialCode', '物料编码'], ['sku', 'SKU'],
-  ['inventoryQty', '在库'], ['transitQty', '在途'], ['undeliveredQty', '未交付数量'],
-  ['_sales', '销量']
+  ['inventoryQty', '在库'], ['transitQty', '在途']
 ];
 
 const FULFILLMENT_COLUMNS = [
@@ -71,10 +69,6 @@ async function apiRequest(path, token, options = {}) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.error || '请求失败');
   return payload;
-}
-
-export function salesTotalForMonths(row, months) {
-  return months.reduce((sum, month) => sum + numberValue(row?.salesByMonth?.[month]), 0);
 }
 
 export function filterFullInventoryRows(rows, filters, keyword) {
@@ -146,11 +140,10 @@ function FullInventoryMultiSelect({ label, allLabel, value, options, onChange })
 }
 
 export default function FullInventorySummaryPage({ token, active }) {
-  const [data, setData] = useState({ updatedAt: '', months: [], groups: [] });
+  const [data, setData] = useState({ updatedAt: '', groups: [] });
   const [activeGroupKey, setActiveGroupKey] = useState('');
   const [filters, setFilters] = useState(emptyFilters);
   const [keyword, setKeyword] = useState('');
-  const [salesMonthCount, setSalesMonthCount] = useState(6);
   const [pageSize, setPageSize] = useState(20);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -168,7 +161,6 @@ export default function FullInventorySummaryPage({ token, active }) {
         const groups = Array.isArray(payload.groups) ? payload.groups : [];
         setData({
           updatedAt: text(payload.updatedAt),
-          months: Array.isArray(payload.months) ? payload.months : [],
           groups
         });
         setActiveGroupKey((current) => groups.some((group) => group.key === current) ? current : groups[0]?.key || '');
@@ -196,14 +188,9 @@ export default function FullInventorySummaryPage({ token, active }) {
     productLines: uniqueValues(sourceRows, 'productLine'),
     productSeries: uniqueValues(sourceRows, 'productSeries')
   }), [sourceRows]);
-  const selectedSalesMonths = useMemo(
-    () => data.months.slice(-salesMonthCount),
-    [data.months, salesMonthCount]
-  );
   function cellValue(row, key) {
-    if (key === '_sales') return numberText(salesTotalForMonths(row, selectedSalesMonths));
     const value = row[key];
-    return key.endsWith('Qty') || ['inventoryQty', 'transitQty', 'undeliveredQty'].includes(key)
+    return key.endsWith('Qty') || ['inventoryQty', 'transitQty'].includes(key)
       ? numberText(value)
       : text(value);
   }
@@ -233,7 +220,6 @@ export default function FullInventorySummaryPage({ token, active }) {
   function clearFilters() {
     setFilters(emptyFilters());
     setKeyword('');
-    setSalesMonthCount(6);
     setPage(1);
   }
 
@@ -300,14 +286,6 @@ export default function FullInventorySummaryPage({ token, active }) {
           <span>搜索</span>
           <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="事业部 / 物料编码 / SKU" />
         </label>
-        {!isFulfillment ? (
-          <label className="full-inventory-filter-field full-inventory-period-field">
-            <span>销量月份</span>
-            <select value={salesMonthCount} onChange={(event) => setSalesMonthCount(Number(event.target.value))}>
-              {SALES_MONTH_OPTIONS.map((count) => <option key={count} value={count}>最近{count}个月</option>)}
-            </select>
-          </label>
-        ) : null}
         <button className="inventory-risk-button secondary inventory-risk-filter-clear" type="button" onClick={clearFilters}>清除筛选</button>
         <span className="inventory-risk-filter-count">当前 {numberText(filteredRows.length)} 条</span>
       </section>
@@ -318,14 +296,13 @@ export default function FullInventorySummaryPage({ token, active }) {
       <section className="inventory-risk-result inventory-risk-result-combined">
         <div className="inventory-risk-section-heading">
           <div><span className="inventory-risk-section-kicker">全量库存明细</span><h3>{currentGroup.label || '暂无分类'}</h3></div>
-          <div className="inventory-risk-section-actions">
-            {!isFulfillment ? <strong>销量口径：{selectedSalesMonths.length ? selectedSalesMonths.join('、') : '无销量月份'}</strong> : null}
-            {isFulfillment ? (
+          {isFulfillment ? (
+            <div className="inventory-risk-section-actions">
               <button type="button" className="inventory-risk-button secondary" onClick={() => setShowFulfillmentDetail((value) => !value)}>
                 {showFulfillmentDetail ? '不展示明细' : '展示明细'}
               </button>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
         </div>
         <div className="inventory-risk-table-wrap">
           <table className={`inventory-risk-table full-inventory-table${isFulfillment ? ' fulfillment-wide' : ''}`}>

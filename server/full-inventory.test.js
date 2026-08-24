@@ -209,7 +209,11 @@ test('前端注册全量库存分组、汇总页和免映射底表页', () => {
   assert.match(appSource, /!slot\.firstMile && !slot\.fullInventory && !slot\.productProjectWorkbook/);
   assert.match(appSource, /<FullInventorySummaryPage token=\{token\} active=\{activeTab === 'fullInventorySummary'\}/);
   assert.match(pageSource, /GET|api\/full-inventory-summary/);
-  assert.match(pageSource, /最近\{count\}个月/);
+  const inventoryColumnsSource = pageSource.match(/const INVENTORY_COLUMNS = \[([\s\S]*?)\n\];/)?.[1] || '';
+  assert.match(inventoryColumnsSource, /inventoryQty/);
+  assert.match(inventoryColumnsSource, /transitQty/);
+  assert.doesNotMatch(inventoryColumnsSource, /undeliveredQty|_sales/);
+  assert.doesNotMatch(pageSource, /SALES_MONTH_OPTIONS|salesTotalForMonths|销量月份|销量口径/);
   assert.match(pageSource, /const FULFILLMENT_COLUMNS = \[/);
   assert.match(pageSource, /currentGroup\.key === 'undelivered'/);
   assert.match(pageSource, /colSpan=\{columns\.length\}/);

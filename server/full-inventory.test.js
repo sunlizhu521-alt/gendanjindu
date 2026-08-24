@@ -158,6 +158,7 @@ test('全量库存汇总按工作表及事业部+物料编码聚合', () => {
   ]);
   assert.deepEqual(result.groups[0].rows[0], {
     businessUnit: '国内事业部',
+    warehouse: '',
     materialCode: '1001',
     sku: 'SKU-1',
     productLine: '护理床',
@@ -181,6 +182,25 @@ test('全量库存汇总按工作表及事业部+物料编码聚合', () => {
     undeliveredQty: 8,
     salesByMonth: { '2026-01': 3, '2026-02': 4 }
   });
+});
+
+test('全量库存汇总按仓库拆分相同事业部和物料编码', () => {
+  const result = buildFullInventorySummary({
+    inventoryRows: [
+      { __sourceSheet: '成品', businessUnit: '国内事业部', warehouse: '仓库A', materialCode: '1001', inventoryQty: 1, transitQty: 2 },
+      { __sourceSheet: '成品', businessUnit: '国内事业部', warehouse: '仓库B', materialCode: '1001', inventoryQty: 3, transitQty: 4 },
+      { __sourceSheet: '成品', businessUnit: '国内事业部', warehouse: '仓库A', materialCode: '1001', inventoryQty: 5, transitQty: 6 }
+    ]
+  });
+
+  assert.deepEqual(result.groups[0].rows.map(({ warehouse, inventoryQty, transitQty }) => ({
+    warehouse,
+    inventoryQty,
+    transitQty
+  })), [
+    { warehouse: '仓库A', inventoryQty: 6, transitQty: 8 },
+    { warehouse: '仓库B', inventoryQty: 3, transitQty: 4 }
+  ]);
 });
 
 test('服务端注册全量库存页面、槽位、权限和汇总接口', () => {
@@ -212,6 +232,7 @@ test('前端注册全量库存分组、汇总页和免映射底表页', () => {
   const inventoryColumnsSource = pageSource.match(/const INVENTORY_COLUMNS = \[([\s\S]*?)\n\];/)?.[1] || '';
   assert.match(inventoryColumnsSource, /inventoryQty/);
   assert.match(inventoryColumnsSource, /transitQty/);
+  assert.match(inventoryColumnsSource, /warehouse/);
   assert.doesNotMatch(inventoryColumnsSource, /undeliveredQty|_sales/);
   assert.doesNotMatch(pageSource, /SALES_MONTH_OPTIONS|salesTotalForMonths|销量月份|销量口径/);
   assert.match(pageSource, /const FULFILLMENT_COLUMNS = \[/);

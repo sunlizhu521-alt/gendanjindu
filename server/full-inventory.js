@@ -206,9 +206,11 @@ export function buildFullInventorySummary({
     const businessUnit = fullInventoryBusinessUnit(rowValue(row, ['businessUnit', '事业部']));
     const materialCode = fullInventoryMaterialCode(rowValue(row, ['materialCode', '物料编码', '品号', '物料代码']));
     if (!businessUnit || !materialCode) return;
-    const key = groupKey(businessUnit, materialCode);
+    const warehouse = text(rowValue(row, ['warehouse', '仓库', '仓库名称']));
+    const key = `${groupKey(businessUnit, materialCode)}\u001f${warehouse}`;
     const current = aggregate.get(key) || {
       businessUnit,
+      warehouse,
       materialCode,
       sku: '',
       inventoryQty: 0,
@@ -227,6 +229,7 @@ export function buildFullInventorySummary({
       const salesByMonth = salesMap.get(key) || {};
       return {
         businessUnit: row.businessUnit,
+        warehouse: row.warehouse,
         materialCode: row.materialCode,
         sku: row.sku,
         productLine: dimension.productLine || '',
@@ -239,6 +242,7 @@ export function buildFullInventorySummary({
     }).sort((left, right) => (
       left.businessUnit.localeCompare(right.businessUnit, 'zh-CN')
       || left.materialCode.localeCompare(right.materialCode, 'zh-CN', { numeric: true })
+      || (left.warehouse || '').localeCompare(right.warehouse || '', 'zh-CN')
     ));
     return { key: group.key, label: group.label, rows };
   });

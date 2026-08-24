@@ -29,7 +29,7 @@ function todayText() {
 }
 
 const INVENTORY_COLUMNS = [
-  ['businessUnit', '事业部'], ['productLine', '产品线'], ['productSeries', '系列'],
+  ['businessUnit', '事业部'], ['warehouse', '仓库名称'], ['productLine', '产品线'], ['productSeries', '系列'],
   ['materialCode', '物料编码'], ['sku', 'SKU'],
   ['inventoryQty', '在库'], ['transitQty', '在途']
 ];

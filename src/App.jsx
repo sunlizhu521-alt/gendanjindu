@@ -407,7 +407,8 @@ const BEI_HUO_REVIEW_LIBRARY_SLOTS = [
 ];
 
 const FULL_INVENTORY_LIBRARY_SLOTS = [
-  { id: 'fullInventoryFile1', title: '全量库存底表', fields: [], fullInventory: true }
+  { id: 'fullInventoryFile1', title: '全量库存底表', fields: [], fullInventory: true },
+  { id: 'fullInventoryFile2', title: '订单履约表', fields: [], fullInventory: true }
 ];
 
 function normalize(value) {

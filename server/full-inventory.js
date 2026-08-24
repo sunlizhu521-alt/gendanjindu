@@ -1,4 +1,5 @@
 import xlsx from 'xlsx';
+import { parseManualProgressRows } from './manual-progress.js';
 
 export const FULL_INVENTORY_SHEETS = Object.freeze(['成品', '退货和配件']);
 
@@ -108,15 +109,23 @@ export function parseFullInventoryWorkbook(file) {
     });
     const columns = uniqueColumns(aoa[1] || []);
     let inheritedBusinessUnit = '';
+    let inheritedWarehouse = '';
     const rows = aoa.slice(2).flatMap((values) => {
       const source = rowObject(columns, values);
       const directBusinessUnit = rowValue(source, ['事业部', '所属事业部']);
-      if (text(directBusinessUnit)) inheritedBusinessUnit = fullInventoryBusinessUnit(directBusinessUnit);
+      if (text(directBusinessUnit)) {
+        const nextBusinessUnit = fullInventoryBusinessUnit(directBusinessUnit);
+        if (nextBusinessUnit !== inheritedBusinessUnit) inheritedWarehouse = '';
+        inheritedBusinessUnit = nextBusinessUnit;
+      }
+      const directWarehouse = rowValue(source, ['仓库', '仓库名称', '仓库名', 'warehouse']);
+      if (text(directWarehouse)) inheritedWarehouse = text(directWarehouse);
       const businessUnit = fullInventoryBusinessUnit(directBusinessUnit || inheritedBusinessUnit);
       const materialCode = fullInventoryMaterialCode(rowValue(source, ['物料编码', '品号', '物料编号', '物料代码']));
       if (!businessUnit || !materialCode) return [];
       return [{
         businessUnit,
+        warehouse: text(directWarehouse || inheritedWarehouse),
         materialCode,
         sku: text(rowValue(source, ['SKU', '产品SKU'])),
         inventoryQty: safeNumber(rowValue(source, ['在库', '在库数量', '在库量'])),
@@ -127,7 +136,7 @@ export function parseFullInventoryWorkbook(file) {
     return {
       sheetName,
       rows,
-      columns: ['事业部', '物料编码', 'SKU', '在库', '在途'],
+      columns: ['事业部', '仓库', '物料编码', 'SKU', '在库', '在途'],
       headerRow: 2
     };
   });
@@ -244,11 +253,64 @@ export function inspectFullInventoryWorkbook(file) {
   const parsed = parseFullInventoryWorkbook(file);
   return {
     sheetNames: parsed.sheetNames,
-    columns: ['事业部', '物料编码', 'SKU', '在库', '在途'],
+    columns: ['事业部', '仓库', '物料编码', 'SKU', '在库', '在途'],
     previewRows: parsed.rows.slice(0, 8),
     rowCount: parsed.rows.length,
     totalRowCount: parsed.rows.length,
     recognizedSheets: FULL_INVENTORY_SHEETS.length,
+    sheetPreviews: parsed.sheets.map((sheet) => ({
+      sheetName: sheet.sheetName,
+      columns: sheet.columns,
+      rowCount: sheet.rows.length
+    }))
+  };
+}
+
+export function parseOrderFulfillmentWorkbook(file) {
+  if (!file?.buffer) throw new Error('未收到上传文件');
+  const workbook = xlsx.read(file.buffer, {
+    type: 'buffer',
+    cellDates: true,
+    dense: true,
+    cellFormula: false,
+    cellHTML: false,
+    cellNF: false,
+    cellStyles: false,
+    WTF: false
+  });
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) throw new Error('订单履约表缺少工作表');
+  const aoa = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], {
+    header: 1,
+    defval: '',
+    raw: false,
+    blankrows: false
+  });
+  const columns = uniqueColumns(aoa[1] || []);
+  const rawRows = aoa.slice(2)
+    .map((values) => rowObject(columns, values))
+    .filter((row) => text(row['物料编码']) || text(row['采购订单号']) || text(row['SKU']));
+  const parsed = parseManualProgressRows(rawRows, { headerRow: 2 });
+  const rows = parsed.rows.map(({ raw: _raw, ...row }) => row);
+  return {
+    sheetNames: workbook.SheetNames,
+    sheetPreviews: [],
+    sheets: [{ sheetName, rows, columns, headerRow: 2 }],
+    rows,
+    selectedSheetNames: [sheetName],
+    mapping: { materialCode: '物料编码', orderNo: '采购订单号' }
+  };
+}
+
+export function inspectOrderFulfillmentWorkbook(file) {
+  const parsed = parseOrderFulfillmentWorkbook(file);
+  return {
+    sheetNames: parsed.sheetNames,
+    columns: ['采购组', '采购下单人', '下单月份', '事业部', '采购订单号', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', '未交付数量', '已下单未备料未生产', '已备料未生产', '生产中产品', '完工未发产品', '已发货数量', '合同约定交期', '生产中交付时间', '未生产预计交付时间', '是否正常履约', '未履约原因'],
+    previewRows: parsed.rows.slice(0, 8),
+    rowCount: parsed.rows.length,
+    totalRowCount: parsed.rows.length,
+    recognizedSheets: 1,
     sheetPreviews: parsed.sheets.map((sheet) => ({
       sheetName: sheet.sheetName,
       columns: sheet.columns,

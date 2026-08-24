@@ -84,11 +84,11 @@ const PAGE_LABELS = {
 };
 
 const NAV_GROUPS = [
+  { title: '全量库存', pages: ['fullInventorySummary', 'fullInventoryLibrary'] },
   { title: '国内数据', pages: ['domesticBoard', 'wangdianData'] },
   { title: '跨境数据', pages: ['crossBorderInventory', 'lingxingInventory'] },
   { title: '库存数据', pages: ['inventorySummary', 'inventoryRisk', 'supplyPlanBoard', 'inventoryPurchase', 'inventorySummaryLibrary', 'inventoryManualLibrary'] },
   { title: '备货复核', pages: ['beiHuoGongJu', 'beiHuoReviewLibrary'] },
-  { title: '全量库存', pages: ['fullInventorySummary', 'fullInventoryLibrary'] },
   { title: '产品数据', pages: ['productArchive', 'businessUnitFeedback'] },
   { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'differenceAllocation', 'operationLogs', 'trace', 'purchaseBoard'] },
   { title: '头程数据', pages: ['firstMileBoard', 'firstMileDatabase'] },

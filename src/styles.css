@@ -547,6 +547,40 @@
 
 .full-inventory-tabs button.active span { background: rgba(255, 255, 255, .18); }
 
+/* ===== 全量库存汇总表格美化 ===== */
+/* 隔行斑马纹 */
+.full-inventory-table tbody tr:nth-child(even) td { background: #f5f8fb; }
+
+/* 行悬停高亮 */
+.full-inventory-table tbody tr:hover td { background: #e7f0f4; }
+
+/* 表头增强：背景加深 + 粗底部分隔 */
+.inventory-risk-table.full-inventory-table th {
+  background: #e8eff6;
+  color: #26364b;
+  border-bottom: 2px solid #b6c9dd;
+}
+
+/* 冻结第一列：横向滚动时始终可见，右边加分隔阴影 */
+.full-inventory-table th:first-child,
+.full-inventory-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  box-shadow: 2px 0 0 #d7e1ea;
+}
+.full-inventory-table th:first-child {
+  z-index: 3;
+  background: #e8eff6;
+}
+.full-inventory-table td:first-child { background: #ffffff; }
+.full-inventory-table tbody tr:nth-child(even) td:first-child { background: #f5f8fb; }
+.full-inventory-table tbody tr:hover td:first-child { background: #e7f0f4; }
+
+/* 行高微调，行更透气 */
+.full-inventory-table th,
+.full-inventory-table td { padding: 10px 9px; }
+
 .full-inventory-filter-field {
   display: grid;
   gap: 5px;

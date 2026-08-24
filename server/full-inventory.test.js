@@ -36,19 +36,18 @@ function workbookFile() {
 function orderFulfillmentWorkbookFile() {
   const workbook = xlsx.utils.book_new();
   const columns = [
-    '采购组', '采购下单人', '下单月份', '事业部', '采购订单号', '供应商简称', '产品线', '系列',
-    '物料编码', 'SKU', '物料名称', '未交付数量', '已下单未备料未生产', '已备料未生产', '生产中产品',
-    '完工未发产品', '已发货数量', '合同约定交期', '生产中交付时间', '未生产预计交付时间',
-    '是否正常履约', '未履约原因', 'OA备货流程号', '运营', '结算单价不含税', '正常履约数量',
-    '非正常履约数量', '备注'
+    '采购组', '采购下单人', '下单月份', 'OA备货流程号', '事业部', '运营', '采购订单号', '供应商简称',
+    '产品线', '系列', '物料编码', 'SKU', '物料名称', '借调订单', '借调备注', '未交付数量',
+    '已下单未备料未生产', '已备料未生产', '生产中产品', '完工未发产品', '已发货数量', '合同约定交期',
+    '生产中交付时间', '未生产预计交付时间', '是否正常履约', '未履约原因', '原因详情', '备注'
   ];
   const sheet = xlsx.utils.aoa_to_sheet([
     ['订单履约明细跟进表', ...columns.slice(1).map(() => '')],
     columns,
     [
-      '国内采购组', '张三', '2026/08', '国内事业部', 'CGDD012345', '示例供应商', '护理床', 'P系列',
-      '1001010044', 'P21', 'P21护理床', 200, 0, 142, 0, 58, 0, '2026/08/31', '2026/08/25',
-      '2026/09/05', '否', '交期延迟', 'OA-001', '李四', 100, 150, 50, '本周跟进'
+      '国内采购组', '张三', '2026/08', 'OA-001', '国内事业部', '李四', 'CGDD012345', '示例供应商',
+      '护理床', 'P系列', '1001010044', 'P21', 'P21护理床', 'JD-001', '跨仓借调', 200, 0, 142,
+      0, 58, 0, '2026/08/31', '2026/08/25', '2026/09/05', '否', '交期延迟', '供应商延期', '本周跟进'
     ],
     ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
   ]);
@@ -107,6 +106,8 @@ test('订单履约表按第2行28列表头解析并移除原始行', () => {
   assert.equal(parsed.rows.length, 1);
   assert.equal(parsed.rows[0].orderNo, 'CGDD012345');
   assert.equal(parsed.rows[0].materialCode, '1001010044');
+  assert.equal(parsed.rows[0].borrowOrder, 'JD-001');
+  assert.equal(parsed.rows[0].borrowRemark, '跨仓借调');
   assert.equal(parsed.rows[0].month, '2026-08');
   assert.equal(parsed.rows[0].manualRemainingQty, 200);
   assert.equal(parsed.rows[0].preparedNotStartedQty, 142);
@@ -192,6 +193,8 @@ test('服务端注册全量库存页面、槽位、权限和汇总接口', () =>
   assert.match(source, /app\.get\('\/api\/full-inventory-summary', requireAuth, requirePage\('fullInventorySummary'\)/);
   assert.match(source, /slotId === 'fullInventoryFile1'[\s\S]*inspectFullInventoryWorkbook\(file\)/);
   assert.match(source, /slotId === 'fullInventoryFile2'[\s\S]*inspectOrderFulfillmentWorkbook\(file\)/);
+  assert.match(source, /slot_id = 'fullInventoryFile2' AND applied = 1/);
+  assert.match(source, /summary\.groups\.find\(\(group\) => group\.key === 'undelivered'\)/);
   const permissionMentions = source.match(/'fullInventoryLibrary'/g) || [];
   assert.ok(permissionMentions.length >= 6, '页面全集、审计映射和4个文件接口都应注册权限');
 });
@@ -207,6 +210,8 @@ test('前端注册全量库存分组、汇总页和免映射底表页', () => {
   assert.match(appSource, /<FullInventorySummaryPage token=\{token\} active=\{activeTab === 'fullInventorySummary'\}/);
   assert.match(pageSource, /GET|api\/full-inventory-summary/);
   assert.match(pageSource, /最近\{count\}个月/);
-  assert.match(pageSource, /colSpan=\{9\}/);
+  assert.match(pageSource, /const FULFILLMENT_COLUMNS = \[/);
+  assert.match(pageSource, /currentGroup\.key === 'undelivered'/);
+  assert.match(pageSource, /colSpan=\{columns\.length\}/);
   assert.match(pageSource, /writeStyledExcelFile/);
 });

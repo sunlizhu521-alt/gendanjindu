@@ -25,6 +25,8 @@ function baseRow(overrides = {}) {
     物料编码: '1001',
     SKU: 'SKU-1',
     物料名称: '测试物料',
+    借调订单: 'JD-1',
+    借调备注: '跨仓借调',
     未交付数量: 10,
     已下单未备料未生产: 0,
     已备料未生产: 2,
@@ -51,6 +53,8 @@ test('手工跟单解析保留每个源行并自动补足未备料数量', () =>
   assert.equal(result.rows[0].unpreparedQty, 5);
   assert.equal(result.rows[0].sourceShippedQty, 5);
   assert.equal(result.rows[0].sourceContractDeliveryDate, '2026-09-18');
+  assert.equal(result.rows[0].borrowOrder, 'JD-1');
+  assert.equal(result.rows[0].borrowRemark, '跨仓借调');
   assert.equal(result.rows[0].sourceNormalQty, 10);
   assert.equal(result.rows[0].sourceNormalAmount, 1234.5);
   assert.equal(result.rows[0].validationStatus, 'valid');

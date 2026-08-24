@@ -2951,6 +2951,11 @@ function fullInventorySummaryData() {
      FROM dimension_files
      WHERE slot_id = 'inventorySummaryFile8' AND applied = 1`
   );
+  const fulfillmentRecord = get(
+    `SELECT rows_json
+     FROM dimension_files
+     WHERE slot_id = 'fullInventoryFile2' AND applied = 1`
+  );
   const undeliveredRows = all(
     `SELECT d.business_unit AS business_unit,
             k.material_code AS material_code,
@@ -2962,13 +2967,17 @@ function fullInventorySummaryData() {
      WHERE d.active = 1
      GROUP BY d.business_unit, k.material_code`
   );
-  return buildFullInventorySummary({
+  const summary = buildFullInventorySummary({
     inventoryRows: parseJson(inventoryRecord?.rows_json, []),
     productRows: getDimensionRows('productCategory'),
     salesRows: parseJson(salesRecord?.rows_json, []),
     undeliveredRows,
     updatedAt: inventoryRecord?.updated_at || ''
   });
+  const fulfillmentRows = parseJson(fulfillmentRecord?.rows_json, []);
+  const undeliveredGroup = summary.groups.find((group) => group.key === 'undelivered');
+  if (undeliveredGroup) undeliveredGroup.rows = fulfillmentRows;
+  return summary;
 }
 
 let inventoryRiskResultCache = { key: '', payload: null };

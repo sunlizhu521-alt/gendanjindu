@@ -226,6 +226,8 @@ export function parseManualProgressRows(rows, { headerRow = 1 } = {}) {
       materialCode: manualValue(rowValue(source, ['物料编码'])),
       sku: manualValue(rowValue(source, ['SKU'])),
       materialName: manualValue(rowValue(source, ['物料名称'])),
+      borrowOrder: manualValue(rowValue(source, ['借调订单'])),
+      borrowRemark: manualValue(rowValue(source, ['借调备注'])),
       ...manualProgressSourceValues(source),
       manualRemainingQty: nonNegative(rowValue(source, ['未交付数量'])),
       unpreparedQty: nonNegative(rowValue(source, ['已下单未备料未生产', '未备料未生产'])),

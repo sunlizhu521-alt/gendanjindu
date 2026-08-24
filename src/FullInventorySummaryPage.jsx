@@ -29,6 +29,27 @@ function todayText() {
     .join('');
 }
 
+const INVENTORY_COLUMNS = [
+  ['businessUnit', '事业部'], ['productLine', '产品线'], ['productSeries', '系列'],
+  ['materialCode', '物料编码'], ['sku', 'SKU'],
+  ['inventoryQty', '在库'], ['transitQty', '在途'], ['undeliveredQty', '未交付数量'],
+  ['_sales', '销量']
+];
+
+const FULFILLMENT_COLUMNS = [
+  ['purchaseGroup', '采购组'], ['purchaseOwner', '采购下单人'], ['month', '下单月份'],
+  ['oaFlowNo', 'OA备货流程号'], ['businessUnit', '事业部'], ['operatorName', '运营'],
+  ['orderNo', '采购订单号'], ['supplierShortName', '供应商简称'], ['productLine', '产品线'],
+  ['productSeries', '系列'], ['materialCode', '物料编码'], ['sku', 'SKU'],
+  ['materialName', '物料名称'], ['borrowOrder', '借调订单'], ['borrowRemark', '借调备注'],
+  ['manualRemainingQty', '未交付数量'], ['unpreparedQty', '已下单未备料未生产'],
+  ['preparedNotStartedQty', '已备料未生产'], ['inProductionQty', '生产中产品'],
+  ['finishedQty', '完工未发产品'], ['sourceShippedQty', '已发货数量'],
+  ['sourceContractDeliveryDate', '合同约定交期'], ['productionDeliveryDate', '生产中交付时间'],
+  ['unproducedEstimatedDeliveryDate', '未生产预计交付时间'], ['fulfillmentStatus', '是否正常履约'],
+  ['unfulfilledReason', '未履约原因'], ['reasonDetail', '原因详情'], ['remark', '备注']
+];
+
 async function apiRequest(path, token, options = {}) {
   const response = await fetch(`${API}${path}`, {
     ...options,
@@ -154,6 +175,8 @@ export default function FullInventorySummaryPage({ token, active }) {
     () => data.groups.find((group) => group.key === activeGroupKey) || data.groups[0] || { key: '', label: '', rows: [] },
     [activeGroupKey, data.groups]
   );
+  const isFulfillment = currentGroup.key === 'undelivered';
+  const columns = isFulfillment ? FULFILLMENT_COLUMNS : INVENTORY_COLUMNS;
   const sourceRows = Array.isArray(currentGroup.rows) ? currentGroup.rows : [];
   const options = useMemo(() => ({
     businessUnits: uniqueValues(sourceRows, 'businessUnit'),
@@ -164,6 +187,13 @@ export default function FullInventorySummaryPage({ token, active }) {
     () => data.months.slice(-salesMonthCount),
     [data.months, salesMonthCount]
   );
+  function cellValue(row, key) {
+    if (key === '_sales') return numberText(salesTotalForMonths(row, selectedSalesMonths));
+    const value = row[key];
+    return key.endsWith('Qty') || ['inventoryQty', 'transitQty', 'undeliveredQty'].includes(key)
+      ? numberText(value)
+      : text(value);
+  }
   const filteredRows = useMemo(
     () => filterFullInventoryRows(sourceRows, filters, keyword),
     [filters, keyword, sourceRows]
@@ -200,17 +230,13 @@ export default function FullInventorySummaryPage({ token, active }) {
     setError('');
     try {
       const XLSX = await import('xlsx');
-      const worksheet = XLSX.utils.json_to_sheet(filteredRows.map((row) => ({
-        '事业部': row.businessUnit,
-        '产品线': row.productLine,
-        '系列': row.productSeries,
-        '物料编码': row.materialCode,
-        'SKU': row.sku,
-        '在库': numberValue(row.inventoryQty),
-        '在途': numberValue(row.transitQty),
-        '未交付数量': numberValue(row.undeliveredQty),
-        '销量': salesTotalForMonths(row, selectedSalesMonths)
-      })));
+      const worksheet = XLSX.utils.json_to_sheet(filteredRows.map((row) => {
+        const out = {};
+        columns.forEach(([key, label]) => {
+          out[label] = cellValue(row, key);
+        });
+        return out;
+      }));
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, currentGroup.label.slice(0, 31));
       await writeStyledExcelFile(XLSX, workbook, `全量库存汇总_${currentGroup.label}_${todayText()}.xlsx`);
@@ -261,12 +287,14 @@ export default function FullInventorySummaryPage({ token, active }) {
           <span>搜索</span>
           <input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="事业部 / 物料编码 / SKU" />
         </label>
-        <label className="full-inventory-filter-field full-inventory-period-field">
-          <span>销量月份</span>
-          <select value={salesMonthCount} onChange={(event) => setSalesMonthCount(Number(event.target.value))}>
-            {SALES_MONTH_OPTIONS.map((count) => <option key={count} value={count}>最近{count}个月</option>)}
-          </select>
-        </label>
+        {!isFulfillment ? (
+          <label className="full-inventory-filter-field full-inventory-period-field">
+            <span>销量月份</span>
+            <select value={salesMonthCount} onChange={(event) => setSalesMonthCount(Number(event.target.value))}>
+              {SALES_MONTH_OPTIONS.map((count) => <option key={count} value={count}>最近{count}个月</option>)}
+            </select>
+          </label>
+        ) : null}
         <button className="inventory-risk-button secondary inventory-risk-filter-clear" type="button" onClick={clearFilters}>清除筛选</button>
         <span className="inventory-risk-filter-count">当前 {numberText(filteredRows.length)} 条</span>
       </section>
@@ -277,19 +305,18 @@ export default function FullInventorySummaryPage({ token, active }) {
       <section className="inventory-risk-result inventory-risk-result-combined">
         <div className="inventory-risk-section-heading">
           <div><span className="inventory-risk-section-kicker">全量库存明细</span><h3>{currentGroup.label || '暂无分类'}</h3></div>
-          <div className="inventory-risk-section-actions"><strong>销量口径：{selectedSalesMonths.length ? selectedSalesMonths.join('、') : '无销量月份'}</strong></div>
+          {!isFulfillment ? <div className="inventory-risk-section-actions"><strong>销量口径：{selectedSalesMonths.length ? selectedSalesMonths.join('、') : '无销量月份'}</strong></div> : null}
         </div>
         <div className="inventory-risk-table-wrap">
-          <table className="inventory-risk-table full-inventory-table">
-            <thead><tr><th>事业部</th><th>产品线</th><th>系列</th><th>物料编码</th><th>SKU</th><th>在库</th><th>在途</th><th>未交付数量</th><th>销量</th></tr></thead>
+          <table className={`inventory-risk-table full-inventory-table${isFulfillment ? ' fulfillment-wide' : ''}`}>
+            <thead><tr>{columns.map(([key, label]) => <th key={key}>{label}</th>)}</tr></thead>
             <tbody>
-              {visibleRows.map((row) => (
-                <tr key={`${row.businessUnit}\u001f${row.materialCode}`}>
-                  <td>{row.businessUnit || '-'}</td><td>{row.productLine || '-'}</td><td>{row.productSeries || '-'}</td><td>{row.materialCode || '-'}</td><td>{row.sku || '-'}</td>
-                  <td>{numberText(row.inventoryQty)}</td><td>{numberText(row.transitQty)}</td><td>{numberText(row.undeliveredQty)}</td><td>{numberText(salesTotalForMonths(row, selectedSalesMonths))}</td>
+              {visibleRows.map((row, index) => (
+                <tr key={`${row.businessUnit || ''}\u001f${row.materialCode || ''}\u001f${index}`}>
+                  {columns.map(([key]) => <td key={key}>{cellValue(row, key) || '-'}</td>)}
                 </tr>
               ))}
-              {!visibleRows.length ? <tr><td className="inventory-risk-empty" colSpan={9}>{loading ? '数据加载中...' : '当前页签和筛选条件下没有数据'}</td></tr> : null}
+              {!visibleRows.length ? <tr><td className="inventory-risk-empty" colSpan={columns.length}>{loading ? '数据加载中...' : '当前页签和筛选条件下没有数据'}</td></tr> : null}
             </tbody>
           </table>
         </div>

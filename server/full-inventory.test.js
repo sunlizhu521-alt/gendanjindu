@@ -152,7 +152,8 @@ test('全量库存汇总按工作表及事业部+物料编码聚合', () => {
   assert.equal(result.updatedAt, '2026-08-19 08:00:00');
   assert.deepEqual(result.groups.map(({ key, label }) => ({ key, label })), [
     { key: 'finished', label: '成品' },
-    { key: 'returnAccessory', label: '退货和配件' }
+    { key: 'returnAccessory', label: '退货和配件' },
+    { key: 'undelivered', label: '未交付' }
   ]);
   assert.deepEqual(result.groups[0].rows[0], {
     businessUnit: '国内事业部',
@@ -168,6 +169,17 @@ test('全量库存汇总按工作表及事业部+物料编码聚合', () => {
   assert.equal(result.groups[1].rows[0].productLine, '');
   assert.equal(result.groups[1].rows[0].undeliveredQty, 0);
   assert.deepEqual(result.groups[1].rows[0].salesByMonth, { '2026-03': 6 });
+  assert.deepEqual(result.groups[2].rows[0], {
+    businessUnit: '国内事业部',
+    materialCode: '1001',
+    sku: '',
+    productLine: '护理床',
+    productSeries: 'P系列',
+    inventoryQty: 0,
+    transitQty: 0,
+    undeliveredQty: 8,
+    salesByMonth: { '2026-01': 3, '2026-02': 4 }
+  });
 });
 
 test('服务端注册全量库存页面、槽位、权限和汇总接口', () => {

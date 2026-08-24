@@ -170,7 +170,8 @@ export function buildFullInventorySummary({
     if (!materialCode || productMap.has(materialCode)) return;
     productMap.set(materialCode, {
       productLine: text(rowValue(row, ['productLine', '销售产品线', '产品线'])),
-      productSeries: text(rowValue(row, ['productSeries', '销售系列', '系列']))
+      productSeries: text(rowValue(row, ['productSeries', '销售系列', '系列'])),
+      sku: text(rowValue(row, ['sku', 'SKU']))
     });
   });
 
@@ -241,6 +242,30 @@ export function buildFullInventorySummary({
     ));
     return { key: group.key, label: group.label, rows };
   });
+
+  const undeliveredGroupRows = [...undeliveredMap.entries()]
+    .map(([key, undeliveredQty]) => {
+      const [businessUnit, materialCode] = key.split('\u001f');
+      const dimension = productMap.get(materialCode) || {};
+      const salesByMonth = salesMap.get(key) || {};
+      return {
+        businessUnit,
+        materialCode,
+        sku: dimension.sku || '',
+        productLine: dimension.productLine || '',
+        productSeries: dimension.productSeries || '',
+        inventoryQty: 0,
+        transitQty: 0,
+        undeliveredQty,
+        salesByMonth: Object.fromEntries(Object.entries(salesByMonth).sort(([left], [right]) => left.localeCompare(right)))
+      };
+    })
+    .filter((row) => row.undeliveredQty > 0)
+    .sort((left, right) => (
+      left.businessUnit.localeCompare(right.businessUnit, 'zh-CN')
+      || left.materialCode.localeCompare(right.materialCode, 'zh-CN', { numeric: true })
+    ));
+  groups.push({ key: 'undelivered', label: '未交付', rows: undeliveredGroupRows });
 
   return {
     updatedAt: text(updatedAt),

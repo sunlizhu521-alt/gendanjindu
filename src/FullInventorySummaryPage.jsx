@@ -50,6 +50,16 @@ const FULFILLMENT_COLUMNS = [
   ['unfulfilledReason', '未履约原因'], ['reasonDetail', '原因详情'], ['remark', '备注']
 ];
 
+const FULFILLMENT_SUMMARY_COLUMNS = [
+  ['purchaseOwner', '采购下单人'], ['month', '下单月份'], ['businessUnit', '事业部'],
+  ['operatorName', '运营'], ['orderNo', '采购订单号'], ['supplierShortName', '供应商简称'],
+  ['productLine', '产品线'], ['productSeries', '系列'], ['materialCode', '物料编码'],
+  ['sku', 'SKU'], ['materialName', '物料名称'], ['manualRemainingQty', '未交付数量'],
+  ['unpreparedQty', '已下单未备料未生产'], ['preparedNotStartedQty', '已备料未生产'],
+  ['inProductionQty', '生产中产品'], ['finishedQty', '完工未发产品'],
+  ['sourceContractDeliveryDate', '合同约定交期']
+];
+
 async function apiRequest(path, token, options = {}) {
   const response = await fetch(`${API}${path}`, {
     ...options,
@@ -146,6 +156,7 @@ export default function FullInventorySummaryPage({ token, active }) {
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
+  const [showFulfillmentDetail, setShowFulfillmentDetail] = useState(false);
 
   useEffect(() => {
     if (!active) return undefined;
@@ -176,7 +187,9 @@ export default function FullInventorySummaryPage({ token, active }) {
     [activeGroupKey, data.groups]
   );
   const isFulfillment = currentGroup.key === 'undelivered';
-  const columns = isFulfillment ? FULFILLMENT_COLUMNS : INVENTORY_COLUMNS;
+  const columns = isFulfillment
+    ? (showFulfillmentDetail ? FULFILLMENT_COLUMNS : FULFILLMENT_SUMMARY_COLUMNS)
+    : INVENTORY_COLUMNS;
   const sourceRows = Array.isArray(currentGroup.rows) ? currentGroup.rows : [];
   const options = useMemo(() => ({
     businessUnits: uniqueValues(sourceRows, 'businessUnit'),
@@ -305,7 +318,14 @@ export default function FullInventorySummaryPage({ token, active }) {
       <section className="inventory-risk-result inventory-risk-result-combined">
         <div className="inventory-risk-section-heading">
           <div><span className="inventory-risk-section-kicker">全量库存明细</span><h3>{currentGroup.label || '暂无分类'}</h3></div>
-          {!isFulfillment ? <div className="inventory-risk-section-actions"><strong>销量口径：{selectedSalesMonths.length ? selectedSalesMonths.join('、') : '无销量月份'}</strong></div> : null}
+          <div className="inventory-risk-section-actions">
+            {!isFulfillment ? <strong>销量口径：{selectedSalesMonths.length ? selectedSalesMonths.join('、') : '无销量月份'}</strong> : null}
+            {isFulfillment ? (
+              <button type="button" className="inventory-risk-button secondary" onClick={() => setShowFulfillmentDetail((value) => !value)}>
+                {showFulfillmentDetail ? '不展示明细' : '展示明细'}
+              </button>
+            ) : null}
+          </div>
         </div>
         <div className="inventory-risk-table-wrap">
           <table className={`inventory-risk-table full-inventory-table${isFulfillment ? ' fulfillment-wide' : ''}`}>

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import xlsx from 'xlsx';
-import { parseFirstMileWorkbook } from './first-mile.js';
+import { FIRST_MILE_PARSER_VERSION, parseFirstMileWorkbook, reparseFirstMileSource } from './first-mile.js';
 
 function workbookFile(sheets) {
   const workbook = xlsx.utils.book_new();
@@ -39,7 +39,7 @@ test('头程工作簿兼容两级表头和单行表头的目的仓库', () => {
 
   const result = parseFirstMileWorkbook(file, { slotId: 'firstMileData1', fileName: '头程测试.xlsx' });
 
-  assert.equal(result.summary.parserVersion, 4);
+  assert.equal(result.summary.parserVersion, FIRST_MILE_PARSER_VERSION);
   assert.equal(result.rows.length, 4);
   assert.deepEqual(
     result.rows.map((row) => [row.oaApprovalNo, row.destinationWarehouse, row.inboundWarehouseType]),
@@ -50,4 +50,42 @@ test('头程工作簿兼容两级表头和单行表头的目的仓库', () => {
       ['OA-004', '智利', '']
     ]
   );
+});
+
+test('旧头程解析结果使用已保存原文件自动升级', () => {
+  const file = workbookFile([
+    {
+      name: '头程成品发货',
+      rows: [
+        ['头程数据说明'],
+        ['OA审批单号', '小包装数量', '物料编码', '目的仓', ''],
+        ['OA审批单号', '小包装数量', '物料编码', '仓库', '领星虚拟仓'],
+        ['OA-REPARSE-1', 20, '1008', '德国东荣', '108-G-德国东荣仓']
+      ],
+      merges: ['D2:E2']
+    }
+  ]);
+  const upgraded = reparseFirstMileSource({
+    slotId: 'firstMileData1',
+    fileName: '旧头程文件.xlsx',
+    sourceFile: file.buffer,
+    mapping: { keep: '保留', __firstMileSummary: { parserVersion: 4 } }
+  });
+
+  assert.equal(upgraded.summary.parserVersion, FIRST_MILE_PARSER_VERSION);
+  assert.equal(upgraded.mapping.keep, '保留');
+  assert.equal(upgraded.rows[0].destinationWarehouse, '108-G-德国东荣仓');
+  assert.equal(upgraded.rows[0].inboundWarehouseType, 'FBM仓');
+  assert.deepEqual(upgraded.selectedSheetNames, ['头程成品发货']);
+  assert.equal(reparseFirstMileSource({
+    slotId: 'firstMileData1',
+    fileName: '新头程文件.xlsx',
+    sourceFile: file.buffer,
+    mapping: { __firstMileSummary: { parserVersion: FIRST_MILE_PARSER_VERSION } }
+  }), null);
+  assert.equal(reparseFirstMileSource({
+    slotId: 'firstMileData1',
+    fileName: '无原文件.xlsx',
+    mapping: { __firstMileSummary: { parserVersion: 4 } }
+  }), null);
 });

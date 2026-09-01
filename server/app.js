@@ -14,7 +14,15 @@ import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import xlsx from 'xlsx';
 import { all, get, initDatabase, run, runMany, saveDatabase, transaction } from './database.js';
-import { dedupeFirstMileRows, firstMileOwner, inspectFirstMileWorkbook, isFirstMileSlot, parseFirstMileWorkbook } from './first-mile.js';
+import {
+  FIRST_MILE_PARSER_VERSION,
+  dedupeFirstMileRows,
+  firstMileOwner,
+  inspectFirstMileWorkbook,
+  isFirstMileSlot,
+  parseFirstMileWorkbook,
+  reparseFirstMileSource
+} from './first-mile.js';
 import { FULL_INVENTORY_SHEETS, buildFullInventorySummary, inspectFullInventoryWorkbook, inspectOrderFulfillmentWorkbook, parseFullInventoryWorkbook, parseOrderFulfillmentWorkbook } from './full-inventory.js';
 import {
   buildInventoryDimensionDiagnostics,
@@ -2059,7 +2067,7 @@ function firstMileBoardModel() {
       parseSummary: mapping.__firstMileSummary
         ? { ...mapping.__firstMileSummary, owner: firstMileOwner(record.slot_id) }
         : null,
-      requiresReupload: numberValue(mapping.__firstMileSummary?.parserVersion) < 4
+      requiresReupload: numberValue(mapping.__firstMileSummary?.parserVersion) < FIRST_MILE_PARSER_VERSION
     };
   });
   const sourceRows = records.flatMap((record) => parseJson(record.rows_json, [])
@@ -2109,6 +2117,55 @@ function firstMileBoardModel() {
       reuploadSources: sourceApplications.filter((source) => source.requiresReupload).length
     }
   };
+}
+
+function migrateAppliedFirstMileSources() {
+  const records = all(
+    `SELECT slot_id, file_name, mapping_json, source_file, source_file_size
+     FROM dimension_files
+     WHERE applied = 1 AND slot_id IN (${FIRST_MILE_SLOT_IDS.map(() => '?').join(', ')})`,
+    FIRST_MILE_SLOT_IDS
+  );
+  const updates = [];
+  let unavailable = 0;
+  records.forEach((record) => {
+    const mapping = parseJson(record.mapping_json, {});
+    if (numberValue(mapping.__firstMileSummary?.parserVersion) >= FIRST_MILE_PARSER_VERSION) return;
+    if (!record.source_file || numberValue(record.source_file_size) <= 0) {
+      unavailable += 1;
+      return;
+    }
+    try {
+      const reparsed = reparseFirstMileSource({
+        slotId: record.slot_id,
+        fileName: record.file_name,
+        sourceFile: record.source_file,
+        mapping
+      });
+      if (reparsed) updates.push({ slotId: record.slot_id, ...reparsed });
+    } catch (error) {
+      console.error(`[First mile migration] ${record.slot_id} reparse failed:`, error.message);
+    }
+  });
+  if (updates.length) {
+    transaction(() => {
+      updates.forEach((update) => {
+        run(
+          `UPDATE dimension_files
+           SET sheet_name = '', sheet_names = ?, selected_sheet_names = ?, mapping_json = ?, rows_json = ?
+           WHERE slot_id = ? AND applied = 1`,
+          [
+            JSON.stringify(update.sheetNames),
+            JSON.stringify(update.selectedSheetNames),
+            JSON.stringify(update.mapping),
+            JSON.stringify(update.rows),
+            update.slotId
+          ]
+        );
+      });
+    });
+  }
+  return { checked: records.length, reparsed: updates.length, unavailable };
 }
 
 function firstMileExpectedSailingMonth(value) {
@@ -8661,6 +8718,17 @@ app.get(/^\/gendanjindu\/(?!api).*/, (req, res) => res.sendFile(path.join(distDi
 app.get(/^\/(?!api).*/, (req, res) => res.sendFile(path.join(distDir, 'index.html')));
 
 await initDatabase();
+try {
+  const firstMileMigration = migrateAppliedFirstMileSources();
+  if (firstMileMigration.reparsed || firstMileMigration.unavailable) {
+    console.info(
+      `[First mile migration] v${FIRST_MILE_PARSER_VERSION}: `
+      + `${firstMileMigration.reparsed} reparsed, ${firstMileMigration.unavailable} require reupload`
+    );
+  }
+} catch (error) {
+  console.error('[First mile migration] startup migration failed:', error);
+}
 // 每30分钟清理过期session
 const sessionCleanupTimer = setInterval(() => {
   try {

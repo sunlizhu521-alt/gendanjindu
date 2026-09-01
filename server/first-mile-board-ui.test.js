@@ -50,7 +50,10 @@ test('头程数据看板展示、搜索并导出目的仓库', () => {
   assert.match(serverSource, /row\.destinationWarehouse, row\.inboundWarehouseType, row\.sourceOwner/);
   assert.match(serverSource, /'店铺', '目的仓库', '入仓类型', '运营'/);
   assert.match(serverSource, /row\.storeName, row\.destinationWarehouse,\s*row\.inboundWarehouseType, row\.operatorName/);
-  assert.match(serverSource, /requiresReupload: numberValue\(mapping\.__firstMileSummary\?\.parserVersion\) < 4/);
+  assert.match(serverSource, /requiresReupload: numberValue\(mapping\.__firstMileSummary\?\.parserVersion\) < FIRST_MILE_PARSER_VERSION/);
+  assert.match(serverSource, /function migrateAppliedFirstMileSources\(\)/);
+  assert.match(serverSource, /source_file, source_file_size/);
+  assert.match(serverSource, /reparseFirstMileSource\(/);
 });
 
 test('头程数据库保存并下载已上传的原始文件', () => {

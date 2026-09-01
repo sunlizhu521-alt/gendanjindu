@@ -1,5 +1,7 @@
 import xlsx from 'xlsx';
 
+export const FIRST_MILE_PARSER_VERSION = 5;
+
 const EMPTY_SHEET_PATTERN = /^Sheet\d*$/i;
 const FIRST_MILE_SLOT_OWNERS = {
   firstMileData1: '张婷婷',
@@ -335,7 +337,7 @@ export function parseFirstMileWorkbook(file, { slotId, fileName }) {
   return {
     rows,
     summary: {
-      parserVersion: 4,
+      parserVersion: FIRST_MILE_PARSER_VERSION,
       owner,
       workbookModifiedAt: modifiedAt,
       recognizedSheets: recognizedSheets.map((sheet) => ({ sheetName: sheet.sheetName, businessType: sheet.kind, rowCount: sheet.rows.length })),
@@ -346,6 +348,21 @@ export function parseFirstMileWorkbook(file, { slotId, fileName }) {
       issues
     },
     sheetNames: workbook.SheetNames
+  };
+}
+
+export function reparseFirstMileSource({ slotId, fileName, sourceFile, mapping = {} } = {}) {
+  const parserVersion = Number(mapping?.__firstMileSummary?.parserVersion || 0);
+  if (parserVersion >= FIRST_MILE_PARSER_VERSION) return null;
+  const buffer = sourceFile ? Buffer.from(sourceFile) : Buffer.alloc(0);
+  if (!buffer.length) return null;
+  const parsed = parseFirstMileWorkbook({ buffer }, { slotId, fileName });
+  return {
+    rows: parsed.rows,
+    mapping: { ...mapping, __firstMileSummary: parsed.summary },
+    sheetNames: parsed.sheetNames,
+    selectedSheetNames: parsed.summary.recognizedSheets.map((sheet) => sheet.sheetName),
+    summary: parsed.summary
   };
 }
 

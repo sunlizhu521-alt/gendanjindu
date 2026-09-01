@@ -34,6 +34,14 @@ function scalar(sql) {
   return Number(value || 0);
 }
 
+function parseJson(value, fallback) {
+  try {
+    return JSON.parse(String(value || ''));
+  } catch {
+    return fallback;
+  }
+}
+
 const integrityRows = rows('PRAGMA integrity_check');
 const integrity = integrityRows.map((row) => String(Object.values(row)[0] || '')).filter(Boolean);
 if (integrity.length !== 1 || integrity[0].toLowerCase() !== 'ok') {
@@ -66,6 +74,36 @@ const migrationMarkers = Object.fromEntries(rows(
    WHERE kind IN ('manual-progress-parser-version')`
 ).map((row) => [String(row.kind), String(row.mapping_json || '')]));
 
+const firstMileSlotIds = [
+  'firstMileData1', 'firstMileData2', 'firstMileData3',
+  'firstMileData4', 'firstMileData5', 'firstMileSpare'
+];
+const firstMileFiles = rows(
+  `SELECT slot_id, mapping_json, rows_json, source_file_size
+   FROM dimension_files
+   WHERE applied = 1 AND slot_id IN (${firstMileSlotIds.map(() => '?').join(', ')})`,
+  firstMileSlotIds
+);
+const firstMileRows = firstMileFiles.flatMap((file) => {
+  const parsed = parseJson(file.rows_json, []);
+  return Array.isArray(parsed) ? parsed : [];
+});
+const firstMileParserVersions = {};
+firstMileFiles.forEach((file) => {
+  const mapping = parseJson(file.mapping_json, {});
+  const version = String(Number(mapping?.__firstMileSummary?.parserVersion || 0));
+  firstMileParserVersions[version] = (firstMileParserVersions[version] || 0) + 1;
+});
+const firstMile = {
+  sourceCount: firstMileFiles.length,
+  originalFileCount: firstMileFiles.filter((file) => Number(file.source_file_size || 0) > 0).length,
+  parserVersions: firstMileParserVersions,
+  rowCount: firstMileRows.length,
+  destinationWarehouseRows: firstMileRows.filter((row) => String(row?.destinationWarehouse || '').trim()).length,
+  fbaRows: firstMileRows.filter((row) => row?.inboundWarehouseType === 'FBA仓').length,
+  fbmRows: firstMileRows.filter((row) => row?.inboundWarehouseType === 'FBM仓').length
+};
+
 console.log(JSON.stringify({
   file: dbFile,
   size: stat.size,
@@ -73,7 +111,8 @@ console.log(JSON.stringify({
   integrity: 'ok',
   tableCounts,
   criticalTotals,
-  migrationMarkers
+  migrationMarkers,
+  firstMile
 }));
 
 db.close();

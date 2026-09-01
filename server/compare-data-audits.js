@@ -73,5 +73,7 @@ console.log(JSON.stringify({
   integrity: post.integrity,
   manualProgressMigration,
   tableCounts: post.tableCounts,
-  criticalTotals: post.criticalTotals
+  criticalTotals: post.criticalTotals,
+  firstMileBefore: baseline.firstMile || {},
+  firstMileAfter: post.firstMile || {}
 }));

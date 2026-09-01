@@ -7830,7 +7830,7 @@ function FirstMileBoard({ token, setMessage, refreshVersion = 0 }) {
       && (omit === 'expectedSailingMonth' || !filters.expectedSailingMonth || firstMileExpectedSailingMonth(row.expectedSailingAt) === filters.expectedSailingMonth)
       && (!keyword || [
         row.oaApprovalNo, row.materialCode, row.sku, row.materialName, row.shipmentNo,
-        row.sourceOwner, row.sourceFileText, row.sourceSheetText
+        row.destinationWarehouse, row.inboundWarehouseType, row.sourceOwner, row.sourceFileText, row.sourceSheetText
       ].join(' ').toLowerCase().includes(keyword));
   };
   const options = useMemo(() => {
@@ -7923,7 +7923,7 @@ function FirstMileBoard({ token, setMessage, refreshVersion = 0 }) {
         <SelectField label="销售系列" value={filters.productSeries} options={options.productSeries} onChange={(value) => setFilters({ ...filters, productSeries: value })} />
         <SelectField label="运输方式" value={filters.transportMode} options={options.transportModes} onChange={(value) => setFilters({ ...filters, transportMode: value })} />
         <SelectField label="预计开船月份" value={filters.expectedSailingMonth} options={options.expectedSailingMonths} onChange={(value) => setFilters({ ...filters, expectedSailingMonth: value })} />
-        <input className="search-input" placeholder="搜索OA、物料、SKU、货件号、来源" value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} />
+        <input className="search-input" placeholder="搜索OA、物料、SKU、货件号、目的仓库、入仓类型、来源" value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} />
         <button type="button" className="ghost compact-button" onClick={clearFilters}>清空筛选</button>
       </div>
       <section className="metric-grid">
@@ -7950,7 +7950,7 @@ function FirstMileBoard({ token, setMessage, refreshVersion = 0 }) {
             className="first-mile-table"
             rows={pageRows}
             columns={[
-              '运输方式', '货物状态', '事业部', '店铺', '运营', '销售产品线', '销售系列',
+              '运输方式', '货物状态', '事业部', '店铺', '目的仓库', '入仓类型', '运营', '销售产品线', '销售系列',
               '来源负责人', 'OA审批单号', '物料编码', 'SKU', '物料名称', '数量',
               '预计开船时间', '实际开船时间', '预计到港时间', '到港时间',
               '预计派送时间', '实际派送时间', '上架时间', '来源文件', '来源Sheet'
@@ -7958,6 +7958,8 @@ function FirstMileBoard({ token, setMessage, refreshVersion = 0 }) {
             render={(row) => [
               <TightCell value={row.transportMode} />, <TightCell value={row.cargoStatus} />,
               <TightCell value={row.businessUnit} />, <TightCell value={row.storeName} />,
+              <TightCell value={row.destinationWarehouse || '未填写'} />,
+              <TightCell value={row.inboundWarehouseType || '未填写'} />,
               <TightCell value={row.operatorName} />, <TightCell value={row.productLine} />,
               <TightCell value={row.productSeries} />, <TightCell value={row.sourceOwner} />,
               <TightCell value={row.oaApprovalNo} />, <TightCell value={row.materialCode} />,
@@ -8346,6 +8348,46 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
     }
   }
 
+  async function downloadSlot(slot, record) {
+    setSlotState(slot.id, {
+      progress: 45,
+      statusText: '正在准备下载...',
+      statusType: 'active',
+      busy: 'download'
+    });
+    try {
+      const response = await fetch(`${API}/api/dimensions/${encodeURIComponent(slot.id)}/download`, {
+        headers: authHeaders(token)
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || `下载失败（${response.status}）`);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = record?.file_name || `${slot.title}.xlsx`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setSlotState(slot.id, {
+        progress: 100,
+        statusText: '文件下载已开始',
+        statusType: 'success',
+        busy: ''
+      });
+      setMessage(`${slot.title} 原文件下载已开始。`);
+    } catch (err) {
+      setSlotState(slot.id, {
+        progress: 100,
+        statusText: `下载失败：${err.message}`,
+        statusType: 'error',
+        busy: ''
+      });
+      setMessage(`${slot.title} 下载失败：${err.message}`);
+    }
+  }
+
   async function deleteSlot(slot) {
     setSlotState(slot.id, {
       progress: 40,
@@ -8504,6 +8546,9 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
                     异常 {record.mapping.__firstMileSummary.issueRows || 0} 行
                   </span>
                 )}
+                {slot.firstMile && record && !record.hasOriginalFile && (
+                  <span className="issue-reason">当前文件在下载功能上线前上传，请重新上传一次后下载原文件。</span>
+                )}
                 {record?.mapping?.__productProject && (
                   <span>
                     重点工作表：{record.mapping.__productProject.primarySheet}，
@@ -8548,6 +8593,7 @@ function DimensionLibrary({ token, reloadDemands, reloadDemandData = true, setMe
               </div>
               <div className="card-actions">
                 {state.file && <button type="button" className="compact-button" disabled={busy} onClick={() => uploadSlot(slot)}>{state.busy === 'upload' ? '上传中...' : '上传保存'}</button>}
+                {slot.firstMile && record && <button type="button" className="ghost compact-button" disabled={busy} onClick={() => downloadSlot(slot, record)}>{state.busy === 'download' ? '下载中...' : '下载文件'}</button>}
                 {record && <button type="button" className="compact-button" disabled={busy} onClick={() => applySlot(slot)}>{state.busy === 'apply' ? '应用中...' : '应用刷新'}</button>}
                 {record && <button type="button" className="ghost compact-button" disabled={busy} onClick={() => deleteSlot(slot)}>{state.busy === 'delete' ? '删除中...' : '删除'}</button>}
               </div>

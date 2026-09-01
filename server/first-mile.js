@@ -122,6 +122,33 @@ function firstValue(row, aliasGroups) {
   return '';
 }
 
+function warehouseValue(value) {
+  const normalized = text(value);
+  return /^(?:\/|-|—|未填写)$/.test(normalized) ? '' : normalized;
+}
+
+function destinationWarehouseInfo(row) {
+  const entries = Object.entries(row || {});
+  const virtualWarehouse = entries.find(([key]) => compact(key).includes(compact('领星虚拟仓')));
+  const destinationColumns = entries.filter(([key]) => compact(key.replace(/_\d+$/, '')) === compact('目的仓'));
+  const physicalWarehouse = entries.find(([key]) => {
+    const keyText = compact(key);
+    return keyText.includes(compact('目的仓')) && !keyText.includes(compact('领星虚拟仓'));
+  });
+  const physicalValue = warehouseValue(physicalWarehouse?.[1]);
+  const virtualValue = warehouseValue(
+    virtualWarehouse?.[1]
+    ?? (destinationColumns.length > 1 ? destinationColumns[1][1] : '')
+  );
+  if (/^[A-Za-z]/.test(physicalValue)) {
+    return { destinationWarehouse: physicalValue, inboundWarehouseType: 'FBA仓' };
+  }
+  if (virtualValue) {
+    return { destinationWarehouse: virtualValue, inboundWarehouseType: 'FBM仓' };
+  }
+  return { destinationWarehouse: physicalValue, inboundWarehouseType: '' };
+}
+
 function sourceModifiedAt(workbook) {
   const value = workbook?.Props?.ModifiedDate || workbook?.Custprops?.ModifiedDate;
   const parsed = value ? new Date(value) : null;
@@ -138,6 +165,7 @@ function normalizeTransport(kind, row) {
 }
 
 function normalizeFirstMileRow({ row, excelRow, sheetName, kind, owner, fileName, modifiedAt }) {
+  const destinationWarehouse = destinationWarehouseInfo(row);
   const materialCode = firstValue(row, [
     ['发货单SKU+识别码/物料编码'],
     ['物料编码'],
@@ -179,6 +207,7 @@ function normalizeFirstMileRow({ row, excelRow, sheetName, kind, owner, fileName
     cargoStatus,
     businessUnit: firstValue(row, [['所属事业部'], ['所属巴']]) || '未填写',
     storeName: valueFor(row, ['店铺', '店铺金蝶为准'], { contains: true }) || '未填写',
+    ...destinationWarehouse,
     operatorName: valueFor(row, ['运营']) || '未填写',
     oaApprovalNo,
     materialCode,
@@ -276,6 +305,7 @@ export function parseFirstMileWorkbook(file, { slotId, fileName }) {
   return {
     rows,
     summary: {
+      parserVersion: 3,
       owner,
       workbookModifiedAt: modifiedAt,
       recognizedSheets: recognizedSheets.map((sheet) => ({ sheetName: sheet.sheetName, businessType: sheet.kind, rowCount: sheet.rows.length })),
@@ -292,6 +322,7 @@ export function parseFirstMileWorkbook(file, { slotId, fileName }) {
 function completeness(row) {
   return [
     row.materialCode, row.sourceSku, row.materialName, row.shipmentNo,
+    row.destinationWarehouse, row.inboundWarehouseType,
     row.expectedSailingAt, row.actualSailingAt, row.expectedArrivalAt, row.actualArrivalAt,
     row.expectedDeliveryAt, row.actualDeliveryAt, row.listingAt, row.factoryShippedAt
   ].filter((value) => text(value)).length;

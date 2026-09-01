@@ -406,6 +406,9 @@ function migrate() {
       selected_sheet_names TEXT NOT NULL DEFAULT '[]',
       mapping_json TEXT NOT NULL,
       rows_json TEXT NOT NULL,
+      source_file BLOB,
+      source_file_mime TEXT NOT NULL DEFAULT '',
+      source_file_size INTEGER NOT NULL DEFAULT 0,
       applied INTEGER NOT NULL DEFAULT 0,
       uploaded_by TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -573,6 +576,15 @@ function migrate() {
   }
   if (!dimensionColumns.includes('selected_sheet_names')) {
     run("ALTER TABLE dimension_files ADD COLUMN selected_sheet_names TEXT NOT NULL DEFAULT '[]'");
+  }
+  if (!dimensionColumns.includes('source_file')) {
+    run('ALTER TABLE dimension_files ADD COLUMN source_file BLOB');
+  }
+  if (!dimensionColumns.includes('source_file_mime')) {
+    run("ALTER TABLE dimension_files ADD COLUMN source_file_mime TEXT NOT NULL DEFAULT ''");
+  }
+  if (!dimensionColumns.includes('source_file_size')) {
+    run('ALTER TABLE dimension_files ADD COLUMN source_file_size INTEGER NOT NULL DEFAULT 0');
   }
 
   const domesticInputColumns = all('PRAGMA table_info(domestic_board_inputs)').map((row) => row.name);

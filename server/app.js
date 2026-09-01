@@ -2059,7 +2059,7 @@ function firstMileBoardModel() {
       parseSummary: mapping.__firstMileSummary
         ? { ...mapping.__firstMileSummary, owner: firstMileOwner(record.slot_id) }
         : null,
-      requiresReupload: !mapping.__firstMileSummary
+      requiresReupload: numberValue(mapping.__firstMileSummary?.parserVersion) < 3
     };
   });
   const sourceRows = records.flatMap((record) => parseJson(record.rows_json, [])
@@ -2129,7 +2129,7 @@ function filterFirstMileRows(rows, filters = {}) {
     && (!filters.expectedSailingMonth || firstMileExpectedSailingMonth(row.expectedSailingAt) === filters.expectedSailingMonth)
     && (!keyword || [
       row.oaApprovalNo, row.materialCode, row.sku, row.materialName, row.shipmentNo,
-      row.sourceOwner, row.sourceFileText, row.sourceSheetText
+      row.destinationWarehouse, row.inboundWarehouseType, row.sourceOwner, row.sourceFileText, row.sourceSheetText
     ].join(' ').toLowerCase().includes(keyword))
   ));
 }
@@ -5913,13 +5913,14 @@ app.get('/api/first-mile-board', requireAuth, requirePage('firstMileBoard'), (re
 app.post('/api/first-mile-board/export', requireAuth, requirePage('firstMileBoard'), async (req, res) => {
   const rows = filterFirstMileRows(firstMileBoardModel().rows, req.body?.filters || {});
   const headers = [
-    '运输方式', '货物状态', '事业部', '店铺', '运营', '销售产品线', '销售系列',
+    '运输方式', '货物状态', '事业部', '店铺', '目的仓库', '入仓类型', '运营', '销售产品线', '销售系列',
     '来源负责人', 'OA审批单号', '物料编码', 'SKU', '物料名称', '数量',
     '预计开船时间', '实际开船时间', '预计到港时间', '到港时间',
     '预计派送时间', '实际派送时间', '上架时间', '来源文件', '来源Sheet'
   ];
   const data = rows.map((row) => [
-    row.transportMode, row.cargoStatus, row.businessUnit, row.storeName, row.operatorName,
+    row.transportMode, row.cargoStatus, row.businessUnit, row.storeName, row.destinationWarehouse,
+    row.inboundWarehouseType, row.operatorName,
     row.productLine, row.productSeries, row.sourceOwner, row.oaApprovalNo, row.materialCode,
     row.sku, row.materialName, row.quantity, row.expectedSailingAt, row.actualSailingAt,
     row.expectedArrivalAt, row.actualArrivalAt, row.expectedDeliveryAt, row.actualDeliveryAt,
@@ -7679,7 +7680,7 @@ app.get('/api/product-projects/sync-history', requireAuth, requirePage('productA
 });
 
 app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase', 'beiHuoReviewLibrary', 'fullInventoryLibrary']), (req, res) => {
-  const rows = all('SELECT slot_id, title, file_name, sheet_name, sheet_names, selected_sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at FROM dimension_files');
+  const rows = all('SELECT slot_id, title, file_name, sheet_name, sheet_names, selected_sheet_names, mapping_json, rows_json, source_file_size, applied, uploaded_by, updated_at FROM dimension_files');
   res.json({
     rows: rows.map((row) => {
       const dimensionRows = parseJson(row.rows_json, []);
@@ -7694,11 +7695,34 @@ app.get('/api/dimensions', requireAuth, requireAnyPage(['dimensionLibrary', 'bus
         sheetNames: parseJson(row.sheet_names, []),
         selectedSheetNames: parseJson(row.selected_sheet_names, []),
         mapping,
+        hasOriginalFile: numberValue(row.source_file_size) > 0,
         rowCount: dimensionRows.length,
         diagnostics: dimensionDiagnostics(row.slot_id, dimensionRows)
       };
     })
   });
+});
+
+app.get('/api/dimensions/:slotId/download', requireAuth, requirePage('firstMileDatabase'), (req, res) => {
+  const slotId = normalize(req.params.slotId);
+  if (!isFirstMileSlot(slotId)) return res.status(404).json({ error: '该槽位不支持下载原文件' });
+  const record = get(
+    'SELECT file_name, source_file, source_file_mime, source_file_size FROM dimension_files WHERE slot_id = ?',
+    [slotId]
+  );
+  if (!record) return res.status(404).json({ error: '未找到已上传文件' });
+  const buffer = record.source_file ? Buffer.from(record.source_file) : Buffer.alloc(0);
+  if (!buffer.length || numberValue(record.source_file_size) <= 0) {
+    return res.status(409).json({ error: '该文件在下载功能上线前上传，请重新上传一次后再下载原文件' });
+  }
+  const fileName = normalize(record.file_name) || `${DIMENSION_SLOTS[slotId] || '头程数据'}.xlsx`;
+  const mimeType = normalize(record.source_file_mime) || 'application/octet-stream';
+  req.auditTarget = fileName;
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('Content-Type', mimeType);
+  res.setHeader('Content-Length', String(buffer.length));
+  res.setHeader('Content-Disposition', `attachment; filename="first-mile-file.xlsx"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+  return res.send(buffer);
 });
 
 app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase', 'beiHuoReviewLibrary', 'fullInventoryLibrary']), dimensionWorkbookUpload, cleanupKingdeeUpload, serializeInventoryUpload, async (req, res) => {
@@ -7978,6 +8002,12 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
       ON CONFLICT(slot_id) DO UPDATE SET title = excluded.title, file_name = excluded.file_name, sheet_name = excluded.sheet_name, sheet_names = excluded.sheet_names, selected_sheet_names = excluded.selected_sheet_names, mapping_json = excluded.mapping_json, rows_json = excluded.rows_json, applied = 1, uploaded_by = excluded.uploaded_by, updated_at = excluded.updated_at`,
       [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), firstMileParsed || fullInventoryParsed ? '' : productProjectParsed?.sheetName || inventoryParsed?.sheetName || sheetName, JSON.stringify(parsed.sheetNames), JSON.stringify(fullInventoryParsed ? fullInventoryParsed.selectedSheetNames : !isInventoryManualSlot(slotId) && baseSlotId === 'inventorySummaryFile16' ? selectedSheetNames : []), JSON.stringify(storedMapping), JSON.stringify(rows), req.user.name, now]
     );
+    if (firstMileParsed && req.file?.buffer?.length) {
+      run(
+        'UPDATE dimension_files SET source_file = ?, source_file_mime = ?, source_file_size = ? WHERE slot_id = ?',
+        [new Uint8Array(req.file.buffer), normalize(req.file.mimetype), req.file.buffer.length, slotId]
+      );
+    }
     if (slotId === 'productCategory' || slotId === 'purchaseAssignment') applyDimensionEnrichment();
     assertOrderDataUnchanged(beforeOrderCounts);
   });

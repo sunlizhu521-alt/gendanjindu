@@ -80,6 +80,28 @@ function sheetKind(sheetName, rows) {
   return null;
 }
 
+function destinationWarehouseColumnIndexes(rows, headerRows) {
+  const parentRowIndex = headerRows[0];
+  const childRowIndex = headerRows.at(-1);
+  const columnCount = Math.max(...headerRows.map((rowIndex) => (rows[rowIndex] || []).length), 0);
+  const destinationKey = compact('目的仓');
+  const virtualKey = compact('领星虚拟仓');
+  const candidates = Array.from({ length: columnCount }, (_, columnIndex) => ({
+    columnIndex,
+    parent: compact(rows[parentRowIndex]?.[columnIndex]),
+    child: compact(rows[childRowIndex]?.[columnIndex])
+  })).filter(({ parent }) => parent.includes(destinationKey));
+  if (!candidates.length) return null;
+  const physical = candidates.find(({ child }) => child.includes(compact('仓库')) && !child.includes(virtualKey))
+    || candidates[0];
+  const virtual = candidates.find(({ child, columnIndex }) => child.includes(virtualKey) && columnIndex !== physical.columnIndex)
+    || candidates.find(({ columnIndex }) => columnIndex !== physical.columnIndex);
+  return {
+    physicalIndex: physical.columnIndex,
+    virtualIndex: virtual?.columnIndex ?? -1
+  };
+}
+
 function parsedSheet(sheetName, sheet) {
   const rows = expandedSheetRows(sheet);
   const kind = sheetKind(sheetName, rows);
@@ -88,6 +110,7 @@ function parsedSheet(sheetName, sheet) {
   const headerRows = kind === 'air' ? [0] : kind === 'foreignTrade' ? [1] : [1, 2];
   const dataStart = kind === 'air' ? 1 : kind === 'foreignTrade' ? 2 : 3;
   const columnCount = Math.max(...headerRows.map((rowIndex) => (rows[rowIndex] || []).length), 0);
+  const destinationWarehouseColumns = destinationWarehouseColumnIndexes(rows, headerRows);
   const columns = uniqueHeaders(Array.from({ length: columnCount }, (_, columnIndex) => {
     const parts = headerRows
       .map((rowIndex) => text(rows[rowIndex]?.[columnIndex]).replace(/\s+/g, ''))
@@ -99,7 +122,15 @@ function parsedSheet(sheetName, sheet) {
     columns.forEach((column, columnIndex) => {
       row[column] = values[columnIndex] ?? '';
     });
-    return { row, excelRow: dataStart + index + 1 };
+    const destinationWarehouseSource = destinationWarehouseColumns
+      ? {
+          physical: values[destinationWarehouseColumns.physicalIndex] ?? '',
+          virtual: destinationWarehouseColumns.virtualIndex >= 0
+            ? values[destinationWarehouseColumns.virtualIndex] ?? ''
+            : ''
+        }
+      : null;
+    return { row, excelRow: dataStart + index + 1, destinationWarehouseSource };
   }).filter(({ row }) => Object.values(row).some((value) => text(value)));
   return { sheetName, kind, rows: dataRows, columns, skipped: false };
 }
@@ -127,7 +158,7 @@ function warehouseValue(value) {
   return /^(?:\/|-|—|未填写)$/.test(normalized) ? '' : normalized;
 }
 
-function destinationWarehouseInfo(row) {
+function destinationWarehouseInfo(row, source) {
   const entries = Object.entries(row || {});
   const virtualWarehouse = entries.find(([key]) => compact(key).includes(compact('领星虚拟仓')));
   const destinationColumns = entries.filter(([key]) => compact(key.replace(/_\d+$/, '')) === compact('目的仓'));
@@ -135,11 +166,10 @@ function destinationWarehouseInfo(row) {
     const keyText = compact(key);
     return keyText.includes(compact('目的仓')) && !keyText.includes(compact('领星虚拟仓'));
   });
-  const physicalValue = warehouseValue(physicalWarehouse?.[1]);
-  const virtualValue = warehouseValue(
-    virtualWarehouse?.[1]
-    ?? (destinationColumns.length > 1 ? destinationColumns[1][1] : '')
-  );
+  const physicalValue = warehouseValue(source ? source.physical : physicalWarehouse?.[1]);
+  const virtualValue = warehouseValue(source
+    ? source.virtual
+    : virtualWarehouse?.[1] ?? (destinationColumns.length > 1 ? destinationColumns[1][1] : ''));
   if (/^[A-Za-z]/.test(physicalValue)) {
     return { destinationWarehouse: physicalValue, inboundWarehouseType: 'FBA仓' };
   }
@@ -164,8 +194,8 @@ function normalizeTransport(kind, row) {
   return '未填写';
 }
 
-function normalizeFirstMileRow({ row, excelRow, sheetName, kind, owner, fileName, modifiedAt }) {
-  const destinationWarehouse = destinationWarehouseInfo(row);
+function normalizeFirstMileRow({ row, excelRow, destinationWarehouseSource, sheetName, kind, owner, fileName, modifiedAt }) {
+  const destinationWarehouse = destinationWarehouseInfo(row, destinationWarehouseSource);
   const materialCode = firstValue(row, [
     ['发货单SKU+识别码/物料编码'],
     ['物料编码'],
@@ -305,7 +335,7 @@ export function parseFirstMileWorkbook(file, { slotId, fileName }) {
   return {
     rows,
     summary: {
-      parserVersion: 3,
+      parserVersion: 4,
       owner,
       workbookModifiedAt: modifiedAt,
       recognizedSheets: recognizedSheets.map((sheet) => ({ sheetName: sheet.sheetName, businessType: sheet.kind, rowCount: sheet.rows.length })),

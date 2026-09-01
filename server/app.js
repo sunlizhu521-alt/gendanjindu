@@ -2059,7 +2059,7 @@ function firstMileBoardModel() {
       parseSummary: mapping.__firstMileSummary
         ? { ...mapping.__firstMileSummary, owner: firstMileOwner(record.slot_id) }
         : null,
-      requiresReupload: numberValue(mapping.__firstMileSummary?.parserVersion) < 3
+      requiresReupload: numberValue(mapping.__firstMileSummary?.parserVersion) < 4
     };
   });
   const sourceRows = records.flatMap((record) => parseJson(record.rows_json, [])

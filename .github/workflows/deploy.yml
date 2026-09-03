@@ -283,6 +283,10 @@ jobs:
             sudo -n systemctl daemon-reload
             sudo -n systemctl enable --now beihuochuhuojihua-certbot-renew.timer
 
+            if command -v ufw >/dev/null 2>&1 && sudo -n ufw status | grep -q '^Status: active'; then
+              sudo -n ufw allow 443/tcp
+            fi
+
             curl -fsS -H 'Host: 129.211.9.242' http://127.0.0.1/ >/dev/null
             curl -kfsS -H 'Host: 129.211.9.242' https://127.0.0.1/beihuochuhuojihua-api/api/bootstrap >/dev/null
             curl -kfsS -H 'Host: 129.211.9.242' https://127.0.0.1/beihuochuhuojihua/ >/dev/null
@@ -293,7 +297,7 @@ jobs:
 
       - name: Verify public HTTPS
         run: |
-          curl --fail --silent --show-error --location \
+          curl --connect-timeout 10 --max-time 30 --fail --silent --show-error --location \
             https://129.211.9.242/beihuochuhuojihua-api/api/bootstrap >/dev/null
-          curl --fail --silent --show-error --location \
+          curl --connect-timeout 10 --max-time 30 --fail --silent --show-error --location \
             https://129.211.9.242/beihuochuhuojihua/ >/dev/null

@@ -149,5 +149,11 @@ jobs:
             curl -fsS -H 'Host: 129.211.9.242' http://127.0.0.1/beihuochuhuojihua-api/api/bootstrap >/dev/null
             curl -fsS -H 'Host: 129.211.9.242' http://127.0.0.1/beihuochuhuojihua/ >/dev/null
             curl -fsS -H 'Host: 129.211.9.242' http://127.0.0.1/ >/dev/null
+            certbot --version || true
+            sudo -n certbot certificates || true
+            sudo -n ss -ltnp | grep ':443 ' || true
+            sudo -n systemctl is-enabled certbot.timer || true
+            sudo -n systemctl is-active certbot.timer || true
+            sudo -n nginx -T 2>/dev/null | grep -E 'listen 443|ssl_certificate' || true
             rm -f "$ARCHIVE"
           EOF

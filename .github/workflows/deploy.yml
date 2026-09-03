@@ -149,11 +149,18 @@ jobs:
             curl -fsS -H 'Host: 129.211.9.242' http://127.0.0.1/beihuochuhuojihua-api/api/bootstrap >/dev/null
             curl -fsS -H 'Host: 129.211.9.242' http://127.0.0.1/beihuochuhuojihua/ >/dev/null
             curl -fsS -H 'Host: 129.211.9.242' http://127.0.0.1/ >/dev/null
-            certbot --version || true
-            sudo -n certbot certificates || true
-            sudo -n ss -ltnp | grep ':443 ' || true
-            sudo -n systemctl is-enabled certbot.timer || true
-            sudo -n systemctl is-active certbot.timer || true
-            sudo -n nginx -T 2>/dev/null | grep -E 'listen 443|ssl_certificate' || true
             rm -f "$ARCHIVE"
           EOF
+
+      - name: Inspect HTTPS capability
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            'certbot --version || true; sudo -n certbot certificates || true; sudo -n ss -ltnp | grep ":443 " || true; sudo -n systemctl is-enabled certbot.timer || true; sudo -n systemctl is-active certbot.timer || true; sudo -n nginx -T 2>/dev/null | grep -E "listen 443|ssl_certificate" || true' \
+            > "$RUNNER_TEMP/https-diagnostic.txt"
+
+      - name: Upload HTTPS diagnostic
+        uses: actions/upload-artifact@v4
+        with:
+          name: https-diagnostic
+          path: ${{ runner.temp }}/https-diagnostic.txt

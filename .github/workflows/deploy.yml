@@ -95,15 +95,21 @@ jobs:
 
             NGINX_CONFIG=/etc/nginx/conf.d/beihuochuhuojihua.conf
             NGINX_BACKUP=
+            ACME_WEBROOT=/var/www/letsencrypt
             if [ -f "$NGINX_CONFIG" ]; then
               NGINX_BACKUP="$BACKUP_DIR/nginx-$(date +%Y%m%d-%H%M%S).conf"
               sudo -n cp "$NGINX_CONFIG" "$NGINX_BACKUP"
             fi
-            sudo -n tee "$NGINX_CONFIG.new" >/dev/null <<'NGINX'
+            sudo -n mkdir -p "$ACME_WEBROOT/.well-known/acme-challenge"
+            sudo -n tee "$NGINX_CONFIG.new" >/dev/null <<'NGINX_HTTP'
           server {
               listen 80;
               server_name 129.211.9.242;
               client_max_body_size 100m;
+
+              location ^~ /.well-known/acme-challenge/ {
+                  root /var/www/letsencrypt;
+              }
 
               location /beihuochuhuojihua-api/ {
                   proxy_pass http://127.0.0.1:4009/;
@@ -134,7 +140,7 @@ jobs:
                   proxy_set_header X-Forwarded-Proto $scheme;
               }
           }
-          NGINX
+          NGINX_HTTP
             sudo -n mv "$NGINX_CONFIG.new" "$NGINX_CONFIG"
             if ! sudo -n nginx -t; then
               if [ -n "$NGINX_BACKUP" ]; then
@@ -146,21 +152,148 @@ jobs:
               exit 1
             fi
             sudo -n systemctl reload nginx
-            curl -fsS -H 'Host: 129.211.9.242' http://127.0.0.1/beihuochuhuojihua-api/api/bootstrap >/dev/null
-            curl -fsS -H 'Host: 129.211.9.242' http://127.0.0.1/beihuochuhuojihua/ >/dev/null
+
+            if ! command -v snap >/dev/null 2>&1; then
+              echo "snap is unavailable; HTTPS setup stopped without replacing the working HTTP proxy."
+              exit 1
+            fi
+            sudo -n snap install certbot --classic || sudo -n snap refresh certbot
+            CERTBOT_VERSION=$(/snap/bin/certbot --version | awk '{print $2}')
+            if [ "$(printf '%s\n' 5.4 "$CERTBOT_VERSION" | sort -V | head -n 1)" != 5.4 ]; then
+              echo "Certbot $CERTBOT_VERSION is too old for IP webroot certificates."
+              exit 1
+            fi
+            sudo -n /snap/bin/certbot certonly \
+              --non-interactive \
+              --agree-tos \
+              --register-unsafely-without-email \
+              --preferred-profile shortlived \
+              --webroot \
+              --webroot-path "$ACME_WEBROOT" \
+              --ip-address 129.211.9.242 \
+              --cert-name 129.211.9.242 \
+              --keep-until-expiring
+
+            sudo -n tee "$NGINX_CONFIG.new" >/dev/null <<'NGINX_HTTPS'
+          server {
+              listen 80;
+              server_name 129.211.9.242;
+              client_max_body_size 100m;
+
+              location ^~ /.well-known/acme-challenge/ {
+                  root /var/www/letsencrypt;
+              }
+
+              location = /beihuochuhuojihua {
+                  return 308 https://$host/beihuochuhuojihua/;
+              }
+
+              location /beihuochuhuojihua/ {
+                  return 308 https://$host$request_uri;
+              }
+
+              location /beihuochuhuojihua-api/ {
+                  return 308 https://$host$request_uri;
+              }
+
+              location / {
+                  proxy_pass http://127.0.0.1:4003;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+          }
+
+          server {
+              listen 443 ssl;
+              server_name 129.211.9.242;
+              client_max_body_size 100m;
+
+              ssl_certificate /etc/letsencrypt/live/129.211.9.242/fullchain.pem;
+              ssl_certificate_key /etc/letsencrypt/live/129.211.9.242/privkey.pem;
+
+              location /beihuochuhuojihua-api/ {
+                  proxy_pass http://127.0.0.1:4009/;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_read_timeout 300s;
+              }
+
+              location /beihuochuhuojihua/ {
+                  proxy_pass http://127.0.0.1:4009;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_read_timeout 300s;
+              }
+
+              location / {
+                  proxy_pass http://127.0.0.1:4003;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+          }
+          NGINX_HTTPS
+            sudo -n mv "$NGINX_CONFIG.new" "$NGINX_CONFIG"
+            if ! sudo -n nginx -t; then
+              if [ -n "$NGINX_BACKUP" ]; then
+                sudo -n cp "$NGINX_BACKUP" "$NGINX_CONFIG"
+              fi
+              sudo -n nginx -t
+              exit 1
+            fi
+            sudo -n systemctl reload nginx
+
+            sudo -n mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+            sudo -n tee /etc/letsencrypt/renewal-hooks/deploy/reload-nginx >/dev/null <<'HOOK'
+          #!/bin/sh
+          systemctl reload nginx
+          HOOK
+            sudo -n chmod 755 /etc/letsencrypt/renewal-hooks/deploy/reload-nginx
+            sudo -n tee /etc/systemd/system/beihuochuhuojihua-certbot-renew.service >/dev/null <<'SERVICE'
+          [Unit]
+          Description=Renew Let's Encrypt certificates for beihuochuhuojihua
+
+          [Service]
+          Type=oneshot
+          ExecStart=/snap/bin/certbot renew --quiet
+          SERVICE
+            sudo -n tee /etc/systemd/system/beihuochuhuojihua-certbot-renew.timer >/dev/null <<'TIMER'
+          [Unit]
+          Description=Renew beihuochuhuojihua HTTPS certificate twice daily
+
+          [Timer]
+          OnCalendar=*-*-* 00,12:15:00
+          RandomizedDelaySec=3600
+          Persistent=true
+
+          [Install]
+          WantedBy=timers.target
+          TIMER
+            sudo -n systemctl daemon-reload
+            sudo -n systemctl enable --now beihuochuhuojihua-certbot-renew.timer
+
             curl -fsS -H 'Host: 129.211.9.242' http://127.0.0.1/ >/dev/null
+            curl -kfsS -H 'Host: 129.211.9.242' https://127.0.0.1/beihuochuhuojihua-api/api/bootstrap >/dev/null
+            curl -kfsS -H 'Host: 129.211.9.242' https://127.0.0.1/beihuochuhuojihua/ >/dev/null
+            sudo -n systemctl is-enabled beihuochuhuojihua-certbot-renew.timer
+            sudo -n systemctl is-active beihuochuhuojihua-certbot-renew.timer
             rm -f "$ARCHIVE"
           EOF
 
-      - name: Inspect HTTPS capability
+      - name: Verify public HTTPS
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            'certbot --version || true; sudo -n certbot certificates || true; sudo -n ss -ltnp | grep ":443 " || true; sudo -n systemctl is-enabled certbot.timer || true; sudo -n systemctl is-active certbot.timer || true; sudo -n nginx -T 2>/dev/null | grep -E "listen 443|ssl_certificate" || true' \
-            > "$RUNNER_TEMP/https-diagnostic.txt"
-
-      - name: Upload HTTPS diagnostic
-        uses: actions/upload-artifact@v4
-        with:
-          name: https-diagnostic
-          path: ${{ runner.temp }}/https-diagnostic.txt
+          curl --fail --silent --show-error --location \
+            https://129.211.9.242/beihuochuhuojihua-api/api/bootstrap >/dev/null
+          curl --fail --silent --show-error --location \
+            https://129.211.9.242/beihuochuhuojihua/ >/dev/null

@@ -97,5 +97,12 @@ jobs:
 
             pm2 save
             pm2 describe "$APP_NAME"
+            if sudo -n true >/dev/null 2>&1; then
+              echo "NGINX_ROUTE_SUMMARY_BEGIN"
+              sudo -n nginx -T 2>/dev/null | grep -E 'listen |server_name|location /|proxy_pass' || true
+              echo "NGINX_ROUTE_SUMMARY_END"
+            else
+              echo "Passwordless sudo is not available for Nginx configuration."
+            fi
             rm -f "$ARCHIVE"
           EOF

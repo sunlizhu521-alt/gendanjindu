@@ -15,13 +15,17 @@ jobs:
           repository: sunlizhu521-alt/beihuochuhuojihua
           ref: main
 
+      - name: Build frontend
+        run: |
+          npm ci
+          VITE_API_BASE_URL=/beihuochuhuojihua-api npm run build
+
       - name: Package source
         run: |
           tar \
             --exclude='.git' \
             --exclude='node_modules' \
             --exclude='data' \
-            --exclude='dist' \
             -czf "$RUNNER_TEMP/beihuochuhuojihua.tar.gz" .
 
       - name: Install SSH key
@@ -32,16 +36,33 @@ jobs:
 
       - name: Upload package
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            "mkdir -p /home/ubuntu/zhuge-ai-lab/beihuochuhuojihua /tmp/beihuochuhuojihua-deploy"
-          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
-            "$RUNNER_TEMP/beihuochuhuojihua.tar.gz" \
-            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/beihuochuhuojihua-deploy/beihuochuhuojihua.tar.gz
+          SSH_OPTIONS=(
+            -i ~/.ssh/deploy_key
+            -o StrictHostKeyChecking=no
+            -o ConnectTimeout=30
+            -o ServerAliveInterval=30
+            -o ServerAliveCountMax=10
+          )
+          for attempt in 1 2 3; do
+            if ssh "${SSH_OPTIONS[@]}" \
+              ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+              "mkdir -p /home/ubuntu/zhuge-ai-lab/beihuochuhuojihua /tmp/beihuochuhuojihua-deploy" \
+              && scp "${SSH_OPTIONS[@]}" \
+                "$RUNNER_TEMP/beihuochuhuojihua.tar.gz" \
+                ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/beihuochuhuojihua-deploy/beihuochuhuojihua.tar.gz; then
+              exit 0
+            fi
+            sleep $((attempt * 10))
+          done
+          exit 1
 
       - name: Deploy and verify
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=30 \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=10 \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
             set -Eeuo pipefail
 
@@ -70,9 +91,7 @@ jobs:
 
             tar -xzf "$ARCHIVE" -C "$APP_DIR"
             cd "$APP_DIR"
-            npm ci
-            export VITE_API_BASE_URL=/beihuochuhuojihua-api
-            npm run build
+            npm ci --omit=dev
 
             export PORT="$APP_PORT"
             export DATA_DIR="$APP_DIR/data"

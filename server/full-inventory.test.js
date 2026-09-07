@@ -258,6 +258,11 @@ test('服务端注册全量库存页面、槽位、权限和汇总接口', () =>
   assert.match(source, /app\.get\('\/api\/full-inventory-summary', requireAuth, requirePage\('fullInventorySummary'\)/);
   assert.match(source, /slotId === 'fullInventoryFile1'[\s\S]*inspectFullInventoryWorkbook\(file\)/);
   assert.match(source, /slotId === 'fullInventoryFile2'[\s\S]*inspectOrderFulfillmentWorkbook\(file\)/);
+  assert.match(source, /slotId === 'fullInventoryFile2' && fullInventoryParsed\?\.transferRows\?\.length[\s\S]*'fullInventoryFile2Transfer', '借调明细'/);
+  assert.match(source, /req\.params\.slotId === 'fullInventoryFile2'[\s\S]*UPDATE dimension_files SET applied = 1[\s\S]*'fullInventoryFile2Transfer'/);
+  assert.match(source, /app\.delete\('\/api\/dimensions\/:slotId'[\s\S]*DELETE FROM dimension_files WHERE slot_id = \?[\s\S]*'fullInventoryFile2Transfer'/);
+  assert.match(source, /app\.get\('\/api\/transfer-detail', requireAuth[\s\S]*slot_id = 'fullInventoryFile2Transfer' AND applied = 1/);
+  assert.match(source, /rows: parseJson\(record\.rows_json, \[\]\)/);
   assert.match(source, /slot_id = 'fullInventoryFile2' AND applied = 1/);
   assert.match(source, /summary\.groups\.find\(\(group\) => group\.key === 'undelivered'\)/);
   const permissionMentions = source.match(/'fullInventoryLibrary'/g) || [];

@@ -8059,6 +8059,16 @@ app.post('/api/dimensions/:slotId/upload', requireAuth, requireAnyPage(['dimensi
       ON CONFLICT(slot_id) DO UPDATE SET title = excluded.title, file_name = excluded.file_name, sheet_name = excluded.sheet_name, sheet_names = excluded.sheet_names, selected_sheet_names = excluded.selected_sheet_names, mapping_json = excluded.mapping_json, rows_json = excluded.rows_json, applied = 1, uploaded_by = excluded.uploaded_by, updated_at = excluded.updated_at`,
       [slotId, DIMENSION_SLOTS[slotId] || slotId, safeFilename(req.file), firstMileParsed || fullInventoryParsed ? '' : productProjectParsed?.sheetName || inventoryParsed?.sheetName || sheetName, JSON.stringify(parsed.sheetNames), JSON.stringify(fullInventoryParsed ? fullInventoryParsed.selectedSheetNames : !isInventoryManualSlot(slotId) && baseSlotId === 'inventorySummaryFile16' ? selectedSheetNames : []), JSON.stringify(storedMapping), JSON.stringify(rows), req.user.name, now]
     );
+    if (slotId === 'fullInventoryFile2' && fullInventoryParsed?.transferRows?.length) {
+      run(
+        `INSERT INTO dimension_files (slot_id, title, file_name, sheet_name, sheet_names, selected_sheet_names, mapping_json, rows_json, applied, uploaded_by, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        ON CONFLICT(slot_id) DO UPDATE SET title = excluded.title, file_name = excluded.file_name, sheet_name = excluded.sheet_name, sheet_names = excluded.sheet_names, selected_sheet_names = excluded.selected_sheet_names, mapping_json = excluded.mapping_json, rows_json = excluded.rows_json, applied = 1, uploaded_by = excluded.uploaded_by, updated_at = excluded.updated_at`,
+        ['fullInventoryFile2Transfer', '借调明细', safeFilename(req.file), fullInventoryParsed.sheets[1]?.sheetName || '', JSON.stringify(fullInventoryParsed.sheetNames), '[]', JSON.stringify(fullInventoryParsed.mapping || {}), JSON.stringify(fullInventoryParsed.transferRows), req.user.name, now]
+      );
+    } else if (slotId === 'fullInventoryFile2') {
+      run('DELETE FROM dimension_files WHERE slot_id = ?', ['fullInventoryFile2Transfer']);
+    }
     if (firstMileParsed && req.file?.buffer?.length) {
       run(
         'UPDATE dimension_files SET source_file = ?, source_file_mime = ?, source_file_size = ? WHERE slot_id = ?',
@@ -8084,6 +8094,9 @@ app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensio
   const beforeOrderCounts = orderDataCounts();
   transaction(() => {
     run('UPDATE dimension_files SET applied = 1, updated_at = ? WHERE slot_id = ?', [nowText(), req.params.slotId]);
+    if (req.params.slotId === 'fullInventoryFile2') {
+      run('UPDATE dimension_files SET applied = 1, updated_at = ? WHERE slot_id = ?', [nowText(), 'fullInventoryFile2Transfer']);
+    }
     if (req.params.slotId === 'productCategory' || req.params.slotId === 'purchaseAssignment') applyDimensionEnrichment();
     assertOrderDataUnchanged(beforeOrderCounts);
   });
@@ -8092,8 +8105,26 @@ app.post('/api/dimensions/:slotId/apply', requireAuth, requireAnyPage(['dimensio
 
 app.delete('/api/dimensions/:slotId', requireAuth, requireAnyPage(['dimensionLibrary', 'businessUnitFeedback', 'wangdianData', 'lingxingInventory', 'inventorySummaryLibrary', 'inventoryManualLibrary', 'firstMileDatabase', 'beiHuoReviewLibrary', 'fullInventoryLibrary']), (req, res) => {
   run('DELETE FROM dimension_files WHERE slot_id = ?', [req.params.slotId]);
+  if (req.params.slotId === 'fullInventoryFile2') {
+    run('DELETE FROM dimension_files WHERE slot_id = ?', ['fullInventoryFile2Transfer']);
+  }
   saveDatabase();
   res.json({ ok: true });
+});
+
+app.get('/api/transfer-detail', requireAuth, (req, res) => {
+  const record = get(
+    `SELECT rows_json, updated_at, file_name, uploaded_by
+     FROM dimension_files
+     WHERE slot_id = 'fullInventoryFile2Transfer' AND applied = 1`
+  );
+  if (!record) return res.json({ rows: [], updatedAt: '', fileName: '', uploadedBy: '' });
+  res.json({
+    rows: parseJson(record.rows_json, []),
+    updatedAt: record.updated_at || '',
+    fileName: record.file_name || '',
+    uploadedBy: record.uploaded_by || ''
+  });
 });
 
 app.get('/api/inventory', requireAuth, requirePage('inventory'), (req, res) => {

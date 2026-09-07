@@ -9154,7 +9154,7 @@ function App() {
 
   async function reloadDemands(currentToken = token, requestedScope = '') {
     const scope = requestedScope || demandDataScopeForPage(activeTab) || 'full';
-    const endpoint = scope === 'progress' ? '/api/progress/demands' : '/api/demands';
+    const endpoint = scope === 'progress' ? '/api/progress/fulfillment-demands' : '/api/demands';
     const requestSequence = demandRequestSequence.current + 1;
     demandRequestSequence.current = requestSequence;
     setDemandsLoading(true);

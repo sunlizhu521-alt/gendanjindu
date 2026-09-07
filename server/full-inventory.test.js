@@ -263,6 +263,8 @@ test('服务端注册全量库存页面、槽位、权限和汇总接口', () =>
   assert.match(source, /app\.delete\('\/api\/dimensions\/:slotId'[\s\S]*DELETE FROM dimension_files WHERE slot_id = \?[\s\S]*'fullInventoryFile2Transfer'/);
   assert.match(source, /app\.get\('\/api\/transfer-detail', requireAuth[\s\S]*slot_id = 'fullInventoryFile2Transfer' AND applied = 1/);
   assert.match(source, /rows: parseJson\(record\.rows_json, \[\]\)/);
+  assert.match(source, /app\.get\('\/api\/progress\/fulfillment-demands', requireAuth, requirePage\('progressRefresh'\)/);
+  assert.match(source, /slot_id = 'fullInventoryFile2' AND applied = 1[\s\S]*dataScope: 'fulfillment'/);
   assert.match(source, /slot_id = 'fullInventoryFile2' AND applied = 1/);
   assert.match(source, /summary\.groups\.find\(\(group\) => group\.key === 'undelivered'\)/);
   const permissionMentions = source.match(/'fullInventoryLibrary'/g) || [];
@@ -283,6 +285,7 @@ test('前端注册全量库存分组、汇总页和免映射底表页', () => {
   assert.match(appSource, /orderFulfillment: '订单履约表'/);
   assert.match(appSource, /title: '维护数据', pages: \['dimensionMissing', 'dimensionLibrary', 'kingdeeImport', 'orderFulfillment'\]/);
   assert.match(appSource, /shouldMount\('orderFulfillment'\)[\s\S]*slots=\{ORDER_FULFILLMENT_SLOTS\}/);
+  assert.match(appSource, /scope === 'progress' \? '\/api\/progress\/fulfillment-demands' : '\/api\/demands'/);
   assert.match(appSource, /slot\.firstMile \|\| slot\.fullInventory/g);
   assert.match(appSource, /!slot\.firstMile && !slot\.fullInventory && !slot\.productProjectWorkbook/);
   assert.match(appSource, /<FullInventorySummaryPage token=\{token\} active=\{activeTab === 'fullInventorySummary'\}/);

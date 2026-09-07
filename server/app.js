@@ -6345,6 +6345,119 @@ app.get('/api/progress/demands', requireAuth, requirePage('progressRefresh'), (r
   });
 });
 
+app.get('/api/progress/fulfillment-demands', requireAuth, requirePage('progressRefresh'), (req, res) => {
+  const startedAt = Date.now();
+  const record = get(
+    `SELECT rows_json, updated_at FROM dimension_files WHERE slot_id = 'fullInventoryFile2' AND applied = 1`
+  );
+  const rawRows = parseJson(record?.rows_json, []);
+
+  const rows = rawRows.map((raw, index) => {
+    const remainingInboundQty = numberValue(raw.manualRemainingQty);
+    const unpreparedQty = numberValue(raw.unpreparedQty);
+    const preparedNotStartedQty = numberValue(raw.preparedNotStartedQty);
+    const inProductionQty = numberValue(raw.inProductionQty);
+    const finishedQty = numberValue(raw.finishedQty);
+    const shippedQty = numberValue(raw.sourceShippedQty);
+    const progressTotal = unpreparedQty + preparedNotStartedQty + inProductionQty + finishedQty;
+    const pretaxPrice = numberValue(raw.sourcePretaxPrice);
+
+    return {
+      demandKey: `fulfillment_${index}`,
+      displayKey: raw.orderNo || raw.materialCode || `行${index + 1}`,
+      month: raw.month || '',
+      businessUnit: raw.businessUnit || '',
+      operatorName: raw.operatorName || '',
+      supplier: raw.supplierShortName || '',
+      supplierShortName: raw.supplierShortName || '',
+      orderSupplierShortName: raw.supplierShortName || '',
+      materialCode: raw.materialCode || '',
+      currentOrderQty: 0,
+      totalPurchaseQty: 0,
+      totalInboundQty: shippedQty,
+      trackingOrderQty: 0,
+      trackingInboundQty: shippedQty,
+      remainingInboundQty,
+      operationStockQty: remainingInboundQty + shippedQty,
+      active: true,
+      sku: raw.sku || '',
+      logisticsCode: '',
+      materialName: raw.materialName || '',
+      productLine: raw.productLine || '',
+      productSeries: raw.productSeries || '',
+      purchaseGroup: raw.purchaseGroup || '',
+      purchaseOwner: raw.purchaseOwner || '',
+      purchaseOrg: '',
+      orderNo: raw.orderNo || '',
+      closeStatus: '',
+      documentStatus: '',
+      orderDates: raw.month || '',
+      contractDeliveryDates: raw.sourceContractDeliveryDate || '',
+      oaFlowNo: raw.oaFlowNo || '',
+      orderCreator: '',
+      orderType: '正常订单',
+      orderRemark: '',
+      reportingMonth: raw.month || '',
+      reportingPurchaseQty: 0,
+      currentOrderDate: '',
+      currentPurchaseQty: 0,
+      originalOrderNo: '',
+      originalOrderDate: '',
+      originalOrderMonth: '',
+      originalPurchaseQty: 0,
+      originalManualClose: '',
+      changeValidationStatus: 'normal',
+      changeValidationMessage: '',
+      stockQty: 0,
+      demandAfterStock: remainingInboundQty,
+      unpreparedQty,
+      preparedNotStartedQty,
+      inProductionQty,
+      finishedQty,
+      shippedQty,
+      progressTotal,
+      gap: remainingInboundQty - progressTotal,
+      progressAdjustmentRequired: Math.abs(remainingInboundQty - progressTotal) > 0.001,
+      shortageAfterStock: remainingInboundQty - progressTotal,
+      productionDeliveryDate: raw.productionDeliveryDate || '',
+      unproducedEstimatedDeliveryDate: raw.unproducedEstimatedDeliveryDate || '',
+      fulfillmentStatus: raw.fulfillmentStatus || '',
+      pretaxPrice,
+      pretaxPriceMaintained: Boolean(pretaxPrice !== 0),
+      normalFulfillmentQty: raw.fulfillmentStatus === '是' ? remainingInboundQty : 0,
+      abnormalFulfillmentQty: raw.fulfillmentStatus === '否' ? remainingInboundQty : 0,
+      normalFulfillmentAmount: 0,
+      abnormalFulfillmentAmount: 0,
+      unfulfilledReason: raw.unfulfilledReason || '',
+      reasonDetail: raw.reasonDetail || '',
+      remark: raw.remark || '',
+      progressUpdatedBy: '',
+      progressUpdatedAt: record?.updated_at || '',
+      canEdit: false,
+      rowKey: `fulfillment_${index}`,
+      followupKey: `fulfillment_${index}`,
+      operationOrderLevel: false,
+      operationOrderRows: [],
+      dataSource: '订单履约表',
+      followupStatus: '',
+      followupRemark: '',
+      followupNextStep: '',
+      followupPlannedCompletionDate: '',
+      followupUpdatedBy: '',
+      followupUpdatedAt: ''
+    };
+  });
+
+  const durationMs = Date.now() - startedAt;
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    rows,
+    currentAppliedAt: record?.updated_at || '',
+    dataScope: 'fulfillment',
+    durationMs
+  });
+});
+
 app.get('/api/operation-board/demands', requireAuth, requirePage('operationBoard'), (req, res) => {
   res.json({
     rows: demandRows(false, null, { includeOperationOrders: true, currentKingdeeOnly: true }),

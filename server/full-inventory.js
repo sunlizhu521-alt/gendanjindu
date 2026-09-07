@@ -307,27 +307,46 @@ export function parseOrderFulfillmentWorkbook(file) {
     cellStyles: false,
     WTF: false
   });
-  const sheetName = workbook.SheetNames[0];
-  if (!sheetName) throw new Error('订单履约表缺少工作表');
-  const aoa = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], {
-    header: 1,
-    defval: '',
-    raw: false,
-    blankrows: false
+
+  // Sheet 1: 采购总览
+  const overviewSheetName = workbook.SheetNames.find((n) => normalizedHeader(n).includes('采购总览')) || workbook.SheetNames[0];
+  if (!overviewSheetName) throw new Error('订单履约表缺少采购总览工作表');
+  const overviewAoa = xlsx.utils.sheet_to_json(workbook.Sheets[overviewSheetName], {
+    header: 1, defval: '', raw: false, blankrows: false
   });
-  const columns = uniqueColumns(aoa[1] || []);
-  const rawRows = aoa.slice(2)
-    .map((values) => rowObject(columns, values))
+  const overviewColumns = uniqueColumns(overviewAoa[1] || []);
+  const overviewRawRows = overviewAoa.slice(2)
+    .map((values) => rowObject(overviewColumns, values))
     .filter((row) => text(row['物料编码']) || text(row['采购订单号']) || text(row['SKU']));
-  const parsed = parseManualProgressRows(rawRows, { headerRow: 2 });
-  const rows = parsed.rows.map(({ raw: _raw, ...row }) => row);
+  const overviewParsed = parseManualProgressRows(overviewRawRows, { headerRow: 2 });
+  const overviewRows = overviewParsed.rows.map(({ raw: _raw, ...row }) => row);
+
+  // Sheet 2: 借调明细
+  const transferSheetName = workbook.SheetNames.find((n) => normalizedHeader(n).includes('借调'));
+  let transferRows = [];
+  let transferColumns = [];
+  if (transferSheetName) {
+    const transferAoa = xlsx.utils.sheet_to_json(workbook.Sheets[transferSheetName], {
+      header: 1, defval: '', raw: false, blankrows: false
+    });
+    transferColumns = uniqueColumns(transferAoa[1] || []);
+    transferRows = transferAoa.slice(2)
+      .map((values) => rowObject(transferColumns, values))
+      .filter((row) => text(row['物料编码']) || text(row['借调数量']));
+  }
+
   return {
     sheetNames: workbook.SheetNames,
     sheetPreviews: [],
-    sheets: [{ sheetName, rows, columns, headerRow: 2 }],
-    rows,
-    selectedSheetNames: [sheetName],
-    mapping: { materialCode: '物料编码', orderNo: '采购订单号' }
+    sheets: [
+      { sheetName: overviewSheetName, rows: overviewRows, columns: overviewColumns, headerRow: 2 },
+      ...(transferSheetName ? [{ sheetName: transferSheetName, rows: transferRows, columns: transferColumns, headerRow: 2 }] : [])
+    ],
+    rows: overviewRows,
+    selectedSheetNames: [overviewSheetName, transferSheetName].filter(Boolean),
+    mapping: { materialCode: '物料编码', orderNo: '采购订单号' },
+    transferRows,
+    transferColumns
   };
 }
 
@@ -338,8 +357,8 @@ export function inspectOrderFulfillmentWorkbook(file) {
     columns: ['采购组', '采购下单人', '下单月份', '事业部', '采购订单号', '供应商简称', '产品线', '系列', '物料编码', 'SKU', '物料名称', '未交付数量', '已下单未备料未生产', '已备料未生产', '生产中产品', '完工未发产品', '已发货数量', '合同约定交期', '生产中交付时间', '未生产预计交付时间', '是否正常履约', '未履约原因'],
     previewRows: parsed.rows.slice(0, 8),
     rowCount: parsed.rows.length,
-    totalRowCount: parsed.rows.length,
-    recognizedSheets: 1,
+    totalRowCount: parsed.rows.length + (parsed.transferRows?.length || 0),
+    recognizedSheets: parsed.transferRows?.length ? 2 : 1,
     sheetPreviews: parsed.sheets.map((sheet) => ({
       sheetName: sheet.sheetName,
       columns: sheet.columns,

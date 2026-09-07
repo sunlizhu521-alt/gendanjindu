@@ -56,6 +56,25 @@ function orderFulfillmentWorkbookFile() {
   return { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) };
 }
 
+function dualSheetOrderFulfillmentWorkbookFile() {
+  const workbook = xlsx.utils.book_new();
+  const overview = xlsx.utils.aoa_to_sheet([
+    ['采购总览', '', '', ''],
+    ['采购订单号', '物料编码', 'SKU', '未交付数量'],
+    ['CGDD012346', '1001010045', 'P22', 80]
+  ]);
+  const transfer = xlsx.utils.aoa_to_sheet([
+    ['借调明细', '', '', ''],
+    ['采购订单号', '物料编码', 'SKU', '借调数量'],
+    ['CGDD012346', '1001010045', 'P22', 12],
+    ['', '1001010046', 'P23', 5],
+    ['', '', '', '']
+  ]);
+  xlsx.utils.book_append_sheet(workbook, transfer, '临时 借调 明细');
+  xlsx.utils.book_append_sheet(workbook, overview, '2026年采购总览');
+  return { buffer: xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' }) };
+}
+
 test('全量库存底表固定解析两个工作表和第2行表头', () => {
   const parsed = parseFullInventoryWorkbook(workbookFile());
   assert.deepEqual(parsed.selectedSheetNames, ['成品', '退货和配件']);
@@ -126,6 +145,32 @@ test('订单履约表预览返回结构化字段和首个工作表', () => {
   assert.equal(inspected.sheetNames[0], '订单履约明细');
   assert.ok(inspected.columns.includes('采购订单号'));
   assert.ok(inspected.columns.includes('未履约原因'));
+});
+
+test('订单履约表按工作表名称解析采购总览和借调明细', () => {
+  const file = dualSheetOrderFulfillmentWorkbookFile();
+  const parsed = parseOrderFulfillmentWorkbook(file);
+  assert.deepEqual(parsed.selectedSheetNames, ['2026年采购总览', '临时 借调 明细']);
+  assert.equal(parsed.rows.length, 1);
+  assert.equal(parsed.rows[0].orderNo, 'CGDD012346');
+  assert.equal(parsed.rows[0].materialCode, '1001010045');
+  assert.equal(parsed.transferRows.length, 2);
+  assert.equal(parsed.transferRows[0]['借调数量'], '12');
+  assert.equal(parsed.transferRows[1]['物料编码'], '1001010046');
+  assert.deepEqual(parsed.transferColumns, ['采购订单号', '物料编码', 'SKU', '借调数量']);
+  assert.deepEqual(parsed.sheets.map(({ sheetName, headerRow }) => ({ sheetName, headerRow })), [
+    { sheetName: '2026年采购总览', headerRow: 2 },
+    { sheetName: '临时 借调 明细', headerRow: 2 }
+  ]);
+
+  const inspected = inspectOrderFulfillmentWorkbook(file);
+  assert.equal(inspected.recognizedSheets, 2);
+  assert.equal(inspected.rowCount, 1);
+  assert.equal(inspected.totalRowCount, 3);
+  assert.deepEqual(inspected.sheetPreviews.map(({ sheetName, rowCount }) => ({ sheetName, rowCount })), [
+    { sheetName: '2026年采购总览', rowCount: 1 },
+    { sheetName: '临时 借调 明细', rowCount: 2 }
+  ]);
 });
 
 test('全量库存汇总按工作表及事业部+物料编码聚合', () => {

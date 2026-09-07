@@ -33,6 +33,7 @@ const PAGE_ORDER = [
   'dimensionMissing',
   'dimensionLibrary',
   'kingdeeImport',
+  'orderFulfillment',
   'permissions'
 ];
 
@@ -49,6 +50,7 @@ const PAGE_LABELS = {
   dimensionMissing: '维度表缺失',
   dimensionLibrary: '维度表库',
   kingdeeImport: '采购订单',
+  orderFulfillment: '订单履约表',
   permissions: '权限管理'
 };
 
@@ -56,7 +58,7 @@ const NAV_GROUPS = [
   { title: '全量库存', pages: ['fullInventorySummary', 'fullInventoryLibrary'] },
   { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'purchaseBoard', 'transferDetailBoard'] },
   { title: '头程数据', pages: ['firstMileBoard', 'firstMileDatabase'] },
-  { title: '维护数据', pages: ['dimensionMissing', 'dimensionLibrary', 'kingdeeImport'] },
+  { title: '维护数据', pages: ['dimensionMissing', 'dimensionLibrary', 'kingdeeImport', 'orderFulfillment'] },
   { title: '系统操作', pages: ['permissions', 'operationLogs'] }
 ];
 
@@ -371,7 +373,10 @@ const BEI_HUO_REVIEW_LIBRARY_SLOTS = [
 ];
 
 const FULL_INVENTORY_LIBRARY_SLOTS = [
-  { id: 'fullInventoryFile1', title: '全量库存底表', fields: [], fullInventory: true },
+  { id: 'fullInventoryFile1', title: '全量库存底表', fields: [], fullInventory: true }
+];
+
+const ORDER_FULFILLMENT_SLOTS = [
   { id: 'fullInventoryFile2', title: '订单履约表', fields: [], fullInventory: true }
 ];
 
@@ -9294,6 +9299,7 @@ function App() {
         {shouldMount('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
         {shouldMount('transferDetailBoard') && <PagePane page="transferDetailBoard" activeTab={activeTab}><React.Suspense fallback={<div className="loading-fallback">加载中...</div>}><TransferDetailBoard token={token} /></React.Suspense></PagePane>}
         {shouldMount('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
+        {shouldMount('orderFulfillment') && <PagePane page="orderFulfillment" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="订单履约表" slots={ORDER_FULFILLMENT_SLOTS} gridColumns={1} /></PagePane>}
         {shouldMount('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('firstMileDatabase') && <PagePane page="firstMileDatabase" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="头程数据库" slots={FIRST_MILE_DATABASE_SLOTS} gridColumns={3} onDataApplied={refreshFirstMileData} /></PagePane>}
         {shouldMount('firstMileBoard') && <PagePane page="firstMileBoard" activeTab={activeTab}><FirstMileBoard token={token} setMessage={setMessage} refreshVersion={firstMileVersion} /></PagePane>}

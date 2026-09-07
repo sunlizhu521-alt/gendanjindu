@@ -276,6 +276,13 @@ test('前端注册全量库存分组、汇总页和免映射底表页', () => {
   assert.match(appSource, /title: '全量库存', pages: \['fullInventorySummary', 'fullInventoryLibrary'\]/);
   assert.match(appSource, /fullInventoryFile1', title: '全量库存底表', fields: \[\], fullInventory: true/);
   assert.match(appSource, /fullInventoryFile2', title: '订单履约表', fields: \[\], fullInventory: true/);
+  const fullInventorySlotsSource = appSource.match(/const FULL_INVENTORY_LIBRARY_SLOTS = \[([\s\S]*?)\n\];/)?.[1] || '';
+  const orderFulfillmentSlotsSource = appSource.match(/const ORDER_FULFILLMENT_SLOTS = \[([\s\S]*?)\n\];/)?.[1] || '';
+  assert.doesNotMatch(fullInventorySlotsSource, /fullInventoryFile2/);
+  assert.match(orderFulfillmentSlotsSource, /fullInventoryFile2/);
+  assert.match(appSource, /orderFulfillment: '订单履约表'/);
+  assert.match(appSource, /title: '维护数据', pages: \['dimensionMissing', 'dimensionLibrary', 'kingdeeImport', 'orderFulfillment'\]/);
+  assert.match(appSource, /shouldMount\('orderFulfillment'\)[\s\S]*slots=\{ORDER_FULFILLMENT_SLOTS\}/);
   assert.match(appSource, /slot\.firstMile \|\| slot\.fullInventory/g);
   assert.match(appSource, /!slot\.firstMile && !slot\.fullInventory && !slot\.productProjectWorkbook/);
   assert.match(appSource, /<FullInventorySummaryPage token=\{token\} active=\{activeTab === 'fullInventorySummary'\}/);

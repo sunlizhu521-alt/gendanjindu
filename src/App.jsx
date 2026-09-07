@@ -9236,8 +9236,6 @@ function App() {
   if (!token || !user) return <>{loadingProgress}<Login onLogin={handleLogin} /></>;
 
   const visiblePages = visiblePagesForUser(user);
-  const progressStandalone = activeTab === 'progressRefresh';
-  const progressReturnPage = visiblePages.find((page) => page !== 'progressRefresh') || '';
   const canView = (page) => visiblePages.includes(page);
   const shouldMount = (page) => canView(page) && visitedPages.has(page);
   const refreshCrossBorderData = () => setCrossBorderVersion((version) => version + 1);
@@ -9252,11 +9250,10 @@ function App() {
   };
 
   return (
-    <main className={progressStandalone ? 'progress-standalone-shell' : 'app-shell'} onClick={() => setMessage('')}>
+    <main className='app-shell' onClick={() => setMessage('')}>
       {loadingProgress}
       <SecurityWatermark userName={user.name} />
-      {!progressStandalone && (
-        <aside className="sidebar" onClick={(event) => event.stopPropagation()}>
+      <aside className="sidebar" onClick={(event) => event.stopPropagation()}>
           <h1>采购跟单&头程数据</h1>
           <span className="app-version-time">服务器共享数据</span>
           <nav className="sidebar-nav">
@@ -9285,8 +9282,7 @@ function App() {
             <button type="button" className="ghost" onClick={logout}>退出登录</button>
           </div>
         </aside>
-      )}
-      <section className={progressStandalone ? 'progress-standalone-content' : 'content'} onClick={(event) => event.stopPropagation()}>
+      <section className='content' onClick={(event) => event.stopPropagation()}>
         {message && <p className="message">{message}</p>}
         {demandsLoading && DEMAND_DATA_PAGES.has(activeTab) && <p className="section-count">正在加载采购订单数据...</p>}
         {shouldMount('fullInventorySummary') && <PagePane page="fullInventorySummary" activeTab={activeTab}><React.Suspense fallback={<div className="loading-fallback">加载中...</div>}><FullInventorySummaryPage token={token} active={activeTab === 'fullInventorySummary'} /></React.Suspense></PagePane>}
@@ -9294,7 +9290,7 @@ function App() {
         {shouldMount('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><OperationBoardPage token={token} active={activeTab === 'operationBoard'} /></PagePane>}
         {shouldMount('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
         {shouldMount('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
-        {shouldMount('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} onExit={progressReturnPage ? () => setActiveTab(progressReturnPage) : null} onLogout={logout} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
+        {shouldMount('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('firstMileDatabase') && <PagePane page="firstMileDatabase" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="头程数据库" slots={FIRST_MILE_DATABASE_SLOTS} gridColumns={3} onDataApplied={refreshFirstMileData} /></PagePane>}
         {shouldMount('firstMileBoard') && <PagePane page="firstMileBoard" activeTab={activeTab}><FirstMileBoard token={token} setMessage={setMessage} refreshVersion={firstMileVersion} /></PagePane>}
         {shouldMount('dimensionMissing') && <PagePane page="dimensionMissing" activeTab={activeTab}><DimensionMissingPage token={token} user={user} setMessage={setMessage} refreshVersion={crossBorderVersion} active={activeTab === 'dimensionMissing'} onMaintain={maintainDimensionSlot} /></PagePane>}

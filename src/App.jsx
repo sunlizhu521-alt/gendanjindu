@@ -33,8 +33,7 @@ const PAGE_ORDER = [
   'dimensionMissing',
   'dimensionLibrary',
   'kingdeeImport',
-  'permissions',
-  'tableRelationships'
+  'permissions'
 ];
 
 const PAGE_LABELS = {
@@ -51,8 +50,7 @@ const PAGE_LABELS = {
   dimensionMissing: '维度表缺失',
   dimensionLibrary: '维度表库',
   kingdeeImport: '采购订单',
-  permissions: '权限管理',
-  tableRelationships: '数据关系图'
+  permissions: '权限管理'
 };
 
 const NAV_GROUPS = [
@@ -60,7 +58,7 @@ const NAV_GROUPS = [
   { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'differenceAllocation', 'operationLogs', 'trace', 'purchaseBoard'] },
   { title: '头程数据', pages: ['firstMileBoard', 'firstMileDatabase'] },
   { title: '维护数据', pages: ['dimensionMissing', 'dimensionLibrary', 'kingdeeImport'] },
-  { title: '系统操作', pages: ['permissions', 'tableRelationships'] }
+  { title: '系统操作', pages: ['permissions'] }
 ];
 
 const DEMAND_DATA_PAGES = new Set(['purchaseBoard', 'progressRefresh']);
@@ -9309,7 +9307,6 @@ function App() {
         {shouldMount('trace') && <PagePane page="trace" activeTab={activeTab}><TracePage token={token} setMessage={setMessage} /></PagePane>}
         {shouldMount('operationLogs') && <PagePane page="operationLogs" activeTab={activeTab}><OperationLogsPage token={token} user={user} setMessage={setMessage} title="生产跟进 / 操作记录" fixedPageKey="progressRefresh" /></PagePane>}
         {shouldMount('permissions') && <PagePane page="permissions" activeTab={activeTab}><PermissionsPage token={token} currentUser={user} pages={pages} setMessage={setMessage} /></PagePane>}
-        {shouldMount('tableRelationships') && <PagePane page="tableRelationships" activeTab={activeTab}><DataRelationshipsPage token={token} /></PagePane>}
         <PersistentHorizontalScrollbar activeTab={activeTab} />
       </section>
     </main>

@@ -272,6 +272,7 @@ test('服务端注册全量库存页面、槽位、权限和汇总接口', () =>
 test('前端注册全量库存分组、汇总页和免映射底表页', () => {
   const appSource = fs.readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const pageSource = fs.readFileSync(new URL('../src/FullInventorySummaryPage.jsx', import.meta.url), 'utf8');
+  const transferPageSource = fs.readFileSync(new URL('../src/TransferDetailBoard.jsx', import.meta.url), 'utf8');
   assert.match(appSource, /title: '全量库存', pages: \['fullInventorySummary', 'fullInventoryLibrary'\]/);
   assert.match(appSource, /fullInventoryFile1', title: '全量库存底表', fields: \[\], fullInventory: true/);
   assert.match(appSource, /fullInventoryFile2', title: '订单履约表', fields: \[\], fullInventory: true/);
@@ -289,4 +290,11 @@ test('前端注册全量库存分组、汇总页和免映射底表页', () => {
   assert.match(pageSource, /currentGroup\.key === 'undelivered'/);
   assert.match(pageSource, /colSpan=\{columns\.length\}/);
   assert.match(pageSource, /writeStyledExcelFile/);
+  assert.match(appSource, /const TransferDetailBoard = React\.lazy\(\(\) => import\('\.\/TransferDetailBoard\.jsx'\)\)/);
+  assert.match(appSource, /transferDetailBoard: '借调明细看板'/);
+  assert.match(appSource, /pages: \['operationBoard', 'progressRefresh', 'purchaseBoard', 'transferDetailBoard'\]/);
+  assert.match(appSource, /shouldMount\('transferDetailBoard'\)[\s\S]*<TransferDetailBoard token=\{token\}/);
+  assert.match(transferPageSource, /request\('\/api\/transfer-detail', \{ token \}\)/);
+  assert.match(transferPageSource, /借调数量合计/);
+  assert.match(transferPageSource, /'采购对接人员'[\s\S]*'预计交付时间'[\s\S]*'备注'/);
 });

@@ -12,6 +12,7 @@ const SupplyPlanBoard = React.lazy(() => import('./SupplyPlanBoard.jsx'));
 const ProductArchivePage = React.lazy(() => import('./ProductArchivePage.jsx'));
 const BeiHuoGongJuPage = React.lazy(() => import('./BeiHuoGongJuPage.jsx'));
 const FullInventorySummaryPage = React.lazy(() => import('./FullInventorySummaryPage.jsx'));
+const TransferDetailBoard = React.lazy(() => import('./TransferDetailBoard.jsx'));
 
 installGlobalFetchProgress();
 
@@ -26,6 +27,7 @@ const PAGE_ORDER = [
   'progressRefresh',
   'operationLogs',
   'purchaseBoard',
+  'transferDetailBoard',
   'firstMileBoard',
   'firstMileDatabase',
   'dimensionMissing',
@@ -41,6 +43,7 @@ const PAGE_LABELS = {
   progressRefresh: '生产跟进',
   operationLogs: '操作记录',
   purchaseBoard: '采购看板',
+  transferDetailBoard: '借调明细看板',
   firstMileBoard: '头程数据看板',
   firstMileDatabase: '头程数据库',
   dimensionMissing: '维度表缺失',
@@ -51,7 +54,7 @@ const PAGE_LABELS = {
 
 const NAV_GROUPS = [
   { title: '全量库存', pages: ['fullInventorySummary', 'fullInventoryLibrary'] },
-  { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'purchaseBoard'] },
+  { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'purchaseBoard', 'transferDetailBoard'] },
   { title: '头程数据', pages: ['firstMileBoard', 'firstMileDatabase'] },
   { title: '维护数据', pages: ['dimensionMissing', 'dimensionLibrary', 'kingdeeImport'] },
   { title: '系统操作', pages: ['permissions', 'operationLogs'] }
@@ -9289,6 +9292,7 @@ function App() {
         {shouldMount('fullInventoryLibrary') && <PagePane page="fullInventoryLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} reloadDemandData={false} setMessage={setMessage} title="全量库存底表" slots={FULL_INVENTORY_LIBRARY_SLOTS} gridColumns={1} /></PagePane>}
         {shouldMount('operationBoard') && <PagePane page="operationBoard" activeTab={activeTab}><OperationBoardPage token={token} active={activeTab === 'operationBoard'} /></PagePane>}
         {shouldMount('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
+        {shouldMount('transferDetailBoard') && <PagePane page="transferDetailBoard" activeTab={activeTab}><React.Suspense fallback={<div className="loading-fallback">加载中...</div>}><TransferDetailBoard token={token} /></React.Suspense></PagePane>}
         {shouldMount('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
         {shouldMount('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('firstMileDatabase') && <PagePane page="firstMileDatabase" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="头程数据库" slots={FIRST_MILE_DATABASE_SLOTS} gridColumns={3} onDataApplied={refreshFirstMileData} /></PagePane>}

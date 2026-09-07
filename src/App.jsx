@@ -24,9 +24,7 @@ const PAGE_ORDER = [
   'fullInventoryLibrary',
   'operationBoard',
   'progressRefresh',
-  'differenceAllocation',
   'operationLogs',
-  'trace',
   'purchaseBoard',
   'firstMileBoard',
   'firstMileDatabase',
@@ -41,9 +39,7 @@ const PAGE_LABELS = {
   fullInventoryLibrary: '全量库存底表',
   operationBoard: '运营看板-未交付',
   progressRefresh: '生产跟进',
-  differenceAllocation: '差异分配',
   operationLogs: '操作记录',
-  trace: '变更追溯',
   purchaseBoard: '采购看板',
   firstMileBoard: '头程数据看板',
   firstMileDatabase: '头程数据库',
@@ -55,14 +51,14 @@ const PAGE_LABELS = {
 
 const NAV_GROUPS = [
   { title: '全量库存', pages: ['fullInventorySummary', 'fullInventoryLibrary'] },
-  { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'differenceAllocation', 'operationLogs', 'trace', 'purchaseBoard'] },
+  { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'operationLogs', 'purchaseBoard'] },
   { title: '头程数据', pages: ['firstMileBoard', 'firstMileDatabase'] },
   { title: '维护数据', pages: ['dimensionMissing', 'dimensionLibrary', 'kingdeeImport'] },
   { title: '系统操作', pages: ['permissions'] }
 ];
 
 const DEMAND_DATA_PAGES = new Set(['purchaseBoard', 'progressRefresh']);
-const PROGRESS_RELATED_PAGES = new Set(['differenceAllocation', 'operationLogs']);
+const PROGRESS_RELATED_PAGES = new Set(['operationLogs']);
 
 function demandDataScopeForPage(page) {
   if (page === 'progressRefresh') return 'progress';
@@ -9299,12 +9295,10 @@ function App() {
         {shouldMount('purchaseBoard') && <PagePane page="purchaseBoard" activeTab={activeTab}><PurchaseBoard rows={demands} /></PagePane>}
         {shouldMount('kingdeeImport') && <PagePane page="kingdeeImport" activeTab={activeTab}><KingdeeImport token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} /></PagePane>}
         {shouldMount('progressRefresh') && <PagePane page="progressRefresh" activeTab={activeTab}><ProgressPage rows={demands} token={token} user={user} reloadDemands={reloadDemands} setMessage={setMessage} onExit={progressReturnPage ? () => setActiveTab(progressReturnPage) : null} onLogout={logout} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
-        {shouldMount('differenceAllocation') && <PagePane page="differenceAllocation" activeTab={activeTab}><DifferenceAllocationPage token={token} user={user} setMessage={setMessage} currentAppliedAt={demandMeta.currentAppliedAt} /></PagePane>}
         {shouldMount('firstMileDatabase') && <PagePane page="firstMileDatabase" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} title="头程数据库" slots={FIRST_MILE_DATABASE_SLOTS} gridColumns={3} onDataApplied={refreshFirstMileData} /></PagePane>}
         {shouldMount('firstMileBoard') && <PagePane page="firstMileBoard" activeTab={activeTab}><FirstMileBoard token={token} setMessage={setMessage} refreshVersion={firstMileVersion} /></PagePane>}
         {shouldMount('dimensionMissing') && <PagePane page="dimensionMissing" activeTab={activeTab}><DimensionMissingPage token={token} user={user} setMessage={setMessage} refreshVersion={crossBorderVersion} active={activeTab === 'dimensionMissing'} onMaintain={maintainDimensionSlot} /></PagePane>}
         {shouldMount('dimensionLibrary') && <PagePane page="dimensionLibrary" activeTab={activeTab}><DimensionLibrary token={token} reloadDemands={reloadDemands} setMessage={setMessage} gridColumns={3} onDataApplied={refreshCrossBorderData} highlightSlotId={highlightSlotId} /></PagePane>}
-        {shouldMount('trace') && <PagePane page="trace" activeTab={activeTab}><TracePage token={token} setMessage={setMessage} /></PagePane>}
         {shouldMount('operationLogs') && <PagePane page="operationLogs" activeTab={activeTab}><OperationLogsPage token={token} user={user} setMessage={setMessage} title="生产跟进 / 操作记录" fixedPageKey="progressRefresh" /></PagePane>}
         {shouldMount('permissions') && <PagePane page="permissions" activeTab={activeTab}><PermissionsPage token={token} currentUser={user} pages={pages} setMessage={setMessage} /></PagePane>}
         <PersistentHorizontalScrollbar activeTab={activeTab} />

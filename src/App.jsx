@@ -51,10 +51,10 @@ const PAGE_LABELS = {
 
 const NAV_GROUPS = [
   { title: '全量库存', pages: ['fullInventorySummary', 'fullInventoryLibrary'] },
-  { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'operationLogs', 'purchaseBoard'] },
+  { title: '采购跟单', pages: ['operationBoard', 'progressRefresh', 'purchaseBoard'] },
   { title: '头程数据', pages: ['firstMileBoard', 'firstMileDatabase'] },
   { title: '维护数据', pages: ['dimensionMissing', 'dimensionLibrary', 'kingdeeImport'] },
-  { title: '系统操作', pages: ['permissions'] }
+  { title: '系统操作', pages: ['permissions', 'operationLogs'] }
 ];
 
 const DEMAND_DATA_PAGES = new Set(['purchaseBoard', 'progressRefresh']);
